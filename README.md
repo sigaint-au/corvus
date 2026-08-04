@@ -4,7 +4,12 @@ Minimal Bitwarden-style secrets manager: **teams → projects → secrets**, mem
 
 Stack: **Flask + HTMX + oat.ink** UI · **Postgres RLS** · **PostgREST** · **Podman Compose**.
 
-**Roles:** team `owner` / `admin` / `member`, plus **global admin** (server-wide). The first registered user becomes global admin; only global admins can open **Server settings** (classification banner, promote admins).
+**Roles:** team `owner` / `admin` / `member`, plus **global admin** (server-wide). The first registered user becomes global admin; only global admins can open **Server settings** (classification banner, LDAP, promote admins).
+
+**LDAP (optional):** enable under **Server settings**. Local accounts still work. On each LDAP login the app reads directory groups and applies:
+
+- **LDAP group → roles** (global admin maps)
+- **Team LDAP maps** (team owners/admins map a group → team role; membership `source=ldap` is re-synced on login; manual members are left alone)
 
 ## Quick start
 
@@ -30,6 +35,8 @@ See `examples/openshift-eso.yaml`.
 | Project | Secret collection (primary access surface) |
 | Secret | Key/value; value Fernet-encrypted at rest (`MASTER_KEY`) |
 | Machine token | Project-scoped bearer for ESO / CI |
+| LDAP role map | Directory group → `global_admin` |
+| Team LDAP map | Directory group → team role (auto membership) |
 
 ## ESO webhook
 

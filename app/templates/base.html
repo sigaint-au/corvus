@@ -243,6 +243,14 @@
       box-shadow: 0 1px 3px rgba(0,0,0,.06);
     }
     .auth-card h1 { margin-top: 0; font-size: 1.35rem; }
+    .auth-card form {
+      display: flex;
+      flex-direction: column;
+      gap: .65rem;
+    }
+    .auth-card form button[type="submit"] {
+      margin-top: 1rem;
+    }
     .auth-brand {
       display: block;
       text-align: center;
@@ -417,7 +425,7 @@
          class="{% if request.endpoint == 'trash' %}active{% endif %}">Trash</a>
       <div class="nav-sep"></div>
       <a href="{{ url_for('teams') }}"
-         class="{% if request.endpoint in ('teams', 'create_team', 'team_detail', 'add_team_member') %}active{% endif %}">Teams</a>
+         class="{% if request.endpoint in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map') %}active{% endif %}">Teams</a>
       {% if is_global_admin %}
       <a href="{{ url_for('server_settings') }}"
          class="{% if request.endpoint == 'server_settings' %}active{% endif %}">Server settings</a>

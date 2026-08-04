@@ -44,15 +44,64 @@
   </form>
   {% endif %}
   <table>
-    <thead><tr><th>User</th><th>Role</th></tr></thead>
+    <thead><tr><th>User</th><th>Role</th><th>Source</th></tr></thead>
     <tbody>
     {% for m in members %}
       <tr>
         <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
         <td>{{ m.role }}</td>
+        <td class="muted">{{ m.source or 'manual' }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
 </section>
+
+{% if my_role in ('owner', 'admin') %}
+<section>
+  <h2>LDAP group membership</h2>
+  <p class="muted">
+    Automatically add users to this team when they sign in via LDAP and belong to the mapped group.
+    Highest matching role wins. Manual members are never removed by LDAP sync.
+    {% if not ldap_enabled %}<strong>LDAP is currently disabled</strong> in server settings.{% endif %}
+  </p>
+  {% if ldap_maps %}
+  <table>
+    <thead><tr><th>LDAP group</th><th>Team role</th><th></th></tr></thead>
+    <tbody>
+    {% for m in ldap_maps %}
+      <tr>
+        <td><code class="k">{{ m.ldap_group }}</code></td>
+        <td>{{ m.role }}</td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('delete_team_ldap_map', team_id=team.id, map_id=m.id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove this LDAP mapping?')">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No LDAP group maps for this team.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('add_team_ldap_map', team_id=team.id) }}" class="row" style="margin-top:1rem;">
+    <label style="flex:2;">LDAP group (CN or DN)
+      <input type="text" name="ldap_group" required
+             placeholder="eng-secrets or CN=eng-secrets,OU=groups,…">
+    </label>
+    <label>Role
+      <select name="role">
+        <option value="member">member</option>
+        <option value="admin">admin</option>
+        <option value="owner">owner</option>
+      </select>
+    </label>
+    <button type="submit">Add map</button>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

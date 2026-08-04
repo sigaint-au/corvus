@@ -139,13 +139,16 @@ class TestAuth(unittest.TestCase):
         self.assertIn("/teams", r.location)
 
     def test_login_get(self):
-        r = self.client.get("/login")
+        with patch.object(store, "_ldap_cfg", return_value={"ldap_enabled": "false"}):
+            r = self.client.get("/login")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Sign in", r.data)
 
     def test_login_bad_creds(self):
         conn, _ = _conn(fetchone=None)
-        with patch.object(store, "connect", return_value=conn):
+        with patch.object(store, "connect", return_value=conn), patch.object(
+            store, "_ldap_cfg", return_value={"ldap_enabled": "false"}
+        ):
             r = self.client.post("/login", data={"email": "a@b.c", "password": "nope"})
         self.assertEqual(r.status_code, 401)
         self.assertIn(b"Invalid", r.data)
@@ -153,7 +156,9 @@ class TestAuth(unittest.TestCase):
     def test_login_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
-        with patch.object(store, "connect", return_value=conn):
+        with patch.object(store, "connect", return_value=conn), patch.object(
+            store, "_ldap_cfg", return_value={"ldap_enabled": "false"}
+        ):
             r = self.client.post(
                 "/login",
                 data={"email": "a@b.c", "password": "secret12"},
@@ -165,6 +170,37 @@ class TestAuth(unittest.TestCase):
             self.assertEqual(s["user_id"], str(uid))
             self.assertEqual(s["email"], "a@b.c")
             self.assertIn("jwt", s)
+
+    def test_login_ldap_ok(self):
+        uid = uuid4()
+        ldap_user = {
+            "email": "ldap@ex.com",
+            "name": "LDAP User",
+            "groups": ["CN=secretstore-admins,OU=groups,DC=ex,DC=com"],
+        }
+        synced = {
+            "id": uid,
+            "email": "ldap@ex.com",
+            "name": "LDAP User",
+            "is_global_admin": True,
+        }
+        conn, _ = _conn(fetchone=None)
+        with patch.object(store, "connect", return_value=conn), patch.object(
+            store, "_ldap_cfg", return_value={"ldap_enabled": "true"}
+        ), patch.object(store, "ldap_authenticate", return_value=ldap_user), patch.object(
+            store, "_sync_ldap_user", return_value=synced
+        ):
+            r = self.client.post(
+                "/login",
+                data={"email": "ldapuser", "password": "dir-pass"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/teams", r.location)
+        with self.client.session_transaction() as s:
+            self.assertEqual(s["user_id"], str(uid))
+            self.assertEqual(s["email"], "ldap@ex.com")
+            self.assertTrue(s["is_global_admin"])
 
     def test_register_short_password(self):
         r = self.client.post(
@@ -837,3 +873,98 @@ class TestSettings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── LDAP helpers / maps ────────────────────────────────────────────
+
+
+class TestLDAPHelpers(unittest.TestCase):
+    def test_group_tokens_cn(self):
+        t = store._group_tokens("CN=Admins,OU=Groups,DC=ex,DC=com")
+        self.assertIn("cn=admins,ou=groups,dc=ex,dc=com", t)
+        self.assertIn("admins", t)
+        self.assertIn("cn=admins", t)
+
+    def test_group_matches_cn_or_dn(self):
+        groups = ["CN=eng-secrets,OU=Groups,DC=ex,DC=com", "other"]
+        self.assertTrue(store._group_matches("eng-secrets", groups))
+        self.assertTrue(
+            store._group_matches("CN=eng-secrets,OU=Groups,DC=ex,DC=com", groups)
+        )
+        self.assertFalse(store._group_matches("nope", groups))
+
+    def test_ldap_escape(self):
+        self.assertEqual(store._ldap_escape("a*b(c)"), "a\\2ab\\28c\\29")
+
+    def test_ldap_disabled_returns_none(self):
+        with patch.object(store, "_ldap_cfg", return_value={"ldap_enabled": "false"}):
+            self.assertIsNone(store.ldap_authenticate("u", "p"))
+
+
+class TestLDAPMaps(unittest.TestCase):
+    def setUp(self):
+        store.app.config["TESTING"] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        self.tid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "owner@ex.com"
+            s["is_global_admin"] = False
+
+    def test_add_team_ldap_map(self):
+        conn, _ = _conn()
+        with patch.object(store, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/teams/{self.tid}/ldap-maps",
+                data={"ldap_group": "eng-secrets", "role": "member"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn(str(self.tid), r.location)
+
+    def test_add_team_ldap_map_empty_group(self):
+        r = self.client.post(
+            f"/teams/{self.tid}/ldap-maps",
+            data={"ldap_group": "  ", "role": "member"},
+            follow_redirects=False,
+        )
+        self.assertEqual(r.status_code, 302)
+
+    def test_delete_team_ldap_map(self):
+        mid = uuid4()
+        conn, _ = _conn()
+        with patch.object(store, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/teams/{self.tid}/ldap-maps/{mid}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+
+    def test_sync_ldap_user_applies_maps(self):
+        uid = uuid4()
+        tid = uuid4()
+        fo = [
+            {"id": uid},  # upsert_ldap_user
+            {  # final user select
+                "id": uid,
+                "email": "u@ex.com",
+                "name": "U",
+                "is_global_admin": True,
+            },
+            None,  # existing membership lookup
+        ]
+        fa = [
+            [{"ldap_group": "admins", "role": "global_admin"}],
+            [{"id": uuid4(), "team_id": tid, "ldap_group": "admins", "role": "admin"}],
+        ]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        cur.fetchall.side_effect = fa
+        with patch.object(store, "connect_admin", return_value=conn):
+            user = store._sync_ldap_user("u@ex.com", "U", ["CN=admins,OU=g,DC=x"])
+        self.assertEqual(str(user["id"]), str(uid))
+        self.assertTrue(user["is_global_admin"])
+        executed = " ".join(str(c) for c in cur.execute.call_args_list).lower()
+        self.assertIn("team_members", executed)
+        self.assertIn("upsert_ldap_user", executed)

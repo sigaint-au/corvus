@@ -49,7 +49,35 @@ _DEFAULT_SETTINGS = {
     "classification_text": "OFFICIAL",
     "classification_color": "#677381",
     "classification_fg": "#ffffff",
+    "ldap_enabled": "false",
+    "ldap_url": "",
+    "ldap_start_tls": "false",
+    "ldap_bind_dn": "",
+    "ldap_bind_password": "",
+    "ldap_user_base": "",
+    "ldap_user_filter": "(|(mail={login})(uid={login})(sAMAccountName={login}))",
+    "ldap_email_attr": "mail",
+    "ldap_name_attr": "displayName",
+    "ldap_group_base": "",
+    "ldap_group_filter": "(member={dn})",
+    "ldap_use_memberof": "true",
 }
+_TEAM_ROLES = ("owner", "admin", "member")
+_ROLE_RANK = {"owner": 3, "admin": 2, "member": 1}
+_LDAP_SETTING_KEYS = (
+    "ldap_enabled",
+    "ldap_url",
+    "ldap_start_tls",
+    "ldap_bind_dn",
+    "ldap_bind_password",
+    "ldap_user_base",
+    "ldap_user_filter",
+    "ldap_email_attr",
+    "ldap_name_attr",
+    "ldap_group_base",
+    "ldap_group_filter",
+    "ldap_use_memberof",
+)
 
 
 def _fernet() -> Fernet:
@@ -165,6 +193,246 @@ def _set_setting(key: str, value: str):
         )
 
 
+def _truthy(val) -> bool:
+    return str(val or "").lower() in ("1", "true", "yes", "on")
+
+
+def _ldap_cfg() -> dict:
+    s = _get_settings()
+    return {k: s.get(k, _DEFAULT_SETTINGS.get(k, "")) for k in _LDAP_SETTING_KEYS}
+
+
+def _ldap_password_plain(cfg: dict) -> str:
+    enc = (cfg.get("ldap_bind_password") or "").strip()
+    if not enc:
+        return ""
+    try:
+        return decrypt(enc)
+    except Exception:
+        # allow plain storage during migration / empty
+        return enc
+
+
+def _group_tokens(group: str) -> set:
+    """Normalize an LDAP group DN/CN into match tokens (lowercased)."""
+    g = (group or "").strip()
+    if not g:
+        return set()
+    low = g.lower()
+    tokens = {low}
+    # CN=foo,OU=... → also match "foo" and "cn=foo"
+    if low.startswith("cn="):
+        cn = low.split(",", 1)[0][3:]
+        tokens.add(cn)
+        tokens.add(f"cn={cn}")
+    else:
+        tokens.add(f"cn={low}")
+    return tokens
+
+
+def _group_matches(map_group: str, user_groups: list) -> bool:
+    want = _group_tokens(map_group)
+    if not want:
+        return False
+    for ug in user_groups or []:
+        if want & _group_tokens(ug):
+            return True
+    return False
+
+
+def _ldap_attr(entry, attr: str, default: str = "") -> str:
+    if not entry or not attr:
+        return default
+    try:
+        vals = entry.entry_attributes_as_dict.get(attr) or []
+        if vals:
+            return str(vals[0])
+    except Exception:
+        pass
+    return default
+
+
+def ldap_authenticate(login: str, password: str) -> dict | None:
+    """
+    Bind as user against LDAP. Returns {email, name, groups} or None.
+    groups is a list of group DNs/CNs (strings).
+    """
+    cfg = _ldap_cfg()
+    if not _truthy(cfg.get("ldap_enabled")):
+        return None
+    url = (cfg.get("ldap_url") or "").strip()
+    user_base = (cfg.get("ldap_user_base") or "").strip()
+    if not url or not user_base or not login or not password:
+        return None
+
+    try:
+        from ldap3 import ALL, SUBTREE, Connection, Server
+    except ImportError:
+        log.error("ldap3 not installed")
+        return None
+
+    user_filter = (cfg.get("ldap_user_filter") or "(mail={login})").replace(
+        "{login}", _ldap_escape(login)
+    )
+    email_attr = (cfg.get("ldap_email_attr") or "mail").strip() or "mail"
+    name_attr = (cfg.get("ldap_name_attr") or "displayName").strip() or "displayName"
+    use_memberof = _truthy(cfg.get("ldap_use_memberof"))
+    group_base = (cfg.get("ldap_group_base") or "").strip()
+    group_filter_tmpl = (cfg.get("ldap_group_filter") or "(member={dn})").strip()
+
+    try:
+        server = Server(url, get_info=ALL, connect_timeout=8)
+        # service bind (optional) to search for user DN
+        bind_dn = (cfg.get("ldap_bind_dn") or "").strip()
+        bind_pw = _ldap_password_plain(cfg)
+        if bind_dn:
+            svc = Connection(server, user=bind_dn, password=bind_pw, auto_bind=True, receive_timeout=10)
+        else:
+            svc = Connection(server, auto_bind=True, receive_timeout=10)
+        if _truthy(cfg.get("ldap_start_tls")):
+            svc.start_tls()
+
+        if not svc.search(
+            user_base,
+            user_filter,
+            search_scope=SUBTREE,
+            attributes=[email_attr, name_attr, "memberOf", "cn", "uid"],
+            size_limit=1,
+        ) or not svc.entries:
+            svc.unbind()
+            return None
+        entry = svc.entries[0]
+        user_dn = str(entry.entry_dn)
+        email = _ldap_attr(entry, email_attr, login).strip().lower()
+        name = _ldap_attr(entry, name_attr) or _ldap_attr(entry, "cn") or email
+        groups = []
+        if use_memberof:
+            groups = [str(g) for g in (entry.entry_attributes_as_dict.get("memberOf") or [])]
+        svc.unbind()
+
+        # user bind to verify password
+        uc = Connection(server, user=user_dn, password=password, auto_bind=True, receive_timeout=10)
+        if _truthy(cfg.get("ldap_start_tls")):
+            try:
+                uc.start_tls()
+            except Exception:
+                pass
+        uc.unbind()
+
+        # group search if not using memberOf or empty
+        if (not groups) and group_base and group_filter_tmpl:
+            gfilter = group_filter_tmpl.replace("{dn}", _ldap_escape(user_dn)).replace(
+                "{login}", _ldap_escape(login)
+            )
+            if bind_dn:
+                gc = Connection(server, user=bind_dn, password=bind_pw, auto_bind=True, receive_timeout=10)
+            else:
+                gc = Connection(server, auto_bind=True, receive_timeout=10)
+            if gc.search(group_base, gfilter, search_scope=SUBTREE, attributes=["cn", "distinguishedName"]):
+                for ge in gc.entries:
+                    groups.append(str(ge.entry_dn))
+                    cn = _ldap_attr(ge, "cn")
+                    if cn:
+                        groups.append(cn)
+            gc.unbind()
+
+        if not email:
+            email = login.strip().lower()
+        return {"email": email, "name": name, "groups": groups, "dn": user_dn}
+    except Exception as e:
+        log.warning("LDAP auth failed for %s: %s", login, e)
+        return None
+
+
+def _ldap_escape(value: str) -> str:
+    """Escape special chars for LDAP filter values."""
+    out = []
+    for ch in value or "":
+        if ch in r'\*()':
+            out.append(f"\\{ord(ch):02x}")
+        elif ch == "\x00":
+            out.append("\\00")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _sync_ldap_user(email: str, name: str, groups: list) -> dict:
+    """Upsert LDAP user, apply global role maps + team membership maps. Returns user row."""
+    with connect_admin() as conn, conn.cursor() as cur:
+        cur.execute("SELECT private.upsert_ldap_user(%s, %s) AS id", (email, name or ""))
+        uid = cur.fetchone()["id"]
+
+        # Global admin from LDAP group → role maps (only when maps exist)
+        cur.execute("SELECT ldap_group, role FROM private.ldap_role_maps")
+        role_maps = cur.fetchall() or []
+        if role_maps:
+            is_admin = any(
+                m["role"] == "global_admin" and _group_matches(m["ldap_group"], groups)
+                for m in role_maps
+            )
+            cur.execute(
+                "UPDATE private.users SET is_global_admin = %s WHERE id = %s",
+                (is_admin, str(uid)),
+            )
+        cur.execute(
+            "SELECT id, email, name, is_global_admin FROM private.users WHERE id = %s",
+            (str(uid),),
+        )
+        user = cur.fetchone()
+
+        # Team membership from team_ldap_maps
+        cur.execute("SELECT id, team_id, ldap_group, role FROM api.team_ldap_maps")
+        tmaps = cur.fetchall() or []
+        desired = {}  # team_id -> best role
+        for m in tmaps:
+            if not _group_matches(m["ldap_group"], groups):
+                continue
+            tid = str(m["team_id"])
+            role = m["role"]
+            if tid not in desired or _ROLE_RANK.get(role, 0) > _ROLE_RANK.get(desired[tid], 0):
+                desired[tid] = role
+
+        # Drop LDAP-sourced memberships no longer mapped
+        cur.execute(
+            """
+            DELETE FROM api.team_members
+            WHERE user_id = %s AND source = 'ldap'
+              AND NOT (team_id = ANY(%s::uuid[]))
+            """,
+            (str(uid), list(desired.keys()) or []),
+        )
+        for tid, role in desired.items():
+            # leave manual memberships alone
+            cur.execute(
+                """
+                SELECT role, source FROM api.team_members
+                WHERE team_id = %s AND user_id = %s
+                """,
+                (tid, str(uid)),
+            )
+            existing = cur.fetchone()
+            if existing and existing.get("source") == "manual":
+                continue
+            if existing:
+                cur.execute(
+                    """
+                    UPDATE api.team_members SET role = %s, source = 'ldap'
+                    WHERE team_id = %s AND user_id = %s
+                    """,
+                    (role, tid, str(uid)),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO api.team_members (team_id, user_id, role, source)
+                    VALUES (%s, %s, %s, 'ldap')
+                    """,
+                    (tid, str(uid), role),
+                )
+        return user
+
+
 def _classification():
     s = _get_settings()
     enabled = (s.get("classification_enabled") or "").lower() in ("1", "true", "yes", "on")
@@ -258,7 +526,19 @@ def ensure_schema():
           ('classification_enabled', 'false'),
           ('classification_text', 'OFFICIAL'),
           ('classification_color', '#677381'),
-          ('classification_fg', '#ffffff')
+          ('classification_fg', '#ffffff'),
+          ('ldap_enabled', 'false'),
+          ('ldap_url', ''),
+          ('ldap_start_tls', 'false'),
+          ('ldap_bind_dn', ''),
+          ('ldap_bind_password', ''),
+          ('ldap_user_base', ''),
+          ('ldap_user_filter', '(|(mail={login})(uid={login})(sAMAccountName={login}))'),
+          ('ldap_email_attr', 'mail'),
+          ('ldap_name_attr', 'displayName'),
+          ('ldap_group_base', ''),
+          ('ldap_group_filter', '(member={dn})'),
+          ('ldap_use_memberof', 'true')
         ON CONFLICT (key) DO NOTHING
         """,
         """
@@ -327,14 +607,24 @@ def ensure_schema():
         $$
         """,
         """
+        ALTER TABLE private.users
+          ADD COLUMN IF NOT EXISTS auth_source text NOT NULL DEFAULT 'local'
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE private.users ALTER COLUMN password_hash DROP NOT NULL;
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
         CREATE OR REPLACE FUNCTION private.register_user(p_email text, p_password text, p_name text)
         RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
         DECLARE uid uuid;
         DECLARE first_user boolean;
         BEGIN
           SELECT NOT EXISTS (SELECT 1 FROM private.users) INTO first_user;
-          INSERT INTO private.users (email, password_hash, name, is_global_admin)
-          VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), first_user)
+          INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
+          VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), first_user, 'local')
           RETURNING id INTO uid;
           RETURN uid;
         END;
@@ -348,11 +638,82 @@ def ensure_schema():
         BEGIN
           RETURN QUERY
           SELECT u.id, u.email, u.name, u.is_global_admin FROM private.users u
-          WHERE u.email = lower(p_email) AND u.password_hash = crypt(p_password, u.password_hash);
+          WHERE u.email = lower(p_email)
+            AND u.password_hash IS NOT NULL
+            AND u.password_hash = crypt(p_password, u.password_hash);
         END;
         $$
         """,
         "GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator",
+        """
+        CREATE OR REPLACE FUNCTION private.upsert_ldap_user(p_email text, p_name text)
+        RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
+        DECLARE uid uuid;
+        DECLARE first_user boolean;
+        BEGIN
+          SELECT id INTO uid FROM private.users WHERE email = lower(p_email);
+          IF uid IS NULL THEN
+            SELECT NOT EXISTS (SELECT 1 FROM private.users) INTO first_user;
+            INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
+            VALUES (lower(p_email), NULL, COALESCE(p_name, ''), first_user, 'ldap')
+            RETURNING id INTO uid;
+          ELSE
+            UPDATE private.users
+            SET name = CASE WHEN COALESCE(p_name, '') <> '' THEN p_name ELSE name END,
+                auth_source = 'ldap'
+            WHERE id = uid;
+          END IF;
+          RETURN uid;
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator",
+        """
+        CREATE TABLE IF NOT EXISTS private.ldap_role_maps (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          ldap_group text NOT NULL,
+          role text NOT NULL CHECK (role IN ('global_admin')),
+          created_at timestamptz NOT NULL DEFAULT now(),
+          UNIQUE (ldap_group)
+        )
+        """,
+        """
+        ALTER TABLE api.team_members
+          ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'manual'
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS api.team_ldap_maps (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
+          ldap_group text NOT NULL,
+          role text NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+          created_at timestamptz NOT NULL DEFAULT now(),
+          UNIQUE (team_id, ldap_group)
+        )
+        """,
+        "ALTER TABLE api.team_ldap_maps ENABLE ROW LEVEL SECURITY",
+        "DROP POLICY IF EXISTS tlm_select ON api.team_ldap_maps",
+        """
+        CREATE POLICY tlm_select ON api.team_ldap_maps FOR SELECT TO authenticated
+          USING (api.is_team_member(team_id))
+        """,
+        "DROP POLICY IF EXISTS tlm_insert ON api.team_ldap_maps",
+        """
+        CREATE POLICY tlm_insert ON api.team_ldap_maps FOR INSERT TO authenticated
+          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        "DROP POLICY IF EXISTS tlm_update ON api.team_ldap_maps",
+        """
+        CREATE POLICY tlm_update ON api.team_ldap_maps FOR UPDATE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        "DROP POLICY IF EXISTS tlm_delete ON api.team_ldap_maps",
+        """
+        CREATE POLICY tlm_delete ON api.team_ldap_maps FOR DELETE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_ldap_maps TO authenticated",
+        "GRANT ALL ON api.team_ldap_maps TO authenticator",
         """
         CREATE OR REPLACE FUNCTION private.get_setting(p_key text)
         RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = private AS $$
@@ -497,22 +858,39 @@ def index():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    ldap_on = _truthy(_ldap_cfg().get("ldap_enabled"))
     if request.method == "POST":
         email = request.form["email"].strip()
         password = request.form["password"]
+        user = None
+        # 1) Local password accounts (break-glass / non-LDAP users)
         with connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM private.verify_user(%s, %s)", (email, password))
             user = cur.fetchone()
+        # 2) LDAP when enabled and local auth failed
+        if not user and ldap_on:
+            ldap_user = ldap_authenticate(email, password)
+            if ldap_user:
+                try:
+                    user = _sync_ldap_user(
+                        ldap_user["email"],
+                        ldap_user.get("name") or "",
+                        ldap_user.get("groups") or [],
+                    )
+                except Exception as e:
+                    log.exception("LDAP user sync failed")
+                    flash(f"LDAP login succeeded but account sync failed: {e}", "error")
+                    return render_template("login.html", ldap_enabled=ldap_on), 500
         if not user:
             flash("Invalid email or password", "error")
-            return render_template("login.html"), 401
+            return render_template("login.html", ldap_enabled=ldap_on), 401
         session["user_id"] = str(user["id"])
         session["email"] = user["email"]
         session["name"] = user["name"]
         session["is_global_admin"] = bool(user.get("is_global_admin"))
         session["jwt"] = make_jwt(user["id"])
         return redirect(url_for("teams"))
-    return render_template("login.html")
+    return render_template("login.html", ldap_enabled=ldap_on)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -616,7 +994,7 @@ def team_detail(team_id):
             return "Not found", 404
         cur.execute(
             """
-            SELECT tm.role, u.id AS user_id, u.email, u.name
+            SELECT tm.role, tm.source, u.id AS user_id, u.email, u.name
             FROM api.team_members tm
             JOIN api.user_directory u ON u.id = tm.user_id
             WHERE tm.team_id = %s ORDER BY tm.role, u.email
@@ -637,12 +1015,24 @@ def team_detail(team_id):
         my_role = my["role"] if my else None
         if session.get("is_global_admin") and not my_role:
             my_role = "owner"
+        cur.execute(
+            """
+            SELECT id, ldap_group, role, created_at
+            FROM api.team_ldap_maps
+            WHERE team_id = %s
+            ORDER BY ldap_group
+            """,
+            (str(team_id),),
+        )
+        ldap_maps = cur.fetchall()
     return render_template(
         "team.html",
         team=team,
         members=members,
         projects=projects,
         my_role=my_role,
+        ldap_maps=ldap_maps,
+        ldap_enabled=_truthy(_ldap_cfg().get("ldap_enabled")),
     )
 
 
@@ -651,20 +1041,66 @@ def team_detail(team_id):
 def add_team_member(team_id):
     email = request.form["email"].strip().lower()
     role = request.form.get("role", "member")
+    if role not in _TEAM_ROLES:
+        role = "member"
     with as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT id FROM api.user_directory WHERE email = %s", (email,))
         u = cur.fetchone()
         if not u:
-            flash("User not found — they must register first", "error")
+            flash("User not found — they must register or sign in via LDAP first", "error")
             return redirect(url_for("team_detail", team_id=team_id))
         try:
             cur.execute(
-                "INSERT INTO api.team_members (team_id, user_id, role) VALUES (%s, %s, %s)",
+                """
+                INSERT INTO api.team_members (team_id, user_id, role, source)
+                VALUES (%s, %s, %s, 'manual')
+                ON CONFLICT (team_id, user_id) DO UPDATE
+                  SET role = EXCLUDED.role, source = 'manual'
+                """,
                 (str(team_id), str(u["id"]), role),
             )
             conn.commit()
         except Exception as e:
             flash(str(e), "error")
+    return redirect(url_for("team_detail", team_id=team_id))
+
+
+@app.post("/teams/<uuid:team_id>/ldap-maps")
+@login_required
+def add_team_ldap_map(team_id):
+    ldap_group = (request.form.get("ldap_group") or "").strip()
+    role = request.form.get("role", "member")
+    if role not in _TEAM_ROLES:
+        role = "member"
+    if not ldap_group:
+        flash("LDAP group required", "error")
+        return redirect(url_for("team_detail", team_id=team_id))
+    with as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        try:
+            cur.execute(
+                """
+                INSERT INTO api.team_ldap_maps (team_id, ldap_group, role)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (team_id, ldap_group) DO UPDATE SET role = EXCLUDED.role
+                """,
+                (str(team_id), ldap_group, role),
+            )
+            conn.commit()
+            flash("LDAP group mapping saved — applies on next LDAP login", "ok")
+        except Exception as e:
+            flash(str(e), "error")
+    return redirect(url_for("team_detail", team_id=team_id))
+
+
+@app.post("/teams/<uuid:team_id>/ldap-maps/<uuid:map_id>/delete")
+@login_required
+def delete_team_ldap_map(team_id, map_id):
+    with as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM api.team_ldap_maps WHERE id = %s AND team_id = %s",
+            (str(map_id), str(team_id)),
+        )
+        conn.commit()
     return redirect(url_for("team_detail", team_id=team_id))
 
 
@@ -1015,6 +1451,70 @@ def server_settings():
                 _set_setting("classification_color", color)
                 _set_setting("classification_fg", fg)
                 flash("Classification banner saved", "ok")
+        elif action == "ldap":
+            enabled = "true" if request.form.get("ldap_enabled") else "false"
+            _set_setting("ldap_enabled", enabled)
+            _set_setting("ldap_url", (request.form.get("ldap_url") or "").strip())
+            _set_setting(
+                "ldap_start_tls",
+                "true" if request.form.get("ldap_start_tls") else "false",
+            )
+            _set_setting("ldap_bind_dn", (request.form.get("ldap_bind_dn") or "").strip())
+            new_pw = request.form.get("ldap_bind_password") or ""
+            if new_pw.strip():
+                _set_setting("ldap_bind_password", encrypt(new_pw.strip()))
+            _set_setting("ldap_user_base", (request.form.get("ldap_user_base") or "").strip())
+            filt = (request.form.get("ldap_user_filter") or "").strip()
+            _set_setting(
+                "ldap_user_filter",
+                filt or _DEFAULT_SETTINGS["ldap_user_filter"],
+            )
+            _set_setting(
+                "ldap_email_attr",
+                (request.form.get("ldap_email_attr") or "mail").strip() or "mail",
+            )
+            _set_setting(
+                "ldap_name_attr",
+                (request.form.get("ldap_name_attr") or "displayName").strip()
+                or "displayName",
+            )
+            _set_setting("ldap_group_base", (request.form.get("ldap_group_base") or "").strip())
+            gfilt = (request.form.get("ldap_group_filter") or "").strip()
+            _set_setting(
+                "ldap_group_filter",
+                gfilt or _DEFAULT_SETTINGS["ldap_group_filter"],
+            )
+            _set_setting(
+                "ldap_use_memberof",
+                "true" if request.form.get("ldap_use_memberof") else "false",
+            )
+            flash("LDAP settings saved", "ok")
+        elif action == "ldap_role_map_add":
+            ldap_group = (request.form.get("ldap_group") or "").strip()
+            role = (request.form.get("role") or "global_admin").strip()
+            if role != "global_admin":
+                flash("Unsupported role for LDAP map", "error")
+            elif not ldap_group:
+                flash("LDAP group required", "error")
+            else:
+                with connect_admin() as conn, conn.cursor() as cur:
+                    try:
+                        cur.execute(
+                            """
+                            INSERT INTO private.ldap_role_maps (ldap_group, role)
+                            VALUES (%s, %s)
+                            ON CONFLICT (ldap_group) DO UPDATE SET role = EXCLUDED.role
+                            """,
+                            (ldap_group, role),
+                        )
+                        flash("LDAP role mapping saved", "ok")
+                    except Exception as e:
+                        flash(str(e), "error")
+        elif action == "ldap_role_map_delete":
+            mid = (request.form.get("map_id") or "").strip()
+            with connect_admin() as conn, conn.cursor() as cur:
+                cur.execute("DELETE FROM private.ldap_role_maps WHERE id = %s::uuid", (mid,))
+            flash("LDAP role mapping removed", "ok")
         elif action == "promote":
             email = (request.form.get("email") or "").strip().lower()
             if not email:
@@ -1029,7 +1529,7 @@ def server_settings():
                 if row:
                     flash(f"Promoted {email} to global admin", "ok")
                 else:
-                    flash("User not found — they must register first", "error")
+                    flash("User not found — they must register or sign in via LDAP first", "error")
         elif action == "demote":
             uid = (request.form.get("user_id") or "").strip()
             if uid == session.get("user_id"):
@@ -1044,19 +1544,28 @@ def server_settings():
         return redirect(url_for("server_settings"))
 
     settings = _get_settings()
+    # never show raw bind password in the form
+    settings = dict(settings)
+    settings["ldap_bind_password_set"] = bool((settings.get("ldap_bind_password") or "").strip())
+    settings["ldap_bind_password"] = ""
     with connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, email, name, is_global_admin, created_at
+            SELECT id, email, name, is_global_admin, auth_source, created_at
             FROM private.users
             ORDER BY is_global_admin DESC, email
             """
         )
         users = cur.fetchall()
+        cur.execute(
+            "SELECT id, ldap_group, role, created_at FROM private.ldap_role_maps ORDER BY ldap_group"
+        )
+        ldap_role_maps = cur.fetchall()
     return render_template(
         "settings.html",
         settings=settings,
         users=users,
+        ldap_role_maps=ldap_role_maps,
         classification=_classification(),
     )
 
@@ -1067,7 +1576,7 @@ def server_settings():
 @app.get("/api/token")
 @login_required
 def api_token():
-    """Return JWT for PostgREST (Authorization: Bearer …)."""
+    """Return JWT for PostgREST (Authorization: Bearer ...)."""
     return jsonify(
         {
             "access_token": make_jwt(session["user_id"]),

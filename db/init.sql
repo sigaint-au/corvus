@@ -23,17 +23,19 @@ GRANT anon, authenticated TO authenticator;
 ALTER ROLE authenticator SET search_path TO api, public;
 ALTER ROLE authenticated SET search_path TO api, public;
 
--- Users (private; auth via Flask)
+-- Users (private; auth via Flask — local password and/or LDAP)
 CREATE TABLE private.users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email text UNIQUE NOT NULL,
-  password_hash text NOT NULL,
+  password_hash text,  -- null for LDAP-only accounts
   name text NOT NULL DEFAULT '',
   is_global_admin boolean NOT NULL DEFAULT false,
+  auth_source text NOT NULL DEFAULT 'local'
+    CHECK (auth_source IN ('local', 'ldap')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Server-wide settings (classification banner, etc.)
+-- Server-wide settings (classification banner, LDAP, etc.)
 CREATE TABLE private.server_settings (
   key text PRIMARY KEY,
   value text NOT NULL DEFAULT ''
@@ -43,8 +45,29 @@ INSERT INTO private.server_settings (key, value) VALUES
   ('classification_enabled', 'false'),
   ('classification_text', 'OFFICIAL'),
   ('classification_color', '#677381'),
-  ('classification_fg', '#ffffff')
+  ('classification_fg', '#ffffff'),
+  ('ldap_enabled', 'false'),
+  ('ldap_url', ''),
+  ('ldap_start_tls', 'false'),
+  ('ldap_bind_dn', ''),
+  ('ldap_bind_password', ''),
+  ('ldap_user_base', ''),
+  ('ldap_user_filter', '(|(mail={login})(uid={login})(sAMAccountName={login}))'),
+  ('ldap_email_attr', 'mail'),
+  ('ldap_name_attr', 'displayName'),
+  ('ldap_group_base', ''),
+  ('ldap_group_filter', '(member={dn})'),
+  ('ldap_use_memberof', 'true')
 ON CONFLICT (key) DO NOTHING;
+
+-- LDAP group → server role (global admin only for now)
+CREATE TABLE private.ldap_role_maps (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  ldap_group text NOT NULL,
+  role text NOT NULL CHECK (role IN ('global_admin')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (ldap_group)
+);
 
 -- Teams
 CREATE TABLE api.teams (
@@ -58,7 +81,19 @@ CREATE TABLE api.team_members (
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
   role text NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+  source text NOT NULL DEFAULT 'manual'
+    CHECK (source IN ('manual', 'ldap')),
   PRIMARY KEY (team_id, user_id)
+);
+
+-- Team owner rules: LDAP group → automatic team membership/role
+CREATE TABLE api.team_ldap_maps (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
+  ldap_group text NOT NULL,
+  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (team_id, ldap_group)
 );
 
 -- Projects (Bitwarden-style: access control surface)
@@ -173,6 +208,7 @@ $$;
 -- RLS
 ALTER TABLE api.teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.team_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.team_ldap_maps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.project_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
@@ -195,6 +231,15 @@ CREATE POLICY tm_update ON api.team_members FOR UPDATE TO authenticated
   USING (api.team_role(team_id) IN ('owner', 'admin'));
 CREATE POLICY tm_delete ON api.team_members FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('owner', 'admin') OR user_id = api.current_user_id());
+
+CREATE POLICY tlm_select ON api.team_ldap_maps FOR SELECT TO authenticated
+  USING (api.is_team_member(team_id));
+CREATE POLICY tlm_insert ON api.team_ldap_maps FOR INSERT TO authenticated
+  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
+CREATE POLICY tlm_update ON api.team_ldap_maps FOR UPDATE TO authenticated
+  USING (api.team_role(team_id) IN ('owner', 'admin'));
+CREATE POLICY tlm_delete ON api.team_ldap_maps FOR DELETE TO authenticated
+  USING (api.team_role(team_id) IN ('owner', 'admin'));
 
 -- Use team_id on the row (not can_read_project(id)) so INSERT … RETURNING works
 CREATE POLICY projects_select ON api.projects FOR SELECT TO authenticated
@@ -247,8 +292,8 @@ DECLARE uid uuid;
 DECLARE first_user boolean;
 BEGIN
   SELECT NOT EXISTS (SELECT 1 FROM private.users) INTO first_user;
-  INSERT INTO private.users (email, password_hash, name, is_global_admin)
-  VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), first_user)
+  INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
+  VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), first_user, 'local')
   RETURNING id INTO uid;
   RETURN uid;
 END;
@@ -260,7 +305,31 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 BEGIN
   RETURN QUERY
   SELECT u.id, u.email, u.name, u.is_global_admin FROM private.users u
-  WHERE u.email = lower(p_email) AND u.password_hash = crypt(p_password, u.password_hash);
+  WHERE u.email = lower(p_email)
+    AND u.password_hash IS NOT NULL
+    AND u.password_hash = crypt(p_password, u.password_hash);
+END;
+$$;
+
+-- Provision / refresh LDAP user (no password stored)
+CREATE OR REPLACE FUNCTION private.upsert_ldap_user(p_email text, p_name text)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
+DECLARE uid uuid;
+DECLARE first_user boolean;
+BEGIN
+  SELECT id INTO uid FROM private.users WHERE email = lower(p_email);
+  IF uid IS NULL THEN
+    SELECT NOT EXISTS (SELECT 1 FROM private.users) INTO first_user;
+    INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
+    VALUES (lower(p_email), NULL, COALESCE(p_name, ''), first_user, 'ldap')
+    RETURNING id INTO uid;
+  ELSE
+    UPDATE private.users
+    SET name = CASE WHEN COALESCE(p_name, '') <> '' THEN p_name ELSE name END,
+        auth_source = 'ldap'
+    WHERE id = uid;
+  END IF;
+  RETURN uid;
 END;
 $$;
 
@@ -334,6 +403,7 @@ $$;
 GRANT USAGE ON SCHEMA private TO authenticator;
 GRANT EXECUTE ON FUNCTION private.register_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator;
+GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
 GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_get_enc TO authenticator;
