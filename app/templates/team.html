@@ -22,6 +22,7 @@
   </div>
   {% if my_role in ('owner', 'admin', 'member') %}
   <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
     <button type="submit">Create</button>
   </form>
@@ -47,6 +48,7 @@
   <h2>Members</h2>
   {% if my_role in ('owner', 'admin') %}
   <form method="post" action="{{ url_for('add_team_member', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Email <input type="email" name="email" required placeholder="user@example.com"></label>
     <label>Role
       <select name="role">
@@ -94,6 +96,7 @@
                 action="{{ url_for('delete_team_ldap_map', team_id=team.id, map_id=m.id) }}"
                 class="inline"
                 onsubmit="return confirm('Remove this LDAP mapping?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Remove</button>
           </form>
         </td>
@@ -105,6 +108,7 @@
   <p class="muted">No LDAP group maps for this team.</p>
   {% endif %}
   <form method="post" action="{{ url_for('add_team_ldap_map', team_id=team.id) }}" class="row" style="margin-top:1rem;">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label style="flex:2;">LDAP group (CN or DN)
       <input type="text" name="ldap_group" required
              placeholder="eng-secrets or cn=eng-secrets,cn=groups,cn=accounts,dc=example,dc=com">

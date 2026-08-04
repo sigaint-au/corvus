@@ -2,16 +2,38 @@
 import os
 import re
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "flask-session-secret-change-me")
+_DEFAULT_SECRET_KEY = "flask-session-secret-change-me"
+_DEFAULT_JWT_SECRET = "dev-jwt-secret-change-me-32chars!!"
+_DEFAULT_MASTER_KEY = "dev-master-key-change-in-prod!!"
+
+SECRET_KEY = os.environ.get("SECRET_KEY", _DEFAULT_SECRET_KEY)
 DATABASE_URL = os.environ["DATABASE_URL"]
 DATABASE_ADMIN_URL = os.environ.get(
     "DATABASE_ADMIN_URL",
     os.environ.get("DATABASE_URL", ""),
 )
-JWT_SECRET = os.environ.get("JWT_SECRET", "dev-jwt-secret-change-me-32chars!!")
-MASTER_KEY = os.environ.get("MASTER_KEY", "dev-master-key-change-in-prod!!")
+JWT_SECRET = os.environ.get("JWT_SECRET", _DEFAULT_JWT_SECRET)
+MASTER_KEY = os.environ.get("MASTER_KEY", _DEFAULT_MASTER_KEY)
 POSTGREST_URL = os.environ.get("POSTGREST_URL", "http://localhost:3000")
 GLOBAL_ADMIN_EMAIL = os.environ.get("GLOBAL_ADMIN_EMAIL", "").strip().lower()
+
+
+def refuse_insecure_defaults():
+    """Exit if production still uses baked-in default secrets."""
+    if os.environ.get("FLASK_ENV") == "development":
+        return
+    if os.environ.get("ALLOW_INSECURE_DEFAULTS", "").lower() in ("1", "true", "yes"):
+        return
+    for name, current, default in (
+        ("SECRET_KEY", SECRET_KEY, _DEFAULT_SECRET_KEY),
+        ("JWT_SECRET", JWT_SECRET, _DEFAULT_JWT_SECRET),
+        ("MASTER_KEY", MASTER_KEY, _DEFAULT_MASTER_KEY),
+    ):
+        if current == default:
+            raise SystemExit(
+                f"Refusing to start: {name} is still the default. "
+                "Set a real value, or ALLOW_INSECURE_DEFAULTS=1 / FLASK_ENV=development for local use."
+            )
 
 APP_NAME = "Sigaint Secret Server"
 

@@ -342,6 +342,33 @@ def ensure_schema():
         """,
         "GRANT SELECT, INSERT ON api.secret_audit TO authenticated",
         "GRANT ALL ON api.secret_audit TO authenticator",
+        # login lockout + token expiry
+        """
+        CREATE TABLE IF NOT EXISTS private.login_failures (
+          id bigserial PRIMARY KEY,
+          email text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS login_failures_email_created_idx
+          ON private.login_failures (email, created_at)
+        """,
+        """
+        ALTER TABLE api.machine_tokens
+          ADD COLUMN IF NOT EXISTS expires_at timestamptz
+        """,
+        """
+        CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
+        RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
+          SELECT EXISTS (
+            SELECT 1 FROM api.machine_tokens
+            WHERE project_id = p_project AND token_hash = p_hash
+              AND (expires_at IS NULL OR expires_at > now())
+          );
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator",
     ]
     try:
         with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:

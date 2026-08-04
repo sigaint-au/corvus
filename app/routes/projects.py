@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from flask import flash, redirect, render_template, request, session, url_for
 
@@ -268,7 +269,12 @@ def register(app):
                 )
             else:
                 cur.execute(
-                    "SELECT id, name, token_prefix, created_at FROM api.machine_tokens WHERE project_id = %s ORDER BY created_at DESC",
+                    """
+                    SELECT id, name, token_prefix, created_at, expires_at
+                    FROM api.machine_tokens
+                    WHERE project_id = %s
+                    ORDER BY created_at DESC
+                    """,
                     (str(project_id),),
                 )
                 tokens = cur.fetchall()
@@ -318,15 +324,18 @@ def register(app):
                     (str(project_id), key, crypto.encrypt(value), note),
                 )
                 row = cur.fetchone()
-                sid = row["id"] if row else (existing["id"] if existing else None)
-                audit.log_secret(
-                    cur,
-                    project_id=project_id,
-                    secret_id=sid,
-                    secret_key=key,
-                    action="updated" if existing else "created",
-                )
-                conn.commit()
+                if not row:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                else:
+                    audit.log_secret(
+                        cur,
+                        project_id=project_id,
+                        secret_id=row["id"],
+                        secret_key=key,
+                        action="updated" if existing else "created",
+                    )
+                    conn.commit()
             except Exception as e:
                 flash(str(e), "error")
         if authz.htmx():
@@ -421,19 +430,34 @@ def register(app):
         raw = "ss_" + secrets.token_urlsafe(32)
         thash = hashlib.sha256(raw.encode()).hexdigest()
         prefix = raw[:11]
+        expires_at = None
+        days_raw = (request.form.get("expires_days") or "").strip()
+        if days_raw:
+            try:
+                days = int(days_raw)
+                if days > 0:
+                    expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+            except ValueError:
+                flash("Expires days must be a positive integer", "error")
+                return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
                 cur.execute(
                     """
-                    INSERT INTO api.machine_tokens (project_id, name, token_hash, token_prefix)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO api.machine_tokens
+                      (project_id, name, token_hash, token_prefix, expires_at)
+                    VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (str(project_id), name, thash, prefix),
+                    (str(project_id), name, thash, prefix, expires_at),
                 )
+                if cur.rowcount == 0:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                    return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
                 conn.commit()
             except Exception as e:
                 flash(str(e), "error")
-                return redirect(url_for("project_detail", project_id=project_id))
+                return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
         session["new_token"] = raw  # shown once
         return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
 
@@ -446,6 +470,8 @@ def register(app):
                 "DELETE FROM api.machine_tokens WHERE id = %s AND project_id = %s",
                 (str(token_id), str(project_id)),
             )
+            if cur.rowcount == 0:
+                flash("You don't have permission to do that", "error")
             conn.commit()
         return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
 

@@ -6,6 +6,7 @@ import psycopg
 import authz
 import db
 import ldap_auth
+import lockout
 import settings_svc
 
 
@@ -19,9 +20,7 @@ def register(app):
         tid = (request.form.get("team_id") or "").strip()
         session["team_id"] = tid or None
         nxt = request.form.get("next") or request.referrer or url_for("projects_list")
-        # only allow relative redirects
-        if not nxt.startswith("/"):
-            nxt = url_for("projects_list")
+        nxt = authz.safe_redirect_target(nxt, url_for("projects_list"))
         return redirect(nxt)
 
 
@@ -41,6 +40,13 @@ def register(app):
         if request.method == "POST":
             email = request.form["email"].strip()
             password = request.form["password"]
+            if lockout.is_locked(email):
+                flash("Too many failed attempts. Try again in a few minutes.", "error")
+                return render_template(
+                    "login.html",
+                    ldap_enabled=ldap_on,
+                    registration_enabled=settings_svc.registration_enabled(),
+                ), 429
             user = None
             # 1) Local password accounts (break-glass / non-LDAP users)
             with db.connect() as conn, conn.cursor() as cur:
@@ -65,12 +71,14 @@ def register(app):
                             registration_enabled=settings_svc.registration_enabled(),
                         ), 500
             if not user:
+                lockout.record_failure(email)
                 flash("Invalid email or password", "error")
                 return render_template(
                     "login.html",
                     ldap_enabled=ldap_on,
                     registration_enabled=settings_svc.registration_enabled(),
                 ), 401
+            lockout.clear_failures(email)
             session["user_id"] = str(user["id"])
             session["email"] = user["email"]
             session["name"] = user["name"]
@@ -122,5 +130,3 @@ def register(app):
     def logout():
         session.clear()
         return redirect(url_for("login"))
-
-

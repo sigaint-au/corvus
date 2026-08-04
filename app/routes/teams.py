@@ -165,7 +165,11 @@ def register(app):
                     """,
                     (str(team_id), str(u["id"]), role),
                 )
-                conn.commit()
+                if cur.rowcount == 0:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                else:
+                    conn.commit()
             except Exception as e:
                 flash(str(e), "error")
         return redirect(url_for("team_detail", team_id=team_id))
@@ -220,7 +224,12 @@ def register(app):
                     "INSERT INTO api.projects (team_id, name) VALUES (%s, %s) RETURNING id",
                     (str(team_id), name),
                 )
-                pid = cur.fetchone()["id"]
+                row = cur.fetchone()
+                if not row:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                    return redirect(url_for("team_detail", team_id=team_id))
+                pid = row["id"]
                 conn.commit()
             except Exception as e:
                 flash(str(e), "error")

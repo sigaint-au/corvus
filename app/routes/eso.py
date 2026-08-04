@@ -68,5 +68,6 @@ def register(app):
             with db.connect() as conn, conn.cursor() as cur:
                 cur.execute("SELECT 1")
             return jsonify({"ok": True})
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 503
+        except Exception:
+            log.exception("health check failed")
+            return jsonify({"ok": False}), 503

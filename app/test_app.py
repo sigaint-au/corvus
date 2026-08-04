@@ -10,6 +10,7 @@ os.environ.setdefault("DATABASE_URL", "postgres://test:test@localhost/test")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-change-me-32chars!!")
 os.environ.setdefault("MASTER_KEY", "test-master-key-change-in-prod!!")
 os.environ.setdefault("SECRET_KEY", "test-flask-session-secret")
+os.environ.setdefault("ALLOW_INSECURE_DEFAULTS", "1")
 
 import jwt as pyjwt  # noqa: E402
 import app as store  # noqa: E402
@@ -128,6 +129,7 @@ class TestHelpers(unittest.TestCase):
 class TestAuth(unittest.TestCase):
     def setUp(self):
         store.app.config["TESTING"] = True
+        store.app.config["CSRF_TESTING"] = False
         self.client = store.app.test_client()
 
     def test_index_anon_to_login(self):
@@ -152,17 +154,24 @@ class TestAuth(unittest.TestCase):
         conn, _ = _conn(fetchone=None)
         with patch.object(db, "connect", return_value=conn), patch.object(
             ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
-        ):
+        ), patch("lockout.record_failure"), patch("lockout.is_locked", return_value=False):
             r = self.client.post("/login", data={"email": "a@b.c", "password": "nope"})
         self.assertEqual(r.status_code, 401)
         self.assertIn(b"Invalid", r.data)
+
+    def test_login_locked(self):
+        with patch("lockout.is_locked", return_value=True), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ):
+            r = self.client.post("/login", data={"email": "a@b.c", "password": "x"})
+        self.assertEqual(r.status_code, 429)
 
     def test_login_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
         with patch.object(db, "connect", return_value=conn), patch.object(
             ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
-        ):
+        ), patch("lockout.is_locked", return_value=False), patch("lockout.clear_failures"):
             r = self.client.post(
                 "/login",
                 data={"email": "a@b.c", "password": "secret12"},
@@ -174,6 +183,40 @@ class TestAuth(unittest.TestCase):
             self.assertEqual(s["user_id"], str(uid))
             self.assertEqual(s["email"], "a@b.c")
             self.assertIn("jwt", s)
+
+    def test_csrf_rejects_post_without_token(self):
+        store.app.config["CSRF_TESTING"] = True
+        try:
+            with self.client.session_transaction() as s:
+                s["_csrf"] = "good-token"
+            r = self.client.post("/logout")
+            self.assertEqual(r.status_code, 400)
+        finally:
+            store.app.config["CSRF_TESTING"] = False
+
+    def test_csrf_accepts_valid_token(self):
+        store.app.config["CSRF_TESTING"] = True
+        try:
+            with self.client.session_transaction() as s:
+                s["_csrf"] = "good-token"
+                s["user_id"] = str(uuid4())
+            r = self.client.post("/logout", data={"_csrf": "good-token"}, follow_redirects=False)
+            self.assertEqual(r.status_code, 302)
+            self.assertIn("/login", r.location)
+        finally:
+            store.app.config["CSRF_TESTING"] = False
+
+    def test_select_team_blocks_open_redirect(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+        r = self.client.post(
+            "/select-team",
+            data={"team_id": "", "next": "//evil.com"},
+            follow_redirects=False,
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertNotIn("evil", r.location)
+        self.assertTrue(r.location.endswith("/projects") or "/projects" in r.location)
 
     def test_login_ldap_ok(self):
         uid = uuid4()
@@ -193,7 +236,7 @@ class TestAuth(unittest.TestCase):
             ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "true"}
         ), patch.object(ldap_auth, "ldap_authenticate", return_value=ldap_user), patch.object(
             ldap_auth, "sync_ldap_user", return_value=synced
-        ):
+        ), patch("lockout.is_locked", return_value=False), patch("lockout.clear_failures"):
             r = self.client.post(
                 "/login",
                 data={"email": "ldapuser", "password": "dir-pass"},
@@ -651,7 +694,9 @@ class TestHealth(unittest.TestCase):
         with patch.object(db, "connect", side_effect=RuntimeError("db down")):
             r = store.app.test_client().get("/health")
         self.assertEqual(r.status_code, 503)
-        self.assertFalse(r.get_json()["ok"])
+        data = r.get_json()
+        self.assertFalse(data["ok"])
+        self.assertNotIn("error", data)
 
 
 # ── UI shell ───────────────────────────────────────────────────────

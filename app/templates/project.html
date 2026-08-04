@@ -54,6 +54,7 @@
         hx-target="#secrets-list"
         hx-swap="innerHTML"
         class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
     <label>Value <input type="password" name="value" required placeholder="••••••••"></label>
     <label>Note <input type="text" name="note" placeholder="optional"></label>
@@ -123,23 +124,27 @@
   <p class="muted">For OpenShift External Secrets Operator (webhook provider). Scoped to this project.</p>
   {% if can_write %}
   <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Name <input type="text" name="name" placeholder="openshift-prod" value="openshift"></label>
+    <label>Expires (days) <input type="number" name="expires_days" min="1" placeholder="never"></label>
     <button type="submit">Create token</button>
   </form>
   {% endif %}
   {% if tokens %}
   <table>
-    <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Expires</th><th></th></tr></thead>
     <tbody>
     {% for t in tokens %}
       <tr>
         <td>{{ t.name }}</td>
         <td><code>{{ t.token_prefix }}…</code></td>
         <td class="muted">{{ t.created_at }}</td>
+        <td class="muted">{{ t.expires_at or 'never' }}</td>
         <td class="acts">
           {% if can_write %}
           <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
                 onsubmit="return confirm('Revoke token?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Revoke</button>
           </form>
           {% endif %}

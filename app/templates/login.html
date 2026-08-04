@@ -6,6 +6,7 @@
 <p class="muted">Local accounts and LDAP directory logins are accepted.</p>
 {% endif %}
 <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <label>{% if ldap_enabled %}Email or username{% else %}Email{% endif %}
     <input type="{% if ldap_enabled %}text{% else %}email{% endif %}"
            name="email" required autocomplete="username">

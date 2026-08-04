@@ -7,6 +7,13 @@
   <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css">
   <script src="https://unpkg.com/@knadh/oat/oat.min.js" defer></script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <script>
+    document.addEventListener('htmx:configRequest', function (e) {
+      var m = document.querySelector('meta[name="csrf-token"]');
+      if (m) e.detail.headers['X-CSRF-Token'] = m.content;
+    });
+  </script>
   <style>
     /* Sigaint theme for Oat – Black / White / Grey
        Primary: pure black & white
@@ -615,6 +622,7 @@
       <span class="brand-sub">Secret Server</span>
     </a>
     <form class="side-team" method="post" action="{{ url_for('select_team') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label for="side-team-select">Team</label>
       <input type="hidden" name="next" value="{{ request.path }}">
       <select id="side-team-select" name="team_id" onchange="this.form.submit()">
@@ -650,6 +658,7 @@
         {% if is_global_admin %}<span class="role-badge">Global admin</span>{% endif %}
       </div>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button type="submit" class="logout-link">Log out</button>
       </form>
     </div>

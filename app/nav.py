@@ -47,6 +47,7 @@ def inject_nav():
         "is_global_admin": bool(session.get("is_global_admin")),
         "nav_teams": [],
         "nav_team_id": None,
+        "csrf_token": authz.csrf_token(),
     }
     if not session.get("user_id"):
         return base

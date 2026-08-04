@@ -58,7 +58,13 @@ Authorization: Bearer ss_…
 | `GLOBAL_ADMIN_EMAIL` | optional; promotes that user on startup |
 | `DATABASE_ADMIN_URL` | superuser DSN for schema upgrades (compose default: postgres) |
 
-Change the secrets in production.
+Change the secrets in production. Without `ALLOW_INSECURE_DEFAULTS=1` or
+`FLASK_ENV=development`, the app refuses to start if `JWT_SECRET` /
+`MASTER_KEY` / `SECRET_KEY` are still the baked-in defaults.
+
+Login is locked for 5 minutes after 5 failed attempts (table
+`private.login_failures`, shared across workers). Machine tokens may set
+optional `expires_at` (form field **Expires (days)**).
 
 ## PostgREST
 

@@ -19,6 +19,7 @@
 
 {% if can_create_team %}
 <form method="post" action="{{ url_for('create_team') }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <label>New team <input type="text" name="name" required placeholder="e.g. Platform"></label>
   <button type="submit">Create</button>
 </form>

@@ -152,8 +152,18 @@ CREATE TABLE api.machine_tokens (
   name text NOT NULL,
   token_hash text NOT NULL,
   token_prefix text NOT NULL,
+  expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Login failure throttle (Flask app; shared across workers)
+CREATE TABLE private.login_failures (
+  id bigserial PRIMARY KEY,
+  email text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX login_failures_email_created_idx
+  ON private.login_failures (email, created_at);
 
 -- Helpers: current user from JWT claim
 CREATE OR REPLACE FUNCTION api.current_user_id() RETURNS uuid
@@ -379,6 +389,7 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
   SELECT EXISTS (
     SELECT 1 FROM api.machine_tokens
     WHERE project_id = p_project AND token_hash = p_hash
+      AND (expires_at IS NULL OR expires_at > now())
   );
 $$;
 
