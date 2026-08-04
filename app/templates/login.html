@@ -13,7 +13,9 @@
   <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
   <button type="submit">Sign in</button>
 </form>
+{% if registration_enabled %}
 <p class="muted">No account? <a href="{{ url_for('register') }}">Register</a>
   {% if ldap_enabled %} <span>(local account)</span>{% endif %}
 </p>
+{% endif %}
 {% endblock %}

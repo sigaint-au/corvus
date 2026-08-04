@@ -46,6 +46,7 @@ INSERT INTO private.server_settings (key, value) VALUES
   ('classification_text', 'OFFICIAL'),
   ('classification_color', '#677381'),
   ('classification_fg', '#ffffff'),
+  ('registration_enabled', 'true'),
   ('ldap_enabled', 'false'),
   ('ldap_url', ''),
   ('ldap_start_tls', 'false'),

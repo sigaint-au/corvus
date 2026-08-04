@@ -5,6 +5,23 @@
 <p class="muted">Global admin only. Changes apply immediately for all users.</p>
 
 <section>
+  <h2>Account registration</h2>
+  <p class="muted">
+    Control whether new local accounts can be created at <code>/register</code>.
+    Existing users and LDAP login are unaffected.
+  </p>
+  <form method="post">
+    <input type="hidden" name="action" value="registration">
+    <label>
+      <input type="checkbox" name="registration_enabled" value="1"
+             {% if settings.registration_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Allow new account registration
+    </label>
+    <p style="margin-top:1rem;"><button type="submit">Save registration setting</button></p>
+  </form>
+</section>
+
+<section>
   <h2>Classification banner</h2>
   <p class="muted">Shown at the top of every page when enabled.</p>
   <form method="post" id="banner-form">

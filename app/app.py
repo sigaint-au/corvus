@@ -49,6 +49,7 @@ _DEFAULT_SETTINGS = {
     "classification_text": "OFFICIAL",
     "classification_color": "#677381",
     "classification_fg": "#ffffff",
+    "registration_enabled": "true",
     "ldap_enabled": "false",
     "ldap_url": "",
     "ldap_start_tls": "false",
@@ -195,6 +196,10 @@ def _set_setting(key: str, value: str):
 
 def _truthy(val) -> bool:
     return str(val or "").lower() in ("1", "true", "yes", "on")
+
+
+def _registration_enabled() -> bool:
+    return _truthy(_get_settings().get("registration_enabled", "true"))
 
 
 def _ldap_cfg() -> dict:
@@ -527,6 +532,7 @@ def ensure_schema():
           ('classification_text', 'OFFICIAL'),
           ('classification_color', '#677381'),
           ('classification_fg', '#ffffff'),
+          ('registration_enabled', 'true'),
           ('ldap_enabled', 'false'),
           ('ldap_url', ''),
           ('ldap_start_tls', 'false'),
@@ -880,21 +886,36 @@ def login():
                 except Exception as e:
                     log.exception("LDAP user sync failed")
                     flash(f"LDAP login succeeded but account sync failed: {e}", "error")
-                    return render_template("login.html", ldap_enabled=ldap_on), 500
+                    return render_template(
+                        "login.html",
+                        ldap_enabled=ldap_on,
+                        registration_enabled=_registration_enabled(),
+                    ), 500
         if not user:
             flash("Invalid email or password", "error")
-            return render_template("login.html", ldap_enabled=ldap_on), 401
+            return render_template(
+                "login.html",
+                ldap_enabled=ldap_on,
+                registration_enabled=_registration_enabled(),
+            ), 401
         session["user_id"] = str(user["id"])
         session["email"] = user["email"]
         session["name"] = user["name"]
         session["is_global_admin"] = bool(user.get("is_global_admin"))
         session["jwt"] = make_jwt(user["id"])
         return redirect(url_for("teams"))
-    return render_template("login.html", ldap_enabled=ldap_on)
+    return render_template(
+        "login.html",
+        ldap_enabled=ldap_on,
+        registration_enabled=_registration_enabled(),
+    )
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    if not _registration_enabled():
+        flash("Account registration is disabled", "error")
+        return redirect(url_for("login"))
     if request.method == "POST":
         email = request.form["email"].strip()
         password = request.form["password"]
@@ -1451,6 +1472,13 @@ def server_settings():
                 _set_setting("classification_color", color)
                 _set_setting("classification_fg", fg)
                 flash("Classification banner saved", "ok")
+        elif action == "registration":
+            enabled = "true" if request.form.get("registration_enabled") else "false"
+            _set_setting("registration_enabled", enabled)
+            flash(
+                "Account registration enabled" if enabled == "true" else "Account registration disabled",
+                "ok",
+            )
         elif action == "ldap":
             enabled = "true" if request.form.get("ldap_enabled") else "false"
             _set_setting("ldap_enabled", enabled)

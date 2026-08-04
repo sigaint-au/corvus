@@ -203,17 +203,20 @@ class TestAuth(unittest.TestCase):
             self.assertTrue(s["is_global_admin"])
 
     def test_register_short_password(self):
-        r = self.client.post(
-            "/register",
-            data={"email": "a@b.c", "password": "short", "name": "A"},
-        )
+        with patch.object(store, "_registration_enabled", return_value=True):
+            r = self.client.post(
+                "/register",
+                data={"email": "a@b.c", "password": "short", "name": "A"},
+            )
         self.assertEqual(r.status_code, 400)
         self.assertIn(b"8 characters", r.data)
 
     def test_register_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={"id": uid})
-        with patch.object(store, "connect", return_value=conn):
+        with patch.object(store, "connect", return_value=conn), patch.object(
+            store, "_registration_enabled", return_value=True
+        ):
             r = self.client.post(
                 "/register",
                 data={"email": "new@b.c", "password": "password1", "name": "N"},
@@ -221,6 +224,28 @@ class TestAuth(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 302)
         self.assertIn("/teams", r.location)
+
+    def test_register_disabled(self):
+        with patch.object(store, "_registration_enabled", return_value=False):
+            r = self.client.get("/register", follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+        with patch.object(store, "_registration_enabled", return_value=False):
+            r = self.client.post(
+                "/register",
+                data={"email": "new@b.c", "password": "password1", "name": "N"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_login_hides_register_when_disabled(self):
+        with patch.object(store, "_ldap_cfg", return_value={"ldap_enabled": "false"}), patch.object(
+            store, "_registration_enabled", return_value=False
+        ):
+            r = self.client.get("/login")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b'href="/register"', r.data)
 
     def test_logout(self):
         with self.client.session_transaction() as s:
