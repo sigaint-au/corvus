@@ -14,9 +14,12 @@ os.environ.setdefault("SECRET_KEY", "test-flask-session-secret")
 import jwt as pyjwt  # noqa: E402
 import app as store  # noqa: E402
 import authz  # noqa: E402
+import config  # noqa: E402
+import crypto  # noqa: E402
 import db  # noqa: E402
 import ldap_auth  # noqa: E402
 import settings_svc  # noqa: E402
+from routes import eso as eso_routes  # noqa: E402
 
 
 # ── helpers ───────────────────────────────────────────────────────
@@ -58,19 +61,19 @@ def _conn(fetchone=_UNSET, fetchall=_UNSET, side_effect=None):
 
 class TestCrypto(unittest.TestCase):
     def test_roundtrip(self):
-        self.assertEqual(store.decrypt(store.encrypt("ping")), "ping")
+        self.assertEqual(crypto.decrypt(crypto.encrypt("ping")), "ping")
 
     def test_empty(self):
-        self.assertEqual(store.decrypt(store.encrypt("")), "")
+        self.assertEqual(crypto.decrypt(crypto.encrypt("")), "")
 
     def test_unicode(self):
         s = "héllo 🔐 日本語"
-        self.assertEqual(store.decrypt(store.encrypt(s)), s)
+        self.assertEqual(crypto.decrypt(crypto.encrypt(s)), s)
 
     def test_ciphertext_differs(self):
-        a, b = store.encrypt("x"), store.encrypt("x")
+        a, b = crypto.encrypt("x"), crypto.encrypt("x")
         self.assertNotEqual(a, b)  # Fernet includes random IV
-        self.assertEqual(store.decrypt(a), store.decrypt(b))
+        self.assertEqual(crypto.decrypt(a), crypto.decrypt(b))
 
 
 # ── JWT ────────────────────────────────────────────────────────────
@@ -79,14 +82,11 @@ class TestCrypto(unittest.TestCase):
 class TestJWT(unittest.TestCase):
     def test_make_jwt_claims(self):
         uid = str(uuid4())
-        token = store.make_jwt(uid, hours=1)
-        claims = pyjwt.decode(token, store.JWT_SECRET, algorithms=["HS256"])
+        token = db.make_jwt(uid, hours=1)
+        claims = pyjwt.decode(token, config.JWT_SECRET, algorithms=["HS256"])
         self.assertEqual(claims["sub"], uid)
         self.assertEqual(claims["role"], "authenticated")
         self.assertIn("exp", claims)
-
-    def test_jwt_json(self):
-        self.assertEqual(store.jwt_json({"a": 1}), '{"a": 1}')
 
 
 # ── Helpers ────────────────────────────────────────────────────────
@@ -95,14 +95,14 @@ class TestJWT(unittest.TestCase):
 class TestHelpers(unittest.TestCase):
     def test_htmx_false(self):
         with store.app.test_request_context("/"):
-            self.assertFalse(store.htmx())
+            self.assertFalse(authz.htmx())
 
     def test_htmx_true(self):
         with store.app.test_request_context("/", headers={"HX-Request": "true"}):
-            self.assertTrue(store.htmx())
+            self.assertTrue(authz.htmx())
 
     def test_login_required_redirects(self):
-        @store.login_required
+        @authz.login_required
         def protected():
             return "ok"
 
@@ -474,7 +474,7 @@ class TestSecrets(unittest.TestCase):
 
     def test_reveal_secret(self):
         sid = uuid4()
-        enc = store.encrypt("super-secret")
+        enc = crypto.encrypt("super-secret")
         conn, _ = _conn(
             fetchone={"id": sid, "key": "API_KEY", "value_enc": enc}
         )
@@ -541,7 +541,7 @@ class TestApiToken(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         data = r.get_json()
         self.assertEqual(data["token_type"], "bearer")
-        claims = pyjwt.decode(data["access_token"], store.JWT_SECRET, algorithms=["HS256"])
+        claims = pyjwt.decode(data["access_token"], config.JWT_SECRET, algorithms=["HS256"])
         self.assertEqual(claims["sub"], uid)
 
 
@@ -559,7 +559,7 @@ class TestESO(unittest.TestCase):
         self.assertEqual(r.status_code, 401)
 
     def test_get_secret_ok(self):
-        enc = store.encrypt("val")
+        enc = crypto.encrypt("val")
         conn, _ = _conn(fetchone={"value_enc": enc})
         with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
@@ -571,7 +571,7 @@ class TestESO(unittest.TestCase):
         self.assertEqual(r.get_json()["key"], "KEY")
 
     def test_get_secret_not_found(self):
-        # first fetch: no value; second: auth ok
+        # first fetch: no value; second: auth ok (same connection)
         state = {"n": 0}
 
         def fetchone():
@@ -581,7 +581,6 @@ class TestESO(unittest.TestCase):
             return {"ok": True}
 
         conn, _ = _conn(fetchone=fetchone)
-        # two separate connect() calls in eso_get_secret
         with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
                 f"/eso/v1/projects/{self.pid}/secrets/MISSING",
@@ -605,7 +604,7 @@ class TestESO(unittest.TestCase):
             state["n"] += 1
             return {"ok": True}
 
-        enc = store.encrypt("v1")
+        enc = crypto.encrypt("v1")
         conn, cur = _conn(fetchone=fetchone, fetchall=[{"key": "A", "value_enc": enc}])
         with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
@@ -617,7 +616,7 @@ class TestESO(unittest.TestCase):
 
     def test_bearer_hash_none(self):
         with store.app.test_request_context("/", headers={}):
-            self.assertIsNone(store._bearer_hash())
+            self.assertIsNone(eso_routes.bearer_hash())
 
 
 # ── Health ─────────────────────────────────────────────────────────
@@ -943,25 +942,25 @@ if __name__ == "__main__":
 
 class TestLDAPHelpers(unittest.TestCase):
     def test_group_tokens_cn(self):
-        t = store._group_tokens("CN=Admins,OU=Groups,DC=ex,DC=com")
+        t = ldap_auth.group_tokens("CN=Admins,OU=Groups,DC=ex,DC=com")
         self.assertIn("cn=admins,ou=groups,dc=ex,dc=com", t)
         self.assertIn("admins", t)
         self.assertIn("cn=admins", t)
 
     def test_group_matches_cn_or_dn(self):
         groups = ["CN=eng-secrets,OU=Groups,DC=ex,DC=com", "other"]
-        self.assertTrue(store._group_matches("eng-secrets", groups))
+        self.assertTrue(ldap_auth.group_matches("eng-secrets", groups))
         self.assertTrue(
-            store._group_matches("CN=eng-secrets,OU=Groups,DC=ex,DC=com", groups)
+            ldap_auth.group_matches("CN=eng-secrets,OU=Groups,DC=ex,DC=com", groups)
         )
-        self.assertFalse(store._group_matches("nope", groups))
+        self.assertFalse(ldap_auth.group_matches("nope", groups))
 
     def test_ldap_escape(self):
-        self.assertEqual(store._ldap_escape("a*b(c)"), "a\\2ab\\28c\\29")
+        self.assertEqual(ldap_auth.ldap_escape("a*b(c)"), "a\\2ab\\28c\\29")
 
     def test_ldap_disabled_returns_none(self):
         with patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}):
-            self.assertIsNone(store.ldap_authenticate("u", "p"))
+            self.assertIsNone(ldap_auth.ldap_authenticate("u", "p"))
 
 
 class TestLDAPMaps(unittest.TestCase):
@@ -1025,7 +1024,7 @@ class TestLDAPMaps(unittest.TestCase):
         cur.fetchone.side_effect = fo
         cur.fetchall.side_effect = fa
         with patch.object(db, "connect_admin", return_value=conn):
-            user = store._sync_ldap_user("u@ex.com", "U", ["CN=admins,OU=g,DC=x"])
+            user = ldap_auth.sync_ldap_user("u@ex.com", "U", ["CN=admins,OU=g,DC=x"])
         self.assertEqual(str(user["id"]), str(uid))
         self.assertTrue(user["is_global_admin"])
         executed = " ".join(str(c) for c in cur.execute.call_args_list).lower()

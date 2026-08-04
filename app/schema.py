@@ -215,26 +215,9 @@ def ensure_schema():
         """,
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_ldap_maps TO authenticated",
         "GRANT ALL ON api.team_ldap_maps TO authenticator",
-        """
-        CREATE OR REPLACE FUNCTION private.get_setting(p_key text)
-        RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = private AS $$
-          SELECT value FROM private.server_settings WHERE key = p_key;
-        $$
-        """,
-        """
-        CREATE OR REPLACE FUNCTION private.set_setting(p_key text, p_value text)
-        RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = private AS $$
-          INSERT INTO private.server_settings (key, value) VALUES (p_key, p_value)
-          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-        $$
-        """,
-        """
-        CREATE OR REPLACE FUNCTION private.all_settings()
-        RETURNS TABLE (key text, value text)
-        LANGUAGE sql STABLE SECURITY DEFINER SET search_path = private AS $$
-          SELECT s.key, s.value FROM private.server_settings s ORDER BY s.key;
-        $$
-        """,
+        "DROP FUNCTION IF EXISTS private.get_setting(text)",
+        "DROP FUNCTION IF EXISTS private.set_setting(text, text)",
+        "DROP FUNCTION IF EXISTS private.all_settings()",
         "DROP VIEW IF EXISTS api.user_directory",
         """
         CREATE VIEW api.user_directory AS
@@ -242,9 +225,6 @@ def ensure_schema():
         """,
         "GRANT SELECT ON api.user_directory TO authenticated",
         "GRANT ALL ON api.user_directory TO authenticator",
-        "GRANT EXECUTE ON FUNCTION private.get_setting TO authenticator",
-        "GRANT EXECUTE ON FUNCTION private.set_setting TO authenticator",
-        "GRANT EXECUTE ON FUNCTION private.all_settings TO authenticator",
         "GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon",
         # teams SELECT for global admin (recreate policy safely)
         "DROP POLICY IF EXISTS teams_select ON api.teams",

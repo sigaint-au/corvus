@@ -15,6 +15,35 @@ import paging
 log = logging.getLogger(__name__)
 
 
+def _load_secrets_page(cur, project_id, page, q):
+    """Count + page live secrets for a project. Returns (rows, pager)."""
+    where = "project_id = %s AND deleted_at IS NULL"
+    params = [str(project_id)]
+    if q:
+        where += " AND (key ILIKE %s OR note ILIKE %s)"
+        like = f"%{q}%"
+        params.extend([like, like])
+    cur.execute(f"SELECT count(*) AS n FROM api.secrets WHERE {where}", params)
+    total = int((cur.fetchone() or {}).get("n") or 0)
+    pager = paging.page_window(total, page)
+    pager.update(
+        endpoint="project_detail",
+        project_id=project_id,
+        tab="secrets",
+        q=q,
+    )
+    cur.execute(
+        f"""
+        SELECT id, key, note, created_at, updated_at FROM api.secrets
+        WHERE {where}
+        ORDER BY key
+        LIMIT %s OFFSET %s
+        """,
+        (*params, pager["limit"], pager["offset"]),
+    )
+    return cur.fetchall(), pager
+
+
 def register(app):
     # ── Projects / Secrets ─────────────────────────────────────────────
 
@@ -48,32 +77,19 @@ def register(app):
                 cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
                 team = cur.fetchone()
                 if team:
+                    sql = """
+                        SELECT s.id, s.key, s.note, s.updated_at,
+                               p.id AS project_id, p.name AS project_name
+                        FROM api.secrets s
+                        JOIN api.projects p ON p.id = s.project_id
+                        WHERE p.team_id = %s AND s.deleted_at IS NULL
+                    """
+                    params = [tid]
                     if q:
                         like = f"%{q}%"
-                        cur.execute(
-                            """
-                            SELECT s.id, s.key, s.note, s.updated_at,
-                                   p.id AS project_id, p.name AS project_name
-                            FROM api.secrets s
-                            JOIN api.projects p ON p.id = s.project_id
-                            WHERE p.team_id = %s AND s.deleted_at IS NULL
-                              AND (s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s)
-                            ORDER BY p.name, s.key
-                            """,
-                            (tid, like, like, like),
-                        )
-                    else:
-                        cur.execute(
-                            """
-                            SELECT s.id, s.key, s.note, s.updated_at,
-                                   p.id AS project_id, p.name AS project_name
-                            FROM api.secrets s
-                            JOIN api.projects p ON p.id = s.project_id
-                            WHERE p.team_id = %s AND s.deleted_at IS NULL
-                            ORDER BY p.name, s.key
-                            """,
-                            (tid,),
-                        )
+                        sql += " AND (s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s)"
+                        params.extend([like, like, like])
+                    cur.execute(sql + " ORDER BY p.name, s.key", params)
                     secrets = cur.fetchall()
         return render_template("secrets.html", team=team, secrets=secrets, search_q=q)
 
@@ -235,58 +251,7 @@ def register(app):
             can_write = cur.fetchone()["w"]
 
             if tab == "secrets":
-                like = f"%{q}%" if q else None
-                if like:
-                    cur.execute(
-                        """
-                        SELECT count(*) AS n FROM api.secrets
-                        WHERE project_id = %s AND deleted_at IS NULL
-                          AND (key ILIKE %s OR note ILIKE %s)
-                        """,
-                        (str(project_id), like, like),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT count(*) AS n FROM api.secrets
-                        WHERE project_id = %s AND deleted_at IS NULL
-                        """,
-                        (str(project_id),),
-                    )
-                total = int((cur.fetchone() or {}).get("n") or 0)
-                secrets_pager = paging.page_window(total, page)
-                secrets_pager["endpoint"] = "project_detail"
-                secrets_pager["project_id"] = project_id
-                secrets_pager["tab"] = "secrets"
-                secrets_pager["q"] = q
-                if like:
-                    cur.execute(
-                        """
-                        SELECT id, key, note, created_at, updated_at FROM api.secrets
-                        WHERE project_id = %s AND deleted_at IS NULL
-                          AND (key ILIKE %s OR note ILIKE %s)
-                        ORDER BY key
-                        LIMIT %s OFFSET %s
-                        """,
-                        (
-                            str(project_id),
-                            like,
-                            like,
-                            secrets_pager["limit"],
-                            secrets_pager["offset"],
-                        ),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT id, key, note, created_at, updated_at FROM api.secrets
-                        WHERE project_id = %s AND deleted_at IS NULL
-                        ORDER BY key
-                        LIMIT %s OFFSET %s
-                        """,
-                        (str(project_id), secrets_pager["limit"], secrets_pager["offset"]),
-                    )
-                secret_rows = cur.fetchall()
+                secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             elif tab == "audit":
                 total = audit.count_for_project(cur, project_id, q=q)
                 audit_pager = paging.page_window(total, page)
@@ -435,59 +400,8 @@ def register(app):
     def _secrets_partial(project_id):
         page = paging.page_arg("page")
         q = (request.args.get("q") or request.form.get("q") or "").strip()
-        like = f"%{q}%" if q else None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            if like:
-                cur.execute(
-                    """
-                    SELECT count(*) AS n FROM api.secrets
-                    WHERE project_id = %s AND deleted_at IS NULL
-                      AND (key ILIKE %s OR note ILIKE %s)
-                    """,
-                    (str(project_id), like, like),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT count(*) AS n FROM api.secrets
-                    WHERE project_id = %s AND deleted_at IS NULL
-                    """,
-                    (str(project_id),),
-                )
-            total = int((cur.fetchone() or {}).get("n") or 0)
-            secrets_pager = paging.page_window(total, page)
-            secrets_pager["endpoint"] = "project_detail"
-            secrets_pager["project_id"] = project_id
-            secrets_pager["tab"] = "secrets"
-            secrets_pager["q"] = q
-            if like:
-                cur.execute(
-                    """
-                    SELECT id, key, note, created_at, updated_at FROM api.secrets
-                    WHERE project_id = %s AND deleted_at IS NULL
-                      AND (key ILIKE %s OR note ILIKE %s)
-                    ORDER BY key
-                    LIMIT %s OFFSET %s
-                    """,
-                    (
-                        str(project_id),
-                        like,
-                        like,
-                        secrets_pager["limit"],
-                        secrets_pager["offset"],
-                    ),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT id, key, note, created_at, updated_at FROM api.secrets
-                    WHERE project_id = %s AND deleted_at IS NULL
-                    ORDER BY key
-                    LIMIT %s OFFSET %s
-                    """,
-                    (str(project_id), secrets_pager["limit"], secrets_pager["offset"]),
-                )
-            rows = cur.fetchall()
+            rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             can_write = cur.fetchone()["w"]
         return render_template(

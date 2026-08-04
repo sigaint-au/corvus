@@ -23,58 +23,31 @@ def register(app):
         like = f"%{q}%" if q else None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             if session.get("is_global_admin"):
+                sql = """
+                    SELECT t.*,
+                      COALESCE(tm.role, 'owner') AS role,
+                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
+                    FROM api.teams t
+                    LEFT JOIN api.team_members tm
+                      ON tm.team_id = t.id AND tm.user_id = %s
+                """
+                params = [session["user_id"]]
                 if like:
-                    cur.execute(
-                        """
-                        SELECT t.*,
-                          COALESCE(tm.role, 'owner') AS role,
-                          (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                        FROM api.teams t
-                        LEFT JOIN api.team_members tm
-                          ON tm.team_id = t.id AND tm.user_id = %s
-                        WHERE t.name ILIKE %s
-                        ORDER BY t.name
-                        """,
-                        (session["user_id"], like),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT t.*,
-                          COALESCE(tm.role, 'owner') AS role,
-                          (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                        FROM api.teams t
-                        LEFT JOIN api.team_members tm
-                          ON tm.team_id = t.id AND tm.user_id = %s
-                        ORDER BY t.name
-                        """,
-                        (session["user_id"],),
-                    )
+                    sql += " WHERE t.name ILIKE %s"
+                    params.append(like)
             else:
+                sql = """
+                    SELECT t.*, tm.role,
+                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
+                    FROM api.teams t
+                    JOIN api.team_members tm ON tm.team_id = t.id
+                    WHERE tm.user_id = %s
+                """
+                params = [session["user_id"]]
                 if like:
-                    cur.execute(
-                        """
-                        SELECT t.*, tm.role,
-                          (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                        FROM api.teams t
-                        JOIN api.team_members tm ON tm.team_id = t.id
-                        WHERE tm.user_id = %s AND t.name ILIKE %s
-                        ORDER BY t.name
-                        """,
-                        (session["user_id"], like),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT t.*, tm.role,
-                          (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                        FROM api.teams t
-                        JOIN api.team_members tm ON tm.team_id = t.id
-                        WHERE tm.user_id = %s
-                        ORDER BY t.name
-                        """,
-                        (session["user_id"],),
-                    )
+                    sql += " AND t.name ILIKE %s"
+                    params.append(like)
+            cur.execute(sql + " ORDER BY t.name", params)
             rows = cur.fetchall()
         return render_template(
             "teams.html",

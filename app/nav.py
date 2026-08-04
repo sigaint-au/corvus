@@ -50,9 +50,8 @@ def inject_nav():
     }
     if not session.get("user_id"):
         return base
-    if session.get("user_id"):
-        session["is_global_admin"] = authz.is_global_admin(session["user_id"])
-        base["is_global_admin"] = session["is_global_admin"]
+    session["is_global_admin"] = authz.is_global_admin(session["user_id"])
+    base["is_global_admin"] = session["is_global_admin"]
     try:
         teams = nav_teams(session["user_id"])
     except Exception:

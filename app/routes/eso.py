@@ -31,16 +31,15 @@ def register(app):
                 (str(project_id), thash, key),
             )
             row = cur.fetchone()
-        if not row or not row["value_enc"]:
-            with db.connect() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT private.auth_machine(%s::uuid, %s) AS ok",
-                    (str(project_id), thash),
-                )
-                if not cur.fetchone()["ok"]:
-                    return jsonify({"error": "unauthorized"}), 401
-            return jsonify({"error": "not found"}), 404
-        return jsonify({"value": crypto.decrypt(row["value_enc"]), "key": key})
+            if row and row["value_enc"]:
+                return jsonify({"value": crypto.decrypt(row["value_enc"]), "key": key})
+            cur.execute(
+                "SELECT private.auth_machine(%s::uuid, %s) AS ok",
+                (str(project_id), thash),
+            )
+            if not cur.fetchone()["ok"]:
+                return jsonify({"error": "unauthorized"}), 401
+        return jsonify({"error": "not found"}), 404
 
     @app.get("/eso/v1/projects/<uuid:project_id>/secrets")
     def eso_list_secrets(project_id):

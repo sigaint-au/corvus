@@ -357,23 +357,6 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION private.get_setting(p_key text)
-RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = private AS $$
-  SELECT value FROM private.server_settings WHERE key = p_key;
-$$;
-
-CREATE OR REPLACE FUNCTION private.set_setting(p_key text, p_value text)
-RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = private AS $$
-  INSERT INTO private.server_settings (key, value) VALUES (p_key, p_value)
-  ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-$$;
-
-CREATE OR REPLACE FUNCTION private.all_settings()
-RETURNS TABLE (key text, value text)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = private AS $$
-  SELECT s.key, s.value FROM private.server_settings s ORDER BY s.key;
-$$;
-
 CREATE OR REPLACE FUNCTION private.create_team(p_user uuid, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private AS $$
 DECLARE tid uuid;
@@ -432,9 +415,6 @@ GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
 GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_get_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_list_enc TO authenticator;
-GRANT EXECUTE ON FUNCTION private.get_setting TO authenticator;
-GRANT EXECUTE ON FUNCTION private.set_setting TO authenticator;
-GRANT EXECUTE ON FUNCTION private.all_settings TO authenticator;
 GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon;
 
 -- PostgREST needs table privileges via authenticator switching roles

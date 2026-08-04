@@ -34,13 +34,10 @@ def registration_enabled() -> bool:
     return truthy(get_settings().get("registration_enabled", "true"))
 
 
-def user_team_creation_enabled() -> bool:
-    """Whether non–global-admin users may create teams."""
-    return truthy(get_settings().get("user_team_creation_enabled", "true"))
-
-
 def can_create_team(is_global_admin: bool = False) -> bool:
-    return bool(is_global_admin) or user_team_creation_enabled()
+    return bool(is_global_admin) or truthy(
+        get_settings().get("user_team_creation_enabled", "true")
+    )
 
 
 def classification():

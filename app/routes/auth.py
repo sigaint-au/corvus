@@ -4,10 +4,8 @@ from flask import flash, redirect, render_template, request, session, url_for
 import psycopg
 
 import authz
-import config
 import db
 import ldap_auth
-from settings_svc import registration_enabled, truthy
 import settings_svc
 
 
