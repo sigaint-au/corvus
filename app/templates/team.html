@@ -6,10 +6,23 @@
 <p class="muted">Your role: <strong>{{ my_role }}</strong></p>
 
 <section>
-  <h2>Projects</h2>
+  <div class="section-head">
+    <h2>Projects</h2>
+    <form method="get" action="{{ url_for('team_detail', team_id=team.id) }}" class="toolbar" role="search">
+      <label class="search-field">
+        <span class="visually-hidden">Search projects</span>
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search…" autocomplete="off" aria-label="Search projects">
+      </label>
+      <button type="submit">Go</button>
+      {% if search_q %}
+      <a class="btn-clear" href="{{ url_for('team_detail', team_id=team.id) }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
   <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
     <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
-    <button type="submit">Create</button>
+    <button type="submit" class="btn-sm">Create</button>
   </form>
   {% if projects %}
   <table>
@@ -24,7 +37,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No projects yet.</p>
+  <p class="muted">{% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}</p>
   {% endif %}
 </section>
 

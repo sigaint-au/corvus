@@ -1,16 +1,18 @@
 """Projects, secrets, machine tokens, trash."""
 
 import hashlib
+import logging
 import secrets
 
 from flask import flash, redirect, render_template, request, session, url_for
 
+import audit
 import authz
 import crypto
 import db
+import paging
 
-
-log = __import__("logging").getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 def register(app):
@@ -39,25 +41,41 @@ def register(app):
     @authz.login_required
     def secrets_list():
         tid = session.get("team_id")
+        q = (request.args.get("q") or "").strip()
         team, secrets = None, []
         if tid:
             with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
                 cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
                 team = cur.fetchone()
                 if team:
-                    cur.execute(
-                        """
-                        SELECT s.id, s.key, s.note, s.updated_at,
-                               p.id AS project_id, p.name AS project_name
-                        FROM api.secrets s
-                        JOIN api.projects p ON p.id = s.project_id
-                        WHERE p.team_id = %s AND s.deleted_at IS NULL
-                        ORDER BY p.name, s.key
-                        """,
-                        (tid,),
-                    )
+                    if q:
+                        like = f"%{q}%"
+                        cur.execute(
+                            """
+                            SELECT s.id, s.key, s.note, s.updated_at,
+                                   p.id AS project_id, p.name AS project_name
+                            FROM api.secrets s
+                            JOIN api.projects p ON p.id = s.project_id
+                            WHERE p.team_id = %s AND s.deleted_at IS NULL
+                              AND (s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s)
+                            ORDER BY p.name, s.key
+                            """,
+                            (tid, like, like, like),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            SELECT s.id, s.key, s.note, s.updated_at,
+                                   p.id AS project_id, p.name AS project_name
+                            FROM api.secrets s
+                            JOIN api.projects p ON p.id = s.project_id
+                            WHERE p.team_id = %s AND s.deleted_at IS NULL
+                            ORDER BY p.name, s.key
+                            """,
+                            (tid,),
+                        )
                     secrets = cur.fetchall()
-        return render_template("secrets.html", team=team, secrets=secrets)
+        return render_template("secrets.html", team=team, secrets=secrets, search_q=q)
 
 
     @app.get("/machines")
@@ -118,16 +136,35 @@ def register(app):
             try:
                 cur.execute(
                     """
+                    SELECT id, project_id, key FROM api.secrets
+                    WHERE id = %s AND deleted_at IS NOT NULL
+                      AND api.can_write_project(project_id)
+                    """,
+                    (str(secret_id),),
+                )
+                row = cur.fetchone()
+                if not row:
+                    flash("Could not restore — missing permission or key already exists", "error")
+                    conn.commit()
+                    return redirect(url_for("trash"))
+                cur.execute(
+                    """
                     UPDATE api.secrets
                     SET deleted_at = NULL, updated_at = now()
                     WHERE id = %s AND deleted_at IS NOT NULL
-                      AND api.can_write_project(project_id)
                     """,
                     (str(secret_id),),
                 )
                 if cur.rowcount == 0:
                     flash("Could not restore — missing permission or key already exists", "error")
                 else:
+                    audit.log_secret(
+                        cur,
+                        project_id=row["project_id"],
+                        secret_id=row["id"],
+                        secret_key=row["key"],
+                        action="restored",
+                    )
                     flash("Secret restored", "ok")
                 conn.commit()
             except Exception as e:
@@ -142,12 +179,28 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                DELETE FROM api.secrets
+                SELECT id, project_id, key FROM api.secrets
                 WHERE id = %s AND deleted_at IS NOT NULL
                   AND api.can_write_project(project_id)
                 """,
                 (str(secret_id),),
             )
+            row = cur.fetchone()
+            if row:
+                audit.log_secret(
+                    cur,
+                    project_id=row["project_id"],
+                    secret_id=row["id"],
+                    secret_key=row["key"],
+                    action="purged",
+                )
+                cur.execute(
+                    """
+                    DELETE FROM api.secrets
+                    WHERE id = %s AND deleted_at IS NOT NULL
+                    """,
+                    (str(secret_id),),
+                )
             conn.commit()
         return redirect(url_for("trash"))
 
@@ -155,6 +208,16 @@ def register(app):
     @app.get("/projects/<uuid:project_id>")
     @authz.login_required
     def project_detail(project_id):
+        tab = (request.args.get("tab") or "secrets").strip().lower()
+        if tab not in ("secrets", "audit", "tokens"):
+            tab = "secrets"
+        page = paging.page_arg("page")
+        q = (request.args.get("q") or "").strip()
+        secrets_pager = None
+        audit_pager = None
+        secret_rows = []
+        audit_rows = []
+        tokens = []
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -168,30 +231,94 @@ def register(app):
             if not project:
                 return "Not found", 404
             session["team_id"] = str(project["team_id"])
-            cur.execute(
-                """
-                SELECT id, key, note, created_at, updated_at FROM api.secrets
-                WHERE project_id = %s AND deleted_at IS NULL
-                ORDER BY key
-                """,
-                (str(project_id),),
-            )
-            secret_rows = cur.fetchall()
-            cur.execute(
-                "SELECT id, name, token_prefix, created_at FROM api.machine_tokens WHERE project_id = %s ORDER BY created_at DESC",
-                (str(project_id),),
-            )
-            tokens = cur.fetchall()
-            can_write = False
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             can_write = cur.fetchone()["w"]
+
+            if tab == "secrets":
+                like = f"%{q}%" if q else None
+                if like:
+                    cur.execute(
+                        """
+                        SELECT count(*) AS n FROM api.secrets
+                        WHERE project_id = %s AND deleted_at IS NULL
+                          AND (key ILIKE %s OR note ILIKE %s)
+                        """,
+                        (str(project_id), like, like),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT count(*) AS n FROM api.secrets
+                        WHERE project_id = %s AND deleted_at IS NULL
+                        """,
+                        (str(project_id),),
+                    )
+                total = int((cur.fetchone() or {}).get("n") or 0)
+                secrets_pager = paging.page_window(total, page)
+                secrets_pager["endpoint"] = "project_detail"
+                secrets_pager["project_id"] = project_id
+                secrets_pager["tab"] = "secrets"
+                secrets_pager["q"] = q
+                if like:
+                    cur.execute(
+                        """
+                        SELECT id, key, note, created_at, updated_at FROM api.secrets
+                        WHERE project_id = %s AND deleted_at IS NULL
+                          AND (key ILIKE %s OR note ILIKE %s)
+                        ORDER BY key
+                        LIMIT %s OFFSET %s
+                        """,
+                        (
+                            str(project_id),
+                            like,
+                            like,
+                            secrets_pager["limit"],
+                            secrets_pager["offset"],
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT id, key, note, created_at, updated_at FROM api.secrets
+                        WHERE project_id = %s AND deleted_at IS NULL
+                        ORDER BY key
+                        LIMIT %s OFFSET %s
+                        """,
+                        (str(project_id), secrets_pager["limit"], secrets_pager["offset"]),
+                    )
+                secret_rows = cur.fetchall()
+            elif tab == "audit":
+                total = audit.count_for_project(cur, project_id, q=q)
+                audit_pager = paging.page_window(total, page)
+                audit_pager["endpoint"] = "project_detail"
+                audit_pager["project_id"] = project_id
+                audit_pager["tab"] = "audit"
+                audit_pager["q"] = q
+                audit_rows = audit.list_for_project(
+                    cur,
+                    project_id,
+                    limit=audit_pager["limit"],
+                    offset=audit_pager["offset"],
+                    q=q,
+                )
+            else:
+                cur.execute(
+                    "SELECT id, name, token_prefix, created_at FROM api.machine_tokens WHERE project_id = %s ORDER BY created_at DESC",
+                    (str(project_id),),
+                )
+                tokens = cur.fetchall()
         return render_template(
             "project.html",
             project=project,
             project_id=project_id,
             secrets=secret_rows,
             tokens=tokens,
+            audit_log=audit_rows,
+            secrets_pager=secrets_pager,
+            audit_pager=audit_pager,
             can_write=can_write,
+            active_tab=tab,
+            search_q=q,
             new_token=session.pop("new_token", None),
         )
 
@@ -204,24 +331,42 @@ def register(app):
         note = request.form.get("note", "").strip()
         if not key or value is None:
             flash("Key and value required", "error")
-            return redirect(url_for("project_detail", project_id=project_id))
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
+                cur.execute(
+                    """
+                    SELECT id FROM api.secrets
+                    WHERE project_id = %s AND key = %s AND deleted_at IS NULL
+                    """,
+                    (str(project_id), key),
+                )
+                existing = cur.fetchone()
                 cur.execute(
                     """
                     INSERT INTO api.secrets (project_id, key, value_enc, note)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
                       SET value_enc = EXCLUDED.value_enc, note = EXCLUDED.note, updated_at = now()
+                    RETURNING id
                     """,
                     (str(project_id), key, crypto.encrypt(value), note),
+                )
+                row = cur.fetchone()
+                sid = row["id"] if row else (existing["id"] if existing else None)
+                audit.log_secret(
+                    cur,
+                    project_id=project_id,
+                    secret_id=sid,
+                    secret_key=key,
+                    action="updated" if existing else "created",
                 )
                 conn.commit()
             except Exception as e:
                 flash(str(e), "error")
         if authz.htmx():
             return _secrets_partial(project_id)
-        return redirect(url_for("project_detail", project_id=project_id))
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
 
 
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/delete")
@@ -230,15 +375,31 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE api.secrets SET deleted_at = now()
+                SELECT id, key FROM api.secrets
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
                 (str(secret_id), str(project_id)),
             )
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    """
+                    UPDATE api.secrets SET deleted_at = now()
+                    WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                    """,
+                    (str(secret_id), str(project_id)),
+                )
+                audit.log_secret(
+                    cur,
+                    project_id=project_id,
+                    secret_id=row["id"],
+                    secret_key=row["key"],
+                    action="deleted",
+                )
             conn.commit()
         if authz.htmx():
             return _secrets_partial(project_id)
-        return redirect(url_for("project_detail", project_id=project_id))
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
 
 
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/reveal")
@@ -247,7 +408,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT value_enc FROM api.secrets
+                SELECT id, key, value_enc FROM api.secrets
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
                 (str(secret_id), str(project_id)),
@@ -255,6 +416,14 @@ def register(app):
             row = cur.fetchone()
             if not row:
                 return "Not found", 404
+            audit.log_secret(
+                cur,
+                project_id=project_id,
+                secret_id=row["id"],
+                secret_key=row["key"],
+                action="revealed",
+            )
+            conn.commit()
         return render_template(
             "partials/reveal.html",
             value=crypto.decrypt(row["value_enc"]),
@@ -264,15 +433,60 @@ def register(app):
 
 
     def _secrets_partial(project_id):
+        page = paging.page_arg("page")
+        q = (request.args.get("q") or request.form.get("q") or "").strip()
+        like = f"%{q}%" if q else None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, key, note, created_at, updated_at FROM api.secrets
-                WHERE project_id = %s AND deleted_at IS NULL
-                ORDER BY key
-                """,
-                (str(project_id),),
-            )
+            if like:
+                cur.execute(
+                    """
+                    SELECT count(*) AS n FROM api.secrets
+                    WHERE project_id = %s AND deleted_at IS NULL
+                      AND (key ILIKE %s OR note ILIKE %s)
+                    """,
+                    (str(project_id), like, like),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT count(*) AS n FROM api.secrets
+                    WHERE project_id = %s AND deleted_at IS NULL
+                    """,
+                    (str(project_id),),
+                )
+            total = int((cur.fetchone() or {}).get("n") or 0)
+            secrets_pager = paging.page_window(total, page)
+            secrets_pager["endpoint"] = "project_detail"
+            secrets_pager["project_id"] = project_id
+            secrets_pager["tab"] = "secrets"
+            secrets_pager["q"] = q
+            if like:
+                cur.execute(
+                    """
+                    SELECT id, key, note, created_at, updated_at FROM api.secrets
+                    WHERE project_id = %s AND deleted_at IS NULL
+                      AND (key ILIKE %s OR note ILIKE %s)
+                    ORDER BY key
+                    LIMIT %s OFFSET %s
+                    """,
+                    (
+                        str(project_id),
+                        like,
+                        like,
+                        secrets_pager["limit"],
+                        secrets_pager["offset"],
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, key, note, created_at, updated_at FROM api.secrets
+                    WHERE project_id = %s AND deleted_at IS NULL
+                    ORDER BY key
+                    LIMIT %s OFFSET %s
+                    """,
+                    (str(project_id), secrets_pager["limit"], secrets_pager["offset"]),
+                )
             rows = cur.fetchall()
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             can_write = cur.fetchone()["w"]
@@ -281,6 +495,8 @@ def register(app):
             secrets=rows,
             project_id=project_id,
             can_write=can_write,
+            secrets_pager=secrets_pager,
+            search_q=q,
         )
 
 
@@ -305,7 +521,7 @@ def register(app):
                 flash(str(e), "error")
                 return redirect(url_for("project_detail", project_id=project_id))
         session["new_token"] = raw  # shown once
-        return redirect(url_for("project_detail", project_id=project_id))
+        return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
 
 
     @app.post("/projects/<uuid:project_id>/tokens/<uuid:token_id>/delete")
@@ -317,6 +533,6 @@ def register(app):
                 (str(token_id), str(project_id)),
             )
             conn.commit()
-        return redirect(url_for("project_detail", project_id=project_id))
+        return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
 
 

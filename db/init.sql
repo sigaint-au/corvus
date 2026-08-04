@@ -129,6 +129,22 @@ CREATE TABLE api.secrets (
 CREATE UNIQUE INDEX secrets_project_key_live
   ON api.secrets (project_id, key) WHERE deleted_at IS NULL;
 
+-- Secret audit log (create / update / reveal / delete / restore / purge)
+CREATE TABLE api.secret_audit (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
+  secret_id uuid,  -- may be null after permanent purge
+  secret_key text NOT NULL DEFAULT '',
+  user_id uuid REFERENCES private.users(id) ON DELETE SET NULL,
+  actor_email text NOT NULL DEFAULT '',
+  action text NOT NULL CHECK (action IN (
+    'created', 'updated', 'revealed', 'deleted', 'restored', 'purged'
+  )),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX secret_audit_project_created_idx
+  ON api.secret_audit (project_id, created_at DESC);
+
 -- Machine tokens (OpenShift ESO / external secrets)
 CREATE TABLE api.machine_tokens (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -214,6 +230,7 @@ ALTER TABLE api.team_ldap_maps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.project_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY teams_select ON api.teams FOR SELECT TO authenticated
@@ -274,6 +291,11 @@ CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
   USING (api.can_write_project(project_id));
 CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
   USING (api.can_write_project(project_id));
+
+CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
+  USING (api.can_read_project(project_id));
+CREATE POLICY secret_audit_insert ON api.secret_audit FOR INSERT TO authenticated
+  WITH CHECK (api.can_read_project(project_id));
 
 CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated
   USING (api.can_write_project(project_id));

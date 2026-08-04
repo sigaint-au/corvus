@@ -381,28 +381,24 @@ class TestSecrets(unittest.TestCase):
             s["user_id"] = self.uid
             s["email"] = "u@ex.com"
 
-    def _project_conn(self, can_write=True, secrets=None, tokens=None):
-        """as_user used by project_detail: project, secrets, tokens, can_write."""
-        seq = [
-            {
-                "id": self.pid,
-                "name": "prod",
-                "team_name": "Ops",
-                "team_id": uuid4(),
-            },
-        ]
-        # after project row: secrets fetchall, tokens fetchall, can_write fetchone
-        state = {"i": 0}
-
-        def fetchone():
-            state["i"] += 1
-            if state["i"] == 1:
-                return seq[0]
-            return {"w": can_write}
-
-        conn, cur = _conn(fetchone=fetchone, fetchall=[])
-        # Alternating fetchall for secrets then tokens
-        cur.fetchall.side_effect = [secrets or [], tokens or []]
+    def _project_conn(self, tab="secrets", can_write=True, secrets=None, tokens=None, audit_log=None, total=None):
+        """as_user used by project_detail (tab-scoped queries)."""
+        project = {
+            "id": self.pid,
+            "name": "prod",
+            "team_name": "Ops",
+            "team_id": uuid4(),
+        }
+        rows = secrets or [] if tab == "secrets" else (audit_log or [] if tab == "audit" else (tokens or []))
+        if total is None:
+            total = len(rows)
+        fo = [project, {"w": can_write}]
+        if tab in ("secrets", "audit"):
+            fo.append({"n": total})
+        fa = [rows] if tab in ("secrets", "audit", "tokens") else []
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        cur.fetchall.side_effect = fa if fa else [[]]
         return conn
 
     def test_project_detail(self):
@@ -411,6 +407,31 @@ class TestSecrets(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"prod", r.data)
         self.assertIn(b"Secrets", r.data)
+        self.assertIn(b"Audit log", r.data)
+
+    def test_project_audit_tab(self):
+        audit_rows = [
+            {
+                "id": uuid4(),
+                "secret_id": uuid4(),
+                "secret_key": "API_KEY",
+                "action": "revealed",
+                "created_at": "2026-01-01",
+                "actor_email": "u@ex.com",
+                "user_id": self.uid,
+                "actor_name": "User",
+            }
+        ]
+        with patch.object(
+            db,
+            "as_user",
+            return_value=self._project_conn(tab="audit", audit_log=audit_rows),
+        ):
+            r = self.client.get(f"/projects/{self.pid}?tab=audit")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"API_KEY", r.data)
+        self.assertIn(b"revealed", r.data)
+        self.assertIn(b"u@ex.com", r.data)
 
     def test_project_404(self):
         conn, _ = _conn(fetchone=None)
@@ -419,8 +440,10 @@ class TestSecrets(unittest.TestCase):
         self.assertEqual(r.status_code, 404)
 
     def test_create_secret(self):
-        conn, _ = _conn()
-        # create_secret then _secrets_partial if htmx — non-htmx redirects
+        sid = uuid4()
+        # existing lookup, RETURNING id
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [None, {"id": sid}]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/secrets",
@@ -429,7 +452,6 @@ class TestSecrets(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 302)
         self.assertIn(str(self.pid), r.location)
-        # ensure encrypt path ran (execute called with value_enc)
         self.assertTrue(conn.cursor.called)
 
     def test_create_secret_missing_key(self):
@@ -442,7 +464,7 @@ class TestSecrets(unittest.TestCase):
 
     def test_delete_secret(self):
         sid = uuid4()
-        conn, _ = _conn()
+        conn, _ = _conn(fetchone={"id": sid, "key": "API_KEY"})
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/secrets/{sid}/delete",
@@ -453,7 +475,9 @@ class TestSecrets(unittest.TestCase):
     def test_reveal_secret(self):
         sid = uuid4()
         enc = store.encrypt("super-secret")
-        conn, _ = _conn(fetchone={"value_enc": enc})
+        conn, _ = _conn(
+            fetchone={"id": sid, "key": "API_KEY", "value_enc": enc}
+        )
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{self.pid}/secrets/{sid}/reveal")
         self.assertEqual(r.status_code, 200)

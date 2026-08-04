@@ -19,36 +19,67 @@ def register(app):
     @app.get("/teams")
     @authz.login_required
     def teams():
+        q = (request.args.get("q") or "").strip()
+        like = f"%{q}%" if q else None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             if session.get("is_global_admin"):
-                cur.execute(
-                    """
-                    SELECT t.*,
-                      COALESCE(tm.role, 'owner') AS role,
-                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                    FROM api.teams t
-                    LEFT JOIN api.team_members tm
-                      ON tm.team_id = t.id AND tm.user_id = %s
-                    ORDER BY t.name
-                    """,
-                    (session["user_id"],),
-                )
+                if like:
+                    cur.execute(
+                        """
+                        SELECT t.*,
+                          COALESCE(tm.role, 'owner') AS role,
+                          (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
+                        FROM api.teams t
+                        LEFT JOIN api.team_members tm
+                          ON tm.team_id = t.id AND tm.user_id = %s
+                        WHERE t.name ILIKE %s
+                        ORDER BY t.name
+                        """,
+                        (session["user_id"], like),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT t.*,
+                          COALESCE(tm.role, 'owner') AS role,
+                          (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
+                        FROM api.teams t
+                        LEFT JOIN api.team_members tm
+                          ON tm.team_id = t.id AND tm.user_id = %s
+                        ORDER BY t.name
+                        """,
+                        (session["user_id"],),
+                    )
             else:
-                cur.execute(
-                    """
-                    SELECT t.*, tm.role,
-                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                    FROM api.teams t
-                    JOIN api.team_members tm ON tm.team_id = t.id
-                    WHERE tm.user_id = %s
-                    ORDER BY t.name
-                    """,
-                    (session["user_id"],),
-                )
+                if like:
+                    cur.execute(
+                        """
+                        SELECT t.*, tm.role,
+                          (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
+                        FROM api.teams t
+                        JOIN api.team_members tm ON tm.team_id = t.id
+                        WHERE tm.user_id = %s AND t.name ILIKE %s
+                        ORDER BY t.name
+                        """,
+                        (session["user_id"], like),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT t.*, tm.role,
+                          (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
+                        FROM api.teams t
+                        JOIN api.team_members tm ON tm.team_id = t.id
+                        WHERE tm.user_id = %s
+                        ORDER BY t.name
+                        """,
+                        (session["user_id"],),
+                    )
             rows = cur.fetchall()
         return render_template(
             "teams.html",
             teams=rows,
+            search_q=q,
             can_create_team=settings_svc.can_create_team(session.get("is_global_admin")),
         )
 
@@ -77,6 +108,7 @@ def register(app):
     @authz.login_required
     def team_detail(team_id):
         session["team_id"] = str(team_id)
+        q = (request.args.get("q") or "").strip()
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
             team = cur.fetchone()
@@ -92,10 +124,20 @@ def register(app):
                 (str(team_id),),
             )
             members = cur.fetchall()
-            cur.execute(
-                "SELECT * FROM api.projects WHERE team_id = %s ORDER BY name",
-                (str(team_id),),
-            )
+            if q:
+                cur.execute(
+                    """
+                    SELECT * FROM api.projects
+                    WHERE team_id = %s AND name ILIKE %s
+                    ORDER BY name
+                    """,
+                    (str(team_id), f"%{q}%"),
+                )
+            else:
+                cur.execute(
+                    "SELECT * FROM api.projects WHERE team_id = %s ORDER BY name",
+                    (str(team_id),),
+                )
             projects = cur.fetchall()
             cur.execute(
                 "SELECT role FROM api.team_members WHERE team_id = %s AND user_id = %s",
@@ -118,6 +160,7 @@ def register(app):
         return render_template(
             "team.html",
             team=team,
+            search_q=q,
             members=members,
             projects=projects,
             my_role=my_role,

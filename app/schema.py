@@ -300,6 +300,38 @@ def ensure_schema():
         END;
         $$
         """,
+        # Secret audit log
+        """
+        CREATE TABLE IF NOT EXISTS api.secret_audit (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
+          secret_id uuid,
+          secret_key text NOT NULL DEFAULT '',
+          user_id uuid REFERENCES private.users(id) ON DELETE SET NULL,
+          actor_email text NOT NULL DEFAULT '',
+          action text NOT NULL CHECK (action IN (
+            'created', 'updated', 'revealed', 'deleted', 'restored', 'purged'
+          )),
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS secret_audit_project_created_idx
+          ON api.secret_audit (project_id, created_at DESC)
+        """,
+        "ALTER TABLE api.secret_audit ENABLE ROW LEVEL SECURITY",
+        "DROP POLICY IF EXISTS secret_audit_select ON api.secret_audit",
+        """
+        CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
+          USING (api.can_read_project(project_id))
+        """,
+        "DROP POLICY IF EXISTS secret_audit_insert ON api.secret_audit",
+        """
+        CREATE POLICY secret_audit_insert ON api.secret_audit FOR INSERT TO authenticated
+          WITH CHECK (api.can_read_project(project_id))
+        """,
+        "GRANT SELECT, INSERT ON api.secret_audit TO authenticated",
+        "GRANT ALL ON api.secret_audit TO authenticator",
     ]
     try:
         with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:
