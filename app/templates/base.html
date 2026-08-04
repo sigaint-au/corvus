@@ -193,26 +193,33 @@
     }
     .sidebar-foot .who {
       display: flex;
-      flex-wrap: wrap;
+      flex-direction: row;
+      flex-wrap: nowrap;
       align-items: center;
-      gap: .35rem .45rem;
+      gap: .4rem;
       font-size: .8rem;
       color: var(--side-muted);
-      word-break: break-all;
+      min-width: 0;
+      width: 100%;
     }
     .sidebar-foot .who .who-email {
+      flex: 1 1 auto;
       min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .sidebar-foot .who .role-badge {
       display: inline-block;
       flex: 0 0 auto;
-      font-size: .65rem;
+      font-size: .6rem;
+      line-height: 1.2;
       text-transform: uppercase;
-      letter-spacing: .04em;
+      letter-spacing: .03em;
       color: #a3a9b0;
       border: 1px solid var(--side-border);
       border-radius: 4px;
-      padding: .1rem .35rem;
+      padding: .15rem .35rem;
       white-space: nowrap;
     }
     .sidebar-foot .logout-link {
@@ -481,10 +488,10 @@
       {% endif %}
     </nav>
     <div class="sidebar-foot">
-      <span class="who">
-        <span class="who-email">{{ session.email }}</span>
+      <div class="who">
+        <span class="who-email" title="{{ session.email }}">{{ session.email }}</span>
         {% if is_global_admin %}<span class="role-badge">Global admin</span>{% endif %}
-      </span>
+      </div>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
         <button type="submit" class="logout-link">Log out</button>
       </form>
