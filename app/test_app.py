@@ -13,6 +13,10 @@ os.environ.setdefault("SECRET_KEY", "test-flask-session-secret")
 
 import jwt as pyjwt  # noqa: E402
 import app as store  # noqa: E402
+import authz  # noqa: E402
+import db  # noqa: E402
+import ldap_auth  # noqa: E402
+import settings_svc  # noqa: E402
 
 
 # ── helpers ───────────────────────────────────────────────────────
@@ -113,7 +117,7 @@ class TestHelpers(unittest.TestCase):
             sess["user_id"] = str(uuid4())
             sess["email"] = "t@t.t"
         conn, _ = _conn(fetchall=[])
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = c.get("/teams")
         self.assertEqual(r.status_code, 200)
 
@@ -139,15 +143,15 @@ class TestAuth(unittest.TestCase):
         self.assertIn("/teams", r.location)
 
     def test_login_get(self):
-        with patch.object(store, "_ldap_cfg", return_value={"ldap_enabled": "false"}):
+        with patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}):
             r = self.client.get("/login")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Sign in", r.data)
 
     def test_login_bad_creds(self):
         conn, _ = _conn(fetchone=None)
-        with patch.object(store, "connect", return_value=conn), patch.object(
-            store, "_ldap_cfg", return_value={"ldap_enabled": "false"}
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
         ):
             r = self.client.post("/login", data={"email": "a@b.c", "password": "nope"})
         self.assertEqual(r.status_code, 401)
@@ -156,8 +160,8 @@ class TestAuth(unittest.TestCase):
     def test_login_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
-        with patch.object(store, "connect", return_value=conn), patch.object(
-            store, "_ldap_cfg", return_value={"ldap_enabled": "false"}
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
         ):
             r = self.client.post(
                 "/login",
@@ -185,10 +189,10 @@ class TestAuth(unittest.TestCase):
             "is_global_admin": True,
         }
         conn, _ = _conn(fetchone=None)
-        with patch.object(store, "connect", return_value=conn), patch.object(
-            store, "_ldap_cfg", return_value={"ldap_enabled": "true"}
-        ), patch.object(store, "ldap_authenticate", return_value=ldap_user), patch.object(
-            store, "_sync_ldap_user", return_value=synced
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "true"}
+        ), patch.object(ldap_auth, "ldap_authenticate", return_value=ldap_user), patch.object(
+            ldap_auth, "sync_ldap_user", return_value=synced
         ):
             r = self.client.post(
                 "/login",
@@ -203,7 +207,7 @@ class TestAuth(unittest.TestCase):
             self.assertTrue(s["is_global_admin"])
 
     def test_register_short_password(self):
-        with patch.object(store, "_registration_enabled", return_value=True):
+        with patch.object(settings_svc, "registration_enabled", return_value=True):
             r = self.client.post(
                 "/register",
                 data={"email": "a@b.c", "password": "short", "name": "A"},
@@ -214,8 +218,8 @@ class TestAuth(unittest.TestCase):
     def test_register_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={"id": uid})
-        with patch.object(store, "connect", return_value=conn), patch.object(
-            store, "_registration_enabled", return_value=True
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            settings_svc, "registration_enabled", return_value=True
         ):
             r = self.client.post(
                 "/register",
@@ -226,11 +230,11 @@ class TestAuth(unittest.TestCase):
         self.assertIn("/teams", r.location)
 
     def test_register_disabled(self):
-        with patch.object(store, "_registration_enabled", return_value=False):
+        with patch.object(settings_svc, "registration_enabled", return_value=False):
             r = self.client.get("/register", follow_redirects=False)
         self.assertEqual(r.status_code, 302)
         self.assertIn("/login", r.location)
-        with patch.object(store, "_registration_enabled", return_value=False):
+        with patch.object(settings_svc, "registration_enabled", return_value=False):
             r = self.client.post(
                 "/register",
                 data={"email": "new@b.c", "password": "password1", "name": "N"},
@@ -240,8 +244,8 @@ class TestAuth(unittest.TestCase):
         self.assertIn("/login", r.location)
 
     def test_login_hides_register_when_disabled(self):
-        with patch.object(store, "_ldap_cfg", return_value={"ldap_enabled": "false"}), patch.object(
-            store, "_registration_enabled", return_value=False
+        with patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}), patch.object(
+            settings_svc, "registration_enabled", return_value=False
         ):
             r = self.client.get("/login")
         self.assertEqual(r.status_code, 200)
@@ -288,7 +292,7 @@ class TestTeams(unittest.TestCase):
                 }
             ]
         )
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get("/teams")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Platform", r.data)
@@ -302,14 +306,14 @@ class TestTeams(unittest.TestCase):
     def test_create_team(self):
         tid = uuid4()
         conn, _ = _conn(fetchone={"id": tid})
-        with patch.object(store, "connect", return_value=conn):
+        with patch.object(db, "connect", return_value=conn):
             r = self.client.post("/teams", data={"name": "Ops"}, follow_redirects=False)
         self.assertEqual(r.status_code, 302)
         self.assertIn(str(tid), r.location)
 
     def test_team_detail_404(self):
         conn, _ = _conn(fetchone=None)
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/teams/{uuid4()}")
         self.assertEqual(r.status_code, 404)
 
@@ -325,7 +329,7 @@ class TestTeams(unittest.TestCase):
 
         conn, cur = _conn(fetchone=fetchone, fetchall=[])
         # members then projects both use fetchall
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/teams/{tid}")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b">T<", r.data)
@@ -333,7 +337,7 @@ class TestTeams(unittest.TestCase):
     def test_add_member_user_missing(self):
         tid = uuid4()
         conn, _ = _conn(fetchone=None)
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/teams/{tid}/members",
                 data={"email": "nope@x.com", "role": "member"},
@@ -344,7 +348,7 @@ class TestTeams(unittest.TestCase):
     def test_create_project(self):
         tid, pid = uuid4(), uuid4()
         conn, _ = _conn(fetchone={"id": pid})
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/teams/{tid}/projects",
                 data={"name": "prod"},
@@ -392,7 +396,7 @@ class TestSecrets(unittest.TestCase):
         return conn
 
     def test_project_detail(self):
-        with patch.object(store, "as_user", return_value=self._project_conn()):
+        with patch.object(db, "as_user", return_value=self._project_conn()):
             r = self.client.get(f"/projects/{self.pid}")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"prod", r.data)
@@ -400,14 +404,14 @@ class TestSecrets(unittest.TestCase):
 
     def test_project_404(self):
         conn, _ = _conn(fetchone=None)
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{uuid4()}")
         self.assertEqual(r.status_code, 404)
 
     def test_create_secret(self):
         conn, _ = _conn()
         # create_secret then _secrets_partial if htmx — non-htmx redirects
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/secrets",
                 data={"key": "API_KEY", "value": "sekrit", "note": ""},
@@ -429,7 +433,7 @@ class TestSecrets(unittest.TestCase):
     def test_delete_secret(self):
         sid = uuid4()
         conn, _ = _conn()
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/secrets/{sid}/delete",
                 follow_redirects=False,
@@ -440,14 +444,14 @@ class TestSecrets(unittest.TestCase):
         sid = uuid4()
         enc = store.encrypt("super-secret")
         conn, _ = _conn(fetchone={"value_enc": enc})
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{self.pid}/secrets/{sid}/reveal")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"super-secret", r.data)
 
     def test_reveal_missing(self):
         conn, _ = _conn(fetchone=None)
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{self.pid}/secrets/{uuid4()}/reveal")
         self.assertEqual(r.status_code, 404)
 
@@ -466,7 +470,7 @@ class TestTokens(unittest.TestCase):
 
     def test_create_token(self):
         conn, _ = _conn()
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/tokens",
                 data={"name": "openshift"},
@@ -478,7 +482,7 @@ class TestTokens(unittest.TestCase):
 
     def test_delete_token(self):
         conn, _ = _conn()
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/tokens/{uuid4()}/delete",
                 follow_redirects=False,
@@ -523,7 +527,7 @@ class TestESO(unittest.TestCase):
     def test_get_secret_ok(self):
         enc = store.encrypt("val")
         conn, _ = _conn(fetchone={"value_enc": enc})
-        with patch.object(store, "connect", return_value=conn):
+        with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
                 f"/eso/v1/projects/{self.pid}/secrets/KEY",
                 headers={"Authorization": "Bearer ss_testtoken"},
@@ -544,7 +548,7 @@ class TestESO(unittest.TestCase):
 
         conn, _ = _conn(fetchone=fetchone)
         # two separate connect() calls in eso_get_secret
-        with patch.object(store, "connect", return_value=conn):
+        with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
                 f"/eso/v1/projects/{self.pid}/secrets/MISSING",
                 headers={"Authorization": "Bearer ss_x"},
@@ -553,7 +557,7 @@ class TestESO(unittest.TestCase):
 
     def test_list_unauthorized(self):
         conn, _ = _conn(fetchone={"ok": False})
-        with patch.object(store, "connect", return_value=conn):
+        with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
                 f"/eso/v1/projects/{self.pid}/secrets",
                 headers={"Authorization": "Bearer bad"},
@@ -569,7 +573,7 @@ class TestESO(unittest.TestCase):
 
         enc = store.encrypt("v1")
         conn, cur = _conn(fetchone=fetchone, fetchall=[{"key": "A", "value_enc": enc}])
-        with patch.object(store, "connect", return_value=conn):
+        with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
                 f"/eso/v1/projects/{self.pid}/secrets",
                 headers={"Authorization": "Bearer ss_ok"},
@@ -588,13 +592,13 @@ class TestESO(unittest.TestCase):
 class TestHealth(unittest.TestCase):
     def test_ok(self):
         conn, _ = _conn()
-        with patch.object(store, "connect", return_value=conn):
+        with patch.object(db, "connect", return_value=conn):
             r = store.app.test_client().get("/health")
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.get_json()["ok"])
 
     def test_down(self):
-        with patch.object(store, "connect", side_effect=RuntimeError("db down")):
+        with patch.object(db, "connect", side_effect=RuntimeError("db down")):
             r = store.app.test_client().get("/health")
         self.assertEqual(r.status_code, 503)
         self.assertFalse(r.get_json()["ok"])
@@ -619,8 +623,8 @@ class TestUIShell(unittest.TestCase):
             s["user_id"] = str(uuid4())
             s["email"] = "x@y.z"
         conn, _ = _conn(fetchall=[])
-        with patch.object(store, "as_user", return_value=conn), patch.object(
-            store, "_is_global_admin", return_value=False
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            authz, "is_global_admin", return_value=False
         ):
             r = c.get("/teams")
         self.assertIn(b'class="app"', r.data)
@@ -641,8 +645,8 @@ class TestUIShell(unittest.TestCase):
             s["email"] = "admin@ex.com"
             s["is_global_admin"] = True
         conn, _ = _conn(fetchall=[])
-        with patch.object(store, "as_user", return_value=conn), patch.object(
-            store, "_is_global_admin", return_value=True
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            authz, "is_global_admin", return_value=True
         ):
             r = c.get("/teams")
         self.assertIn(b"Server settings", r.data)
@@ -680,7 +684,7 @@ class TestNav(unittest.TestCase):
             return {"id": self.tid, "name": "Ops"}
 
         conn, cur = _conn(fetchone=fetchone, fetchall=[{"id": pid, "name": "api"}])
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get("/projects")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"api", r.data)
@@ -699,7 +703,7 @@ class TestNav(unittest.TestCase):
                 }
             ],
         )
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get("/secrets")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"DB_URL", r.data)
@@ -718,7 +722,7 @@ class TestNav(unittest.TestCase):
                 }
             ],
         )
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get("/machines")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"eso", r.data)
@@ -726,7 +730,7 @@ class TestNav(unittest.TestCase):
 
     def test_trash_empty_no_team(self):
         conn, _ = _conn(fetchall=[])
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get("/trash")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Trash", r.data)
@@ -737,7 +741,7 @@ class TestNav(unittest.TestCase):
         conn, _ = _conn(fetchone={"id": tid, "name": "Ops"}, fetchall=[])
         with self.client.session_transaction() as s:
             s["team_id"] = str(tid)
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get("/trash")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Nothing in trash", r.data)
@@ -762,7 +766,7 @@ class TestNav(unittest.TestCase):
         )
         with self.client.session_transaction() as s:
             s["team_id"] = str(tid)
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.get("/trash")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"DB_URL", r.data)
@@ -772,7 +776,7 @@ class TestNav(unittest.TestCase):
     def test_restore_secret(self):
         conn, cur = _conn()
         cur.rowcount = 1
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/trash/secrets/{uuid4()}/restore",
                 follow_redirects=False,
@@ -782,7 +786,7 @@ class TestNav(unittest.TestCase):
 
     def test_purge_secret(self):
         conn, _ = _conn()
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/trash/secrets/{uuid4()}/purge",
                 follow_redirects=False,
@@ -811,8 +815,8 @@ class TestSettings(unittest.TestCase):
             s["email"] = "u@ex.com"
             s["is_global_admin"] = False
         conn, _ = _conn(fetchall=[])
-        with patch.object(store, "as_user", return_value=conn), patch.object(
-            store, "_is_global_admin", return_value=False
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            authz, "is_global_admin", return_value=False
         ):
             r = self.client.get("/settings", follow_redirects=False)
         self.assertEqual(r.status_code, 302)
@@ -839,13 +843,13 @@ class TestSettings(unittest.TestCase):
             "classification_color": "#c62828",
             "classification_fg": "#ffffff",
         }
-        with patch.object(store, "as_user", return_value=conn), patch.object(
-            store, "connect", return_value=conn
-        ), patch.object(store, "_is_global_admin", return_value=True), patch.object(
-            store, "_get_settings", return_value=settings
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            db, "connect_admin", return_value=conn
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "get_settings", return_value=settings
         ), patch.object(
-            store,
-            "_classification",
+            settings_svc,
+            "classification",
             return_value={
                 "enabled": True,
                 "text": "SECRET",
@@ -869,9 +873,9 @@ class TestSettings(unittest.TestCase):
         def set_setting(k, v):
             sets.append((k, v))
 
-        with patch.object(store, "_is_global_admin", return_value=True), patch.object(
-            store, "_set_setting", side_effect=set_setting
-        ), patch.object(store, "as_user", return_value=_conn(fetchall=[])[0]):
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "set_setting", side_effect=set_setting
+        ), patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]):
             r = self.client.post(
                 "/settings",
                 data={
@@ -922,7 +926,7 @@ class TestLDAPHelpers(unittest.TestCase):
         self.assertEqual(store._ldap_escape("a*b(c)"), "a\\2ab\\28c\\29")
 
     def test_ldap_disabled_returns_none(self):
-        with patch.object(store, "_ldap_cfg", return_value={"ldap_enabled": "false"}):
+        with patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}):
             self.assertIsNone(store.ldap_authenticate("u", "p"))
 
 
@@ -939,7 +943,7 @@ class TestLDAPMaps(unittest.TestCase):
 
     def test_add_team_ldap_map(self):
         conn, _ = _conn()
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/teams/{self.tid}/ldap-maps",
                 data={"ldap_group": "eng-secrets", "role": "member"},
@@ -959,7 +963,7 @@ class TestLDAPMaps(unittest.TestCase):
     def test_delete_team_ldap_map(self):
         mid = uuid4()
         conn, _ = _conn()
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/teams/{self.tid}/ldap-maps/{mid}/delete",
                 follow_redirects=False,
@@ -986,7 +990,7 @@ class TestLDAPMaps(unittest.TestCase):
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         cur.fetchall.side_effect = fa
-        with patch.object(store, "connect_admin", return_value=conn):
+        with patch.object(db, "connect_admin", return_value=conn):
             user = store._sync_ldap_user("u@ex.com", "U", ["CN=admins,OU=g,DC=x"])
         self.assertEqual(str(user["id"]), str(uid))
         self.assertTrue(user["is_global_admin"])

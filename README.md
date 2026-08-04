@@ -4,6 +4,8 @@ Minimal Bitwarden-style secrets manager: **teams → projects → secrets**, mem
 
 Stack: **Flask + HTMX + oat.ink** UI · **Postgres RLS** · **PostgREST** · **Podman Compose**.
 
+App layout (`app/`): thin `app.py` entrypoint; modules `config`, `db`, `crypto`, `authz`, `settings_svc`, `ldap_auth`, `schema`, `nav`; HTTP handlers under `routes/`.
+
 **Roles:** team `owner` / `admin` / `member`, plus **global admin** (server-wide). The first registered user becomes global admin; only global admins can open **Server settings** (registration toggle, classification banner, LDAP, promote admins).
 
 **LDAP (optional):** enable under **Server settings**. Local accounts still work. On each LDAP login the app reads directory groups and applies:
