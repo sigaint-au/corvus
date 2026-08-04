@@ -46,12 +46,19 @@ def register(app):
                     (session["user_id"],),
                 )
             rows = cur.fetchall()
-        return render_template("teams.html", teams=rows)
+        return render_template(
+            "teams.html",
+            teams=rows,
+            can_create_team=settings_svc.can_create_team(session.get("is_global_admin")),
+        )
 
 
     @app.post("/teams")
     @authz.login_required
     def create_team():
+        if not settings_svc.can_create_team(session.get("is_global_admin")):
+            flash("Only global admins can create teams", "error")
+            return redirect(url_for("teams"))
         name = request.form["name"].strip()
         if not name:
             flash("Name required", "error")

@@ -299,17 +299,27 @@ class TestTeams(unittest.TestCase):
         self.assertIn(b"sidebar", r.data)  # modernised shell
 
     def test_create_team_empty_name(self):
-        r = self.client.post("/teams", data={"name": "  "}, follow_redirects=False)
+        with patch.object(settings_svc, "can_create_team", return_value=True):
+            r = self.client.post("/teams", data={"name": "  "}, follow_redirects=False)
         self.assertEqual(r.status_code, 302)
         self.assertIn("/teams", r.location)
 
     def test_create_team(self):
         tid = uuid4()
         conn, _ = _conn(fetchone={"id": tid})
-        with patch.object(db, "connect", return_value=conn):
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            settings_svc, "can_create_team", return_value=True
+        ):
             r = self.client.post("/teams", data={"name": "Ops"}, follow_redirects=False)
         self.assertEqual(r.status_code, 302)
         self.assertIn(str(tid), r.location)
+
+    def test_create_team_restricted(self):
+        with patch.object(settings_svc, "can_create_team", return_value=False):
+            r = self.client.post("/teams", data={"name": "Ops"}, follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/teams", r.location)
+        self.assertNotIn("Ops", r.headers.get("Location", ""))
 
     def test_team_detail_404(self):
         conn, _ = _conn(fetchone=None)

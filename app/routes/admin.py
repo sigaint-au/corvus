@@ -43,6 +43,15 @@ def register(app):
                     "Account registration enabled" if enabled == "true" else "Account registration disabled",
                     "ok",
                 )
+            elif action == "team_creation":
+                enabled = "true" if request.form.get("user_team_creation_enabled") else "false"
+                settings_svc.set_setting("user_team_creation_enabled", enabled)
+                flash(
+                    "Non–global admins can create teams"
+                    if enabled == "true"
+                    else "Only global admins can create teams",
+                    "ok",
+                )
             elif action == "ldap":
                 enabled = "true" if request.form.get("ldap_enabled") else "false"
                 settings_svc.set_setting("ldap_enabled", enabled)

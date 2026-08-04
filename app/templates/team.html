@@ -91,7 +91,7 @@
   <form method="post" action="{{ url_for('add_team_ldap_map', team_id=team.id) }}" class="row" style="margin-top:1rem;">
     <label style="flex:2;">LDAP group (CN or DN)
       <input type="text" name="ldap_group" required
-             placeholder="eng-secrets or CN=eng-secrets,OU=groups,…">
+             placeholder="eng-secrets or cn=eng-secrets,cn=groups,cn=accounts,dc=example,dc=com">
     </label>
     <label>Role
       <select name="role">

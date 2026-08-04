@@ -192,13 +192,20 @@
       gap: .5rem;
     }
     .sidebar-foot .who {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .35rem .45rem;
       font-size: .8rem;
       color: var(--side-muted);
       word-break: break-all;
     }
+    .sidebar-foot .who .who-email {
+      min-width: 0;
+    }
     .sidebar-foot .who .role-badge {
       display: inline-block;
-      margin-top: .25rem;
+      flex: 0 0 auto;
       font-size: .65rem;
       text-transform: uppercase;
       letter-spacing: .04em;
@@ -206,17 +213,23 @@
       border: 1px solid var(--side-border);
       border-radius: 4px;
       padding: .1rem .35rem;
+      white-space: nowrap;
     }
-    .sidebar-foot button {
-      width: 100%;
+    .sidebar-foot .logout-link {
+      background: none;
+      border: none;
+      padding: 0;
+      font: inherit;
       font-size: .85rem;
-      background: #e8eaed;
-      color: #0a0a0a;
-      border: 1px solid #c5c9ce;
+      font-weight: 500;
+      color: var(--side-muted);
+      cursor: pointer;
+      text-decoration: none;
+      text-align: left;
     }
-    .sidebar-foot button:hover {
-      background: #f5f5f5;
-      border-color: #d4d4d8;
+    .sidebar-foot .logout-link:hover {
+      color: #fff;
+      text-decoration: underline;
     }
     .main {
       padding: 1.5rem 1.75rem 3rem;
@@ -418,7 +431,7 @@
         padding: 0 0 0 .75rem;
         gap: .5rem;
       }
-      .sidebar-foot button { width: auto; }
+
       .main { padding: 1rem 1rem 2.5rem; }
     }
   </style>
@@ -469,11 +482,11 @@
     </nav>
     <div class="sidebar-foot">
       <span class="who">
-        {{ session.email }}
+        <span class="who-email">{{ session.email }}</span>
         {% if is_global_admin %}<span class="role-badge">Global admin</span>{% endif %}
       </span>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
-        <button type="submit">Log out</button>
+        <button type="submit" class="logout-link">Log out</button>
       </form>
     </div>
   </aside>

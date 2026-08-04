@@ -4,10 +4,14 @@
 <h1>Teams</h1>
 <p class="muted">Teams own projects. Access is by team membership (Bitwarden-style).</p>
 
+{% if can_create_team %}
 <form method="post" action="{{ url_for('create_team') }}" class="row">
   <label>New team <input type="text" name="name" required placeholder="e.g. Platform"></label>
   <button type="submit">Create</button>
 </form>
+{% else %}
+<p class="muted">Team creation is restricted to global admins.</p>
+{% endif %}
 
 {% if teams %}
 <table>
@@ -23,6 +27,6 @@
   </tbody>
 </table>
 {% else %}
-<p>No teams yet. Create one.</p>
+<p>{% if can_create_team %}No teams yet. Create one.{% else %}No teams yet.{% endif %}</p>
 {% endif %}
 {% endblock %}
