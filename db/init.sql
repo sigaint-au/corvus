@@ -29,8 +29,22 @@ CREATE TABLE private.users (
   email text UNIQUE NOT NULL,
   password_hash text NOT NULL,
   name text NOT NULL DEFAULT '',
+  is_global_admin boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Server-wide settings (classification banner, etc.)
+CREATE TABLE private.server_settings (
+  key text PRIMARY KEY,
+  value text NOT NULL DEFAULT ''
+);
+
+INSERT INTO private.server_settings (key, value) VALUES
+  ('classification_enabled', 'false'),
+  ('classification_text', 'OFFICIAL'),
+  ('classification_color', '#677381'),
+  ('classification_fg', '#ffffff')
+ON CONFLICT (key) DO NOTHING;
 
 -- Teams
 CREATE TABLE api.teams (
@@ -64,6 +78,7 @@ CREATE TABLE api.project_members (
 );
 
 -- Secrets (value_enc = Fernet ciphertext from Flask)
+-- Soft-delete via deleted_at; live rows unique on (project_id, key)
 CREATE TABLE api.secrets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
@@ -72,8 +87,10 @@ CREATE TABLE api.secrets (
   note text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (project_id, key)
+  deleted_at timestamptz
 );
+CREATE UNIQUE INDEX secrets_project_key_live
+  ON api.secrets (project_id, key) WHERE deleted_at IS NULL;
 
 -- Machine tokens (OpenShift ESO / external secrets)
 CREATE TABLE api.machine_tokens (
@@ -91,12 +108,23 @@ LANGUAGE sql STABLE AS $$
   SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
 $$;
 
+-- Global admin: full access across teams/projects
+CREATE OR REPLACE FUNCTION api.is_global_admin() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT COALESCE(
+    (SELECT is_global_admin FROM private.users WHERE id = api.current_user_id()),
+    false
+  );
+$$;
+
 -- row_security=off: avoid RLS recursion inside policy helper functions
 CREATE OR REPLACE FUNCTION api.is_team_member(tid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
-  SELECT EXISTS (
+  SELECT api.is_global_admin() OR EXISTS (
     SELECT 1 FROM api.team_members
     WHERE team_id = tid AND user_id = api.current_user_id()
   );
@@ -106,15 +134,18 @@ CREATE OR REPLACE FUNCTION api.team_role(tid uuid) RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
-  SELECT role FROM api.team_members
-  WHERE team_id = tid AND user_id = api.current_user_id();
+  SELECT CASE
+    WHEN api.is_global_admin() THEN 'owner'
+    ELSE (SELECT role FROM api.team_members
+          WHERE team_id = tid AND user_id = api.current_user_id())
+  END;
 $$;
 
 CREATE OR REPLACE FUNCTION api.can_read_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
-  SELECT EXISTS (
+  SELECT api.is_global_admin() OR EXISTS (
     SELECT 1 FROM api.projects p
     JOIN api.team_members tm ON tm.team_id = p.team_id
     WHERE p.id = pid AND tm.user_id = api.current_user_id()
@@ -128,7 +159,7 @@ CREATE OR REPLACE FUNCTION api.can_write_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
-  SELECT EXISTS (
+  SELECT api.is_global_admin() OR EXISTS (
     SELECT 1 FROM api.projects p
     JOIN api.team_members tm ON tm.team_id = p.team_id
     WHERE p.id = pid AND tm.user_id = api.current_user_id()
@@ -148,9 +179,9 @@ ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY teams_select ON api.teams FOR SELECT TO authenticated
-  USING (api.is_team_member(id));
+  USING (api.is_global_admin() OR api.is_team_member(id));
 CREATE POLICY teams_insert ON api.teams FOR INSERT TO authenticated
-  WITH CHECK (created_by = api.current_user_id());
+  WITH CHECK (created_by = api.current_user_id() OR api.is_global_admin());
 CREATE POLICY teams_update ON api.teams FOR UPDATE TO authenticated
   USING (api.team_role(id) IN ('owner', 'admin'));
 CREATE POLICY teams_delete ON api.teams FOR DELETE TO authenticated
@@ -213,22 +244,41 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA api TO authenticated, anon;
 CREATE OR REPLACE FUNCTION private.register_user(p_email text, p_password text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 DECLARE uid uuid;
+DECLARE first_user boolean;
 BEGIN
-  INSERT INTO private.users (email, password_hash, name)
-  VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''))
+  SELECT NOT EXISTS (SELECT 1 FROM private.users) INTO first_user;
+  INSERT INTO private.users (email, password_hash, name, is_global_admin)
+  VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), first_user)
   RETURNING id INTO uid;
   RETURN uid;
 END;
 $$;
 
 CREATE OR REPLACE FUNCTION private.verify_user(p_email text, p_password text)
-RETURNS TABLE (id uuid, email text, name text)
+RETURNS TABLE (id uuid, email text, name text, is_global_admin boolean)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 BEGIN
   RETURN QUERY
-  SELECT u.id, u.email, u.name FROM private.users u
+  SELECT u.id, u.email, u.name, u.is_global_admin FROM private.users u
   WHERE u.email = lower(p_email) AND u.password_hash = crypt(p_password, u.password_hash);
 END;
+$$;
+
+CREATE OR REPLACE FUNCTION private.get_setting(p_key text)
+RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = private AS $$
+  SELECT value FROM private.server_settings WHERE key = p_key;
+$$;
+
+CREATE OR REPLACE FUNCTION private.set_setting(p_key text, p_value text)
+RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = private AS $$
+  INSERT INTO private.server_settings (key, value) VALUES (p_key, p_value)
+  ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+$$;
+
+CREATE OR REPLACE FUNCTION private.all_settings()
+RETURNS TABLE (key text, value text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = private AS $$
+  SELECT s.key, s.value FROM private.server_settings s ORDER BY s.key;
 $$;
 
 CREATE OR REPLACE FUNCTION private.create_team(p_user uuid, p_name text)
@@ -243,7 +293,7 @@ $$;
 
 -- Public user directory for membership UI (no password_hash)
 CREATE OR REPLACE VIEW api.user_directory AS
-  SELECT id, email, name, created_at FROM private.users;
+  SELECT id, email, name, is_global_admin, created_at FROM private.users;
 GRANT SELECT ON api.user_directory TO authenticated;
 
 -- Machine/ESO helpers (bypass RLS; token hash is the gate)
@@ -261,7 +311,10 @@ BEGIN
   IF NOT private.auth_machine(p_project, p_hash) THEN
     RETURN NULL;
   END IF;
-  RETURN (SELECT value_enc FROM api.secrets WHERE project_id = p_project AND key = p_key);
+  RETURN (
+    SELECT value_enc FROM api.secrets
+    WHERE project_id = p_project AND key = p_key AND deleted_at IS NULL
+  );
 END;
 $$;
 
@@ -272,7 +325,9 @@ BEGIN
   IF NOT private.auth_machine(p_project, p_hash) THEN
     RETURN;
   END IF;
-  RETURN QUERY SELECT s.key, s.value_enc FROM api.secrets s WHERE s.project_id = p_project;
+  RETURN QUERY
+    SELECT s.key, s.value_enc FROM api.secrets s
+    WHERE s.project_id = p_project AND s.deleted_at IS NULL;
 END;
 $$;
 
@@ -283,6 +338,10 @@ GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
 GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_get_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_list_enc TO authenticator;
+GRANT EXECUTE ON FUNCTION private.get_setting TO authenticator;
+GRANT EXECUTE ON FUNCTION private.set_setting TO authenticator;
+GRANT EXECUTE ON FUNCTION private.all_settings TO authenticator;
+GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon;
 
 -- PostgREST needs table privileges via authenticator switching roles
 GRANT ALL ON ALL TABLES IN SCHEMA api TO authenticator;

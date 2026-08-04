@@ -1,6 +1,46 @@
 {% extends "base.html" %}
-{% block title %}Trash — Secret Store{% endblock %}
+{% block title %}Trash — {{ app_name }}{% endblock %}
 {% block body %}
 <h1>Trash</h1>
-<p class="muted">Deleted items will show up here. Nothing in trash.</p>
+{% if not team %}
+<p class="muted">Select a team to view deleted secrets.</p>
+{% elif items %}
+<p class="muted">Deleted secrets for <strong>{{ team.name }}</strong>. Restore to put them back in the project, or permanently delete.</p>
+<table>
+  <thead>
+    <tr>
+      <th>Key</th>
+      <th>Project</th>
+      <th>Note</th>
+      <th>Deleted</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for item in items %}
+    <tr>
+      <td><code class="k">{{ item.key }}</code></td>
+      <td><a href="{{ url_for('project_detail', project_id=item.project_id) }}">{{ item.project_name }}</a></td>
+      <td class="muted">{{ item.note }}</td>
+      <td class="muted">{{ item.deleted_at }}</td>
+      <td class="row" style="flex:0;">
+        {% if item.can_write %}
+        <form method="post" action="{{ url_for('restore_secret', secret_id=item.id) }}" class="inline">
+          <button type="submit">Restore</button>
+        </form>
+        <form method="post" action="{{ url_for('purge_secret', secret_id=item.id) }}" class="inline"
+              onsubmit="return confirm('Permanently delete {{ item.key }}? This cannot be undone.')">
+          <button type="submit">Delete forever</button>
+        </form>
+        {% else %}
+        <span class="muted">Read only</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Nothing in trash.</p>
+{% endif %}
 {% endblock %}

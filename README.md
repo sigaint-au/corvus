@@ -1,8 +1,10 @@
-# Secret Store
+# Sigaint Secret Server
 
 Minimal Bitwarden-style secrets manager: **teams → projects → secrets**, membership, machine tokens for **OpenShift External Secrets Operator**.
 
 Stack: **Flask + HTMX + oat.ink** UI · **Postgres RLS** · **PostgREST** · **Podman Compose**.
+
+**Roles:** team `owner` / `admin` / `member`, plus **global admin** (server-wide). The first registered user becomes global admin; only global admins can open **Server settings** (classification banner, promote admins).
 
 ## Quick start
 
@@ -44,8 +46,10 @@ Authorization: Bearer ss_…
 | `JWT_SECRET` | shared Flask ↔ PostgREST |
 | `MASTER_KEY` | secret encryption |
 | `SECRET_KEY` | Flask session |
+| `GLOBAL_ADMIN_EMAIL` | optional; promotes that user on startup |
+| `DATABASE_ADMIN_URL` | superuser DSN for schema upgrades (compose default: postgres) |
 
-Change all three in production.
+Change the secrets in production.
 
 ## PostgREST
 

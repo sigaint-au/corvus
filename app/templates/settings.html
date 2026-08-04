@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Server settings — {{ app_name }}{% endblock %}
+{% block body %}
+<h1>Server settings</h1>
+<p class="muted">Global admin only. Changes apply immediately for all users.</p>
+
+<section>
+  <h2>Classification banner</h2>
+  <p class="muted">Shown at the top of every page when enabled.</p>
+  <form method="post" id="banner-form">
+    <input type="hidden" name="action" value="classification">
+    <label>
+      <input type="checkbox" name="classification_enabled" value="1"
+             {% if settings.classification_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Show classification banner
+    </label>
+    <label>Banner text
+      <input type="text" name="classification_text" maxlength="120"
+             value="{{ settings.classification_text }}"
+             placeholder="OFFICIAL — SENSITIVE" required>
+    </label>
+    <div class="row">
+      <div>
+        <label>Background colour</label>
+        <div class="color-field">
+          <input type="color" id="classification_color_picker"
+                 value="{{ settings.classification_color }}"
+                 oninput="document.getElementById('classification_color').value=this.value; updatePreview();">
+          <input type="text" name="classification_color" id="classification_color"
+                 value="{{ settings.classification_color }}" pattern="#[0-9A-Fa-f]{6}"
+                 required oninput="syncColor('classification_color'); updatePreview();">
+        </div>
+      </div>
+      <div>
+        <label>Text colour</label>
+        <div class="color-field">
+          <input type="color" id="classification_fg_picker"
+                 value="{{ settings.classification_fg }}"
+                 oninput="document.getElementById('classification_fg').value=this.value; updatePreview();">
+          <input type="text" name="classification_fg" id="classification_fg"
+                 value="{{ settings.classification_fg }}" pattern="#[0-9A-Fa-f]{6}"
+                 required oninput="syncColor('classification_fg'); updatePreview();">
+        </div>
+      </div>
+    </div>
+    <p class="muted" style="margin:.5rem 0 .25rem;">Presets</p>
+    <div class="swatch-row">
+      <button type="button" class="swatch" style="background:#000000" title="Black"
+              onclick="applyPreset('#000000','#ffffff')"></button>
+      <button type="button" class="swatch" style="background:#677381" title="Slate"
+              onclick="applyPreset('#677381','#ffffff')"></button>
+      <button type="button" class="swatch" style="background:#47817F" title="Teal-grey"
+              onclick="applyPreset('#47817F','#ffffff')"></button>
+      <button type="button" class="swatch" style="background:#c62828" title="Red"
+              onclick="applyPreset('#c62828','#ffffff')"></button>
+      <button type="button" class="swatch" style="background:#ef6c00" title="Orange"
+              onclick="applyPreset('#ef6c00','#000000')"></button>
+      <button type="button" class="swatch" style="background:#f9a825" title="Amber"
+              onclick="applyPreset('#f9a825','#000000')"></button>
+      <button type="button" class="swatch" style="background:#1565c0" title="Blue"
+              onclick="applyPreset('#1565c0','#ffffff')"></button>
+      <button type="button" class="swatch" style="background:#ffffff;border-color:#d4d4d8" title="White"
+              onclick="applyPreset('#ffffff','#000000')"></button>
+    </div>
+    <div class="banner-preview" id="banner-preview"
+         style="background: {{ settings.classification_color }}; color: {{ settings.classification_fg }};">
+      {{ settings.classification_text or 'Preview' }}
+    </div>
+    <p style="margin-top:1rem;"><button type="submit">Save banner</button></p>
+  </form>
+</section>
+
+<section>
+  <h2>Global admins</h2>
+  <p class="muted">Global admins can access every team, project, and server settings.</p>
+  <table>
+    <thead>
+      <tr><th>User</th><th>Role</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for u in users if u.is_global_admin %}
+      <tr>
+        <td>{{ u.name or u.email }} <span class="muted">{{ u.email }}</span></td>
+        <td>Global admin</td>
+        <td>
+          {% if u.id|string != session.user_id %}
+          <form method="post" class="inline" onsubmit="return confirm('Remove global admin?');">
+            <input type="hidden" name="action" value="demote">
+            <input type="hidden" name="user_id" value="{{ u.id }}">
+            <button type="submit">Remove</button>
+          </form>
+          {% else %}
+          <span class="muted">you</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No global admins found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form method="post" class="row" style="margin-top:1rem;">
+    <input type="hidden" name="action" value="promote">
+    <label style="flex:2;">Promote user by email
+      <input type="email" name="email" required placeholder="user@example.com">
+    </label>
+    <button type="submit">Make global admin</button>
+  </form>
+</section>
+
+<script>
+function applyPreset(bg, fg) {
+  document.getElementById('classification_color').value = bg;
+  document.getElementById('classification_color_picker').value = bg;
+  document.getElementById('classification_fg').value = fg;
+  document.getElementById('classification_fg_picker').value = fg;
+  updatePreview();
+}
+function syncColor(id) {
+  var v = document.getElementById(id).value;
+  if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+    document.getElementById(id + '_picker').value = v;
+  }
+}
+function updatePreview() {
+  var el = document.getElementById('banner-preview');
+  var text = document.querySelector('[name=classification_text]').value || 'Preview';
+  el.textContent = text;
+  el.style.background = document.getElementById('classification_color').value;
+  el.style.color = document.getElementById('classification_fg').value;
+}
+document.querySelector('[name=classification_text]').addEventListener('input', updatePreview);
+</script>
+{% endblock %}

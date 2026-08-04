@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ team.name }} — Secret Store{% endblock %}
+{% block title %}{{ team.name }} — {{ app_name }}{% endblock %}
 {% block body %}
 <p class="muted"><a href="{{ url_for('teams') }}">← Teams</a></p>
 <h1>{{ team.name }}</h1>

@@ -37,10 +37,12 @@ services:
         condition: service_started
     environment:
       DATABASE_URL: postgres://authenticator:authenticator@db:5432/secretstore
+      DATABASE_ADMIN_URL: postgres://postgres:postgres@db:5432/secretstore
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-32chars!!}
       MASTER_KEY: ${MASTER_KEY:-dev-master-key-change-in-prod!!}
       SECRET_KEY: ${SECRET_KEY:-flask-session-secret-change-me}
       POSTGREST_URL: http://postgrest:3000
+      GLOBAL_ADMIN_EMAIL: ${GLOBAL_ADMIN_EMAIL:-}
     ports:
       - "8080:8080"
 

@@ -548,6 +548,9 @@ class TestUIShell(unittest.TestCase):
         self.assertIn(b'class="auth"', r.data)
         self.assertIn(b"auth-card", r.data)
         self.assertNotIn(b'class="sidebar"', r.data)
+        self.assertIn(b"Sigaint", r.data)
+        self.assertIn(b"Secret Server", r.data)
+        self.assertIn(b"light-dark(#000000, #f5f5f5)", r.data)  # primary black/white
 
     def test_app_has_sidebar(self):
         c = store.app.test_client()
@@ -555,7 +558,9 @@ class TestUIShell(unittest.TestCase):
             s["user_id"] = str(uuid4())
             s["email"] = "x@y.z"
         conn, _ = _conn(fetchall=[])
-        with patch.object(store, "as_user", return_value=conn):
+        with patch.object(store, "as_user", return_value=conn), patch.object(
+            store, "_is_global_admin", return_value=False
+        ):
             r = c.get("/teams")
         self.assertIn(b'class="app"', r.data)
         self.assertIn(b"sidebar", r.data)
@@ -566,6 +571,21 @@ class TestUIShell(unittest.TestCase):
         self.assertIn(b"Machine accounts", r.data)
         self.assertIn(b"Trash", r.data)
         self.assertIn(b"side-team-select", r.data)
+        self.assertNotIn(b"Server settings", r.data)
+
+    def test_global_admin_sees_settings_nav(self):
+        c = store.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, _ = _conn(fetchall=[])
+        with patch.object(store, "as_user", return_value=conn), patch.object(
+            store, "_is_global_admin", return_value=True
+        ):
+            r = c.get("/teams")
+        self.assertIn(b"Server settings", r.data)
+        self.assertIn(b"Global admin", r.data)
 
 
 class TestNav(unittest.TestCase):
@@ -643,13 +663,176 @@ class TestNav(unittest.TestCase):
         self.assertIn(b"eso", r.data)
         self.assertIn(b"Machine accounts", r.data)
 
-    def test_trash(self):
+    def test_trash_empty_no_team(self):
         conn, _ = _conn(fetchall=[])
         with patch.object(store, "as_user", return_value=conn):
             r = self.client.get("/trash")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Trash", r.data)
+        self.assertIn(b"Select a team", r.data)
+
+    def test_trash_empty_with_team(self):
+        tid = uuid4()
+        conn, _ = _conn(fetchone={"id": tid, "name": "Ops"}, fetchall=[])
+        with self.client.session_transaction() as s:
+            s["team_id"] = str(tid)
+        with patch.object(store, "as_user", return_value=conn):
+            r = self.client.get("/trash")
+        self.assertEqual(r.status_code, 200)
         self.assertIn(b"Nothing in trash", r.data)
+
+    def test_trash_with_items(self):
+        tid = uuid4()
+        pid = uuid4()
+        sid = uuid4()
+        conn, _ = _conn(
+            fetchone={"id": tid, "name": "Ops"},
+            fetchall=[
+                {
+                    "id": sid,
+                    "key": "DB_URL",
+                    "note": "old",
+                    "deleted_at": "2026-01-01",
+                    "project_id": pid,
+                    "project_name": "prod",
+                    "can_write": True,
+                }
+            ],
+        )
+        with self.client.session_transaction() as s:
+            s["team_id"] = str(tid)
+        with patch.object(store, "as_user", return_value=conn):
+            r = self.client.get("/trash")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"DB_URL", r.data)
+        self.assertIn(b"Restore", r.data)
+        self.assertIn(b"Delete forever", r.data)
+
+    def test_restore_secret(self):
+        conn, cur = _conn()
+        cur.rowcount = 1
+        with patch.object(store, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/trash/secrets/{uuid4()}/restore",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/trash", r.location)
+
+    def test_purge_secret(self):
+        conn, _ = _conn()
+        with patch.object(store, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/trash/secrets/{uuid4()}/purge",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/trash", r.location)
+
+
+# ── Global admin / settings ───────────────────────────────────────
+
+
+class TestSettings(unittest.TestCase):
+    def setUp(self):
+        store.app.config["TESTING"] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+
+    def test_settings_requires_login(self):
+        r = self.client.get("/settings")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_settings_requires_global_admin(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "u@ex.com"
+            s["is_global_admin"] = False
+        conn, _ = _conn(fetchall=[])
+        with patch.object(store, "as_user", return_value=conn), patch.object(
+            store, "_is_global_admin", return_value=False
+        ):
+            r = self.client.get("/settings", follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+
+    def test_settings_ok_for_global_admin(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, _ = _conn(
+            fetchall=[
+                {
+                    "id": self.uid,
+                    "email": "admin@ex.com",
+                    "name": "Admin",
+                    "is_global_admin": True,
+                    "created_at": "now",
+                }
+            ]
+        )
+        settings = {
+            "classification_enabled": "true",
+            "classification_text": "SECRET",
+            "classification_color": "#c62828",
+            "classification_fg": "#ffffff",
+        }
+        with patch.object(store, "as_user", return_value=conn), patch.object(
+            store, "connect", return_value=conn
+        ), patch.object(store, "_is_global_admin", return_value=True), patch.object(
+            store, "_get_settings", return_value=settings
+        ), patch.object(
+            store,
+            "_classification",
+            return_value={
+                "enabled": True,
+                "text": "SECRET",
+                "color": "#c62828",
+                "fg": "#ffffff",
+            },
+        ):
+            r = self.client.get("/settings")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Classification banner", r.data)
+        self.assertIn(b"SECRET", r.data)
+        self.assertIn(b"Global admins", r.data)
+
+    def test_save_classification(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        sets = []
+
+        def set_setting(k, v):
+            sets.append((k, v))
+
+        with patch.object(store, "_is_global_admin", return_value=True), patch.object(
+            store, "_set_setting", side_effect=set_setting
+        ), patch.object(store, "as_user", return_value=_conn(fetchall=[])[0]):
+            r = self.client.post(
+                "/settings",
+                data={
+                    "action": "classification",
+                    "classification_enabled": "1",
+                    "classification_text": "OFFICIAL",
+                    "classification_color": "#677381",
+                    "classification_fg": "#ffffff",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/settings", r.location)
+        self.assertEqual(
+            dict(sets),
+            {
+                "classification_enabled": "true",
+                "classification_text": "OFFICIAL",
+                "classification_color": "#677381",
+                "classification_fg": "#ffffff",
+            },
+        )
 
 
 if __name__ == "__main__":
