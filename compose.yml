@@ -1,0 +1,48 @@
+services:
+  db:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: secretstore
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  postgrest:
+    image: docker.io/postgrest/postgrest:v12.2.3
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:authenticator@db:5432/secretstore
+      PGRST_DB_SCHEMAS: api
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-32chars!!}
+      PGRST_DB_EXTRA_SEARCH_PATH: public
+    ports:
+      - "3000:3000"
+
+  app:
+    build: ./app
+    depends_on:
+      db:
+        condition: service_healthy
+      postgrest:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://authenticator:authenticator@db:5432/secretstore
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-32chars!!}
+      MASTER_KEY: ${MASTER_KEY:-dev-master-key-change-in-prod!!}
+      SECRET_KEY: ${SECRET_KEY:-flask-session-secret-change-me}
+      POSTGREST_URL: http://postgrest:3000
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

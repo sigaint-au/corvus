@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ team.name }} — Secret Store{% endblock %}
+{% block body %}
+<p class="muted"><a href="{{ url_for('teams') }}">← Teams</a></p>
+<h1>{{ team.name }}</h1>
+<p class="muted">Your role: <strong>{{ my_role }}</strong></p>
+
+<section>
+  <h2>Projects</h2>
+  <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
+    <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
+    <button type="submit">Create</button>
+  </form>
+  {% if projects %}
+  <table>
+    <thead><tr><th>Name</th><th></th></tr></thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
+        <td class="muted"><code class="k">{{ p.id }}</code></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No projects yet.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Members</h2>
+  {% if my_role in ('owner', 'admin') %}
+  <form method="post" action="{{ url_for('add_team_member', team_id=team.id) }}" class="row">
+    <label>Email <input type="email" name="email" required placeholder="user@example.com"></label>
+    <label>Role
+      <select name="role">
+        <option value="member">member</option>
+        <option value="admin">admin</option>
+        <option value="owner">owner</option>
+      </select>
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  {% endif %}
+  <table>
+    <thead><tr><th>User</th><th>Role</th></tr></thead>
+    <tbody>
+    {% for m in members %}
+      <tr>
+        <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
+        <td>{{ m.role }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

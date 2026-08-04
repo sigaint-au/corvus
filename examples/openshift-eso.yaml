@@ -1,0 +1,49 @@
+# OpenShift External Secrets Operator — webhook provider against this secret store.
+# Replace PROJECT_ID, TOKEN, and the app URL.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secretstore-machine-token
+  labels:
+    external-secrets.io/type: webhook
+stringData:
+  token: "ss_REPLACE_WITH_MACHINE_TOKEN"
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: secretstore-webhook
+spec:
+  provider:
+    webhook:
+      url: "http://secretstore.example.svc:8080/eso/v1/projects/PROJECT_ID/secrets/{{ .remoteRef.key }}"
+      result:
+        jsonPath: "$.value"
+      headers:
+        Authorization: "Bearer {{ .auth.token }}"
+        Content-Type: application/json
+      secrets:
+        - name: auth
+          secretRef:
+            name: secretstore-machine-token
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: app-secrets
+spec:
+  refreshInterval: 1m
+  secretStoreRef:
+    name: secretstore-webhook
+    kind: SecretStore
+  target:
+    name: app-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: DATABASE_URL
+      remoteRef:
+        key: DATABASE_URL
+    - secretKey: API_KEY
+      remoteRef:
+        key: API_KEY

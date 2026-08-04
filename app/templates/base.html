@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Secret Store{% endblock %}</title>
+  <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css">
+  <script src="https://unpkg.com/@knadh/oat/oat.min.js" defer></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --surface: #fff;
+      --ink: #1a1d23;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #2563eb;
+      --side-bg: #111827;
+      --side-ink: #e5e7eb;
+      --side-muted: #9ca3af;
+      --side-active: #1f2937;
+      --ok-bg: #ecfdf5;
+      --ok-bd: #6ee7b7;
+      --err-bg: #fef2f2;
+      --err-bd: #fca5a5;
+      --warn-bg: #fffbeb;
+      --warn-bd: #fcd34d;
+      --radius: 8px;
+      --side-w: 15rem;
+    }
+    * { box-sizing: border-box; }
+    html { height: 100%; }
+    body {
+      margin: 0;
+      min-height: 100%;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    a { color: var(--accent); }
+    a:hover { text-decoration: underline; }
+
+    /* ── App shell ── */
+    body.app {
+      display: grid;
+      grid-template-columns: var(--side-w) 1fr;
+      max-width: none;
+      padding: 0;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: .25rem;
+      background: var(--side-bg);
+      color: var(--side-ink);
+      padding: 1.25rem 0.85rem;
+      min-height: 100vh;
+      position: sticky;
+      top: 0;
+      align-self: start;
+    }
+    .sidebar a.brand {
+      color: #fff;
+      font-weight: 700;
+      font-size: 1.05rem;
+      text-decoration: none;
+      letter-spacing: -.02em;
+      padding: .35rem .65rem .9rem;
+    }
+    .sidebar a.brand:hover { text-decoration: none; opacity: .9; }
+    .sidebar nav {
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+      flex: 1;
+    }
+    .sidebar nav a {
+      color: var(--side-muted);
+      text-decoration: none;
+      padding: .55rem .65rem;
+      border-radius: 6px;
+      font-size: .925rem;
+      font-weight: 500;
+    }
+    .sidebar nav a:hover {
+      background: var(--side-active);
+      color: #fff;
+      text-decoration: none;
+    }
+    .sidebar nav a.active {
+      background: var(--side-active);
+      color: #fff;
+    }
+    .side-team {
+      padding: 0 .35rem .75rem;
+    }
+    .side-team label {
+      display: block;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--side-muted);
+      margin-bottom: .3rem;
+    }
+    .side-team select {
+      width: 100%;
+      background: var(--side-active);
+      color: #fff;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      padding: .45rem .5rem;
+      font-size: .875rem;
+    }
+    .nav-sep {
+      height: 1px;
+      background: #1f2937;
+      margin: .45rem .35rem;
+    }
+    .sidebar-foot {
+      border-top: 1px solid #1f2937;
+      padding: .9rem .65rem 0;
+      margin-top: .5rem;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+    .sidebar-foot .who {
+      font-size: .8rem;
+      color: var(--side-muted);
+      word-break: break-all;
+    }
+    .sidebar-foot button { width: 100%; font-size: .85rem; }
+    .main {
+      padding: 1.5rem 1.75rem 3rem;
+      max-width: 52rem;
+      width: 100%;
+    }
+
+    /* ── Auth (login/register) ── */
+    body.auth {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      max-width: none;
+    }
+    .auth-card {
+      width: 100%;
+      max-width: 22rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .auth-card h1 { margin-top: 0; font-size: 1.35rem; }
+    .auth-brand {
+      display: block;
+      text-align: center;
+      font-weight: 700;
+      color: var(--ink);
+      text-decoration: none;
+      margin-bottom: 1.25rem;
+      font-size: 1.1rem;
+    }
+    .auth-brand:hover { text-decoration: none; }
+
+    /* ── Content ── */
+    h1 { font-size: 1.5rem; letter-spacing: -.02em; margin: 0 0 .5rem; }
+    h2 { font-size: 1.05rem; margin: 0 0 .75rem; }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.15rem;
+      margin: 1.25rem 0;
+    }
+    .muted { color: var(--muted); font-size: .9em; }
+    .flash {
+      padding: .7rem 1rem;
+      margin-bottom: 1rem;
+      border-radius: var(--radius);
+      border: 1px solid transparent;
+      font-size: .925rem;
+    }
+    .flash.error { background: var(--err-bg); border-color: var(--err-bd); }
+    .flash.ok { background: var(--ok-bg); border-color: var(--ok-bd); }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: end; }
+    .row > * { flex: 1; min-width: 8rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .925rem; }
+    th, td { text-align: left; padding: .55rem .4rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+    .token-once {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-bd);
+      border-radius: var(--radius);
+      padding: 1rem;
+      margin: 1rem 0;
+      word-break: break-all;
+    }
+    code.k { font-size: .9em; }
+    form.inline { display: inline; }
+
+    @media (max-width: 720px) {
+      body.app { grid-template-columns: 1fr; }
+      .sidebar {
+        min-height: auto;
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .35rem .5rem;
+        padding: .75rem 1rem;
+      }
+      .sidebar a.brand { padding: .25rem .4rem; flex: 1; }
+      .sidebar nav { flex: none; flex-direction: row; }
+      .sidebar-foot {
+        flex-direction: row;
+        align-items: center;
+        border-top: none;
+        border-left: 1px solid #1f2937;
+        margin: 0;
+        padding: 0 0 0 .75rem;
+        gap: .5rem;
+      }
+      .sidebar-foot button { width: auto; }
+      .main { padding: 1rem 1rem 2.5rem; }
+    }
+  </style>
+</head>
+<body class="{% if session.get('user_id') %}app{% else %}auth{% endif %}">
+  {% if session.get('user_id') %}
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('projects_list') }}">Secret Store</a>
+    <form class="side-team" method="post" action="{{ url_for('select_team') }}">
+      <label for="side-team-select">Team</label>
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <select id="side-team-select" name="team_id" onchange="this.form.submit()">
+        {% if not nav_teams %}
+        <option value="">No teams</option>
+        {% else %}
+        {% for t in nav_teams %}
+        <option value="{{ t.id }}" {% if nav_team_id == t.id|string %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+        {% endif %}
+      </select>
+    </form>
+    <nav>
+      <a href="{{ url_for('projects_list') }}"
+         class="{% if request.endpoint in ('projects_list', 'project_detail', 'create_secret', 'delete_secret', 'reveal_secret', 'create_token', 'delete_token', 'create_project') %}active{% endif %}">Projects</a>
+      <a href="{{ url_for('secrets_list') }}"
+         class="{% if request.endpoint == 'secrets_list' %}active{% endif %}">Secrets</a>
+      <a href="{{ url_for('machines_list') }}"
+         class="{% if request.endpoint == 'machines_list' %}active{% endif %}">Machine accounts</a>
+      <a href="{{ url_for('trash') }}"
+         class="{% if request.endpoint == 'trash' %}active{% endif %}">Trash</a>
+      <div class="nav-sep"></div>
+      <a href="{{ url_for('teams') }}"
+         class="{% if request.endpoint in ('teams', 'create_team', 'team_detail', 'add_team_member') %}active{% endif %}">Teams</a>
+    </nav>
+    <div class="sidebar-foot">
+      <span class="who">{{ session.email }}</span>
+      <form method="post" action="{{ url_for('logout') }}" class="inline">
+        <button type="submit">Log out</button>
+      </form>
+    </div>
+  </aside>
+  <div class="main">
+  {% else %}
+  <div class="auth-card">
+    <a class="auth-brand" href="{{ url_for('login') }}">Secret Store</a>
+  {% endif %}
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="flash {{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    {% block body %}{% endblock %}
+  </div>
+</body>
+</html>

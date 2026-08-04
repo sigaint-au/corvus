@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — Secret Store{% endblock %}
+{% block body %}
+<p class="muted">
+  <a href="{{ url_for('teams') }}">Teams</a> /
+  <a href="{{ url_for('team_detail', team_id=project.team_id) }}">{{ project.team_name }}</a>
+</p>
+<h1>{{ project.name }}</h1>
+<p class="muted">Project ID: <code class="k">{{ project.id }}</code> — use this in OpenShift ExternalSecret paths.</p>
+
+{% if new_token %}
+<div class="token-once">
+  <strong>Machine token (copy now — shown once)</strong>
+  <pre>{{ new_token }}</pre>
+</div>
+{% endif %}
+
+<section>
+  <h2>Secrets</h2>
+  {% if can_write %}
+  <form method="post"
+        action="{{ url_for('create_secret', project_id=project.id) }}"
+        hx-post="{{ url_for('create_secret', project_id=project.id) }}"
+        hx-target="#secrets-list"
+        hx-swap="innerHTML"
+        class="row">
+    <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
+    <label>Value <input type="password" name="value" required placeholder="••••••••"></label>
+    <label>Note <input type="text" name="note" placeholder="optional"></label>
+    <button type="submit">Save</button>
+  </form>
+  {% endif %}
+  <div id="secrets-list">
+    {% include "partials/secrets.html" %}
+  </div>
+</section>
+
+<section>
+  <h2>Machine tokens</h2>
+  <p class="muted">For OpenShift External Secrets Operator (webhook provider). Scoped to this project.</p>
+  {% if can_write %}
+  <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row">
+    <label>Name <input type="text" name="name" placeholder="openshift-prod" value="openshift"></label>
+    <button type="submit">Create token</button>
+  </form>
+  {% endif %}
+  {% if tokens %}
+  <table>
+    <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for t in tokens %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td><code>{{ t.token_prefix }}…</code></td>
+        <td class="muted">{{ t.created_at }}</td>
+        <td>
+          {% if can_write %}
+          <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
+                onsubmit="return confirm('Revoke token?')">
+            <button type="submit">Revoke</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No machine tokens.</p>
+  {% endif %}
+</section>
+{% endblock %}

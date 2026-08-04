@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Teams — Secret Store{% endblock %}
+{% block body %}
+<h1>Teams</h1>
+<p class="muted">Teams own projects. Access is by team membership (Bitwarden-style).</p>
+
+<form method="post" action="{{ url_for('create_team') }}" class="row">
+  <label>New team <input type="text" name="name" required placeholder="e.g. Platform"></label>
+  <button type="submit">Create</button>
+</form>
+
+{% if teams %}
+<table>
+  <thead><tr><th>Name</th><th>Role</th><th>Projects</th></tr></thead>
+  <tbody>
+  {% for t in teams %}
+    <tr>
+      <td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td>
+      <td>{{ t.role }}</td>
+      <td>{{ t.project_count }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No teams yet. Create one.</p>
+{% endif %}
+{% endblock %}
