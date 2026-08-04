@@ -23,14 +23,14 @@
       <td><a href="{{ url_for('project_detail', project_id=item.project_id) }}">{{ item.project_name }}</a></td>
       <td class="muted">{{ item.note }}</td>
       <td class="muted">{{ item.deleted_at }}</td>
-      <td class="row" style="flex:0;">
+      <td class="acts">
         {% if item.can_write %}
         <form method="post" action="{{ url_for('restore_secret', secret_id=item.id) }}" class="inline">
-          <button type="submit">Restore</button>
+          <button type="submit" class="link">Restore</button>
         </form>
         <form method="post" action="{{ url_for('purge_secret', secret_id=item.id) }}" class="inline"
               onsubmit="return confirm('Permanently delete {{ item.key }}? This cannot be undone.')">
-          <button type="submit">Delete forever</button>
+          <button type="submit" class="link danger">Delete forever</button>
         </form>
         {% else %}
         <span class="muted">Read only</span>

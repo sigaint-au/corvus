@@ -307,6 +307,28 @@
     }
     code.k { font-size: .9em; }
     form.inline { display: inline; }
+    .acts { white-space: nowrap; }
+    .acts a,
+    .acts button.link {
+      font-size: .875rem;
+      margin-right: .75rem;
+      text-decoration: none;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: inherit;
+      color: inherit;
+      cursor: pointer;
+    }
+    .acts a:last-child,
+    .acts form:last-child button.link { margin-right: 0; }
+    .acts a:hover,
+    .acts button.link:hover { text-decoration: underline; }
+    .acts form.inline { margin-right: .75rem; }
+    .acts form.inline:last-child { margin-right: 0; }
+    .acts .danger,
+    a.danger,
+    button.link.danger { color: var(--danger); }
     .swatch-row { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
     .swatch {
       width: 1.75rem; height: 1.75rem; border-radius: 4px;
