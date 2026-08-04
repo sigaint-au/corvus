@@ -6,7 +6,7 @@
   <a href="{{ url_for('team_detail', team_id=project.team_id) }}">{{ project.team_name }}</a>
 </p>
 <h1>{{ project.name }}</h1>
-<p class="muted">Project ID: <code class="k">{{ project.id }}</code> — use this in OpenShift ExternalSecret paths.</p>
+<p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
 
 {% if new_token %}
 <div class="token-once">
@@ -57,7 +57,7 @@
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
     <label>Value <input type="password" name="value" required placeholder="••••••••"></label>
     <label>Note <input type="text" name="note" placeholder="optional"></label>
-    <button type="submit" class="btn-sm">Save</button>
+    <button type="submit">Save</button>
   </form>
   {% endif %}
   <div id="secrets-list">
@@ -124,7 +124,7 @@
   {% if can_write %}
   <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row">
     <label>Name <input type="text" name="name" placeholder="openshift-prod" value="openshift"></label>
-    <button type="submit" class="btn-sm">Create token</button>
+    <button type="submit">Create token</button>
   </form>
   {% endif %}
   {% if tokens %}
