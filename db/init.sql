@@ -82,7 +82,7 @@ CREATE TABLE api.teams (
 CREATE TABLE api.team_members (
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
-  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'read-only')),
   source text NOT NULL DEFAULT 'manual'
     CHECK (source IN ('manual', 'ldap')),
   PRIMARY KEY (team_id, user_id)
@@ -93,7 +93,7 @@ CREATE TABLE api.team_ldap_maps (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   ldap_group text NOT NULL,
-  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'read-only')),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, ldap_group)
 );
@@ -216,6 +216,7 @@ SET row_security = off AS $$
     SELECT 1 FROM api.projects p
     JOIN api.team_members tm ON tm.team_id = p.team_id
     WHERE p.id = pid AND tm.user_id = api.current_user_id()
+      AND tm.role IN ('owner', 'admin', 'member')
   ) OR EXISTS (
     SELECT 1 FROM api.project_members
     WHERE project_id = pid AND user_id = api.current_user_id()
@@ -270,9 +271,9 @@ CREATE POLICY projects_select ON api.projects FOR SELECT TO authenticated
     )
   );
 CREATE POLICY projects_insert ON api.projects FOR INSERT TO authenticated
-  WITH CHECK (api.is_team_member(team_id));
+  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin', 'member'));
 CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
-  USING (api.is_team_member(team_id));
+  USING (api.team_role(team_id) IN ('owner', 'admin', 'member'));
 CREATE POLICY projects_delete ON api.projects FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('owner', 'admin'));
 

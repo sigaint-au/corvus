@@ -20,10 +20,12 @@
       {% endif %}
     </form>
   </div>
+  {% if my_role in ('owner', 'admin', 'member') %}
   <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
     <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
     <button type="submit">Create</button>
   </form>
+  {% endif %}
   {% if projects %}
   <table>
     <thead><tr><th>Name</th><th></th></tr></thead>
@@ -49,6 +51,7 @@
     <label>Role
       <select name="role">
         <option value="member">member</option>
+        <option value="read-only">read-only</option>
         <option value="admin">admin</option>
         <option value="owner">owner</option>
       </select>
@@ -109,6 +112,7 @@
     <label>Role
       <select name="role">
         <option value="member">member</option>
+        <option value="read-only">read-only</option>
         <option value="admin">admin</option>
         <option value="owner">owner</option>
       </select>

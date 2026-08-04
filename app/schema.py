@@ -100,12 +100,42 @@ def ensure_schema():
             SELECT 1 FROM api.projects p
             JOIN api.team_members tm ON tm.team_id = p.team_id
             WHERE p.id = pid AND tm.user_id = api.current_user_id()
+              AND tm.role IN ('owner', 'admin', 'member')
           ) OR EXISTS (
             SELECT 1 FROM api.project_members
             WHERE project_id = pid AND user_id = api.current_user_id()
               AND role IN ('admin', 'write')
           );
         $$
+        """,
+        # team role: read-only (view secrets; no mutate)
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.team_members DROP CONSTRAINT IF EXISTS team_members_role_check;
+          ALTER TABLE api.team_members
+            ADD CONSTRAINT team_members_role_check
+            CHECK (role IN ('owner', 'admin', 'member', 'read-only'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.team_ldap_maps DROP CONSTRAINT IF EXISTS team_ldap_maps_role_check;
+          ALTER TABLE api.team_ldap_maps
+            ADD CONSTRAINT team_ldap_maps_role_check
+            CHECK (role IN ('owner', 'admin', 'member', 'read-only'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        "DROP POLICY IF EXISTS projects_insert ON api.projects",
+        """
+        CREATE POLICY projects_insert ON api.projects FOR INSERT TO authenticated
+          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin', 'member'))
+        """,
+        "DROP POLICY IF EXISTS projects_update ON api.projects",
+        """
+        CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin', 'member'))
         """,
         """
         ALTER TABLE private.users
@@ -187,7 +217,7 @@ def ensure_schema():
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
           ldap_group text NOT NULL,
-          role text NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+          role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'read-only')),
           created_at timestamptz NOT NULL DEFAULT now(),
           UNIQUE (team_id, ldap_group)
         )

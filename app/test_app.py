@@ -355,6 +355,23 @@ class TestTeams(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 302)
 
+    def test_team_roles_include_read_only(self):
+        self.assertIn("read-only", config.TEAM_ROLES)
+        self.assertLess(config.ROLE_RANK["read-only"], config.ROLE_RANK["member"])
+
+    def test_add_member_read_only_role(self):
+        tid, uid = uuid4(), uuid4()
+        conn, cur = _conn(fetchone={"id": uid})
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/teams/{tid}/members",
+                data={"email": "ro@ex.com", "role": "read-only"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        sql = " ".join(str(c) for c in cur.execute.call_args_list)
+        self.assertIn("read-only", sql)
+
     def test_create_project(self):
         tid, pid = uuid4(), uuid4()
         conn, _ = _conn(fetchone={"id": pid})

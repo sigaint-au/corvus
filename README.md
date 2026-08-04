@@ -6,7 +6,7 @@ Stack: **Flask + HTMX + oat.ink** UI · **Postgres RLS** · **PostgREST** · **P
 
 App layout (`app/`): thin `app.py` entrypoint; modules `config`, `db`, `crypto`, `authz`, `settings_svc`, `ldap_auth`, `schema`, `nav`; HTTP handlers under `routes/`.
 
-**Roles:** team `owner` / `admin` / `member`, plus **global admin** (server-wide). The first registered user becomes global admin; only global admins can open **Server settings** (registration toggle, classification banner, LDAP, promote admins).
+**Roles:** team `owner` / `admin` / `member` / `read-only`, plus **global admin** (server-wide). `read-only` can view secrets but not change them. The first registered user becomes global admin; only global admins can open **Server settings** (registration toggle, classification banner, LDAP, promote admins).
 
 **LDAP (optional):** enable under **Server settings**. Local accounts still work. On each LDAP login the app reads directory groups and applies:
 
@@ -33,7 +33,7 @@ See `examples/openshift-eso.yaml`.
 
 | Concept | Notes |
 |--------|--------|
-| Team | Org unit; members have `owner` / `admin` / `member` |
+| Team | Org unit; members have `owner` / `admin` / `member` / `read-only` |
 | Project | Secret collection (primary access surface) |
 | Secret | Key/value; value Fernet-encrypted at rest (`MASTER_KEY`) |
 | Machine token | Project-scoped bearer for ESO / CI |

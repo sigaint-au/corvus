@@ -36,8 +36,8 @@ DEFAULT_SETTINGS = {
     "ldap_group_filter": "(member={dn})",
     "ldap_use_memberof": "true",
 }
-TEAM_ROLES = ("owner", "admin", "member")
-ROLE_RANK = {"owner": 3, "admin": 2, "member": 1}
+TEAM_ROLES = ("owner", "admin", "member", "read-only")
+ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "read-only": 1}
 LDAP_SETTING_KEYS = (
     "ldap_enabled",
     "ldap_url",
