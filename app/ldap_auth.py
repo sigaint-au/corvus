@@ -76,6 +76,36 @@ def ldap_escape(value: str) -> str:
     return "".join(out)
 
 
+def _ldap_bind(server, user=None, password=None, start_tls=False, receive_timeout=10):
+    """
+    open → optional start_tls (fail closed) → bind.
+    Never auto_bind: credentials must not go over cleartext when StartTLS is required.
+    """
+    from ldap3 import Connection
+
+    kwargs = {"receive_timeout": receive_timeout, "auto_bind": False}
+    if user is not None:
+        kwargs["user"] = user
+        kwargs["password"] = password
+    conn = Connection(server, **kwargs)
+    if not conn.open():
+        raise RuntimeError("LDAP open failed")
+    if start_tls:
+        if not conn.start_tls():
+            try:
+                conn.unbind()
+            except Exception:
+                pass
+            raise RuntimeError("LDAP StartTLS failed")
+    if not conn.bind():
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+        raise RuntimeError("LDAP bind failed")
+    return conn
+
+
 def ldap_authenticate(login: str, password: str) -> dict | None:
     """
     Bind as user against LDAP. Returns {email, name, groups} or None.
@@ -90,7 +120,7 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
         return None
 
     try:
-        from ldap3 import ALL, SUBTREE, Connection, Server
+        from ldap3 import ALL, SUBTREE, Server
     except ImportError:
         log.error("ldap3 not installed")
         return None
@@ -103,17 +133,16 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
     use_memberof = truthy(cfg.get("ldap_use_memberof"))
     group_base = (cfg.get("ldap_group_base") or "").strip()
     group_filter_tmpl = (cfg.get("ldap_group_filter") or "(member={dn})").strip()
+    want_tls = truthy(cfg.get("ldap_start_tls"))
 
     try:
         server = Server(url, get_info=ALL, connect_timeout=8)
         bind_dn = (cfg.get("ldap_bind_dn") or "").strip()
         bind_pw = ldap_password_plain(cfg)
         if bind_dn:
-            svc = Connection(server, user=bind_dn, password=bind_pw, auto_bind=True, receive_timeout=10)
+            svc = _ldap_bind(server, user=bind_dn, password=bind_pw, start_tls=want_tls)
         else:
-            svc = Connection(server, auto_bind=True, receive_timeout=10)
-        if truthy(cfg.get("ldap_start_tls")):
-            svc.start_tls()
+            svc = _ldap_bind(server, start_tls=want_tls)
 
         if not svc.search(
             user_base,
@@ -133,12 +162,8 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
             groups = [str(g) for g in (entry.entry_attributes_as_dict.get("memberOf") or [])]
         svc.unbind()
 
-        uc = Connection(server, user=user_dn, password=password, auto_bind=True, receive_timeout=10)
-        if truthy(cfg.get("ldap_start_tls")):
-            try:
-                uc.start_tls()
-            except Exception:
-                pass
+        # Prove user credentials (same open → StartTLS → bind order)
+        uc = _ldap_bind(server, user=user_dn, password=password, start_tls=want_tls)
         uc.unbind()
 
         if (not groups) and group_base and group_filter_tmpl:
@@ -146,9 +171,9 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
                 "{login}", ldap_escape(login)
             )
             if bind_dn:
-                gc = Connection(server, user=bind_dn, password=bind_pw, auto_bind=True, receive_timeout=10)
+                gc = _ldap_bind(server, user=bind_dn, password=bind_pw, start_tls=want_tls)
             else:
-                gc = Connection(server, auto_bind=True, receive_timeout=10)
+                gc = _ldap_bind(server, start_tls=want_tls)
             if gc.search(group_base, gfilter, search_scope=SUBTREE, attributes=["cn", "distinguishedName"]):
                 for ge in gc.entries:
                     groups.append(str(ge.entry_dn))
@@ -184,7 +209,7 @@ def sync_ldap_user(email: str, name: str, groups: list) -> dict:
             )
         cur.execute(
             "SELECT id, email, name, is_global_admin FROM private.users WHERE id = %s",
-            (str(uid),),
+            (str(uid)),
         )
         user = cur.fetchone()
 

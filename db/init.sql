@@ -142,7 +142,7 @@ CREATE TRIGGER secrets_touch_updated_at
   BEFORE UPDATE ON api.secrets
   FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at();
 
--- Secret audit log (create / update / reveal / delete / restore / purge)
+-- Secret audit log (create / update / reveal / delete / restore / purge / machine_upsert)
 CREATE TABLE api.secret_audit (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
@@ -151,7 +151,7 @@ CREATE TABLE api.secret_audit (
   user_id uuid REFERENCES private.users(id) ON DELETE SET NULL,
   actor_email text NOT NULL DEFAULT '',
   action text NOT NULL CHECK (action IN (
-    'created', 'updated', 'revealed', 'deleted', 'restored', 'purged'
+    'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
   )),
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -165,7 +165,7 @@ CREATE TABLE api.machine_tokens (
   project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
   name text NOT NULL,
   token_hash text NOT NULL,
-  token_prefix text NOT NULL,
+  token_prefix text NOT NULL UNIQUE,
   role text NOT NULL DEFAULT 'read-only'
     CHECK (role IN ('read-only', 'write')),
   expires_at timestamptz,
@@ -321,8 +321,7 @@ CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
 
 CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
   USING (api.can_read_project(project_id));
-CREATE POLICY secret_audit_insert ON api.secret_audit FOR INSERT TO authenticated
-  WITH CHECK (api.can_read_project(project_id));
+-- INSERT only via private.audit_secret (SECURITY DEFINER); no direct client insert
 
 -- read-only may list tokens (name/prefix/expiry); only writers create/revoke
 CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated
@@ -336,16 +335,17 @@ CREATE POLICY mt_delete ON api.machine_tokens FOR DELETE TO authenticated
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA api TO authenticated;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO authenticated;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA api TO authenticated, anon;
+-- Audit rows must not be forgeable via PostgREST / authenticated INSERT
+REVOKE INSERT ON api.secret_audit FROM authenticated;
 
 -- Auth helpers (SECURITY DEFINER; Flask/anon only)
+-- Never auto-promote first registrant; GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL does that in app.
 CREATE OR REPLACE FUNCTION private.register_user(p_email text, p_password text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 DECLARE uid uuid;
-DECLARE first_user boolean;
 BEGIN
-  SELECT NOT EXISTS (SELECT 1 FROM private.users) INTO first_user;
   INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
-  VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), first_user, 'local')
+  VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), false, 'local')
   RETURNING id INTO uid;
   RETURN uid;
 END;
@@ -363,17 +363,15 @@ BEGIN
 END;
 $$;
 
--- Provision / refresh LDAP user (no password stored)
+-- Provision / refresh LDAP user (no password stored; never auto-promote admin)
 CREATE OR REPLACE FUNCTION private.upsert_ldap_user(p_email text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 DECLARE uid uuid;
-DECLARE first_user boolean;
 BEGIN
   SELECT id INTO uid FROM private.users WHERE email = lower(p_email);
   IF uid IS NULL THEN
-    SELECT NOT EXISTS (SELECT 1 FROM private.users) INTO first_user;
     INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
-    VALUES (lower(p_email), NULL, COALESCE(p_name, ''), first_user, 'ldap')
+    VALUES (lower(p_email), NULL, COALESCE(p_name, ''), false, 'ldap')
     RETURNING id INTO uid;
   ELSE
     UPDATE private.users
@@ -395,10 +393,69 @@ BEGIN
 END;
 $$;
 
--- Public user directory for membership UI (no password_hash)
+-- User directory: not granted to authenticated (prevents full-user enumeration via PostgREST)
 CREATE OR REPLACE VIEW api.user_directory AS
   SELECT id, email, name, is_global_admin, created_at FROM private.users;
-GRANT SELECT ON api.user_directory TO authenticated;
+-- Global admin / app admin path only
+GRANT SELECT ON api.user_directory TO authenticator;
+
+-- Lookup by email for add-member (does not list all users)
+CREATE OR REPLACE FUNCTION private.lookup_user(p_email text)
+RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = private
+SET row_security = off AS $$
+  SELECT id FROM private.users WHERE email = lower(p_email) LIMIT 1;
+$$;
+
+-- Team member listing with emails (caller must be a team member / global admin)
+CREATE OR REPLACE FUNCTION private.team_member_rows(p_team uuid)
+RETURNS TABLE (role text, source text, user_id uuid, email text, name text)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT tm.role, tm.source, u.id, u.email, u.name
+  FROM api.team_members tm
+  JOIN private.users u ON u.id = tm.user_id
+  WHERE tm.team_id = p_team
+    AND api.is_team_member(p_team)
+  ORDER BY tm.role, u.email;
+$$;
+
+-- Audit insert only via this function (not direct table INSERT for authenticated)
+CREATE OR REPLACE FUNCTION private.audit_secret(
+  p_project uuid,
+  p_secret_id uuid,
+  p_secret_key text,
+  p_action text,
+  p_user_id uuid DEFAULT NULL,
+  p_actor_email text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private AS $$
+DECLARE
+  uid uuid;
+  email text;
+BEGIN
+  IF p_action NOT IN (
+    'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
+  ) THEN
+    RAISE EXCEPTION 'invalid audit action: %', p_action;
+  END IF;
+  uid := p_user_id;
+  IF uid IS NULL THEN
+    BEGIN
+      uid := NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
+    EXCEPTION WHEN others THEN
+      uid := NULL;
+    END;
+  END IF;
+  email := COALESCE(
+    NULLIF(p_actor_email, ''),
+    (SELECT u.email FROM private.users u WHERE u.id = uid),
+    ''
+  );
+  INSERT INTO api.secret_audit (project_id, secret_id, secret_key, user_id, actor_email, action)
+  VALUES (p_project, p_secret_id, COALESCE(p_secret_key, ''), uid, email, p_action);
+END;
+$$;
 
 -- Machine/ESO helpers (bypass RLS; token hash is the gate)
 CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
@@ -472,6 +529,9 @@ GRANT EXECUTE ON FUNCTION private.register_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
+GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated;
+GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated;
+GRANT EXECUTE ON FUNCTION private.audit_secret TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_role TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_get_enc TO authenticator;

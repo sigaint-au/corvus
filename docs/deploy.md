@@ -14,6 +14,7 @@ podman-compose up -d --build
 Local play with baked-in secrets only:
 
 ```bash
+export GLOBAL_ADMIN_EMAIL=you@example.com
 ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
 ```
 
@@ -31,17 +32,21 @@ defaults.
 | `DATABASE_URL` | App role (authenticator); RLS applies |
 | `DATABASE_ADMIN_URL` | Superuser DSN for schema upgrades (**required**) |
 | `POSTGREST_URL` | PostgREST base URL (default `http://localhost:3000`) |
-| `GLOBAL_ADMIN_EMAIL` | Optional; promote this user on startup |
+| `GLOBAL_ADMIN_EMAIL` | Promote this email to global admin (startup + login/register) |
+| `BOOTSTRAP_ADMIN_EMAIL` | Same as above if `GLOBAL_ADMIN_EMAIL` unset |
 | `ALLOW_INSECURE_DEFAULTS` | `0` by default; `1` only for local defaults |
-| `COOKIE_SECURE` | `1` to set Secure on session cookie (HTTPS) |
+| `COOKIE_SECURE` | `1` Secure session cookie + HSTS |
 
-## First-run
+## First-run / bootstrap
 
-1. Register at `/register` (or enable LDAP under **Server settings** after first admin).
-2. First user becomes global admin.
-3. Create team → project → secrets.
-4. Create a **machine account** (prefer `read-only` for ESO).
-5. Wire OpenShift ESO — see [openshift-eso.yaml](./openshift-eso.yaml).
+Registration **does not** auto-promote the first user (avoids a race/takeover).
+
+1. Set `GLOBAL_ADMIN_EMAIL=you@example.com` (or `BOOTSTRAP_ADMIN_EMAIL`).
+2. Register or sign in as that email → promoted to global admin.
+3. If neither env is set and no admin exists, registration is disabled until you set one.
+4. Create team → project → secrets.
+5. Create a **machine account** (prefer `read-only` for ESO).
+6. Wire OpenShift ESO — see [openshift-eso.yaml](./openshift-eso.yaml).
 
 ## Machine accounts (ESO / CI)
 

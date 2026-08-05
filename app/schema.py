@@ -1,7 +1,7 @@
 """Idempotent schema upgrades for existing database volumes."""
 import logging
 
-from config import DATABASE_ADMIN_URL, GLOBAL_ADMIN_EMAIL
+from config import DATABASE_ADMIN_URL, bootstrap_admin_email
 import db
 
 log = logging.getLogger(__name__)
@@ -162,11 +162,9 @@ def ensure_schema():
         CREATE OR REPLACE FUNCTION private.register_user(p_email text, p_password text, p_name text)
         RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
         DECLARE uid uuid;
-        DECLARE first_user boolean;
         BEGIN
-          SELECT NOT EXISTS (SELECT 1 FROM private.users) INTO first_user;
           INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
-          VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), first_user, 'local')
+          VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), false, 'local')
           RETURNING id INTO uid;
           RETURN uid;
         END;
@@ -191,13 +189,11 @@ def ensure_schema():
         CREATE OR REPLACE FUNCTION private.upsert_ldap_user(p_email text, p_name text)
         RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
         DECLARE uid uuid;
-        DECLARE first_user boolean;
         BEGIN
           SELECT id INTO uid FROM private.users WHERE email = lower(p_email);
           IF uid IS NULL THEN
-            SELECT NOT EXISTS (SELECT 1 FROM private.users) INTO first_user;
             INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
-            VALUES (lower(p_email), NULL, COALESCE(p_name, ''), first_user, 'ldap')
+            VALUES (lower(p_email), NULL, COALESCE(p_name, ''), false, 'ldap')
             RETURNING id INTO uid;
           ELSE
             UPDATE private.users
@@ -264,9 +260,36 @@ def ensure_schema():
         CREATE VIEW api.user_directory AS
           SELECT id, email, name, is_global_admin, created_at FROM private.users
         """,
-        "GRANT SELECT ON api.user_directory TO authenticated",
+        # No SELECT for authenticated — prevents user enumeration via PostgREST
+        "REVOKE ALL ON api.user_directory FROM authenticated",
+        "GRANT SELECT ON api.user_directory TO authenticator",
         "GRANT ALL ON api.user_directory TO authenticator",
         "GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon",
+        """
+        CREATE OR REPLACE FUNCTION private.lookup_user(p_email text)
+        RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = private
+        SET row_security = off AS $$
+          SELECT id FROM private.users WHERE email = lower(p_email) LIMIT 1;
+        $$
+        """,
+        "GRANT USAGE ON SCHEMA private TO authenticator, authenticated",
+        "GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated",
+        """
+        CREATE OR REPLACE FUNCTION private.team_member_rows(p_team uuid)
+        RETURNS TABLE (role text, source text, user_id uuid, email text, name text)
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT tm.role, tm.source, u.id, u.email, u.name
+          FROM api.team_members tm
+          JOIN private.users u ON u.id = tm.user_id
+          WHERE tm.team_id = p_team
+            AND api.is_team_member(p_team)
+          ORDER BY tm.role, u.email;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated",
         # teams SELECT for global admin (recreate policy safely)
         "DROP POLICY IF EXISTS teams_select ON api.teams",
         """
@@ -337,11 +360,20 @@ def ensure_schema():
           secret_key text NOT NULL DEFAULT '',
           user_id uuid REFERENCES private.users(id) ON DELETE SET NULL,
           actor_email text NOT NULL DEFAULT '',
-          action text NOT NULL CHECK (action IN (
-            'created', 'updated', 'revealed', 'deleted', 'restored', 'purged'
-          )),
+          action text NOT NULL DEFAULT 'created',
           created_at timestamptz NOT NULL DEFAULT now()
         )
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.secret_audit DROP CONSTRAINT IF EXISTS secret_audit_action_check;
+          ALTER TABLE api.secret_audit
+            ADD CONSTRAINT secret_audit_action_check
+            CHECK (action IN (
+              'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
+            ));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
         """,
         """
         CREATE INDEX IF NOT EXISTS secret_audit_project_created_idx
@@ -354,12 +386,47 @@ def ensure_schema():
           USING (api.can_read_project(project_id))
         """,
         "DROP POLICY IF EXISTS secret_audit_insert ON api.secret_audit",
-        """
-        CREATE POLICY secret_audit_insert ON api.secret_audit FOR INSERT TO authenticated
-          WITH CHECK (api.can_read_project(project_id))
-        """,
-        "GRANT SELECT, INSERT ON api.secret_audit TO authenticated",
+        "REVOKE INSERT ON api.secret_audit FROM authenticated",
+        "GRANT SELECT ON api.secret_audit TO authenticated",
         "GRANT ALL ON api.secret_audit TO authenticator",
+        """
+        CREATE OR REPLACE FUNCTION private.audit_secret(
+          p_project uuid,
+          p_secret_id uuid,
+          p_secret_key text,
+          p_action text,
+          p_user_id uuid DEFAULT NULL,
+          p_actor_email text DEFAULT NULL
+        ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private AS $$
+        DECLARE
+          uid uuid;
+          email text;
+        BEGIN
+          IF p_action NOT IN (
+            'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
+          ) THEN
+            RAISE EXCEPTION 'invalid audit action: %', p_action;
+          END IF;
+          uid := p_user_id;
+          IF uid IS NULL THEN
+            BEGIN
+              uid := NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
+            EXCEPTION WHEN others THEN
+              uid := NULL;
+            END;
+          END IF;
+          email := COALESCE(
+            NULLIF(p_actor_email, ''),
+            (SELECT u.email FROM private.users u WHERE u.id = uid),
+            ''
+          );
+          INSERT INTO api.secret_audit
+            (project_id, secret_id, secret_key, user_id, actor_email, action)
+          VALUES (p_project, p_secret_id, COALESCE(p_secret_key, ''), uid, email, p_action);
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.audit_secret TO authenticator, authenticated",
         # login lockout + token expiry
         """
         CREATE TABLE IF NOT EXISTS private.login_failures (
@@ -379,6 +446,13 @@ def ensure_schema():
         """
         ALTER TABLE api.machine_tokens
           ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'read-only'
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.machine_tokens
+            ADD CONSTRAINT machine_tokens_token_prefix_key UNIQUE (token_prefix);
+        EXCEPTION WHEN duplicate_table OR duplicate_object OR unique_violation THEN NULL;
+        END $$
         """,
         """
         DO $$ BEGIN
@@ -478,18 +552,13 @@ def ensure_schema():
             try:
                 for sql in stmts:
                     cur.execute(sql)
-                # Bootstrap: first user, or GLOBAL_ADMIN_EMAIL
-                cur.execute(
-                    """
-                    UPDATE private.users SET is_global_admin = true
-                    WHERE id = (SELECT id FROM private.users ORDER BY created_at ASC LIMIT 1)
-                      AND NOT EXISTS (SELECT 1 FROM private.users WHERE is_global_admin)
-                    """
-                )
-                if GLOBAL_ADMIN_EMAIL:
+                # Bootstrap: only explicit GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL
+                # (never auto-promote the first registrant — race / takeover risk)
+                boot = bootstrap_admin_email()
+                if boot:
                     cur.execute(
                         "UPDATE private.users SET is_global_admin = true WHERE email = %s",
-                        (GLOBAL_ADMIN_EMAIL,),
+                        (boot,),
                     )
             finally:
                 cur.execute(

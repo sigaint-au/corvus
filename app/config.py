@@ -15,6 +15,13 @@ JWT_SECRET = os.environ.get("JWT_SECRET", _DEFAULT_JWT_SECRET)
 MASTER_KEY = os.environ.get("MASTER_KEY", _DEFAULT_MASTER_KEY)
 POSTGREST_URL = os.environ.get("POSTGREST_URL", "http://localhost:3000")
 GLOBAL_ADMIN_EMAIL = os.environ.get("GLOBAL_ADMIN_EMAIL", "").strip().lower()
+# Alias: promote this email once no global admin exists yet (same as GLOBAL_ADMIN_EMAIL).
+BOOTSTRAP_ADMIN_EMAIL = os.environ.get("BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()
+
+
+def bootstrap_admin_email() -> str:
+    """Email that may be promoted to global admin (GLOBAL_ADMIN_EMAIL or BOOTSTRAP_ADMIN_EMAIL)."""
+    return GLOBAL_ADMIN_EMAIL or BOOTSTRAP_ADMIN_EMAIL
 
 
 def refuse_insecure_defaults():

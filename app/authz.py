@@ -23,9 +23,12 @@ def global_admin_required(f):
     def wrapped(*a, **kw):
         if not session.get("user_id"):
             return redirect(url_for("login"))
-        if not session.get("is_global_admin"):
+        # Always verify against DB (session flag alone can be stale after demotion)
+        if not is_global_admin(session["user_id"]):
+            session["is_global_admin"] = False
             flash("Global admin access required", "error")
             return redirect(url_for("projects_list"))
+        session["is_global_admin"] = True
         return f(*a, **kw)
 
     return wrapped
@@ -59,6 +62,9 @@ def csrf_token() -> str:
 def csrf_protect():
     """Reject POSTs without a valid session CSRF token (form or X-CSRF-Token)."""
     if request.method != "POST":
+        return
+    # Bearer-token ESO/machine API — not session-cookie CSRF surface
+    if request.path.startswith("/eso/"):
         return
     # Unit tests skip unless CSRF_TESTING is set
     if current_app.config.get("TESTING") and not current_app.config.get("CSRF_TESTING"):

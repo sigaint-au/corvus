@@ -2,6 +2,9 @@
 {% block title %}Login — {{ app_name }}{% endblock %}
 {% block body %}
 <h1>Sign in</h1>
+{% if setup_notice %}
+<p class="flash error">{{ setup_notice }}</p>
+{% endif %}
 {% if ldap_enabled %}
 <p class="muted">Local accounts and LDAP directory logins are accepted.</p>
 {% endif %}

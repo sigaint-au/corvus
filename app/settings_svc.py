@@ -1,5 +1,5 @@
 """Server settings and classification banner."""
-from config import DEFAULT_SETTINGS, HEX
+from config import DEFAULT_SETTINGS, HEX, bootstrap_admin_email
 import db
 
 
@@ -30,8 +30,37 @@ def set_setting(key: str, value: str):
         )
 
 
+def has_global_admin() -> bool:
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute("SELECT EXISTS (SELECT 1 FROM private.users WHERE is_global_admin) AS ok")
+            row = cur.fetchone()
+            return bool(row and row.get("ok"))
+    except Exception:
+        return False
+
+
 def registration_enabled() -> bool:
+    # No global admin and no bootstrap email configured → refuse open registration race
+    if not has_global_admin() and not bootstrap_admin_email():
+        return False
     return truthy(get_settings().get("registration_enabled", "true"))
+
+
+def setup_notice() -> str | None:
+    """Message when the instance still needs an admin bootstrap."""
+    if has_global_admin():
+        return None
+    boot = bootstrap_admin_email()
+    if boot:
+        return (
+            f"No global admin yet. Register or sign in as {boot} "
+            f"(set via GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL) to become admin."
+        )
+    return (
+        "No global admin configured. Set GLOBAL_ADMIN_EMAIL (or BOOTSTRAP_ADMIN_EMAIL) "
+        "and restart, then register that address."
+    )
 
 
 def can_create_team(is_global_admin: bool = False) -> bool:

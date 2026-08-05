@@ -121,6 +121,66 @@ class TestLdapPassword(unittest.TestCase):
         )
 
 
+class TestLdapStartTLS(unittest.TestCase):
+    def test_open_start_tls_before_bind(self):
+        order = []
+
+        class FakeConn:
+            def __init__(self, *a, **k):
+                self.auto_bind = k.get("auto_bind", True)
+
+            def open(self):
+                order.append("open")
+                return True
+
+            def start_tls(self):
+                order.append("start_tls")
+                return True
+
+            def bind(self):
+                order.append("bind")
+                return True
+
+            def unbind(self):
+                order.append("unbind")
+
+        with patch.dict("sys.modules", {"ldap3": MagicMock()}):
+            import ldap3 as ldap3_mod
+
+            ldap3_mod.Connection = FakeConn
+            conn = ldap_auth._ldap_bind(object(), user="cn=x", password="p", start_tls=True)
+        self.assertEqual(order[:3], ["open", "start_tls", "bind"])
+        self.assertFalse(conn.auto_bind)
+
+    def test_start_tls_failure_fails_closed(self):
+        bound = {"n": 0}
+
+        class FakeConn:
+            def __init__(self, *a, **k):
+                pass
+
+            def open(self):
+                return True
+
+            def start_tls(self):
+                return False
+
+            def unbind(self):
+                pass
+
+            def bind(self):
+                bound["n"] += 1
+                return True
+
+        fake_mod = MagicMock()
+        fake_mod.Connection = FakeConn
+        with patch.dict("sys.modules", {"ldap3": fake_mod}):
+            with self.assertRaises(RuntimeError) as cm:
+                ldap_auth._ldap_bind(object(), start_tls=True)
+        self.assertIn("StartTLS", str(cm.exception))
+        self.assertEqual(bound["n"], 0)
+
+
 # ── Schema ensure ──────────────────────────────────────────────────
 
 
@@ -135,7 +195,7 @@ class TestEnsureSchema(unittest.TestCase):
         conn, cur = _conn()
         with patch.object(schema_mod, "DATABASE_ADMIN_URL", "postgres://admin@x/db"), patch.object(
             db, "connect_admin", return_value=conn
-        ), patch.object(schema_mod, "GLOBAL_ADMIN_EMAIL", ""):
+        ), patch.object(schema_mod, "bootstrap_admin_email", return_value=""):
             schema_mod.ensure_schema()
         sqls = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
         self.assertIn("pg_advisory_lock", sqls)
@@ -254,12 +314,9 @@ class TestAudit(unittest.TestCase):
             with self.assertRaises(ValueError):
                 audit.log_secret(cur, project_id=uuid4(), action="nope")
 
-    def test_log_secret_inserts(self):
+    def test_log_secret_calls_audit_secret_fn(self):
         cur = MagicMock()
         pid, sid = uuid4(), uuid4()
-        with store.app.test_request_context("/"):
-            with store.app.test_client().session_transaction() as s:
-                pass
         with store.app.test_request_context("/"):
             from flask import session
 
@@ -269,7 +326,19 @@ class TestAudit(unittest.TestCase):
                 cur, project_id=pid, secret_id=sid, secret_key="K", action="revealed"
             )
         self.assertEqual(cur.execute.call_count, 1)
-        self.assertIn("INSERT INTO api.secret_audit", cur.execute.call_args.args[0])
+        sql = cur.execute.call_args.args[0]
+        self.assertIn("private.audit_secret", sql)
+        self.assertNotIn("INSERT INTO api.secret_audit", sql)
+
+    def test_schema_revokes_secret_audit_insert(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("REVOKE INSERT ON api.secret_audit FROM authenticated", init)
+        self.assertIn("CREATE OR REPLACE FUNCTION private.audit_secret", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("REVOKE INSERT ON api.secret_audit FROM authenticated", src)
+        self.assertIn("private.audit_secret", src)
 
 
 # ── Auth routes ────────────────────────────────────────────────────
@@ -294,7 +363,9 @@ class TestAuth(unittest.TestCase):
         self.assertIn("/teams", r.location)
 
     def test_login_get(self):
-        with patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}):
+        with patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}), patch.object(
+            settings_svc, "setup_notice", return_value=None
+        ), patch.object(settings_svc, "registration_enabled", return_value=True):
             r = self.client.get("/login")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Sign in", r.data)
@@ -320,7 +391,11 @@ class TestAuth(unittest.TestCase):
         conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
         with patch.object(db, "connect", return_value=conn), patch.object(
             ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
-        ), patch("lockout.is_locked", return_value=False), patch("lockout.clear_failures"):
+        ), patch("lockout.is_locked", return_value=False), patch(
+            "lockout.clear_failures"
+        ), patch.object(authz, "is_global_admin", return_value=False), patch.object(
+            settings_svc, "setup_notice", return_value=None
+        ):
             r = self.client.post(
                 "/login",
                 data={"email": "a@b.c", "password": "secret12"},
@@ -332,6 +407,29 @@ class TestAuth(unittest.TestCase):
             self.assertEqual(s["user_id"], str(uid))
             self.assertEqual(s["email"], "a@b.c")
             self.assertIn("jwt", s)
+
+    def test_login_clears_session_first(self):
+        uid = uuid4()
+        conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
+        with self.client.session_transaction() as s:
+            s["stale"] = "should-be-gone"
+            s["_csrf"] = "old"
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ), patch("lockout.is_locked", return_value=False), patch(
+            "lockout.clear_failures"
+        ), patch.object(authz, "is_global_admin", return_value=False), patch.object(
+            settings_svc, "setup_notice", return_value=None
+        ):
+            r = self.client.post(
+                "/login",
+                data={"email": "a@b.c", "password": "secret12"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            self.assertNotIn("stale", s)
+            self.assertEqual(s["user_id"], str(uid))
 
     def test_csrf_rejects_post_without_token(self):
         store.app.config["CSRF_TESTING"] = True
@@ -385,7 +483,11 @@ class TestAuth(unittest.TestCase):
             ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "true"}
         ), patch.object(ldap_auth, "ldap_authenticate", return_value=ldap_user), patch.object(
             ldap_auth, "sync_ldap_user", return_value=synced
-        ), patch("lockout.is_locked", return_value=False), patch("lockout.clear_failures"):
+        ), patch("lockout.is_locked", return_value=False), patch(
+            "lockout.clear_failures"
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "setup_notice", return_value=None
+        ):
             r = self.client.post(
                 "/login",
                 data={"email": "ldapuser", "password": "dir-pass"},
@@ -399,7 +501,9 @@ class TestAuth(unittest.TestCase):
             self.assertTrue(s["is_global_admin"])
 
     def test_register_short_password(self):
-        with patch.object(settings_svc, "registration_enabled", return_value=True):
+        with patch.object(settings_svc, "registration_enabled", return_value=True), patch.object(
+            settings_svc, "setup_notice", return_value=None
+        ):
             r = self.client.post(
                 "/register",
                 data={"email": "a@b.c", "password": "short", "name": "A"},
@@ -412,6 +516,8 @@ class TestAuth(unittest.TestCase):
         conn, _ = _conn(fetchone={"id": uid})
         with patch.object(db, "connect", return_value=conn), patch.object(
             settings_svc, "registration_enabled", return_value=True
+        ), patch.object(settings_svc, "setup_notice", return_value=None), patch.object(
+            authz, "is_global_admin", return_value=False
         ):
             r = self.client.post(
                 "/register",
@@ -420,6 +526,40 @@ class TestAuth(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 302)
         self.assertIn("/teams", r.location)
+        with self.client.session_transaction() as s:
+            self.assertFalse(s.get("is_global_admin"))
+
+    def test_register_does_not_auto_promote_first_user(self):
+        """register_user SQL must set is_global_admin false (no first_user race)."""
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        # Extract register_user body
+        start = init.index("CREATE OR REPLACE FUNCTION private.register_user")
+        end = init.index("$$;", start)
+        body = init[start:end]
+        self.assertIn("false, 'local'", body)
+        self.assertNotIn("first_user", body)
+
+    def test_bootstrap_email_promotes_on_register(self):
+        uid = uuid4()
+        conn, _ = _conn(fetchone={"id": uid})
+        admin_conn, admin_cur = _conn()
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            db, "connect_admin", return_value=admin_conn
+        ), patch.object(settings_svc, "registration_enabled", return_value=True), patch.object(
+            settings_svc, "setup_notice", return_value=None
+        ), patch(
+            "routes.auth.bootstrap_admin_email", return_value="admin@ex.com"
+        ), patch.object(authz, "is_global_admin", return_value=True):
+            r = self.client.post(
+                "/register",
+                data={"email": "admin@ex.com", "password": "password1", "name": "A"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        sql = " ".join(str(c.args[0]) for c in admin_cur.execute.call_args_list)
+        self.assertIn("is_global_admin = true", sql)
 
     def test_register_disabled(self):
         with patch.object(settings_svc, "registration_enabled", return_value=False):
@@ -438,10 +578,16 @@ class TestAuth(unittest.TestCase):
     def test_login_hides_register_when_disabled(self):
         with patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}), patch.object(
             settings_svc, "registration_enabled", return_value=False
-        ):
+        ), patch.object(settings_svc, "setup_notice", return_value=None):
             r = self.client.get("/login")
         self.assertEqual(r.status_code, 200)
         self.assertNotIn(b'href="/register"', r.data)
+
+    def test_registration_disabled_without_bootstrap(self):
+        with patch.object(settings_svc, "has_global_admin", return_value=False), patch(
+            "settings_svc.bootstrap_admin_email", return_value=""
+        ), patch.object(settings_svc, "get_settings", return_value={"registration_enabled": "true"}):
+            self.assertFalse(settings_svc.registration_enabled())
 
     def test_logout(self):
         with self.client.session_transaction() as s:
@@ -543,10 +689,12 @@ class TestTeams(unittest.TestCase):
             r = self.client.get(f"/teams/{tid}")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b">T<", r.data)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        self.assertIn("team_member_rows", sql)
 
     def test_add_member_user_missing(self):
         tid = uuid4()
-        conn, _ = _conn(fetchone=None)
+        conn, _ = _conn(fetchone={"id": None})
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/teams/{tid}/members",
@@ -554,6 +702,33 @@ class TestTeams(unittest.TestCase):
                 follow_redirects=False,
             )
         self.assertEqual(r.status_code, 302)
+
+    def test_add_member_uses_lookup_user(self):
+        tid, uid = uuid4(), uuid4()
+        conn, cur = _conn(fetchone={"id": uid})
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/teams/{tid}/members",
+                data={"email": "u@ex.com", "role": "member"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("private.lookup_user", sql)
+        self.assertNotIn("user_directory", sql)
+
+    def test_user_directory_not_granted_to_authenticated(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        # Must not grant directory SELECT to authenticated (enumeration risk)
+        self.assertNotIn(
+            "GRANT SELECT ON api.user_directory TO authenticated",
+            init,
+        )
+        self.assertIn("private.lookup_user", init)
+        self.assertIn("private.team_member_rows", init)
 
     def test_non_member_cannot_self_join(self):
         """RLS must reject self-insert into a team the user does not admin."""
@@ -907,6 +1082,14 @@ class TestTokens(unittest.TestCase):
         self.assertNotIn("updated_at = now()", routes)
         self.assertNotIn("updated_at=now()", routes)
 
+    def test_token_prefix_unique_constraint(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("token_prefix text NOT NULL UNIQUE", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("machine_tokens_token_prefix_key", src)
+
 
 # ── PostgREST token API ────────────────────────────────────────────
 
@@ -1016,7 +1199,7 @@ class TestESO(unittest.TestCase):
 
     def test_upsert_write_ok(self):
         sid = uuid4()
-        fo = [{"role": "write"}, {"id": sid}]
+        fo = [{"role": "write"}, {"id": sid}, None]  # role, upsert id, audit_secret
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, "connect", return_value=conn):
@@ -1030,6 +1213,28 @@ class TestESO(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["key"], "K")
         conn.commit.assert_called()
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("audit_secret", sql)
+        self.assertIn("machine_upsert", sql)
+
+    def test_eso_post_exempt_from_csrf(self):
+        """Bearer ESO upsert must not require session CSRF when CSRF_TESTING is on."""
+        store.app.config["CSRF_TESTING"] = True
+        try:
+            sid = uuid4()
+            fo = [{"role": "write"}, {"id": sid}, None]
+            conn, cur = _conn()
+            cur.fetchone.side_effect = fo
+            with patch.object(db, "connect", return_value=conn):
+                r = self.client.post(
+                    f"/eso/v1/projects/{self.pid}/secrets",
+                    json={"key": "K", "value": "v"},
+                    headers={"Authorization": "Bearer ss_write"},
+                )
+            self.assertNotEqual(r.status_code, 400)
+            self.assertEqual(r.status_code, 200)
+        finally:
+            store.app.config["CSRF_TESTING"] = False
 
     def test_upsert_no_auth(self):
         r = self.client.post(
@@ -1090,6 +1295,26 @@ class TestHealth(unittest.TestCase):
         data = r.get_json()
         self.assertFalse(data["ok"])
         self.assertNotIn("error", data)
+
+    def test_security_headers(self):
+        conn, _ = _conn()
+        with patch.object(db, "connect", return_value=conn):
+            r = store.app.test_client().get("/health")
+        self.assertEqual(r.headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(r.headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(r.headers.get("Referrer-Policy"), "no-referrer")
+        csp = r.headers.get("Content-Security-Policy", "")
+        self.assertIn("unpkg.com", csp)
+        self.assertIn("frame-ancestors 'none'", csp)
+        self.assertNotIn("Strict-Transport-Security", r.headers)
+
+    def test_hsts_when_cookie_secure(self):
+        conn, _ = _conn()
+        with patch.object(db, "connect", return_value=conn), patch.dict(
+            os.environ, {"COOKIE_SECURE": "1"}, clear=False
+        ):
+            r = store.app.test_client().get("/health")
+        self.assertIn("Strict-Transport-Security", r.headers)
 
 
 # ── UI shell ───────────────────────────────────────────────────────
@@ -1323,6 +1548,18 @@ class TestSettings(unittest.TestCase):
         ):
             r = self.client.get("/settings", follow_redirects=False)
         self.assertEqual(r.status_code, 302)
+
+    def test_demoted_admin_denied_despite_session_flag(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "was-admin@ex.com"
+            s["is_global_admin"] = True
+        with patch.object(authz, "is_global_admin", return_value=False):
+            r = self.client.get("/settings", follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/projects", r.location)
+        with self.client.session_transaction() as s:
+            self.assertFalse(s.get("is_global_admin"))
 
     def test_settings_ok_for_global_admin(self):
         with self.client.session_transaction() as s:

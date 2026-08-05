@@ -94,6 +94,14 @@ def register(app):
             out = cur.fetchone()
             if not out or not out["id"]:
                 return jsonify({"error": "forbidden"}), 403
+            cur.execute(
+                """
+                SELECT private.audit_secret(
+                  %s::uuid, %s::uuid, %s, 'machine_upsert', NULL::uuid, %s
+                )
+                """,
+                (str(project_id), str(out["id"]), key, "machine"),
+            )
             conn.commit()
         return jsonify({"ok": True, "id": str(out["id"]), "key": key}), 200
 

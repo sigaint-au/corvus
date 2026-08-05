@@ -36,8 +36,12 @@ It is not a password manager for individuals, a full PAM platform, or a multi-cl
 ## Quick start
 
 ```bash
+# Bootstrap admin: that email becomes global admin on register/login (no first-user race).
+export GLOBAL_ADMIN_EMAIL=you@example.com
 ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
-# UI: http://localhost:8080
+# UI: http://localhost:8080 — register as you@example.com
 ```
+
+Without `GLOBAL_ADMIN_EMAIL` (or `BOOTSTRAP_ADMIN_EMAIL`) and no existing admin, registration stays closed until you set one.
 
 Deploy, env vars, ESO examples: **[docs/deploy.md](docs/deploy.md)** · **[docs/openshift-eso.yaml](docs/openshift-eso.yaml)**

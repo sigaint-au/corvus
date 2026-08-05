@@ -4,6 +4,7 @@ from flask import flash, redirect, render_template, request, session, url_for
 import psycopg
 
 import authz
+from config import bootstrap_admin_email
 import db
 import ldap_auth
 import lockout
@@ -11,6 +12,33 @@ import settings_svc
 
 
 log = __import__("logging").getLogger(__name__)
+
+
+def _maybe_promote_bootstrap_admin(email: str, user_id) -> bool:
+    """Promote email to global admin if it matches bootstrap config. Returns new is_global_admin."""
+    boot = bootstrap_admin_email()
+    if not boot or (email or "").strip().lower() != boot:
+        return authz.is_global_admin(str(user_id))
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE private.users SET is_global_admin = true WHERE id = %s::uuid",
+                (str(user_id),),
+            )
+        return True
+    except Exception:
+        log.exception("bootstrap admin promote failed")
+        return authz.is_global_admin(str(user_id))
+
+
+def _establish_session(user_id, email, name, is_global_admin: bool):
+    """Clear session then set auth values (session regeneration)."""
+    session.clear()
+    session["user_id"] = str(user_id)
+    session["email"] = email
+    session["name"] = name or ""
+    session["is_global_admin"] = bool(is_global_admin)
+    session["jwt"] = db.make_jwt(user_id)
 
 
 def register(app):
@@ -37,6 +65,7 @@ def register(app):
     @app.route("/login", methods=["GET", "POST"])
     def login():
         ldap_on = settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled"))
+        notice = settings_svc.setup_notice()
         if request.method == "POST":
             email = request.form["email"].strip()
             password = request.form["password"]
@@ -46,6 +75,7 @@ def register(app):
                     "login.html",
                     ldap_enabled=ldap_on,
                     registration_enabled=settings_svc.registration_enabled(),
+                    setup_notice=notice,
                 ), 429
             user = None
             # 1) Local password accounts (break-glass / non-LDAP users)
@@ -69,6 +99,7 @@ def register(app):
                             "login.html",
                             ldap_enabled=ldap_on,
                             registration_enabled=settings_svc.registration_enabled(),
+                            setup_notice=notice,
                         ), 500
             if not user:
                 lockout.record_failure(email)
@@ -77,25 +108,26 @@ def register(app):
                     "login.html",
                     ldap_enabled=ldap_on,
                     registration_enabled=settings_svc.registration_enabled(),
+                    setup_notice=notice,
                 ), 401
             lockout.clear_failures(email)
-            session["user_id"] = str(user["id"])
-            session["email"] = user["email"]
-            session["name"] = user["name"]
-            session["is_global_admin"] = bool(user.get("is_global_admin"))
-            session["jwt"] = db.make_jwt(user["id"])
+            _maybe_promote_bootstrap_admin(user["email"], user["id"])
+            is_admin = authz.is_global_admin(str(user["id"]))
+            _establish_session(user["id"], user["email"], user["name"], is_admin)
             return redirect(url_for("teams"))
         return render_template(
             "login.html",
             ldap_enabled=ldap_on,
             registration_enabled=settings_svc.registration_enabled(),
+            setup_notice=notice,
         )
 
 
     @app.route("/register", methods=["GET", "POST"])
     def register():
+        notice = settings_svc.setup_notice()
         if not settings_svc.registration_enabled():
-            flash("Account registration is disabled", "error")
+            flash(notice or "Account registration is disabled", "error")
             return redirect(url_for("login"))
         if request.method == "POST":
             email = request.form["email"].strip()
@@ -103,7 +135,7 @@ def register(app):
             name = request.form.get("name", "").strip()
             if len(password) < 8:
                 flash("Password must be at least 8 characters", "error")
-                return render_template("register.html"), 400
+                return render_template("register.html", setup_notice=notice), 400
             try:
                 with db.connect(autocommit=True) as conn, conn.cursor() as cur:
                     cur.execute(
@@ -113,17 +145,15 @@ def register(app):
                     uid = cur.fetchone()["id"]
             except psycopg.errors.UniqueViolation:
                 flash("Email already registered", "error")
-                return render_template("register.html"), 400
+                return render_template("register.html", setup_notice=notice), 400
             except Exception as e:
                 flash(str(e), "error")
-                return render_template("register.html"), 400
-            session["user_id"] = str(uid)
-            session["email"] = email.lower()
-            session["name"] = name
-            session["is_global_admin"] = authz.is_global_admin(str(uid))
-            session["jwt"] = db.make_jwt(uid)
+                return render_template("register.html", setup_notice=notice), 400
+            _maybe_promote_bootstrap_admin(email.lower(), uid)
+            is_admin = authz.is_global_admin(str(uid))
+            _establish_session(uid, email.lower(), name, is_admin)
             return redirect(url_for("teams"))
-        return render_template("register.html")
+        return render_template("register.html", setup_notice=notice)
 
 
     @app.post("/logout")

@@ -88,12 +88,7 @@ def register(app):
             if not team:
                 return "Not found", 404
             cur.execute(
-                """
-                SELECT tm.role, tm.source, u.id AS user_id, u.email, u.name
-                FROM api.team_members tm
-                JOIN api.user_directory u ON u.id = tm.user_id
-                WHERE tm.team_id = %s ORDER BY tm.role, u.email
-                """,
+                "SELECT * FROM private.team_member_rows(%s::uuid)",
                 (str(team_id),),
             )
             members = cur.fetchall()
@@ -150,9 +145,9 @@ def register(app):
         if role not in config.TEAM_ROLES:
             role = "member"
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute("SELECT id FROM api.user_directory WHERE email = %s", (email,))
+            cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
             u = cur.fetchone()
-            if not u:
+            if not u or not u.get("id"):
                 flash("User not found — they must register or sign in via LDAP first", "error")
                 return redirect(url_for("team_detail", team_id=team_id))
             try:
