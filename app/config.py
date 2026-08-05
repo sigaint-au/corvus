@@ -8,10 +8,9 @@ _DEFAULT_MASTER_KEY = "dev-master-key-change-in-prod!!"
 
 SECRET_KEY = os.environ.get("SECRET_KEY", _DEFAULT_SECRET_KEY)
 DATABASE_URL = os.environ["DATABASE_URL"]
-DATABASE_ADMIN_URL = os.environ.get(
-    "DATABASE_ADMIN_URL",
-    os.environ.get("DATABASE_URL", ""),
-)
+# Superuser DSN for schema upgrades only. Do not fall back to DATABASE_URL
+# (authenticator) — that silently fails policy DDL and masks misconfiguration.
+DATABASE_ADMIN_URL = os.environ.get("DATABASE_ADMIN_URL", "").strip()
 JWT_SECRET = os.environ.get("JWT_SECRET", _DEFAULT_JWT_SECRET)
 MASTER_KEY = os.environ.get("MASTER_KEY", _DEFAULT_MASTER_KEY)
 POSTGREST_URL = os.environ.get("POSTGREST_URL", "http://localhost:3000")

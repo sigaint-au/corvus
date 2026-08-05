@@ -46,13 +46,18 @@ def inject_nav():
         "classification": banner,
         "is_global_admin": bool(session.get("is_global_admin")),
         "nav_teams": [],
-        "nav_team_id": None,
+        "nav_team_id": session.get("team_id"),
         "csrf_token": authz.csrf_token(),
     }
     if not session.get("user_id"):
         return base
-    session["is_global_admin"] = authz.is_global_admin(session["user_id"])
-    base["is_global_admin"] = session["is_global_admin"]
+    # Prefer session flag set at login; only hit DB if missing (legacy sessions).
+    if "is_global_admin" not in session:
+        session["is_global_admin"] = authz.is_global_admin(session["user_id"])
+    base["is_global_admin"] = bool(session.get("is_global_admin"))
+    # HTMX partials don't render the sidebar — skip the teams query.
+    if authz.htmx():
+        return base
     try:
         teams = nav_teams(session["user_id"])
     except Exception:

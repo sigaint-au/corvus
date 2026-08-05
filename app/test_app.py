@@ -19,8 +19,12 @@ import config  # noqa: E402
 import crypto  # noqa: E402
 import db  # noqa: E402
 import ldap_auth  # noqa: E402
+import schema as schema_mod  # noqa: E402
 import settings_svc  # noqa: E402
 from routes import eso as eso_routes  # noqa: E402
+
+# Skip real schema bootstrap (no Postgres in unit tests).
+store.app.config["TESTING"] = True
 
 
 # ── helpers ───────────────────────────────────────────────────────
@@ -88,6 +92,51 @@ class TestJWT(unittest.TestCase):
         self.assertEqual(claims["sub"], uid)
         self.assertEqual(claims["role"], "authenticated")
         self.assertIn("exp", claims)
+
+
+# ── LDAP helpers ───────────────────────────────────────────────────
+
+
+class TestLdapPassword(unittest.TestCase):
+    def test_empty(self):
+        self.assertEqual(ldap_auth.ldap_password_plain({}), "")
+        self.assertEqual(ldap_auth.ldap_password_plain({"ldap_bind_password": "  "}), "")
+
+    def test_decrypts(self):
+        enc = crypto.encrypt("bind-secret")
+        self.assertEqual(
+            ldap_auth.ldap_password_plain({"ldap_bind_password": enc}),
+            "bind-secret",
+        )
+
+    def test_decrypt_failure_returns_empty_not_ciphertext(self):
+        # Must not return the ciphertext (would be used as the bind password).
+        bad = "not-valid-fernet-ciphertext"
+        self.assertEqual(
+            ldap_auth.ldap_password_plain({"ldap_bind_password": bad}),
+            "",
+        )
+
+
+# ── Schema ensure ──────────────────────────────────────────────────
+
+
+class TestEnsureSchema(unittest.TestCase):
+    def test_requires_admin_url(self):
+        with patch.object(schema_mod, "DATABASE_ADMIN_URL", ""):
+            with self.assertRaises(RuntimeError) as cm:
+                schema_mod.ensure_schema()
+        self.assertIn("DATABASE_ADMIN_URL", str(cm.exception))
+
+    def test_uses_advisory_lock(self):
+        conn, cur = _conn()
+        with patch.object(schema_mod, "DATABASE_ADMIN_URL", "postgres://admin@x/db"), patch.object(
+            db, "connect_admin", return_value=conn
+        ), patch.object(schema_mod, "GLOBAL_ADMIN_EMAIL", ""):
+            schema_mod.ensure_schema()
+        sqls = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
+        self.assertIn("pg_advisory_lock", sqls)
+        self.assertIn("pg_advisory_unlock", sqls)
 
 
 # ── Helpers ────────────────────────────────────────────────────────
@@ -372,17 +421,25 @@ class TestTeams(unittest.TestCase):
 
     def test_team_detail_ok(self):
         tid = uuid4()
-        calls = {"n": 0}
+        last_sql = {"s": ""}
+
+        def execute(sql, params=None):
+            last_sql["s"] = " ".join(str(sql).lower().split())
 
         def fetchone():
-            calls["n"] += 1
-            if calls["n"] == 1:
+            s = last_sql["s"]
+            # Per-query stubs (order-independent)
+            if "from api.teams" in s and "where id" in s:
                 return {"id": tid, "name": "T"}
-            return {"role": "owner"}
+            if "select role from api.team_members" in s:
+                return {"role": "owner"}
+            return None
 
         conn, cur = _conn(fetchone=fetchone, fetchall=[])
-        # members then projects both use fetchall
-        with patch.object(db, "as_user", return_value=conn):
+        cur.execute.side_effect = execute
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ):
             r = self.client.get(f"/teams/{tid}")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b">T<", r.data)
@@ -397,6 +454,56 @@ class TestTeams(unittest.TestCase):
                 follow_redirects=False,
             )
         self.assertEqual(r.status_code, 302)
+
+    def test_non_member_cannot_self_join(self):
+        """RLS must reject self-insert into a team the user does not admin."""
+        tid = uuid4()
+        # Lookup succeeds (user exists / is self); INSERT fails as RLS would.
+        rls_err = Exception(
+            'new row violates row-level security policy for table "team_members"'
+        )
+
+        def execute(sql, params=None):
+            if "INSERT INTO api.team_members" in str(sql):
+                raise rls_err
+
+        conn, cur = _conn(fetchone={"id": self.uid})
+        cur.execute.side_effect = execute
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/teams/{tid}/members",
+                data={"email": "u@ex.com", "role": "owner"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        # Must not commit a successful membership grant
+        conn.commit.assert_not_called()
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(
+            any("row-level security" in msg for _cat, msg in flashes),
+            f"expected RLS error flash, got {flashes!r}",
+        )
+
+    def test_tm_insert_policy_forbids_self_join(self):
+        """Policy must require owner/admin — no user_id = current_user escape hatch."""
+        from pathlib import Path
+
+        init_sql = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        # Extract the tm_insert policy body
+        start = init_sql.index("CREATE POLICY tm_insert ON api.team_members")
+        end = init_sql.index(";", start)
+        policy = init_sql[start:end]
+        self.assertIn("api.team_role(team_id) IN ('owner', 'admin')", policy)
+        self.assertNotIn("user_id = api.current_user_id()", policy)
+
+        # ensure_schema must re-apply the same fix on existing volumes
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("DROP POLICY IF EXISTS tm_insert ON api.team_members", src)
+        ensure_start = src.index("DROP POLICY IF EXISTS tm_insert ON api.team_members")
+        ensure_chunk = src[ensure_start : ensure_start + 280]
+        self.assertIn("api.team_role(team_id) IN ('owner', 'admin')", ensure_chunk)
+        self.assertNotIn("user_id = api.current_user_id()", ensure_chunk)
 
     def test_team_roles_include_read_only(self):
         self.assertIn("read-only", config.TEAM_ROLES)
@@ -524,13 +631,35 @@ class TestSecrets(unittest.TestCase):
 
     def test_delete_secret(self):
         sid = uuid4()
-        conn, _ = _conn(fetchone={"id": sid, "key": "API_KEY"})
+        conn, cur = _conn(fetchone={"id": sid, "key": "API_KEY"})
+        cur.rowcount = 1
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/secrets/{sid}/delete",
                 follow_redirects=False,
             )
         self.assertEqual(r.status_code, 302)
+        conn.commit.assert_called()
+
+    def test_delete_secret_read_only_no_op(self):
+        """Read (SELECT) ok but write (UPDATE) blocked — must flash, not silent success."""
+        sid = uuid4()
+        conn, cur = _conn(fetchone={"id": sid, "key": "API_KEY"})
+        cur.rowcount = 0  # RLS WITH CHECK / USING blocked the UPDATE
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/secrets/{sid}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        conn.commit.assert_not_called()
+        conn.rollback.assert_called()
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(
+            any("permission" in msg.lower() for _cat, msg in flashes),
+            f"expected permission flash, got {flashes!r}",
+        )
 
     def test_reveal_secret(self):
         sid = uuid4()
@@ -563,7 +692,8 @@ class TestTokens(unittest.TestCase):
             s["email"] = "u@ex.com"
 
     def test_create_token(self):
-        conn, _ = _conn()
+        conn, cur = _conn(fetchone={"w": True})
+        cur.rowcount = 1
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/tokens",
@@ -574,14 +704,72 @@ class TestTokens(unittest.TestCase):
         with self.client.session_transaction() as s:
             self.assertTrue(s.get("new_token", "").startswith("ss_"))
 
+    def test_create_token_read_only_denied(self):
+        conn, _ = _conn(fetchone={"w": False})
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/tokens",
+                data={"name": "openshift"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        conn.commit.assert_not_called()
+        with self.client.session_transaction() as s:
+            self.assertNotIn("new_token", s)
+            flashes = s.get("_flashes") or []
+        self.assertTrue(
+            any("permission" in msg.lower() for _cat, msg in flashes),
+            f"expected permission flash, got {flashes!r}",
+        )
+
     def test_delete_token(self):
-        conn, _ = _conn()
+        conn, cur = _conn(fetchone={"w": True})
+        cur.rowcount = 1
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/tokens/{uuid4()}/delete",
                 follow_redirects=False,
             )
         self.assertEqual(r.status_code, 302)
+
+    def test_delete_token_read_only_denied(self):
+        conn, _ = _conn(fetchone={"w": False})
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/tokens/{uuid4()}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(
+            any("permission" in msg.lower() for _cat, msg in flashes),
+            f"expected permission flash, got {flashes!r}",
+        )
+
+    def test_mt_select_policy_allows_readers(self):
+        """Read-only may list tokens; only writers insert/delete."""
+        from pathlib import Path
+
+        init_sql = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        sel_start = init_sql.index("CREATE POLICY mt_select ON api.machine_tokens")
+        sel_end = init_sql.index(";", sel_start)
+        self.assertIn("can_read_project", init_sql[sel_start:sel_end])
+        ins_start = init_sql.index("CREATE POLICY mt_insert ON api.machine_tokens")
+        ins_end = init_sql.index(";", ins_start)
+        self.assertIn("can_write_project", init_sql[ins_start:ins_end])
+
+    def test_secrets_updated_at_trigger_defined(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        init_sql = (root / "db" / "init.sql").read_text()
+        self.assertIn("CREATE TRIGGER secrets_touch_updated_at", init_sql)
+        self.assertIn("api.touch_updated_at", init_sql)
+        # App upserts/restores must not hand-set updated_at (trigger owns it)
+        routes = (Path(__file__).resolve().parent / "routes" / "projects.py").read_text()
+        self.assertNotIn("updated_at = now()", routes)
+        self.assertNotIn("updated_at=now()", routes)
 
 
 # ── PostgREST token API ────────────────────────────────────────────

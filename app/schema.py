@@ -1,14 +1,25 @@
 """Idempotent schema upgrades for existing database volumes."""
 import logging
 
-from config import GLOBAL_ADMIN_EMAIL
+from config import DATABASE_ADMIN_URL, GLOBAL_ADMIN_EMAIL
 import db
 
 log = logging.getLogger(__name__)
 
+# Session-level advisory lock key for ensure_schema (arbitrary stable int4 pair).
+_ENSURE_LOCK_K1 = 834201
+_ENSURE_LOCK_K2 = 1
+
 
 def ensure_schema():
     """Idempotent upgrades for existing volumes (init.sql only runs once)."""
+    if not DATABASE_ADMIN_URL:
+        # Do not fall back to the app/authenticator role — policy DDL would fail
+        # and hide misconfiguration. Compose sets DATABASE_ADMIN_URL explicitly.
+        raise RuntimeError(
+            "DATABASE_ADMIN_URL is not set; schema upgrades require a superuser DSN"
+        )
+
     stmts = [
         """
         ALTER TABLE private.users
@@ -267,6 +278,13 @@ def ensure_schema():
         CREATE POLICY teams_insert ON api.teams FOR INSERT TO authenticated
           WITH CHECK (created_by = api.current_user_id() OR api.is_global_admin())
         """,
+        # team_members INSERT: owners/admins only (no self-join escape hatch).
+        # Team creators use SECURITY DEFINER private.create_team instead.
+        "DROP POLICY IF EXISTS tm_insert ON api.team_members",
+        """
+        CREATE POLICY tm_insert ON api.team_members FOR INSERT TO authenticated
+          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
         # Soft-delete for secrets (trash + restore)
         """
         ALTER TABLE api.secrets
@@ -369,25 +387,70 @@ def ensure_schema():
         $$
         """,
         "GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator",
+        # Machine tokens: read-only may SELECT; only writers INSERT/DELETE
+        "DROP POLICY IF EXISTS mt_select ON api.machine_tokens",
+        """
+        CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated
+          USING (api.can_read_project(project_id))
+        """,
+        "DROP POLICY IF EXISTS mt_insert ON api.machine_tokens",
+        """
+        CREATE POLICY mt_insert ON api.machine_tokens FOR INSERT TO authenticated
+          WITH CHECK (api.can_write_project(project_id))
+        """,
+        "DROP POLICY IF EXISTS mt_delete ON api.machine_tokens",
+        """
+        CREATE POLICY mt_delete ON api.machine_tokens FOR DELETE TO authenticated
+          USING (api.can_write_project(project_id))
+        """,
+        # secrets.updated_at maintained by trigger (not app-layer now())
+        """
+        CREATE OR REPLACE FUNCTION api.touch_updated_at()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          NEW.updated_at := now();
+          RETURN NEW;
+        END;
+        $$
+        """,
+        "DROP TRIGGER IF EXISTS secrets_touch_updated_at ON api.secrets",
+        """
+        CREATE TRIGGER secrets_touch_updated_at
+          BEFORE UPDATE ON api.secrets
+          FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at()
+        """,
     ]
     try:
         with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:
-            for sql in stmts:
-                cur.execute(sql)
-            # Bootstrap: first user, or GLOBAL_ADMIN_EMAIL
+            # Serialize workers so concurrent DROP POLICY / CREATE POLICY pairs
+            # cannot race across gunicorn processes.
             cur.execute(
-                """
-                UPDATE private.users SET is_global_admin = true
-                WHERE id = (SELECT id FROM private.users ORDER BY created_at ASC LIMIT 1)
-                  AND NOT EXISTS (SELECT 1 FROM private.users WHERE is_global_admin)
-                """
+                "SELECT pg_advisory_lock(%s, %s)",
+                (_ENSURE_LOCK_K1, _ENSURE_LOCK_K2),
             )
-            if GLOBAL_ADMIN_EMAIL:
+            try:
+                for sql in stmts:
+                    cur.execute(sql)
+                # Bootstrap: first user, or GLOBAL_ADMIN_EMAIL
                 cur.execute(
-                    "UPDATE private.users SET is_global_admin = true WHERE email = %s",
-                    (GLOBAL_ADMIN_EMAIL,),
+                    """
+                    UPDATE private.users SET is_global_admin = true
+                    WHERE id = (SELECT id FROM private.users ORDER BY created_at ASC LIMIT 1)
+                      AND NOT EXISTS (SELECT 1 FROM private.users WHERE is_global_admin)
+                    """
+                )
+                if GLOBAL_ADMIN_EMAIL:
+                    cur.execute(
+                        "UPDATE private.users SET is_global_admin = true WHERE email = %s",
+                        (GLOBAL_ADMIN_EMAIL,),
+                    )
+            finally:
+                cur.execute(
+                    "SELECT pg_advisory_unlock(%s, %s)",
+                    (_ENSURE_LOCK_K1, _ENSURE_LOCK_K2),
                 )
         log.info("schema ensure complete")
-    except Exception as e:
-        log.warning("ensure_schema failed (db not ready?): %s", e)
+    except Exception:
+        log.exception("ensure_schema failed")
+        raise
 

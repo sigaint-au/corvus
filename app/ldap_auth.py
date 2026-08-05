@@ -21,7 +21,8 @@ def ldap_password_plain(cfg: dict) -> str:
     try:
         return decrypt(enc)
     except Exception:
-        return enc
+        log.exception("failed to decrypt ldap_bind_password; refusing ciphertext as bind password")
+        return ""
 
 
 def group_tokens(group: str) -> set:

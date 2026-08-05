@@ -115,19 +115,32 @@ CREATE TABLE api.project_members (
 );
 
 -- Secrets (value_enc = Fernet ciphertext from Flask)
+-- note is intentional plaintext (labels/search only — do not store secrets there)
 -- Soft-delete via deleted_at; live rows unique on (project_id, key)
 CREATE TABLE api.secrets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
   key text NOT NULL,
   value_enc text NOT NULL,
-  note text NOT NULL DEFAULT '',
+  note text NOT NULL DEFAULT '',  -- non-sensitive; not encrypted
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz
 );
 CREATE UNIQUE INDEX secrets_project_key_live
   ON api.secrets (project_id, key) WHERE deleted_at IS NULL;
+
+-- Keep updated_at current on any row change (app code should not set it manually)
+CREATE OR REPLACE FUNCTION api.touch_updated_at()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER secrets_touch_updated_at
+  BEFORE UPDATE ON api.secrets
+  FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at();
 
 -- Secret audit log (create / update / reveal / delete / restore / purge)
 CREATE TABLE api.secret_audit (
@@ -256,7 +269,7 @@ CREATE POLICY teams_delete ON api.teams FOR DELETE TO authenticated
 CREATE POLICY tm_select ON api.team_members FOR SELECT TO authenticated
   USING (api.is_team_member(team_id));
 CREATE POLICY tm_insert ON api.team_members FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin') OR user_id = api.current_user_id());
+  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
 CREATE POLICY tm_update ON api.team_members FOR UPDATE TO authenticated
   USING (api.team_role(team_id) IN ('owner', 'admin'));
 CREATE POLICY tm_delete ON api.team_members FOR DELETE TO authenticated
@@ -308,8 +321,9 @@ CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticate
 CREATE POLICY secret_audit_insert ON api.secret_audit FOR INSERT TO authenticated
   WITH CHECK (api.can_read_project(project_id));
 
+-- read-only may list tokens (name/prefix/expiry); only writers create/revoke
 CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated
-  USING (api.can_write_project(project_id));
+  USING (api.can_read_project(project_id));
 CREATE POLICY mt_insert ON api.machine_tokens FOR INSERT TO authenticated
   WITH CHECK (api.can_write_project(project_id));
 CREATE POLICY mt_delete ON api.machine_tokens FOR DELETE TO authenticated

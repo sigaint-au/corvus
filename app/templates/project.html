@@ -57,7 +57,7 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
     <label>Value <input type="password" name="value" required placeholder="••••••••"></label>
-    <label>Note <input type="text" name="note" placeholder="optional"></label>
+    <label>Note <input type="text" name="note" placeholder="optional label (not encrypted)"></label>
     <button type="submit">Save</button>
   </form>
   {% endif %}

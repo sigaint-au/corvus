@@ -33,7 +33,11 @@ def _bootstrap_schema():
     global _schema_ready
     if _schema_ready:
         return
-    ensure_schema()
+    # TESTING: unit tests mock the DB and do not run real schema upgrades.
+    if app.config.get("TESTING"):
+        _schema_ready = True
+        return
+    ensure_schema()  # raises on misconfig / DB failure (do not mark ready)
     _schema_ready = True
 
 

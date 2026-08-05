@@ -167,7 +167,7 @@ def register(app):
                 cur.execute(
                     """
                     UPDATE api.secrets
-                    SET deleted_at = NULL, updated_at = now()
+                    SET deleted_at = NULL
                     WHERE id = %s AND deleted_at IS NOT NULL
                     """,
                     (str(secret_id),),
@@ -318,7 +318,7 @@ def register(app):
                     INSERT INTO api.secrets (project_id, key, value_enc, note)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
-                      SET value_enc = EXCLUDED.value_enc, note = EXCLUDED.note, updated_at = now()
+                      SET value_enc = EXCLUDED.value_enc, note = EXCLUDED.note
                     RETURNING id
                     """,
                     (str(project_id), key, crypto.encrypt(value), note),
@@ -355,7 +355,9 @@ def register(app):
                 (str(secret_id), str(project_id)),
             )
             row = cur.fetchone()
-            if row:
+            if not row:
+                flash("Secret not found", "error")
+            else:
                 cur.execute(
                     """
                     UPDATE api.secrets SET deleted_at = now()
@@ -363,14 +365,19 @@ def register(app):
                     """,
                     (str(secret_id), str(project_id)),
                 )
-                audit.log_secret(
-                    cur,
-                    project_id=project_id,
-                    secret_id=row["id"],
-                    secret_key=row["key"],
-                    action="deleted",
-                )
-            conn.commit()
+                if cur.rowcount == 0:
+                    # SELECT allowed (read), UPDATE blocked (write) — e.g. read-only role
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                else:
+                    audit.log_secret(
+                        cur,
+                        project_id=project_id,
+                        secret_id=row["id"],
+                        secret_key=row["key"],
+                        action="deleted",
+                    )
+                    conn.commit()
         if authz.htmx():
             return _secrets_partial(project_id)
         return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
@@ -427,9 +434,6 @@ def register(app):
     @authz.login_required
     def create_token(project_id):
         name = request.form.get("name", "machine").strip() or "machine"
-        raw = "ss_" + secrets.token_urlsafe(32)
-        thash = hashlib.sha256(raw.encode()).hexdigest()
-        prefix = raw[:11]
         expires_at = None
         days_raw = (request.form.get("expires_days") or "").strip()
         if days_raw:
@@ -441,6 +445,14 @@ def register(app):
                 flash("Expires days must be a positive integer", "error")
                 return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            # Explicit write gate (read-only can list tokens, not create them)
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            if not cur.fetchone()["w"]:
+                flash("You don't have permission to do that", "error")
+                return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
+            raw = "ss_" + secrets.token_urlsafe(32)
+            thash = hashlib.sha256(raw.encode()).hexdigest()
+            prefix = raw[:11]
             try:
                 cur.execute(
                     """
@@ -466,6 +478,10 @@ def register(app):
     @authz.login_required
     def delete_token(project_id, token_id):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            if not cur.fetchone()["w"]:
+                flash("You don't have permission to do that", "error")
+                return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
             cur.execute(
                 "DELETE FROM api.machine_tokens WHERE id = %s AND project_id = %s",
                 (str(token_id), str(project_id)),
