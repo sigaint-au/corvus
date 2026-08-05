@@ -14,11 +14,14 @@ os.environ.setdefault("ALLOW_INSECURE_DEFAULTS", "1")
 
 import jwt as pyjwt  # noqa: E402
 import app as store  # noqa: E402
+import audit  # noqa: E402
 import authz  # noqa: E402
 import config  # noqa: E402
 import crypto  # noqa: E402
 import db  # noqa: E402
 import ldap_auth  # noqa: E402
+import lockout  # noqa: E402
+import paging  # noqa: E402
 import schema as schema_mod  # noqa: E402
 import settings_svc  # noqa: E402
 from routes import eso as eso_routes  # noqa: E402
@@ -170,6 +173,103 @@ class TestHelpers(unittest.TestCase):
         with patch.object(db, "as_user", return_value=conn):
             r = c.get("/teams")
         self.assertEqual(r.status_code, 200)
+
+    def test_safe_redirect_allows_relative(self):
+        self.assertEqual(authz.safe_redirect_target("/teams", "/x"), "/teams")
+        self.assertEqual(authz.safe_redirect_target(None, "/x"), "/x")
+
+    def test_safe_redirect_blocks_open_redirect(self):
+        self.assertEqual(authz.safe_redirect_target("//evil", "/x"), "/x")
+        self.assertEqual(authz.safe_redirect_target("https://evil", "/x"), "/x")
+        self.assertEqual(authz.safe_redirect_target("teams", "/x"), "/x")
+
+    def test_page_window_basic(self):
+        w = paging.page_window(100, 2, per_page=25)
+        self.assertEqual(w["page"], 2)
+        self.assertEqual(w["offset"], 25)
+        self.assertEqual(w["pages"], 4)
+        self.assertTrue(w["has_prev"])
+        self.assertTrue(w["has_next"])
+
+    def test_page_window_empty(self):
+        w = paging.page_window(0, 1)
+        self.assertEqual(w["pages"], 1)
+        self.assertEqual(w["start"], 0)
+        self.assertEqual(w["end"], 0)
+
+
+class TestLockout(unittest.TestCase):
+    def test_empty_email_not_locked(self):
+        self.assertFalse(lockout.is_locked(""))
+        self.assertFalse(lockout.is_locked("  "))
+
+    def test_is_locked_when_at_threshold(self):
+        conn, _ = _conn(fetchone={"n": lockout.MAX_ATTEMPTS})
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertTrue(lockout.is_locked("a@b.c"))
+
+    def test_not_locked_below_threshold(self):
+        conn, _ = _conn(fetchone={"n": lockout.MAX_ATTEMPTS - 1})
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertFalse(lockout.is_locked("a@b.c"))
+
+    def test_db_error_fails_open(self):
+        with patch.object(db, "connect_admin", side_effect=RuntimeError("db")):
+            self.assertFalse(lockout.is_locked("a@b.c"))
+
+    def test_record_and_clear(self):
+        conn, cur = _conn()
+        with patch.object(db, "connect_admin", return_value=conn):
+            lockout.record_failure("A@B.C")
+            lockout.clear_failures("A@B.C")
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("INSERT INTO private.login_failures", sql)
+        self.assertIn("DELETE FROM private.login_failures", sql)
+        # emails lowercased
+        self.assertEqual(cur.execute.call_args_list[0].args[1], ("a@b.c",))
+
+
+class TestRefuseInsecureDefaults(unittest.TestCase):
+    def test_opt_in_allows(self):
+        with patch.dict(os.environ, {"ALLOW_INSECURE_DEFAULTS": "1"}, clear=False):
+            os.environ.pop("FLASK_ENV", None)
+            config.refuse_insecure_defaults()  # must not raise
+
+    def test_blocks_default_secrets(self):
+        # Module-level SECRET_KEY etc. are fixed at import; force them to baked-ins.
+        with patch.dict(os.environ, {"ALLOW_INSECURE_DEFAULTS": "0"}, clear=False), patch.object(
+            config, "SECRET_KEY", config._DEFAULT_SECRET_KEY
+        ), patch.object(config, "JWT_SECRET", config._DEFAULT_JWT_SECRET), patch.object(
+            config, "MASTER_KEY", config._DEFAULT_MASTER_KEY
+        ):
+            os.environ.pop("FLASK_ENV", None)
+            with self.assertRaises(SystemExit):
+                config.refuse_insecure_defaults()
+
+
+class TestAudit(unittest.TestCase):
+    def test_invalid_action_raises(self):
+        cur = MagicMock()
+        with store.app.test_request_context("/"):
+            with self.assertRaises(ValueError):
+                audit.log_secret(cur, project_id=uuid4(), action="nope")
+
+    def test_log_secret_inserts(self):
+        cur = MagicMock()
+        pid, sid = uuid4(), uuid4()
+        with store.app.test_request_context("/"):
+            with store.app.test_client().session_transaction() as s:
+                pass
+        with store.app.test_request_context("/"):
+            from flask import session
+
+            session["user_id"] = str(uuid4())
+            session["email"] = "a@b.c"
+            audit.log_secret(
+                cur, project_id=pid, secret_id=sid, secret_key="K", action="revealed"
+            )
+        self.assertEqual(cur.execute.call_count, 1)
+        self.assertIn("INSERT INTO api.secret_audit", cur.execute.call_args.args[0])
 
 
 # ── Auth routes ────────────────────────────────────────────────────
@@ -938,6 +1038,35 @@ class TestESO(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 401)
 
+    def test_upsert_missing_key_value(self):
+        r = self.client.post(
+            f"/eso/v1/projects/{self.pid}/secrets",
+            json={"key": "", "value": "v"},
+            headers={"Authorization": "Bearer ss_x"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_token_with_expiry(self):
+        # reuse token create path with expires_days (writer)
+        c = store.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+            s["email"] = "u@ex.com"
+        conn, cur = _conn(fetchone={"w": True})
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = c.post(
+                f"/projects/{self.pid}/tokens",
+                data={"name": "eso", "role": "read-only", "expires_days": "30"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        insert = [
+            c for c in cur.execute.call_args_list
+            if c.args and "INSERT INTO api.machine_tokens" in str(c.args[0])
+        ][0]
+        self.assertIsNotNone(insert.args[1][5])  # expires_at set
+
     def test_machine_token_roles_config(self):
         self.assertIn("read-only", config.MACHINE_TOKEN_ROLES)
         self.assertIn("write", config.MACHINE_TOKEN_ROLES)
@@ -1142,6 +1271,21 @@ class TestNav(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 302)
         self.assertIn("/trash", r.location)
+
+    def test_restore_secret_denied(self):
+        conn, _ = _conn(fetchone=None)
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/trash/secrets/{uuid4()}/restore",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(
+            any("could not" in msg.lower() or "permission" in msg.lower() for _c, msg in flashes),
+            f"expected deny flash, got {flashes!r}",
+        )
 
     def test_purge_secret(self):
         conn, _ = _conn()
