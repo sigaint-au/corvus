@@ -232,3 +232,48 @@ def register(app):
         return redirect(url_for("project_detail", project_id=pid))
 
 
+    @app.post("/teams/<uuid:team_id>/delete")
+    @authz.login_required
+    def delete_team(team_id):
+        """Owner (or global admin via team_role) only — RLS teams_delete enforces."""
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+            row = cur.fetchone()
+            if not row or row["r"] != "owner":
+                flash("Only team owners can delete a team", "error")
+                return redirect(url_for("team_detail", team_id=team_id))
+            cur.execute("DELETE FROM api.teams WHERE id = %s", (str(team_id),))
+            if cur.rowcount == 0:
+                flash("You don't have permission to do that", "error")
+                conn.rollback()
+                return redirect(url_for("team_detail", team_id=team_id))
+            conn.commit()
+        if session.get("team_id") == str(team_id):
+            session.pop("team_id", None)
+        flash("Team deleted", "ok")
+        return redirect(url_for("teams"))
+
+
+    @app.post("/teams/<uuid:team_id>/projects/<uuid:project_id>/delete")
+    @authz.login_required
+    def delete_project_from_team(team_id, project_id):
+        """Owner/admin only — RLS projects_delete enforces."""
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+            row = cur.fetchone()
+            if not row or row["r"] not in ("owner", "admin"):
+                flash("Only team owners or admins can delete projects", "error")
+                return redirect(url_for("team_detail", team_id=team_id))
+            cur.execute(
+                "DELETE FROM api.projects WHERE id = %s AND team_id = %s",
+                (str(project_id), str(team_id)),
+            )
+            if cur.rowcount == 0:
+                flash("You don't have permission to do that", "error")
+                conn.rollback()
+            else:
+                conn.commit()
+                flash("Project deleted", "ok")
+        return redirect(url_for("team_detail", team_id=team_id))
+
+

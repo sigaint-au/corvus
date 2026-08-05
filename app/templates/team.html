@@ -29,12 +29,23 @@
   {% endif %}
   {% if projects %}
   <table>
-    <thead><tr><th>Name</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>ID</th>{% if my_role in ('owner', 'admin') %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for p in projects %}
       <tr>
         <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
+        {% if my_role in ('owner', 'admin') %}
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('delete_project_from_team', team_id=team.id, project_id=p.id) }}"
+                class="inline"
+                onsubmit="return confirm('Delete project “{{ p.name }}” and all its secrets? This cannot be undone.')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Delete</button>
+          </form>
+        </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
@@ -122,6 +133,18 @@
       </select>
     </label>
     <button type="submit">Add map</button>
+  </form>
+</section>
+{% endif %}
+
+{% if my_role == 'owner' %}
+<section>
+  <h2>Danger zone</h2>
+  <p class="muted">Delete this team and all projects, secrets, members, and machine tokens. Irreversible.</p>
+  <form method="post" action="{{ url_for('delete_team', team_id=team.id) }}"
+        onsubmit="return confirm('Delete team “{{ team.name }}” and everything in it? This cannot be undone.')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <button type="submit" class="danger">Delete team</button>
   </form>
 </section>
 {% endif %}

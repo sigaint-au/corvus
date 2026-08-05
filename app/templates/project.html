@@ -152,7 +152,7 @@
           {% if can_write %}
           <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
                 onsubmit="return confirm('Revoke token?')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Revoke</button>
           </form>
           {% endif %}
@@ -164,6 +164,18 @@
   {% else %}
   <p class="muted">No machine accounts.</p>
   {% endif %}
+</section>
+{% endif %}
+
+{% if can_delete %}
+<section>
+  <h2>Danger zone</h2>
+  <p class="muted">Delete this project and all secrets, audit history, and machine tokens. Irreversible.</p>
+  <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
+        onsubmit="return confirm('Delete project “{{ project.name }}” and all its data? This cannot be undone.')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <button type="submit" class="danger">Delete project</button>
+  </form>
 </section>
 {% endif %}
 {% endblock %}

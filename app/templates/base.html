@@ -652,7 +652,7 @@
          class="{% if request.endpoint == 'trash' %}active{% endif %}">Trash</a>
       <div class="nav-sep"></div>
       <a href="{{ url_for('teams') }}"
-         class="{% if request.endpoint in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map') %}active{% endif %}">Teams</a>
+         class="{% if request.endpoint in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}">Teams</a>
       {% if is_global_admin %}
       <a href="{{ url_for('server_settings') }}"
          class="{% if request.endpoint == 'server_settings' %}active{% endif %}">Server settings</a>

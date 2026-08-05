@@ -26,7 +26,8 @@ It is not a password manager for individuals, a full PAM platform, or a multi-cl
 
 | Who | Can do |
 |-----|--------|
-| Team `owner` / `admin` | Manage members, projects, secrets |
+| Team `owner` | Manage members, projects, secrets; **delete team** |
+| Team `admin` | Manage members, projects, secrets; **delete projects** |
 | Team `member` | Read + write secrets; create projects |
 | Team `read-only` | View secrets only |
 | Global admin | Server settings, all teams |

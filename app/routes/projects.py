@@ -252,6 +252,10 @@ def register(app):
             session["team_id"] = str(project["team_id"])
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             can_write = cur.fetchone()["w"]
+            cur.execute("SELECT api.team_role(%s) AS r", (str(project["team_id"]),))
+            team_role = (cur.fetchone() or {}).get("r")
+            # Project delete: team owner/admin (matches projects_delete RLS)
+            can_delete = team_role in ("owner", "admin")
 
             if tab == "secrets":
                 secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
@@ -290,10 +294,41 @@ def register(app):
             secrets_pager=secrets_pager,
             audit_pager=audit_pager,
             can_write=can_write,
+            can_delete=can_delete,
             active_tab=tab,
             search_q=q,
             new_token=session.pop("new_token", None),
         )
+
+
+    @app.post("/projects/<uuid:project_id>/delete")
+    @authz.login_required
+    def delete_project(project_id):
+        """Delete project (and secrets/tokens via CASCADE). Team owner/admin only."""
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.team_id, api.team_role(p.team_id) AS r
+                FROM api.projects p WHERE p.id = %s
+                """,
+                (str(project_id),),
+            )
+            row = cur.fetchone()
+            if not row:
+                flash("Project not found", "error")
+                return redirect(url_for("projects_list"))
+            team_id = row["team_id"]
+            if row["r"] not in ("owner", "admin"):
+                flash("Only team owners or admins can delete projects", "error")
+                return redirect(url_for("project_detail", project_id=project_id))
+            cur.execute("DELETE FROM api.projects WHERE id = %s", (str(project_id),))
+            if cur.rowcount == 0:
+                flash("You don't have permission to do that", "error")
+                conn.rollback()
+                return redirect(url_for("project_detail", project_id=project_id))
+            conn.commit()
+        flash("Project deleted", "ok")
+        return redirect(url_for("team_detail", team_id=team_id))
 
 
     @app.post("/projects/<uuid:project_id>/secrets")

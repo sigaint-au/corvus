@@ -809,6 +809,64 @@ class TestTeams(unittest.TestCase):
         self.assertEqual(r.status_code, 302)
         self.assertIn(str(pid), r.location)
 
+    def test_delete_team_owner_ok(self):
+        tid = uuid4()
+        conn, cur = _conn(fetchone={"r": "owner"})
+        cur.rowcount = 1
+        with self.client.session_transaction() as s:
+            s["team_id"] = str(tid)
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(f"/teams/{tid}/delete", follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/teams", r.location)
+        self.assertNotIn(str(tid), r.location)
+        conn.commit.assert_called()
+        with self.client.session_transaction() as s:
+            self.assertNotEqual(s.get("team_id"), str(tid))
+
+    def test_delete_team_non_owner_denied(self):
+        tid = uuid4()
+        for role in ("admin", "member", "read-only"):
+            conn, cur = _conn(fetchone={"r": role})
+            with patch.object(db, "as_user", return_value=conn):
+                r = self.client.post(f"/teams/{tid}/delete", follow_redirects=False)
+            self.assertEqual(r.status_code, 302)
+            self.assertIn(str(tid), r.location)
+            conn.commit.assert_not_called()
+            with self.client.session_transaction() as s:
+                flashes = s.get("_flashes") or []
+            self.assertTrue(
+                any("owner" in msg.lower() for _c, msg in flashes),
+                f"role={role} flashes={flashes!r}",
+            )
+
+    def test_delete_project_admin_ok(self):
+        tid, pid = uuid4(), uuid4()
+        conn, cur = _conn(fetchone={"r": "admin"})
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/teams/{tid}/projects/{pid}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn(str(tid), r.location)
+        conn.commit.assert_called()
+
+    def test_delete_project_member_denied(self):
+        tid, pid = uuid4(), uuid4()
+        conn, _ = _conn(fetchone={"r": "member"})
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/teams/{tid}/projects/{pid}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        conn.commit.assert_not_called()
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(any("owner" in msg.lower() or "admin" in msg.lower() for _c, msg in flashes))
+
 
 # ── Projects / secrets ─────────────────────────────────────────────
 
@@ -823,7 +881,16 @@ class TestSecrets(unittest.TestCase):
             s["user_id"] = self.uid
             s["email"] = "u@ex.com"
 
-    def _project_conn(self, tab="secrets", can_write=True, secrets=None, tokens=None, audit_log=None, total=None):
+    def _project_conn(
+        self,
+        tab="secrets",
+        can_write=True,
+        team_role="owner",
+        secrets=None,
+        tokens=None,
+        audit_log=None,
+        total=None,
+    ):
         """as_user used by project_detail (tab-scoped queries)."""
         project = {
             "id": self.pid,
@@ -834,7 +901,7 @@ class TestSecrets(unittest.TestCase):
         rows = secrets or [] if tab == "secrets" else (audit_log or [] if tab == "audit" else (tokens or []))
         if total is None:
             total = len(rows)
-        fo = [project, {"w": can_write}]
+        fo = [project, {"w": can_write}, {"r": team_role}]
         if tab in ("secrets", "audit"):
             fo.append({"n": total})
         fa = [rows] if tab in ("secrets", "audit", "tokens") else []
@@ -880,6 +947,45 @@ class TestSecrets(unittest.TestCase):
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{uuid4()}")
         self.assertEqual(r.status_code, 404)
+
+    def test_delete_project_route_owner_ok(self):
+        tid = uuid4()
+        conn, cur = _conn(fetchone={"team_id": tid, "r": "owner"})
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn(str(tid), r.location)
+        conn.commit.assert_called()
+
+    def test_delete_project_route_read_only_denied(self):
+        tid = uuid4()
+        conn, _ = _conn(fetchone={"team_id": tid, "r": "read-only"})
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn(str(self.pid), r.location)
+        conn.commit.assert_not_called()
+
+    def test_project_detail_shows_delete_for_owner(self):
+        with patch.object(db, "as_user", return_value=self._project_conn(team_role="owner")):
+            r = self.client.get(f"/projects/{self.pid}")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Delete project", r.data)
+
+    def test_project_detail_hides_delete_for_member(self):
+        with patch.object(
+            db, "as_user", return_value=self._project_conn(team_role="member", can_write=True)
+        ):
+            r = self.client.get(f"/projects/{self.pid}")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b"Delete project", r.data)
 
     def test_create_secret(self):
         sid = uuid4()
