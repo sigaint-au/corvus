@@ -28,6 +28,12 @@
      class="tab {% if active_tab == 'tokens' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine tokens</a>
+  {% if can_delete %}
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
+     class="tab {% if active_tab == 'settings' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'settings' else 'false' }}">Settings</a>
+  {% endif %}
 </nav>
 
 {% if active_tab == 'secrets' %}
@@ -118,7 +124,7 @@
   </p>
   {% endif %}
 </section>
-{% else %}
+{% elif active_tab == 'tokens' %}
 <section>
   <h2>Machine accounts</h2>
   <p class="muted">For OpenShift External Secrets Operator / CI. Scoped to this project.
@@ -165,11 +171,12 @@
   <p class="muted">No machine accounts.</p>
   {% endif %}
 </section>
-{% endif %}
-
-{% if can_delete %}
+{% elif active_tab == 'settings' and can_delete %}
 <section>
-  <h2>Danger zone</h2>
+  <h2>Project settings</h2>
+  <p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
+
+  <h3>Danger zone</h3>
   <p class="muted">Delete this project and all secrets, audit history, and machine tokens. Irreversible.</p>
   <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
         onsubmit="return confirm('Delete project “{{ project.name }}” and all its data? This cannot be undone.')">

@@ -973,19 +973,31 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(str(self.pid), r.location)
         conn.commit.assert_not_called()
 
-    def test_project_detail_shows_delete_for_owner(self):
-        with patch.object(db, "as_user", return_value=self._project_conn(team_role="owner")):
-            r = self.client.get(f"/projects/{self.pid}")
+    def test_project_settings_tab_shows_delete_for_owner(self):
+        with patch.object(
+            db, "as_user", return_value=self._project_conn(tab="settings", team_role="owner")
+        ):
+            r = self.client.get(f"/projects/{self.pid}?tab=settings")
         self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Project settings", r.data)
         self.assertIn(b"Delete project", r.data)
+        self.assertIn(b"Settings", r.data)  # tab nav
 
-    def test_project_detail_hides_delete_for_member(self):
+    def test_project_settings_tab_hidden_for_member(self):
         with patch.object(
             db, "as_user", return_value=self._project_conn(team_role="member", can_write=True)
         ):
             r = self.client.get(f"/projects/{self.pid}")
         self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b"?tab=settings", r.data)
         self.assertNotIn(b"Delete project", r.data)
+
+    def test_project_secrets_tab_no_danger_zone(self):
+        with patch.object(db, "as_user", return_value=self._project_conn(team_role="owner")):
+            r = self.client.get(f"/projects/{self.pid}?tab=secrets")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Settings", r.data)
+        self.assertNotIn(b"Danger zone", r.data)
 
     def test_create_secret(self):
         sid = uuid4()

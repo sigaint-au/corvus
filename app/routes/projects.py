@@ -228,7 +228,7 @@ def register(app):
     @authz.login_required
     def project_detail(project_id):
         tab = (request.args.get("tab") or "secrets").strip().lower()
-        if tab not in ("secrets", "audit", "tokens"):
+        if tab not in ("secrets", "audit", "tokens", "settings"):
             tab = "secrets"
         page = paging.page_arg("page")
         q = (request.args.get("q") or "").strip()
@@ -257,6 +257,8 @@ def register(app):
             # Project delete: team owner/admin (matches projects_delete RLS)
             can_delete = team_role in ("owner", "admin")
 
+            if tab == "settings" and not can_delete:
+                tab = "secrets"
             if tab == "secrets":
                 secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             elif tab == "audit":
@@ -273,7 +275,7 @@ def register(app):
                     offset=audit_pager["offset"],
                     q=q,
                 )
-            else:
+            elif tab == "tokens":
                 cur.execute(
                     """
                     SELECT id, name, token_prefix, role, created_at, expires_at
@@ -284,6 +286,7 @@ def register(app):
                     (str(project_id),),
                 )
                 tokens = cur.fetchall()
+            # settings: no extra queries
         return render_template(
             "project.html",
             project=project,
