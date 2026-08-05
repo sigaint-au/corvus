@@ -120,24 +120,32 @@
 </section>
 {% else %}
 <section>
-  <h2>Machine tokens</h2>
-  <p class="muted">For OpenShift External Secrets Operator (webhook provider). Scoped to this project.</p>
+  <h2>Machine accounts</h2>
+  <p class="muted">For OpenShift External Secrets Operator / CI. Scoped to this project.
+    <strong>read-only</strong> can fetch secrets; <strong>write</strong> can also upsert via the machine API.</p>
   {% if can_write %}
   <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Name <input type="text" name="name" placeholder="openshift-prod" value="openshift"></label>
+    <label>Role
+      <select name="role">
+        <option value="read-only" selected>read-only</option>
+        <option value="write">write</option>
+      </select>
+    </label>
     <label>Expires (days) <input type="number" name="expires_days" min="1" placeholder="never"></label>
     <button type="submit">Create token</button>
   </form>
   {% endif %}
   {% if tokens %}
   <table>
-    <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Expires</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Prefix</th><th>Role</th><th>Created</th><th>Expires</th><th></th></tr></thead>
     <tbody>
     {% for t in tokens %}
       <tr>
         <td>{{ t.name }}</td>
         <td><code>{{ t.token_prefix }}…</code></td>
+        <td><span class="role-badge">{{ t.role or 'read-only' }}</span></td>
         <td class="muted">{{ t.created_at }}</td>
         <td class="muted">{{ t.expires_at or 'never' }}</td>
         <td class="acts">
@@ -154,7 +162,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No machine tokens.</p>
+  <p class="muted">No machine accounts.</p>
   {% endif %}
 </section>
 {% endif %}

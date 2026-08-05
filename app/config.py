@@ -59,6 +59,8 @@ DEFAULT_SETTINGS = {
 }
 TEAM_ROLES = ("owner", "admin", "member", "read-only")
 ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "read-only": 1}
+# Machine accounts / ESO tokens: read-only (fetch) or write (fetch + upsert API)
+MACHINE_TOKEN_ROLES = ("read-only", "write")
 LDAP_SETTING_KEYS = (
     "ldap_enabled",
     "ldap_url",

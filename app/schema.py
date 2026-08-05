@@ -377,6 +377,19 @@ def ensure_schema():
           ADD COLUMN IF NOT EXISTS expires_at timestamptz
         """,
         """
+        ALTER TABLE api.machine_tokens
+          ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'read-only'
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.machine_tokens DROP CONSTRAINT IF EXISTS machine_tokens_role_check;
+          ALTER TABLE api.machine_tokens
+            ADD CONSTRAINT machine_tokens_role_check
+            CHECK (role IN ('read-only', 'write'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
         CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
         RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
           SELECT EXISTS (
@@ -387,7 +400,41 @@ def ensure_schema():
         $$
         """,
         "GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator",
-        # Machine tokens: read-only may SELECT; only writers INSERT/DELETE
+        """
+        CREATE OR REPLACE FUNCTION private.machine_role(p_project uuid, p_hash text)
+        RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
+          SELECT role FROM api.machine_tokens
+          WHERE project_id = p_project AND token_hash = p_hash
+            AND (expires_at IS NULL OR expires_at > now())
+          LIMIT 1;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.machine_role TO authenticator",
+        """
+        CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
+          p_project uuid, p_hash text, p_key text, p_value_enc text, p_note text
+        )
+        RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api AS $$
+        DECLARE sid uuid;
+        BEGIN
+          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+            RETURN NULL;
+          END IF;
+          IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
+            RETURN NULL;
+          END IF;
+          INSERT INTO api.secrets (project_id, key, value_enc, note)
+          VALUES (p_project, p_key, p_value_enc, COALESCE(p_note, ''))
+          ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+            SET value_enc = EXCLUDED.value_enc,
+                note = EXCLUDED.note
+          RETURNING id INTO sid;
+          RETURN sid;
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.machine_upsert_enc TO authenticator",
+        # Machine tokens: project readers may SELECT; only writers INSERT/DELETE
         "DROP POLICY IF EXISTS mt_select ON api.machine_tokens",
         """
         CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated

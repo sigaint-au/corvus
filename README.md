@@ -49,7 +49,7 @@ See `examples/openshift-eso.yaml`.
 | Team | Org unit; members have `owner` / `admin` / `member` / `read-only` |
 | Project | Secret collection (primary access surface) |
 | Secret | Key/value; **value** Fernet-encrypted at rest (`MASTER_KEY`). **Note** is plaintext by design (optional label for search/UI — never put credentials there). |
-| Machine token | Project-scoped bearer for ESO / CI |
+| Machine account | Project-scoped bearer for ESO / CI; role `read-only` (fetch) or `write` (fetch + upsert API) |
 | LDAP role map | Directory group → `global_admin` |
 | Team LDAP map | Directory group → team role (auto membership) |
 
@@ -78,8 +78,13 @@ refuses to start if `JWT_SECRET` / `MASTER_KEY` / `SECRET_KEY` are still the
 baked-in defaults.
 
 Login is locked for 5 minutes after 5 failed attempts (table
-`private.login_failures`, shared across workers). Machine tokens may set
-optional `expires_at` (form field **Expires (days)**).
+`private.login_failures`, shared across workers). Machine accounts may set
+optional `expires_at` (form field **Expires (days)**) and a **role**:
+
+| Role | ESO GET / list | Machine upsert `POST /eso/v1/projects/{id}/secrets` |
+|------|----------------|------------------------------------------------------|
+| `read-only` (default) | yes | no (403) |
+| `write` | yes | yes (`{"key","value","note?"}`) |
 
 ## PostgREST
 

@@ -1,4 +1,4 @@
-"""OpenShift External Secrets Operator webhook + health."""
+"""OpenShift External Secrets Operator webhook + health + machine write API."""
 
 import hashlib
 import logging
@@ -21,7 +21,7 @@ def bearer_hash():
 def register(app):
     @app.get("/eso/v1/projects/<uuid:project_id>/secrets/<path:key>")
     def eso_get_secret(project_id, key):
-        """ESO webhook: single secret. jsonPath: $.value"""
+        """ESO webhook: single secret. jsonPath: $.value (any machine role)."""
         thash = bearer_hash()
         if not thash:
             return jsonify({"error": "unauthorized"}), 401
@@ -43,7 +43,7 @@ def register(app):
 
     @app.get("/eso/v1/projects/<uuid:project_id>/secrets")
     def eso_list_secrets(project_id):
-        """All secrets as {key: value} map for bulk sync."""
+        """All secrets as {key: value} map for bulk sync (any machine role)."""
         thash = bearer_hash()
         if not thash:
             return jsonify({"error": "unauthorized"}), 401
@@ -61,6 +61,41 @@ def register(app):
             rows = cur.fetchall()
         data = {r["key"]: crypto.decrypt(r["value_enc"]) for r in rows}
         return jsonify({"secrets": data})
+
+    @app.post("/eso/v1/projects/<uuid:project_id>/secrets")
+    def eso_upsert_secret(project_id):
+        """Create/update a secret. Requires machine token role=write."""
+        thash = bearer_hash()
+        if not thash:
+            return jsonify({"error": "unauthorized"}), 401
+        body = request.get_json(silent=True) or {}
+        key = (body.get("key") or "").strip()
+        value = body.get("value")
+        note = (body.get("note") or "").strip()
+        if not key or value is None:
+            return jsonify({"error": "key and value required"}), 400
+        with db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT private.machine_role(%s::uuid, %s) AS role",
+                (str(project_id), thash),
+            )
+            row = cur.fetchone()
+            role = row["role"] if row else None
+            if role is None:
+                return jsonify({"error": "unauthorized"}), 401
+            if role != "write":
+                return jsonify({"error": "token is read-only"}), 403
+            cur.execute(
+                """
+                SELECT private.machine_upsert_enc(%s::uuid, %s, %s, %s, %s) AS id
+                """,
+                (str(project_id), thash, key, crypto.encrypt(str(value)), note),
+            )
+            out = cur.fetchone()
+            if not out or not out["id"]:
+                return jsonify({"error": "forbidden"}), 403
+            conn.commit()
+        return jsonify({"ok": True, "id": str(out["id"]), "key": key}), 200
 
     @app.get("/health")
     def health():

@@ -9,6 +9,7 @@ from flask import flash, redirect, render_template, request, session, url_for
 
 import audit
 import authz
+import config
 import crypto
 import db
 import paging
@@ -107,7 +108,8 @@ def register(app):
                 if team:
                     cur.execute(
                         """
-                        SELECT mt.id, mt.name, mt.token_prefix, mt.created_at,
+                        SELECT mt.id, mt.name, mt.token_prefix, mt.role,
+                               mt.created_at, mt.expires_at,
                                p.id AS project_id, p.name AS project_name
                         FROM api.machine_tokens mt
                         JOIN api.projects p ON p.id = mt.project_id
@@ -270,7 +272,7 @@ def register(app):
             else:
                 cur.execute(
                     """
-                    SELECT id, name, token_prefix, created_at, expires_at
+                    SELECT id, name, token_prefix, role, created_at, expires_at
                     FROM api.machine_tokens
                     WHERE project_id = %s
                     ORDER BY created_at DESC
@@ -434,6 +436,9 @@ def register(app):
     @authz.login_required
     def create_token(project_id):
         name = request.form.get("name", "machine").strip() or "machine"
+        role = (request.form.get("role") or "read-only").strip()
+        if role not in config.MACHINE_TOKEN_ROLES:
+            role = "read-only"
         expires_at = None
         days_raw = (request.form.get("expires_days") or "").strip()
         if days_raw:
@@ -457,10 +462,10 @@ def register(app):
                 cur.execute(
                     """
                     INSERT INTO api.machine_tokens
-                      (project_id, name, token_hash, token_prefix, expires_at)
-                    VALUES (%s, %s, %s, %s, %s)
+                      (project_id, name, token_hash, token_prefix, role, expires_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
-                    (str(project_id), name, thash, prefix, expires_at),
+                    (str(project_id), name, thash, prefix, role, expires_at),
                 )
                 if cur.rowcount == 0:
                     flash("You don't have permission to do that", "error")

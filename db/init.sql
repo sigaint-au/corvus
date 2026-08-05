@@ -158,13 +158,16 @@ CREATE TABLE api.secret_audit (
 CREATE INDEX secret_audit_project_created_idx
   ON api.secret_audit (project_id, created_at DESC);
 
--- Machine tokens (OpenShift ESO / external secrets)
+-- Machine tokens / accounts (OpenShift ESO / CI)
+-- role: read-only = ESO fetch only; write = fetch + machine upsert API
 CREATE TABLE api.machine_tokens (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
   name text NOT NULL,
   token_hash text NOT NULL,
   token_prefix text NOT NULL,
+  role text NOT NULL DEFAULT 'read-only'
+    CHECK (role IN ('read-only', 'write')),
   expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -407,6 +410,14 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
   );
 $$;
 
+CREATE OR REPLACE FUNCTION private.machine_role(p_project uuid, p_hash text)
+RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
+  SELECT role FROM api.machine_tokens
+  WHERE project_id = p_project AND token_hash = p_hash
+    AND (expires_at IS NULL OR expires_at > now())
+  LIMIT 1;
+$$;
+
 CREATE OR REPLACE FUNCTION private.machine_get_enc(p_project uuid, p_hash text, p_key text)
 RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
 BEGIN
@@ -433,14 +444,39 @@ BEGIN
 END;
 $$;
 
+-- Upsert secret via write-scoped machine token (returns id, or NULL if denied)
+CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
+  p_project uuid, p_hash text, p_key text, p_value_enc text, p_note text
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api AS $$
+DECLARE sid uuid;
+BEGIN
+  IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+    RETURN NULL;
+  END IF;
+  IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
+    RETURN NULL;
+  END IF;
+  INSERT INTO api.secrets (project_id, key, value_enc, note)
+  VALUES (p_project, p_key, p_value_enc, COALESCE(p_note, ''))
+  ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+    SET value_enc = EXCLUDED.value_enc,
+        note = EXCLUDED.note
+  RETURNING id INTO sid;
+  RETURN sid;
+END;
+$$;
+
 GRANT USAGE ON SCHEMA private TO authenticator;
 GRANT EXECUTE ON FUNCTION private.register_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
 GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator;
+GRANT EXECUTE ON FUNCTION private.machine_role TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_get_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_list_enc TO authenticator;
+GRANT EXECUTE ON FUNCTION private.machine_upsert_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon;
 
 -- PostgREST needs table privileges via authenticator switching roles

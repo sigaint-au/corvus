@@ -703,6 +703,42 @@ class TestTokens(unittest.TestCase):
         self.assertEqual(r.status_code, 302)
         with self.client.session_transaction() as s:
             self.assertTrue(s.get("new_token", "").startswith("ss_"))
+        sql = " ".join(str(c) for c in cur.execute.call_args_list)
+        self.assertIn("read-only", sql)
+
+    def test_create_token_write_role(self):
+        conn, cur = _conn(fetchone={"w": True})
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/tokens",
+                data={"name": "ci-writer", "role": "write"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        # INSERT args: project_id, name, hash, prefix, role, expires
+        insert_calls = [
+            c for c in cur.execute.call_args_list
+            if c.args and "INSERT INTO api.machine_tokens" in str(c.args[0])
+        ]
+        self.assertTrue(insert_calls)
+        self.assertEqual(insert_calls[0].args[1][4], "write")
+
+    def test_create_token_invalid_role_defaults_read_only(self):
+        conn, cur = _conn(fetchone={"w": True})
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/tokens",
+                data={"name": "x", "role": "owner"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        insert_calls = [
+            c for c in cur.execute.call_args_list
+            if c.args and "INSERT INTO api.machine_tokens" in str(c.args[0])
+        ]
+        self.assertEqual(insert_calls[0].args[1][4], "read-only")
 
     def test_create_token_read_only_denied(self):
         conn, _ = _conn(fetchone={"w": False})
@@ -865,6 +901,46 @@ class TestESO(unittest.TestCase):
     def test_bearer_hash_none(self):
         with store.app.test_request_context("/", headers={}):
             self.assertIsNone(eso_routes.bearer_hash())
+
+    def test_upsert_read_only_forbidden(self):
+        conn, _ = _conn(fetchone={"role": "read-only"})
+        with patch.object(db, "connect", return_value=conn):
+            r = self.client.post(
+                f"/eso/v1/projects/{self.pid}/secrets",
+                json={"key": "K", "value": "v"},
+                headers={"Authorization": "Bearer ss_ro"},
+            )
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("read-only", r.get_json()["error"])
+        conn.commit.assert_not_called()
+
+    def test_upsert_write_ok(self):
+        sid = uuid4()
+        fo = [{"role": "write"}, {"id": sid}]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, "connect", return_value=conn):
+            r = self.client.post(
+                f"/eso/v1/projects/{self.pid}/secrets",
+                json={"key": "K", "value": "secret"},
+                headers={"Authorization": "Bearer ss_write"},
+            )
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["key"], "K")
+        conn.commit.assert_called()
+
+    def test_upsert_no_auth(self):
+        r = self.client.post(
+            f"/eso/v1/projects/{self.pid}/secrets",
+            json={"key": "K", "value": "v"},
+        )
+        self.assertEqual(r.status_code, 401)
+
+    def test_machine_token_roles_config(self):
+        self.assertIn("read-only", config.MACHINE_TOKEN_ROLES)
+        self.assertIn("write", config.MACHINE_TOKEN_ROLES)
 
 
 # ── Health ─────────────────────────────────────────────────────────
