@@ -404,6 +404,29 @@
     .audit-action.audit-updated { color: var(--muted-foreground); }
     .audit-action.audit-deleted,
     .audit-action.audit-purged { color: var(--danger); }
+    .due-badge {
+      display: inline-block;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      padding: .1rem .35rem;
+      border-radius: 4px;
+      margin-left: .35rem;
+      vertical-align: middle;
+    }
+    .due-overdue {
+      background: color-mix(in srgb, var(--danger) 18%, var(--background));
+      color: var(--danger);
+    }
+    .due-soon {
+      background: color-mix(in srgb, var(--warning) 18%, var(--background));
+      color: var(--warning);
+    }
+    .export-bar a { margin: 0 .1rem; }
+    .gen-row { margin: .5rem 0 1rem; align-items: end; }
+    .import-box { margin: 0 0 1rem; }
+    .import-box textarea { width: 100%; font-family: ui-monospace, monospace; font-size: .85rem; }
     section {
       background: var(--card);
       color: var(--card-foreground);

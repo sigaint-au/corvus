@@ -1205,6 +1205,19 @@ class TestTokens(unittest.TestCase):
         self.assertNotIn("updated_at = now()", routes)
         self.assertNotIn("updated_at=now()", routes)
 
+    def test_secret_versions_schema(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        init = (root / "db" / "init.sql").read_text()
+        self.assertIn("CREATE TABLE api.secret_versions", init)
+        self.assertIn("archive_secret_version", init)
+        self.assertIn("expires_at", init)
+        self.assertIn("rotate_days", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("api.secret_versions", src)
+        self.assertIn("archive_secret_version", src)
+
     def test_token_prefix_unique_constraint(self):
         from pathlib import Path
 
@@ -1212,6 +1225,116 @@ class TestTokens(unittest.TestCase):
         self.assertIn("token_prefix text NOT NULL UNIQUE", init)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("machine_tokens_token_prefix_key", src)
+
+
+class TestSecretLifecycle(unittest.TestCase):
+    """Versioning helpers, expiry status, import parse (no DB)."""
+
+    def setUp(self):
+        store.app.config["TESTING"] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        self.pid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "u@ex.com"
+
+    def test_parse_env(self):
+        from routes.projects import parse_secret_pairs
+
+        pairs = parse_secret_pairs("FOO=bar\n# c\nBAZ='qux'\nexport Q=1\n")
+        self.assertEqual(pairs, [("FOO", "bar"), ("BAZ", "qux"), ("Q", "1")])
+
+    def test_parse_json_object(self):
+        from routes.projects import parse_secret_pairs
+
+        pairs = parse_secret_pairs('{"A": "1", "B": {"value": "2"}}')
+        self.assertEqual(pairs, [("A", "1"), ("B", "2")])
+
+    def test_parse_json_enc(self):
+        from routes.projects import parse_secret_pairs
+
+        pairs = parse_secret_pairs('{"K": {"value_enc": "gAAAA", "note": "n"}}')
+        self.assertEqual(pairs[0][0], "K")
+        self.assertEqual(pairs[0][1]["_enc"], "gAAAA")
+
+    def test_parse_csv(self):
+        from routes.projects import parse_secret_pairs
+
+        pairs = parse_secret_pairs("key,value\nX,y\n")
+        self.assertEqual(pairs, [("X", "y")])
+
+    def test_due_status(self):
+        from datetime import datetime, timedelta, timezone
+
+        from routes.projects import secret_due_status
+
+        now = datetime.now(timezone.utc)
+        self.assertEqual(
+            secret_due_status({"expires_at": now - timedelta(days=1)}), "overdue"
+        )
+        self.assertEqual(
+            secret_due_status({"expires_at": now + timedelta(days=3)}), "soon"
+        )
+        self.assertIsNone(secret_due_status({"expires_at": now + timedelta(days=60)}))
+        self.assertEqual(
+            secret_due_status(
+                {"rotate_days": 7, "updated_at": now - timedelta(days=10)}
+            ),
+            "overdue",
+        )
+
+    def test_history_requires_login(self):
+        r = store.app.test_client().get(
+            f"/projects/{uuid4()}/secrets/{uuid4()}/history"
+        )
+        self.assertEqual(r.status_code, 302)
+
+    def test_export_plain_env(self):
+        enc = crypto.encrypt("secret-val")
+        conn, cur = _conn()
+        cur.fetchall.return_value = [{"key": "K", "value_enc": enc, "note": ""}]
+        cur.fetchone.return_value = {"r": True}
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(f"/projects/{self.pid}/export?format=env&mode=plain")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"K=secret-val", r.data)
+
+    def test_import_env(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{"w": True}, None, {"id": sid}]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/import",
+                data={"payload": "NEW_KEY=hello"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        conn.commit.assert_called()
+
+    def test_history_page(self):
+        sid, vid = uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"id": sid, "key": "K", "note": "", "updated_at": None,
+             "expires_at": None, "rotate_days": None},
+            {"w": True},
+            {
+                "name": "prod",
+                "id": self.pid,
+                "team_name": "Ops",
+                "team_id": uuid4(),
+            },
+        ]
+        cur.fetchall.return_value = [
+            {"id": vid, "note": "old", "created_at": "2020-01-01"}
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(f"/projects/{self.pid}/secrets/{sid}/history")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Rollback", r.data)
+        self.assertIn(b"History", r.data)
 
 
 # ── PostgREST token API ────────────────────────────────────────────

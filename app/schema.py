@@ -538,6 +538,69 @@ def ensure_schema():
           BEFORE UPDATE ON api.secrets
           FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at()
         """,
+        # Secret versioning + expiry / rotation hints
+        """
+        ALTER TABLE api.secrets
+          ADD COLUMN IF NOT EXISTS expires_at timestamptz
+        """,
+        """
+        ALTER TABLE api.secrets
+          ADD COLUMN IF NOT EXISTS rotate_days int
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS api.secret_versions (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+          value_enc text NOT NULL,
+          note text NOT NULL DEFAULT '',
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS secret_versions_secret_created_idx
+          ON api.secret_versions (secret_id, created_at DESC)
+        """,
+        """
+        CREATE OR REPLACE FUNCTION api.archive_secret_version()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.value_enc IS DISTINCT FROM NEW.value_enc THEN
+            INSERT INTO api.secret_versions (secret_id, value_enc, note)
+            VALUES (OLD.id, OLD.value_enc, OLD.note);
+          END IF;
+          RETURN NEW;
+        END;
+        $$
+        """,
+        "DROP TRIGGER IF EXISTS secrets_archive_version ON api.secrets",
+        """
+        CREATE TRIGGER secrets_archive_version
+          BEFORE UPDATE ON api.secrets
+          FOR EACH ROW EXECUTE FUNCTION api.archive_secret_version()
+        """,
+        "ALTER TABLE api.secret_versions ENABLE ROW LEVEL SECURITY",
+        "DROP POLICY IF EXISTS secret_versions_select ON api.secret_versions",
+        """
+        CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authenticated
+          USING (
+            EXISTS (
+              SELECT 1 FROM api.secrets s
+              WHERE s.id = secret_id AND api.can_read_project(s.project_id)
+            )
+          )
+        """,
+        "DROP POLICY IF EXISTS secret_versions_insert ON api.secret_versions",
+        """
+        CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT TO authenticated
+          WITH CHECK (
+            EXISTS (
+              SELECT 1 FROM api.secrets s
+              WHERE s.id = secret_id AND api.can_write_project(s.project_id)
+            )
+          )
+        """,
+        "GRANT SELECT, INSERT ON api.secret_versions TO authenticated",
+        "GRANT ALL ON api.secret_versions TO authenticator",
     ]
     try:
         with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:

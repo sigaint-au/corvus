@@ -53,19 +53,78 @@
       {% endif %}
     </form>
   </div>
+  <p class="muted export-bar">
+    Export:
+    <a href="{{ url_for('export_secrets', project_id=project.id, format='env', mode='plain') }}"
+       onclick="return confirm('Download PLAINTEXT secrets for this project?')">.env</a>
+    ·
+    <a href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='plain') }}"
+       onclick="return confirm('Download PLAINTEXT secrets for this project?')">JSON</a>
+    ·
+    <a href="{{ url_for('export_secrets', project_id=project.id, format='csv', mode='plain') }}"
+       onclick="return confirm('Download PLAINTEXT secrets for this project?')">CSV</a>
+    ·
+    <a href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='enc') }}">encrypted JSON</a>
+  </p>
   {% if can_write %}
   <form method="post"
         action="{{ url_for('create_secret', project_id=project.id) }}"
         hx-post="{{ url_for('create_secret', project_id=project.id) }}"
         hx-target="#secrets-list"
         hx-swap="innerHTML"
-        class="row">
+        class="row" id="secret-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
-    <label>Value <input type="password" name="value" required placeholder="••••••••"></label>
+    <label>Value
+      <input type="password" name="value" id="secret-value" required placeholder="••••••••">
+    </label>
     <label>Note <input type="text" name="note" placeholder="optional label (not encrypted)"></label>
+    <label>Expires <input type="date" name="expires_at"></label>
+    <label>Rotate every (days) <input type="number" name="rotate_days" min="1" placeholder="—"></label>
     <button type="submit">Save</button>
   </form>
+  <div class="row gen-row">
+    <label>Length <input type="number" id="gen-len" value="24" min="8" max="128" style="width:4.5rem"></label>
+    <label>Charset
+      <select id="gen-charset">
+        <option value="alnum">A–Z a–z 0–9</option>
+        <option value="alnumsym" selected>A–Z a–z 0–9 + symbols</option>
+        <option value="hex">hex</option>
+      </select>
+    </label>
+    <button type="button" id="gen-btn">Generate random</button>
+  </div>
+  <details class="import-box">
+    <summary>Bulk import (.env / CSV / JSON)</summary>
+    <form method="post" action="{{ url_for('import_secrets', project_id=project.id) }}" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>File <input type="file" name="file" accept=".env,.txt,.csv,.json,text/*"></label>
+      <label>Or paste
+        <textarea name="payload" rows="6" placeholder="KEY=value&#10;OTHER=secret"></textarea>
+      </label>
+      <button type="submit">Import</button>
+    </form>
+  </details>
+  <script>
+  (function () {
+    var btn = document.getElementById('gen-btn');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var len = Math.min(128, Math.max(8, parseInt(document.getElementById('gen-len').value, 10) || 24));
+      var mode = document.getElementById('gen-charset').value;
+      var chars = mode === 'hex' ? '0123456789abcdef'
+        : mode === 'alnum' ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+        : 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*_-+=';
+      var buf = new Uint8Array(len);
+      crypto.getRandomValues(buf);
+      var out = '';
+      for (var i = 0; i < len; i++) out += chars[buf[i] % chars.length];
+      var inp = document.getElementById('secret-value');
+      inp.type = 'text';
+      inp.value = out;
+    });
+  })();
+  </script>
   {% endif %}
   <div id="secrets-list">
     {% include "partials/secrets.html" %}

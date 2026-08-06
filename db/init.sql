@@ -123,12 +123,25 @@ CREATE TABLE api.secrets (
   key text NOT NULL,
   value_enc text NOT NULL,
   note text NOT NULL DEFAULT '',  -- non-sensitive; not encrypted
+  expires_at timestamptz,        -- hard expiry (optional)
+  rotate_days int,               -- soft "rotate every N days" hint from updated_at
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz
 );
 CREATE UNIQUE INDEX secrets_project_key_live
   ON api.secrets (project_id, key) WHERE deleted_at IS NULL;
+
+-- Prior value_enc snapshots on update (trigger-filled; human + machine paths)
+CREATE TABLE api.secret_versions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+  value_enc text NOT NULL,
+  note text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()  -- when this version was superseded
+);
+CREATE INDEX secret_versions_secret_created_idx
+  ON api.secret_versions (secret_id, created_at DESC);
 
 -- Keep updated_at current on any row change (app code should not set it manually)
 CREATE OR REPLACE FUNCTION api.touch_updated_at()
@@ -141,6 +154,21 @@ $$;
 CREATE TRIGGER secrets_touch_updated_at
   BEFORE UPDATE ON api.secrets
   FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at();
+
+-- Archive previous ciphertext when value changes
+CREATE OR REPLACE FUNCTION api.archive_secret_version()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.value_enc IS DISTINCT FROM NEW.value_enc THEN
+    INSERT INTO api.secret_versions (secret_id, value_enc, note)
+    VALUES (OLD.id, OLD.value_enc, OLD.note);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER secrets_archive_version
+  BEFORE UPDATE ON api.secrets
+  FOR EACH ROW EXECUTE FUNCTION api.archive_secret_version();
 
 -- Secret audit log (create / update / reveal / delete / restore / purge / machine_upsert)
 CREATE TABLE api.secret_audit (
@@ -257,6 +285,7 @@ ALTER TABLE api.team_ldap_maps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.project_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
 
@@ -318,6 +347,23 @@ CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
   USING (api.can_write_project(project_id));
 CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
   USING (api.can_write_project(project_id));
+
+-- Versions inherit access from parent secret's project
+CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND api.can_read_project(s.project_id)
+    )
+  );
+CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND api.can_write_project(s.project_id)
+    )
+  );
+-- No direct UPDATE/DELETE for authenticated (purge via secret CASCADE)
 
 CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
   USING (api.can_read_project(project_id));

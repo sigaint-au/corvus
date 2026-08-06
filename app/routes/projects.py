@@ -1,11 +1,23 @@
 """Projects, secrets, machine tokens, trash."""
 
+import csv
 import hashlib
+import io
+import json
 import logging
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from flask import flash, redirect, render_template, request, session, url_for
+from flask import (
+    Response,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 import audit
 import authz
@@ -15,6 +27,96 @@ import db
 import paging
 
 log = logging.getLogger(__name__)
+
+_SOON_DAYS = 14
+_ENV_LINE = re.compile(
+    r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$"
+)
+
+
+def _as_utc(dt):
+    if dt is None:
+        return None
+    if getattr(dt, "tzinfo", None) is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def secret_due_status(row, soon_days=_SOON_DAYS):
+    """Return 'overdue', 'soon', or None from expires_at / rotate_days."""
+    now = datetime.now(timezone.utc)
+    due = _as_utc(row.get("expires_at"))
+    if due is None:
+        days = row.get("rotate_days")
+        upd = _as_utc(row.get("updated_at"))
+        if days and upd and int(days) > 0:
+            due = upd + timedelta(days=int(days))
+    if due is None:
+        return None
+    if due <= now:
+        return "overdue"
+    if due <= now + timedelta(days=soon_days):
+        return "soon"
+    return None
+
+
+def parse_secret_pairs(text: str) -> list[tuple[str, str]]:
+    """Parse .env, JSON object/list, or CSV (key,value) into (key, value) pairs."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    # JSON
+    if text[0] in "{[":
+        data = json.loads(text)
+        if isinstance(data, dict):
+            out = []
+            for k, v in data.items():
+                if isinstance(v, dict) and "value" in v:
+                    out.append((str(k), str(v["value"])))
+                elif isinstance(v, dict) and "value_enc" in v:
+                    out.append((str(k), {"_enc": v["value_enc"], "note": v.get("note", "")}))
+                else:
+                    out.append((str(k), "" if v is None else str(v)))
+            return out
+        if isinstance(data, list):
+            out = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                k = item.get("key") or item.get("name")
+                if not k:
+                    continue
+                if "value_enc" in item and "value" not in item:
+                    out.append((str(k), {"_enc": item["value_enc"], "note": item.get("note", "")}))
+                else:
+                    out.append((str(k), "" if item.get("value") is None else str(item.get("value"))))
+            return out
+        raise ValueError("JSON must be object or array of {key,value}")
+    # CSV with header key,value
+    first = text.splitlines()[0].lower()
+    if "key" in first and "value" in first and ("," in first or "\t" in first):
+        delim = "\t" if "\t" in first and first.count("\t") >= first.count(",") else ","
+        reader = csv.DictReader(io.StringIO(text), delimiter=delim)
+        out = []
+        for row in reader:
+            k = (row.get("key") or row.get("KEY") or "").strip()
+            if k:
+                out.append((k, row.get("value") or row.get("VALUE") or ""))
+        return out
+    # .env
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        m = _ENV_LINE.match(line)
+        if not m:
+            continue
+        k, v = m.group(1), m.group(2).strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            v = v[1:-1]
+        out.append((k, v))
+    return out
 
 
 def _load_secrets_page(cur, project_id, page, q):
@@ -36,14 +138,92 @@ def _load_secrets_page(cur, project_id, page, q):
     )
     cur.execute(
         f"""
-        SELECT id, key, note, created_at, updated_at FROM api.secrets
+        SELECT id, key, note, created_at, updated_at, expires_at, rotate_days
+        FROM api.secrets
         WHERE {where}
         ORDER BY key
         LIMIT %s OFFSET %s
         """,
         (*params, pager["limit"], pager["offset"]),
     )
-    return cur.fetchall(), pager
+    rows = cur.fetchall()
+    for r in rows:
+        r["due"] = secret_due_status(r)
+    return rows, pager
+
+
+def _parse_expiry_fields(form):
+    """Return (expires_at|None, rotate_days|None) from form."""
+    expires_at = None
+    raw = (form.get("expires_at") or "").strip()
+    if raw:
+        try:
+            expires_at = datetime.fromisoformat(raw)
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise ValueError("expires_at must be YYYY-MM-DD or ISO datetime")
+    rotate_days = None
+    rd = (form.get("rotate_days") or "").strip()
+    if rd:
+        rotate_days = int(rd)
+        if rotate_days < 1:
+            raise ValueError("rotate_days must be >= 1")
+    return expires_at, rotate_days
+
+
+def _upsert_secret(
+    cur,
+    project_id,
+    key,
+    value_or_enc,
+    note="",
+    expires_at=None,
+    rotate_days=None,
+    *,
+    already_enc=False,
+    touch_meta=True,
+):
+    """Insert/update one secret; returns (id, was_new)."""
+    enc = value_or_enc if already_enc else crypto.encrypt(str(value_or_enc))
+    cur.execute(
+        """
+        SELECT id FROM api.secrets
+        WHERE project_id = %s AND key = %s AND deleted_at IS NULL
+        """,
+        (str(project_id), key),
+    )
+    existing = cur.fetchone()
+    if touch_meta:
+        cur.execute(
+            """
+            INSERT INTO api.secrets
+              (project_id, key, value_enc, note, expires_at, rotate_days)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+              SET value_enc = EXCLUDED.value_enc,
+                  note = EXCLUDED.note,
+                  expires_at = EXCLUDED.expires_at,
+                  rotate_days = EXCLUDED.rotate_days
+            RETURNING id
+            """,
+            (str(project_id), key, enc, note or "", expires_at, rotate_days),
+        )
+    else:
+        cur.execute(
+            """
+            INSERT INTO api.secrets (project_id, key, value_enc, note)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+              SET value_enc = EXCLUDED.value_enc,
+                  note = CASE WHEN EXCLUDED.note = '' THEN api.secrets.note
+                              ELSE EXCLUDED.note END
+            RETURNING id
+            """,
+            (str(project_id), key, enc, note or ""),
+        )
+    row = cur.fetchone()
+    return (row["id"] if row else None), (existing is None)
 
 
 def register(app):
@@ -343,37 +523,32 @@ def register(app):
         if not key or value is None:
             flash("Key and value required", "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        try:
+            expires_at, rotate_days = _parse_expiry_fields(request.form)
+        except (ValueError, TypeError) as e:
+            flash(str(e), "error")
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
-                cur.execute(
-                    """
-                    SELECT id FROM api.secrets
-                    WHERE project_id = %s AND key = %s AND deleted_at IS NULL
-                    """,
-                    (str(project_id), key),
+                sid, was_new = _upsert_secret(
+                    cur,
+                    project_id,
+                    key,
+                    value,
+                    note=note,
+                    expires_at=expires_at,
+                    rotate_days=rotate_days,
                 )
-                existing = cur.fetchone()
-                cur.execute(
-                    """
-                    INSERT INTO api.secrets (project_id, key, value_enc, note)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
-                      SET value_enc = EXCLUDED.value_enc, note = EXCLUDED.note
-                    RETURNING id
-                    """,
-                    (str(project_id), key, crypto.encrypt(value), note),
-                )
-                row = cur.fetchone()
-                if not row:
+                if not sid:
                     flash("You don't have permission to do that", "error")
                     conn.rollback()
                 else:
                     audit.log_secret(
                         cur,
                         project_id=project_id,
-                        secret_id=row["id"],
+                        secret_id=sid,
                         secret_key=key,
-                        action="updated" if existing else "created",
+                        action="created" if was_new else "updated",
                     )
                     conn.commit()
             except Exception as e:
@@ -468,6 +643,213 @@ def register(app):
             secrets_pager=secrets_pager,
             search_q=q,
         )
+
+
+    @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/history")
+    @authz.login_required
+    def secret_history(project_id, secret_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, key, note, updated_at, expires_at, rotate_days
+                FROM api.secrets
+                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                """,
+                (str(secret_id), str(project_id)),
+            )
+            secret = cur.fetchone()
+            if not secret:
+                return "Not found", 404
+            cur.execute(
+                """
+                SELECT id, note, created_at FROM api.secret_versions
+                WHERE secret_id = %s
+                ORDER BY created_at DESC
+                LIMIT 50
+                """,
+                (str(secret_id),),
+            )
+            versions = cur.fetchall()
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            can_write = cur.fetchone()["w"]
+            cur.execute(
+                """
+                SELECT p.name, p.id, t.name AS team_name, t.id AS team_id
+                FROM api.projects p JOIN api.teams t ON t.id = p.team_id
+                WHERE p.id = %s
+                """,
+                (str(project_id),),
+            )
+            project = cur.fetchone()
+        return render_template(
+            "secret_history.html",
+            project=project,
+            secret=secret,
+            versions=versions,
+            can_write=can_write,
+            project_id=project_id,
+        )
+
+
+    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/rollback/<uuid:version_id>")
+    @authz.login_required
+    def rollback_secret(project_id, secret_id, version_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT s.id, s.key, v.value_enc, v.note
+                FROM api.secret_versions v
+                JOIN api.secrets s ON s.id = v.secret_id
+                WHERE v.id = %s AND s.id = %s AND s.project_id = %s
+                  AND s.deleted_at IS NULL
+                """,
+                (str(version_id), str(secret_id), str(project_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                flash("Version not found", "error")
+                return redirect(
+                    url_for("secret_history", project_id=project_id, secret_id=secret_id)
+                )
+            cur.execute(
+                """
+                UPDATE api.secrets
+                SET value_enc = %s, note = %s
+                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                """,
+                (row["value_enc"], row["note"], str(secret_id), str(project_id)),
+            )
+            if cur.rowcount == 0:
+                flash("You don't have permission to do that", "error")
+                conn.rollback()
+            else:
+                audit.log_secret(
+                    cur,
+                    project_id=project_id,
+                    secret_id=secret_id,
+                    secret_key=row["key"],
+                    action="updated",
+                )
+                conn.commit()
+                flash("Rolled back to selected version", "ok")
+        return redirect(url_for("secret_history", project_id=project_id, secret_id=secret_id))
+
+
+    @app.get("/projects/<uuid:project_id>/export")
+    @authz.login_required
+    def export_secrets(project_id):
+        fmt = (request.args.get("format") or "env").strip().lower()
+        mode = (request.args.get("mode") or "plain").strip().lower()
+        if fmt not in ("env", "json", "csv"):
+            fmt = "env"
+        if mode not in ("plain", "enc"):
+            mode = "plain"
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT key, value_enc, note FROM api.secrets
+                WHERE project_id = %s AND deleted_at IS NULL
+                ORDER BY key
+                """,
+                (str(project_id),),
+            )
+            rows = cur.fetchall()
+            cur.execute("SELECT api.can_read_project(%s) AS r", (str(project_id),))
+            if not (cur.fetchone() or {}).get("r"):
+                return "Not found", 404
+        if mode == "enc":
+            payload = {
+                r["key"]: {"value_enc": r["value_enc"], "note": r["note"]} for r in rows
+            }
+            body = json.dumps(payload, indent=2)
+            return Response(
+                body,
+                mimetype="application/json",
+                headers={
+                    "Content-Disposition": f'attachment; filename="secrets-{project_id}-enc.json"'
+                },
+            )
+        pairs = [(r["key"], crypto.decrypt(r["value_enc"])) for r in rows]
+        if fmt == "json":
+            body = json.dumps({k: v for k, v in pairs}, indent=2)
+            mime, name = "application/json", f"secrets-{project_id}.json"
+        elif fmt == "csv":
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(["key", "value"])
+            w.writerows(pairs)
+            body = buf.getvalue()
+            mime, name = "text/csv", f"secrets-{project_id}.csv"
+        else:
+            body = "\n".join(f"{k}={v}" for k, v in pairs) + ("\n" if pairs else "")
+            mime, name = "text/plain", f"secrets-{project_id}.env"
+        return Response(
+            body,
+            mimetype=mime,
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
+
+
+    @app.post("/projects/<uuid:project_id>/import")
+    @authz.login_required
+    def import_secrets(project_id):
+        raw = request.form.get("payload") or ""
+        f = request.files.get("file")
+        if f and f.filename:
+            raw = f.read().decode("utf-8", errors="replace")
+        if not raw.strip():
+            flash("Paste secrets or choose a file", "error")
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        try:
+            pairs = parse_secret_pairs(raw)
+        except Exception as e:
+            flash(f"Parse error: {e}", "error")
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        if not pairs:
+            flash("No key/value pairs found", "error")
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        n_ok = 0
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            if not cur.fetchone()["w"]:
+                flash("You don't have permission to do that", "error")
+                return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+            try:
+                for key, val in pairs:
+                    if isinstance(val, dict) and "_enc" in val:
+                        sid, was_new = _upsert_secret(
+                            cur,
+                            project_id,
+                            key,
+                            val["_enc"],
+                            note=val.get("note") or "",
+                            already_enc=True,
+                            touch_meta=False,
+                        )
+                    else:
+                        sid, was_new = _upsert_secret(
+                            cur,
+                            project_id,
+                            key,
+                            val,
+                            touch_meta=False,
+                        )
+                    if sid:
+                        audit.log_secret(
+                            cur,
+                            project_id=project_id,
+                            secret_id=sid,
+                            secret_key=key,
+                            action="created" if was_new else "updated",
+                        )
+                        n_ok += 1
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+                return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        flash(f"Imported {n_ok} secret(s)", "ok")
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
 
 
     @app.post("/projects/<uuid:project_id>/tokens")
