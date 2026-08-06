@@ -1267,7 +1267,7 @@ class TestSecretLifecycle(unittest.TestCase):
     def test_due_status(self):
         from datetime import datetime, timedelta, timezone
 
-        from routes.projects import secret_due_status
+        from routes.projects import expires_status, secret_due_status
 
         now = datetime.now(timezone.utc)
         self.assertEqual(
@@ -1283,6 +1283,9 @@ class TestSecretLifecycle(unittest.TestCase):
             ),
             "overdue",
         )
+        self.assertEqual(expires_status(now - timedelta(hours=1)), "overdue")
+        self.assertEqual(expires_status(now + timedelta(days=2)), "soon")
+        self.assertIsNone(expires_status(None))
 
     def test_history_requires_login(self):
         r = store.app.test_client().get(
@@ -1595,6 +1598,8 @@ class TestUIShell(unittest.TestCase):
         self.assertIn(b"Machine accounts", r.data)
         self.assertIn(b"Trash", r.data)
         self.assertIn(b"side-team-select", r.data)
+        self.assertIn(b"Active team", r.data)
+        self.assertIn(b"Switch team", r.data)
         self.assertNotIn(b"Server settings", r.data)
 
     def test_global_admin_sees_settings_nav(self):
@@ -1731,6 +1736,9 @@ class TestNav(unittest.TestCase):
         self.assertIn(b"DB_URL", r.data)
         self.assertIn(b"Restore", r.data)
         self.assertIn(b"Delete forever", r.data)
+        # Two-step confirm for permanent purge
+        self.assertIn("Delete forever — this cannot be undone".encode(), r.data)
+        self.assertIn(b"&& confirm(", r.data)
 
     def test_restore_secret(self):
         conn, cur = _conn()

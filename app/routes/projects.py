@@ -42,22 +42,34 @@ def _as_utc(dt):
     return dt
 
 
+def expires_status(expires_at, soon_days=_SOON_DAYS):
+    """Return 'overdue', 'soon', or None for a single expiry timestamp."""
+    due = _as_utc(expires_at)
+    if due is None:
+        return None
+    now = datetime.now(timezone.utc)
+    if due <= now:
+        return "overdue"
+    if due <= now + timedelta(days=soon_days):
+        return "soon"
+    return None
+
+
 def secret_due_status(row, soon_days=_SOON_DAYS):
     """Return 'overdue', 'soon', or None from expires_at / rotate_days."""
-    now = datetime.now(timezone.utc)
     due = _as_utc(row.get("expires_at"))
     if due is None:
         days = row.get("rotate_days")
         upd = _as_utc(row.get("updated_at"))
         if days and upd and int(days) > 0:
             due = upd + timedelta(days=int(days))
-    if due is None:
-        return None
-    if due <= now:
-        return "overdue"
-    if due <= now + timedelta(days=soon_days):
-        return "soon"
-    return None
+    return expires_status(due, soon_days=soon_days)
+
+
+def _annotate_token_expiry(rows):
+    for r in rows:
+        r["due"] = expires_status(r.get("expires_at"))
+    return rows
 
 
 def parse_secret_pairs(text: str) -> list[tuple[str, str]]:
@@ -298,7 +310,7 @@ def register(app):
                         """,
                         (tid,),
                     )
-                    tokens = cur.fetchall()
+                    tokens = _annotate_token_expiry(cur.fetchall())
         return render_template("machines.html", team=team, tokens=tokens)
 
 
@@ -408,7 +420,7 @@ def register(app):
     @authz.login_required
     def project_detail(project_id):
         tab = (request.args.get("tab") or "secrets").strip().lower()
-        if tab not in ("secrets", "audit", "tokens", "settings"):
+        if tab not in ("secrets", "audit", "tokens", "import", "settings"):
             tab = "secrets"
         page = paging.page_arg("page")
         q = (request.args.get("q") or "").strip()
@@ -439,6 +451,8 @@ def register(app):
 
             if tab == "settings" and not can_delete:
                 tab = "secrets"
+            if tab == "import" and not can_write:
+                tab = "secrets"
             if tab == "secrets":
                 secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             elif tab == "audit":
@@ -465,7 +479,7 @@ def register(app):
                     """,
                     (str(project_id),),
                 )
-                tokens = cur.fetchall()
+                tokens = _annotate_token_expiry(cur.fetchall())
             # settings: no extra queries
         return render_template(
             "project.html",
@@ -797,23 +811,24 @@ def register(app):
         f = request.files.get("file")
         if f and f.filename:
             raw = f.read().decode("utf-8", errors="replace")
+        back = url_for("project_detail", project_id=project_id, tab="import")
         if not raw.strip():
             flash("Paste secrets or choose a file", "error")
-            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+            return redirect(back)
         try:
             pairs = parse_secret_pairs(raw)
         except Exception as e:
             flash(f"Parse error: {e}", "error")
-            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+            return redirect(back)
         if not pairs:
             flash("No key/value pairs found", "error")
-            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+            return redirect(back)
         n_ok = 0
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             if not cur.fetchone()["w"]:
                 flash("You don't have permission to do that", "error")
-                return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+                return redirect(back)
             try:
                 for key, val in pairs:
                     if isinstance(val, dict) and "_enc" in val:
@@ -847,9 +862,9 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-                return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+                return redirect(back)
         flash(f"Imported {n_ok} secret(s)", "ok")
-        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        return redirect(back)
 
 
     @app.post("/projects/<uuid:project_id>/tokens")

@@ -172,7 +172,32 @@
       color: #fff;
     }
     .side-team {
-      padding: 0 .35rem .75rem;
+      padding: 0 .35rem .85rem;
+      border-bottom: 1px solid var(--side-border);
+      margin-bottom: .35rem;
+    }
+    .side-team-active {
+      margin-bottom: .55rem;
+    }
+    .side-team-label {
+      display: block;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--side-muted);
+      margin-bottom: .2rem;
+    }
+    .side-team-name {
+      display: block;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 650;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+    .side-team-name.is-empty {
+      color: var(--side-muted);
+      font-weight: 500;
     }
     .side-team label {
       display: block;
@@ -190,6 +215,22 @@
       border-radius: 6px;
       padding: .45rem .5rem;
       font-size: .875rem;
+    }
+    .side-team select:focus {
+      outline: 2px solid #fff;
+      outline-offset: 1px;
+    }
+    .warn-inline {
+      color: var(--warning);
+      font-size: .85rem;
+      margin: .35rem 0 .5rem;
+    }
+    .field-hint {
+      display: block;
+      font-size: .75rem;
+      font-weight: 500;
+      color: var(--muted-foreground);
+      margin-top: .15rem;
     }
     .nav-sep {
       height: 1px;
@@ -423,10 +464,114 @@
       background: color-mix(in srgb, var(--warning) 18%, var(--background));
       color: var(--warning);
     }
-    .export-bar a { margin: 0 .1rem; }
-    .gen-row { margin: .5rem 0 1rem; align-items: end; }
     .import-box { margin: 0 0 1rem; }
     .import-box textarea { width: 100%; font-family: ui-monospace, monospace; font-size: .85rem; }
+    .section-tools {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: .5rem;
+    }
+    .section-tools .toolbar { margin: 0; }
+    .menu {
+      position: relative;
+    }
+    .menu > summary {
+      list-style: none;
+      cursor: pointer;
+      user-select: none;
+      font-size: .875rem;
+      font-weight: 500;
+      padding: .4rem .7rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--background);
+      color: var(--foreground);
+    }
+    .menu > summary::-webkit-details-marker { display: none; }
+    .menu > summary::after {
+      content: " ▾";
+      font-size: .75em;
+      opacity: .7;
+    }
+    .menu[open] > summary {
+      border-color: var(--ring);
+    }
+    .menu-panel {
+      position: absolute;
+      right: 0;
+      top: calc(100% + .25rem);
+      z-index: 20;
+      min-width: 12rem;
+      padding: .3rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px color-mix(in srgb, #000 12%, transparent);
+      display: flex;
+      flex-direction: column;
+      gap: .1rem;
+    }
+    .menu-panel a {
+      display: block;
+      padding: .45rem .65rem;
+      border-radius: 5px;
+      color: var(--foreground);
+      text-decoration: none;
+      font-size: .875rem;
+      white-space: nowrap;
+    }
+    .menu-panel a:hover {
+      background: var(--muted);
+      text-decoration: none;
+    }
+    .secret-create { margin-bottom: 1rem; }
+    .value-label { min-width: 12rem; }
+    .input-with-btn {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      border: 1px solid var(--input);
+      border-radius: 6px;
+      background: var(--background);
+      overflow: hidden;
+    }
+    .input-with-btn:focus-within {
+      outline: 2px solid var(--ring);
+      outline-offset: 1px;
+    }
+    .input-with-btn input {
+      flex: 1;
+      min-width: 0;
+      border: none !important;
+      border-radius: 0 !important;
+      outline: none !important;
+      box-shadow: none !important;
+    }
+    .icon-btn {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-left: 1px solid var(--input);
+      border-radius: 0;
+      background: var(--muted);
+      color: var(--muted-foreground);
+      cursor: pointer;
+    }
+    .icon-btn:hover {
+      background: var(--accent);
+      color: var(--foreground);
+    }
+    .icon-btn:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: -2px;
+    }
     section {
       background: var(--card);
       color: var(--card-foreground);
@@ -651,12 +796,21 @@
       <span class="brand-sub">Secret Server</span>
     </a>
     <form class="side-team" method="post" action="{{ url_for('select_team') }}">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <label for="side-team-select">Team</label>
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="next" value="{{ request.path }}">
-      <select id="side-team-select" name="team_id" onchange="this.form.submit()">
+      <div class="side-team-active">
+        <span class="side-team-label">Active team</span>
+        {% if nav_team_name %}
+        <strong class="side-team-name" title="{{ nav_team_name }}">{{ nav_team_name }}</strong>
+        {% else %}
+        <strong class="side-team-name is-empty">No team selected</strong>
+        {% endif %}
+      </div>
+      <label for="side-team-select">Switch team</label>
+      <select id="side-team-select" name="team_id" onchange="this.form.submit()"
+              aria-label="Switch team">
         {% if not nav_teams %}
-        <option value="">No teams</option>
+        <option value="">No teams available</option>
         {% else %}
         {% for t in nav_teams %}
         <option value="{{ t.id }}" {% if nav_team_id == t.id|string %}selected{% endif %}>{{ t.name }}</option>

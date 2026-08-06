@@ -25,13 +25,14 @@
       <td class="muted">{{ item.deleted_at }}</td>
       <td class="acts">
         {% if item.can_write %}
-        <form method="post" action="{{ url_for('restore_secret', secret_id=item.id) }}" class="inline">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <form method="post" action="{{ url_for('restore_secret', secret_id=item.id) }}" class="inline"
+              onsubmit="return confirm('Restore {{ item.key }} to the project?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="link">Restore</button>
         </form>
         <form method="post" action="{{ url_for('purge_secret', secret_id=item.id) }}" class="inline"
-              onsubmit="return confirm('Permanently delete {{ item.key }}? This cannot be undone.')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              onsubmit="return confirm('Permanently delete {{ item.key }}?') && confirm('Delete forever — this cannot be undone. Continue?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="link danger">Delete forever</button>
         </form>
         {% else %}

@@ -28,6 +28,12 @@
      class="tab {% if active_tab == 'tokens' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine tokens</a>
+  {% if can_write %}
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
+     class="tab {% if active_tab == 'import' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'import' else 'false' }}">Import</a>
+  {% endif %}
   {% if can_delete %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
@@ -40,88 +46,83 @@
 <section>
   <div class="section-head">
     <h2>Secrets</h2>
-    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
-      <input type="hidden" name="tab" value="secrets">
-      <label class="search-field">
-        <span class="visually-hidden">Search secrets</span>
-        <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search secrets">
-      </label>
-      <button type="submit">Go</button>
-      {% if search_q %}
-      <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
-      {% endif %}
-    </form>
+    <div class="section-tools">
+      <details class="menu">
+        <summary>Export</summary>
+        <div class="menu-panel" role="menu">
+          <a role="menuitem"
+             href="{{ url_for('export_secrets', project_id=project.id, format='env', mode='plain') }}"
+             onclick="return confirm('Download PLAINTEXT secrets for this project?')">.env (plaintext)</a>
+          <a role="menuitem"
+             href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='plain') }}"
+             onclick="return confirm('Download PLAINTEXT secrets for this project?')">JSON (plaintext)</a>
+          <a role="menuitem"
+             href="{{ url_for('export_secrets', project_id=project.id, format='csv', mode='plain') }}"
+             onclick="return confirm('Download PLAINTEXT secrets for this project?')">CSV (plaintext)</a>
+          <a role="menuitem"
+             href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='enc') }}">Encrypted JSON</a>
+        </div>
+      </details>
+      <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+        <input type="hidden" name="tab" value="secrets">
+        <label class="search-field">
+          <span class="visually-hidden">Search secrets</span>
+          <input type="search" name="q" value="{{ search_q or '' }}"
+                 placeholder="Search…" autocomplete="off" aria-label="Search secrets">
+        </label>
+        <button type="submit">Go</button>
+        {% if search_q %}
+        <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+        {% endif %}
+      </form>
+    </div>
   </div>
-  <p class="muted export-bar">
-    Export:
-    <a href="{{ url_for('export_secrets', project_id=project.id, format='env', mode='plain') }}"
-       onclick="return confirm('Download PLAINTEXT secrets for this project?')">.env</a>
-    ·
-    <a href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='plain') }}"
-       onclick="return confirm('Download PLAINTEXT secrets for this project?')">JSON</a>
-    ·
-    <a href="{{ url_for('export_secrets', project_id=project.id, format='csv', mode='plain') }}"
-       onclick="return confirm('Download PLAINTEXT secrets for this project?')">CSV</a>
-    ·
-    <a href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='enc') }}">encrypted JSON</a>
-  </p>
   {% if can_write %}
   <form method="post"
         action="{{ url_for('create_secret', project_id=project.id) }}"
         hx-post="{{ url_for('create_secret', project_id=project.id) }}"
         hx-target="#secrets-list"
         hx-swap="innerHTML"
-        class="row" id="secret-form">
+        class="row secret-create" id="secret-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
-    <label>Value
-      <input type="password" name="value" id="secret-value" required placeholder="••••••••">
+    <label class="value-label">Value
+      <span class="input-with-btn">
+        <input type="password" name="value" id="secret-value" required placeholder="••••••••" autocomplete="off">
+        <button type="button" class="icon-btn" id="gen-btn"
+                title="Generate random value" aria-label="Generate random value">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
+            <path d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </span>
     </label>
-    <label>Note <input type="text" name="note" placeholder="optional label (not encrypted)"></label>
+    <label>Note
+      <input type="text" name="note" placeholder="optional label">
+      <span class="field-hint">Plaintext — not encrypted. Do not put credentials here.</span>
+    </label>
     <label>Expires <input type="date" name="expires_at"></label>
     <label>Rotate every (days) <input type="number" name="rotate_days" min="1" placeholder="—"></label>
     <button type="submit">Save</button>
   </form>
-  <div class="row gen-row">
-    <label>Length <input type="number" id="gen-len" value="24" min="8" max="128" style="width:4.5rem"></label>
-    <label>Charset
-      <select id="gen-charset">
-        <option value="alnum">A–Z a–z 0–9</option>
-        <option value="alnumsym" selected>A–Z a–z 0–9 + symbols</option>
-        <option value="hex">hex</option>
-      </select>
-    </label>
-    <button type="button" id="gen-btn">Generate random</button>
-  </div>
-  <details class="import-box">
-    <summary>Bulk import (.env / CSV / JSON)</summary>
-    <form method="post" action="{{ url_for('import_secrets', project_id=project.id) }}" enctype="multipart/form-data">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <label>File <input type="file" name="file" accept=".env,.txt,.csv,.json,text/*"></label>
-      <label>Or paste
-        <textarea name="payload" rows="6" placeholder="KEY=value&#10;OTHER=secret"></textarea>
-      </label>
-      <button type="submit">Import</button>
-    </form>
-  </details>
   <script>
   (function () {
     var btn = document.getElementById('gen-btn');
-    if (!btn) return;
+    var inp = document.getElementById('secret-value');
+    if (!btn || !inp) return;
     btn.addEventListener('click', function () {
-      var len = Math.min(128, Math.max(8, parseInt(document.getElementById('gen-len').value, 10) || 24));
-      var mode = document.getElementById('gen-charset').value;
-      var chars = mode === 'hex' ? '0123456789abcdef'
-        : mode === 'alnum' ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-        : 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*_-+=';
+      var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*_-+=';
+      var len = 32;
       var buf = new Uint8Array(len);
       crypto.getRandomValues(buf);
       var out = '';
       for (var i = 0; i < len; i++) out += chars[buf[i] % chars.length];
-      var inp = document.getElementById('secret-value');
       inp.type = 'text';
       inp.value = out;
+      inp.focus();
     });
   })();
   </script>
@@ -129,6 +130,21 @@
   <div id="secrets-list">
     {% include "partials/secrets.html" %}
   </div>
+</section>
+{% elif active_tab == 'import' and can_write %}
+<section>
+  <h2>Bulk import</h2>
+  <p class="muted">Import secrets from a <code>.env</code>, CSV (<code>key,value</code>), or JSON file/paste.
+    Existing keys are updated. Encrypted JSON exports from this app can be re-imported as ciphertext.</p>
+  <form method="post" action="{{ url_for('import_secrets', project_id=project.id) }}"
+        enctype="multipart/form-data" class="import-box">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>File <input type="file" name="file" accept=".env,.txt,.csv,.json,text/*"></label>
+    <label>Or paste
+      <textarea name="payload" rows="12" placeholder="KEY=value&#10;OTHER=secret"></textarea>
+    </label>
+    <button type="submit">Import</button>
+  </form>
 </section>
 {% elif active_tab == 'audit' %}
 <section>
@@ -187,20 +203,33 @@
 <section>
   <h2>Machine accounts</h2>
   <p class="muted">For OpenShift External Secrets Operator / CI. Scoped to this project.
-    <strong>read-only</strong> can fetch secrets; <strong>write</strong> can also upsert via the machine API.</p>
+    Default is <strong>read-only</strong> (fetch only). Choose <strong>write</strong> only if automation must create or update secrets.</p>
   {% if can_write %}
-  <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row">
+  <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row" id="token-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Name <input type="text" name="name" placeholder="openshift-prod" value="openshift"></label>
     <label>Role
-      <select name="role">
-        <option value="read-only" selected>read-only</option>
-        <option value="write">write</option>
+      <select name="role" id="token-role">
+        <option value="read-only" selected>read-only — fetch only (recommended)</option>
+        <option value="write">write — can create/update secrets</option>
       </select>
     </label>
     <label>Expires (days) <input type="number" name="expires_days" min="1" placeholder="never"></label>
     <button type="submit">Create token</button>
   </form>
+  <p class="warn-inline" id="token-write-warn" hidden>
+    Warning: write tokens can create and update secrets via the machine API. Prefer read-only for ESO.
+  </p>
+  <script>
+  (function () {
+    var sel = document.getElementById('token-role');
+    var warn = document.getElementById('token-write-warn');
+    if (!sel || !warn) return;
+    function sync() { warn.hidden = sel.value !== 'write'; }
+    sel.addEventListener('change', sync);
+    sync();
+  })();
+  </script>
   {% endif %}
   {% if tokens %}
   <table>
@@ -212,11 +241,15 @@
         <td><code>{{ t.token_prefix }}…</code></td>
         <td><span class="role-badge">{{ t.role or 'read-only' }}</span></td>
         <td class="muted">{{ t.created_at }}</td>
-        <td class="muted">{{ t.expires_at or 'never' }}</td>
+        <td class="muted">
+          {{ t.expires_at or 'never' }}
+          {% if t.due == 'overdue' %}<span class="due-badge due-overdue">expired</span>
+          {% elif t.due == 'soon' %}<span class="due-badge due-soon">expiring soon</span>{% endif %}
+        </td>
         <td class="acts">
           {% if can_write %}
           <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
-                onsubmit="return confirm('Revoke token?')">
+                onsubmit="return confirm('Revoke token “{{ t.name }}”?')">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Revoke</button>
           </form>

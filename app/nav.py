@@ -47,6 +47,7 @@ def inject_nav():
         "is_global_admin": bool(session.get("is_global_admin")),
         "nav_teams": [],
         "nav_team_id": session.get("team_id"),
+        "nav_team_name": None,
         "csrf_token": authz.csrf_token(),
     }
     if not session.get("user_id"):
@@ -63,5 +64,15 @@ def inject_nav():
     except Exception:
         teams = []
     base["nav_teams"] = teams
-    base["nav_team_id"] = active_team_id(teams)
+    tid = active_team_id(teams)
+    base["nav_team_id"] = tid
+    name = None
+    for t in teams:
+        try:
+            if str(t["id"]) == tid:
+                name = t.get("name") if hasattr(t, "get") else t["name"]
+                break
+        except (KeyError, TypeError):
+            continue
+    base["nav_team_name"] = name
     return base
