@@ -10,11 +10,20 @@ from settings_svc import classification
 def nav_teams(user_id: str):
     with db.as_user(user_id) as conn, conn.cursor() as cur:
         if session.get("is_global_admin"):
-            cur.execute("SELECT t.id, t.name FROM api.teams t ORDER BY t.name")
+            cur.execute(
+                """
+                SELECT t.id, t.name,
+                       t.classification_enabled, t.classification_text,
+                       t.classification_color, t.classification_fg
+                FROM api.teams t ORDER BY t.name
+                """
+            )
         else:
             cur.execute(
                 """
-                SELECT t.id, t.name
+                SELECT t.id, t.name,
+                       t.classification_enabled, t.classification_text,
+                       t.classification_color, t.classification_fg
                 FROM api.teams t
                 JOIN api.team_members tm ON tm.team_id = t.id
                 WHERE tm.user_id = %s
@@ -67,12 +76,35 @@ def inject_nav():
     tid = active_team_id(teams)
     base["nav_team_id"] = tid
     name = None
+    active = None
     for t in teams:
         try:
             if str(t["id"]) == tid:
                 name = t.get("name") if hasattr(t, "get") else t["name"]
+                active = t
                 break
         except (KeyError, TypeError):
             continue
     base["nav_team_name"] = name
+    # Team-level classification override when set (enabled is not null)
+    if active is not None:
+        try:
+            if active.get("classification_enabled") is not None:
+                from config import HEX
+
+                text = (active.get("classification_text") or "").strip()
+                color = active.get("classification_color") or banner["color"]
+                fg = active.get("classification_fg") or banner["fg"]
+                if not HEX.match(color):
+                    color = banner["color"]
+                if not HEX.match(fg):
+                    fg = banner["fg"]
+                base["classification"] = {
+                    "enabled": bool(active.get("classification_enabled")) and bool(text),
+                    "text": text,
+                    "color": color,
+                    "fg": fg,
+                }
+        except (KeyError, TypeError, AttributeError):
+            pass
     return base

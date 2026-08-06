@@ -66,6 +66,10 @@ DEFAULT_SETTINGS = {
 }
 TEAM_ROLES = ("owner", "admin", "member", "read-only")
 ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "read-only": 1}
+# Invite / join-request roles (cannot self-invite as owner)
+INVITE_ROLES = ("admin", "member", "read-only")
+# Project-scoped membership (in addition to team roles)
+PROJECT_ROLES = ("admin", "write", "read")
 # Machine accounts / ESO tokens: read-only (fetch) or write (fetch + upsert API)
 MACHINE_TOKEN_ROLES = ("read-only", "write")
 LDAP_SETTING_KEYS = (

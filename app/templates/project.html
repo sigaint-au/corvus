@@ -28,12 +28,14 @@
      class="tab {% if active_tab == 'tokens' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine tokens</a>
-  {% if can_write %}
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='members') }}"
+     class="tab {% if active_tab == 'members' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'members' else 'false' }}">Members</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
      class="tab {% if active_tab == 'import' %}active{% endif %}"
      role="tab"
-     aria-selected="{{ 'true' if active_tab == 'import' else 'false' }}">Import</a>
-  {% endif %}
+     aria-selected="{{ 'true' if active_tab == 'import' else 'false' }}">Import / Export</a>
   {% if can_delete %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
@@ -46,36 +48,18 @@
 <section>
   <div class="section-head">
     <h2>Secrets</h2>
-    <div class="section-tools">
-      <details class="menu">
-        <summary>Export</summary>
-        <div class="menu-panel" role="menu">
-          <a role="menuitem"
-             href="{{ url_for('export_secrets', project_id=project.id, format='env', mode='plain') }}"
-             onclick="return confirm('Download PLAINTEXT secrets for this project?')">.env (plaintext)</a>
-          <a role="menuitem"
-             href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='plain') }}"
-             onclick="return confirm('Download PLAINTEXT secrets for this project?')">JSON (plaintext)</a>
-          <a role="menuitem"
-             href="{{ url_for('export_secrets', project_id=project.id, format='csv', mode='plain') }}"
-             onclick="return confirm('Download PLAINTEXT secrets for this project?')">CSV (plaintext)</a>
-          <a role="menuitem"
-             href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='enc') }}">Encrypted JSON</a>
-        </div>
-      </details>
-      <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
-        <input type="hidden" name="tab" value="secrets">
-        <label class="search-field">
-          <span class="visually-hidden">Search secrets</span>
-          <input type="search" name="q" value="{{ search_q or '' }}"
-                 placeholder="Search…" autocomplete="off" aria-label="Search secrets">
-        </label>
-        <button type="submit">Go</button>
-        {% if search_q %}
-        <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
-        {% endif %}
-      </form>
-    </div>
+    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="secrets">
+      <label class="search-field">
+        <span class="visually-hidden">Search secrets</span>
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search…" autocomplete="off" aria-label="Search secrets">
+      </label>
+      <button type="submit">Go</button>
+      {% if search_q %}
+      <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+      {% endif %}
+    </form>
   </div>
   {% if can_write %}
   <form method="post"
@@ -102,10 +86,8 @@
     </label>
     <label>Note
       <input type="text" name="note" placeholder="optional label">
-      <span class="field-hint">Plaintext — not encrypted. Do not put credentials here.</span>
     </label>
     <label>Expires <input type="date" name="expires_at"></label>
-    <label>Rotate every (days) <input type="number" name="rotate_days" min="1" placeholder="—"></label>
     <button type="submit">Save</button>
   </form>
   <script>
@@ -131,10 +113,29 @@
     {% include "partials/secrets.html" %}
   </div>
 </section>
-{% elif active_tab == 'import' and can_write %}
+{% elif active_tab == 'import' %}
 <section>
-  <h2>Bulk import</h2>
-  <p class="muted">Import secrets from a <code>.env</code>, CSV (<code>key,value</code>), or JSON file/paste.
+  <h2>Import / Export</h2>
+
+  <h3>Export</h3>
+  <p class="muted">Download all live secrets in this project. Prefer encrypted JSON for backups; plaintext formats need a confirm.</p>
+  <div class="export-actions">
+    <a class="btn-secondary"
+       href="{{ url_for('export_secrets', project_id=project.id, format='env', mode='plain') }}"
+       onclick="return confirm('Download PLAINTEXT secrets for this project?')">.env (plaintext)</a>
+    <a class="btn-secondary"
+       href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='plain') }}"
+       onclick="return confirm('Download PLAINTEXT secrets for this project?')">JSON (plaintext)</a>
+    <a class="btn-secondary"
+       href="{{ url_for('export_secrets', project_id=project.id, format='csv', mode='plain') }}"
+       onclick="return confirm('Download PLAINTEXT secrets for this project?')">CSV (plaintext)</a>
+    <a class="btn-secondary"
+       href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='enc') }}">Encrypted JSON</a>
+  </div>
+
+  <h3>Import</h3>
+  {% if can_write %}
+  <p class="muted">Import from a <code>.env</code>, CSV (<code>key,value</code>), or JSON file/paste.
     Existing keys are updated. Encrypted JSON exports from this app can be re-imported as ciphertext.</p>
   <form method="post" action="{{ url_for('import_secrets', project_id=project.id) }}"
         enctype="multipart/form-data" class="import-box">
@@ -145,6 +146,9 @@
     </label>
     <button type="submit">Import</button>
   </form>
+  {% else %}
+  <p class="muted">You need write access to import secrets.</p>
+  {% endif %}
 </section>
 {% elif active_tab == 'audit' %}
 <section>
@@ -214,7 +218,10 @@
         <option value="write">write — can create/update secrets</option>
       </select>
     </label>
-    <label>Expires (days) <input type="number" name="expires_days" min="1" placeholder="never"></label>
+    <label>Expires (days)
+      <input type="number" name="expires_days" min="1"
+             placeholder="{% if default_token_days %}{{ default_token_days }} (team default){% else %}never{% endif %}">
+    </label>
     <button type="submit">Create token</button>
   </form>
   <p class="warn-inline" id="token-write-warn" hidden>
@@ -261,6 +268,54 @@
   </table>
   {% else %}
   <p class="muted">No machine accounts.</p>
+  {% endif %}
+</section>
+{% elif active_tab == 'members' %}
+<section>
+  <h2>Project members</h2>
+  <p class="muted">
+    Grant access at project granularity (in addition to team membership).
+    Roles: <strong>read</strong> (view), <strong>write</strong> (edit secrets), <strong>admin</strong> (write + manage members).
+  </p>
+  {% if can_write %}
+  <form method="post" action="{{ url_for('add_project_member', project_id=project.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Email <input type="email" name="email" required placeholder="user@example.com"></label>
+    <label>Role
+      <select name="role">
+        {% for r in project_roles %}
+        <option value="{{ r }}" {% if r == 'read' %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  {% endif %}
+  {% if project_members %}
+  <table>
+    <thead><tr><th>User</th><th>Role</th>{% if can_write %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for m in project_members %}
+      <tr>
+        <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
+        <td><span class="role-badge">{{ m.role }}</span></td>
+        {% if can_write %}
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('remove_project_member', project_id=project.id, user_id=m.user_id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove {{ m.email }} from this project?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No project-level members. Team members still have access via their team role.</p>
   {% endif %}
 </section>
 {% elif active_tab == 'settings' and can_delete %}

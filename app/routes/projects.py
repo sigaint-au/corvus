@@ -56,14 +56,8 @@ def expires_status(expires_at, soon_days=_SOON_DAYS):
 
 
 def secret_due_status(row, soon_days=_SOON_DAYS):
-    """Return 'overdue', 'soon', or None from expires_at / rotate_days."""
-    due = _as_utc(row.get("expires_at"))
-    if due is None:
-        days = row.get("rotate_days")
-        upd = _as_utc(row.get("updated_at"))
-        if days and upd and int(days) > 0:
-            due = upd + timedelta(days=int(days))
-    return expires_status(due, soon_days=soon_days)
+    """Return 'overdue', 'soon', or None from expires_at."""
+    return expires_status(row.get("expires_at"), soon_days=soon_days)
 
 
 def _annotate_token_expiry(rows):
@@ -150,7 +144,7 @@ def _load_secrets_page(cur, project_id, page, q):
     )
     cur.execute(
         f"""
-        SELECT id, key, note, created_at, updated_at, expires_at, rotate_days
+        SELECT id, key, note, created_at, updated_at, expires_at
         FROM api.secrets
         WHERE {where}
         ORDER BY key
@@ -164,24 +158,18 @@ def _load_secrets_page(cur, project_id, page, q):
     return rows, pager
 
 
-def _parse_expiry_fields(form):
-    """Return (expires_at|None, rotate_days|None) from form."""
-    expires_at = None
+def _parse_expires_at(form):
+    """Return expires_at datetime or None from form."""
     raw = (form.get("expires_at") or "").strip()
-    if raw:
-        try:
-            expires_at = datetime.fromisoformat(raw)
-            if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-        except ValueError:
-            raise ValueError("expires_at must be YYYY-MM-DD or ISO datetime")
-    rotate_days = None
-    rd = (form.get("rotate_days") or "").strip()
-    if rd:
-        rotate_days = int(rd)
-        if rotate_days < 1:
-            raise ValueError("rotate_days must be >= 1")
-    return expires_at, rotate_days
+    if not raw:
+        return None
+    try:
+        expires_at = datetime.fromisoformat(raw)
+    except ValueError:
+        raise ValueError("expires_at must be YYYY-MM-DD or ISO datetime")
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at
 
 
 def _upsert_secret(
@@ -191,7 +179,6 @@ def _upsert_secret(
     value_or_enc,
     note="",
     expires_at=None,
-    rotate_days=None,
     *,
     already_enc=False,
     touch_meta=True,
@@ -210,16 +197,15 @@ def _upsert_secret(
         cur.execute(
             """
             INSERT INTO api.secrets
-              (project_id, key, value_enc, note, expires_at, rotate_days)
-            VALUES (%s, %s, %s, %s, %s, %s)
+              (project_id, key, value_enc, note, expires_at)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
               SET value_enc = EXCLUDED.value_enc,
                   note = EXCLUDED.note,
-                  expires_at = EXCLUDED.expires_at,
-                  rotate_days = EXCLUDED.rotate_days
+                  expires_at = EXCLUDED.expires_at
             RETURNING id
             """,
-            (str(project_id), key, enc, note or "", expires_at, rotate_days),
+            (str(project_id), key, enc, note or "", expires_at),
         )
     else:
         cur.execute(
@@ -420,7 +406,7 @@ def register(app):
     @authz.login_required
     def project_detail(project_id):
         tab = (request.args.get("tab") or "secrets").strip().lower()
-        if tab not in ("secrets", "audit", "tokens", "import", "settings"):
+        if tab not in ("secrets", "audit", "tokens", "import", "members", "settings"):
             tab = "secrets"
         page = paging.page_arg("page")
         q = (request.args.get("q") or "").strip()
@@ -429,10 +415,13 @@ def register(app):
         secret_rows = []
         audit_rows = []
         tokens = []
+        project_members = []
+        default_token_days = None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT p.*, t.name AS team_name, t.id AS team_id
+                SELECT p.*, t.name AS team_name, t.id AS team_id,
+                       t.default_token_days
                 FROM api.projects p JOIN api.teams t ON t.id = p.team_id
                 WHERE p.id = %s
                 """,
@@ -442,6 +431,7 @@ def register(app):
             if not project:
                 return "Not found", 404
             session["team_id"] = str(project["team_id"])
+            default_token_days = project.get("default_token_days")
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             can_write = cur.fetchone()["w"]
             cur.execute("SELECT api.team_role(%s) AS r", (str(project["team_id"]),))
@@ -450,8 +440,6 @@ def register(app):
             can_delete = team_role in ("owner", "admin")
 
             if tab == "settings" and not can_delete:
-                tab = "secrets"
-            if tab == "import" and not can_write:
                 tab = "secrets"
             if tab == "secrets":
                 secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
@@ -480,7 +468,13 @@ def register(app):
                     (str(project_id),),
                 )
                 tokens = _annotate_token_expiry(cur.fetchall())
-            # settings: no extra queries
+            elif tab == "members":
+                cur.execute(
+                    "SELECT * FROM private.project_member_rows(%s::uuid)",
+                    (str(project_id),),
+                )
+                project_members = cur.fetchall()
+            # settings / import: no extra queries
         return render_template(
             "project.html",
             project=project,
@@ -490,6 +484,9 @@ def register(app):
             audit_log=audit_rows,
             secrets_pager=secrets_pager,
             audit_pager=audit_pager,
+            project_members=project_members,
+            project_roles=config.PROJECT_ROLES,
+            default_token_days=default_token_days,
             can_write=can_write,
             can_delete=can_delete,
             active_tab=tab,
@@ -538,7 +535,7 @@ def register(app):
             flash("Key and value required", "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
         try:
-            expires_at, rotate_days = _parse_expiry_fields(request.form)
+            expires_at = _parse_expires_at(request.form)
         except (ValueError, TypeError) as e:
             flash(str(e), "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
@@ -551,7 +548,6 @@ def register(app):
                     value,
                     note=note,
                     expires_at=expires_at,
-                    rotate_days=rotate_days,
                 )
                 if not sid:
                     flash("You don't have permission to do that", "error")
@@ -665,7 +661,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, key, note, updated_at, expires_at, rotate_days
+                SELECT id, key, note, updated_at, expires_at
                 FROM api.secrets
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
@@ -876,20 +872,34 @@ def register(app):
             role = "read-only"
         expires_at = None
         days_raw = (request.form.get("expires_days") or "").strip()
-        if days_raw:
-            try:
-                days = int(days_raw)
-                if days > 0:
-                    expires_at = datetime.now(timezone.utc) + timedelta(days=days)
-            except ValueError:
-                flash("Expires days must be a positive integer", "error")
-                return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             # Explicit write gate (read-only can list tokens, not create them)
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             if not cur.fetchone()["w"]:
                 flash("You don't have permission to do that", "error")
                 return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
+            if not days_raw:
+                cur.execute(
+                    """
+                    SELECT t.default_token_days
+                    FROM api.projects p JOIN api.teams t ON t.id = p.team_id
+                    WHERE p.id = %s
+                    """,
+                    (str(project_id),),
+                )
+                row = cur.fetchone() or {}
+                if row.get("default_token_days"):
+                    days_raw = str(row["default_token_days"])
+            if days_raw:
+                try:
+                    days = int(days_raw)
+                    if days > 0:
+                        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+                except ValueError:
+                    flash("Expires days must be a positive integer", "error")
+                    return redirect(
+                        url_for("project_detail", project_id=project_id, tab="tokens")
+                    )
             raw = "ss_" + secrets.token_urlsafe(32)
             thash = hashlib.sha256(raw.encode()).hexdigest()
             prefix = raw[:11]
@@ -931,4 +941,101 @@ def register(app):
             conn.commit()
         return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
 
+
+    @app.post("/projects/<uuid:project_id>/members")
+    @authz.login_required
+    def add_project_member(project_id):
+        email = (request.form.get("email") or "").strip().lower()
+        role = (request.form.get("role") or "read").strip()
+        if role not in config.PROJECT_ROLES:
+            role = "read"
+        if not email:
+            flash("Email required", "error")
+            return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            if not cur.fetchone()["w"]:
+                flash("You don't have permission to do that", "error")
+                return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+            cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
+            u = cur.fetchone()
+            if not u or not u.get("id"):
+                flash("User not found — they must register or sign in via LDAP first", "error")
+                return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+            cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
+            proj = cur.fetchone()
+            try:
+                cur.execute(
+                    """
+                    SELECT role FROM api.project_members
+                    WHERE project_id = %s AND user_id = %s
+                    """,
+                    (str(project_id), str(u["id"])),
+                )
+                prev = cur.fetchone()
+                cur.execute(
+                    """
+                    INSERT INTO api.project_members (project_id, user_id, role)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role
+                    """,
+                    (str(project_id), str(u["id"]), role),
+                )
+                if cur.rowcount == 0:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                else:
+                    action = (
+                        audit.ORG_PROJECT_MEMBER_ROLE if prev else audit.ORG_PROJECT_MEMBER_ADD
+                    )
+                    detail = (
+                        f"{email} → {role}"
+                        if not prev
+                        else f"{email}: {prev['role']} → {role}"
+                    )
+                    audit.log_org(
+                        cur,
+                        team_id=proj["team_id"] if proj else None,
+                        project_id=project_id,
+                        action=action,
+                        detail=detail,
+                    )
+                    conn.commit()
+                    flash("Project member saved", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+
+
+    @app.post("/projects/<uuid:project_id>/members/<uuid:user_id>/remove")
+    @authz.login_required
+    def remove_project_member(project_id, user_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            if not cur.fetchone()["w"]:
+                flash("You don't have permission to do that", "error")
+                return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+            cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
+            proj = cur.fetchone()
+            cur.execute(
+                """
+                DELETE FROM api.project_members
+                WHERE project_id = %s AND user_id = %s
+                """,
+                (str(project_id), str(user_id)),
+            )
+            if cur.rowcount == 0:
+                flash("Member not found or not permitted", "error")
+            else:
+                audit.log_org(
+                    cur,
+                    team_id=proj["team_id"] if proj else None,
+                    project_id=project_id,
+                    action=audit.ORG_PROJECT_MEMBER_REMOVE,
+                    detail=str(user_id),
+                )
+                conn.commit()
+                flash("Project member removed", "ok")
+        return redirect(url_for("project_detail", project_id=project_id, tab="members"))
 

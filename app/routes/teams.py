@@ -1,7 +1,12 @@
-"""Teams, members, LDAP maps, project creation."""
+"""Teams, members, invites, LDAP maps, project creation."""
+
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 
 from flask import flash, redirect, render_template, request, session, url_for
 
+import audit
 import authz
 import config
 import db
@@ -125,6 +130,48 @@ def register(app):
                 (str(team_id),),
             )
             ldap_maps = cur.fetchall()
+            invites, join_requests, org_events = [], [], []
+            if my_role in ("owner", "admin"):
+                cur.execute(
+                    """
+                    SELECT id, role, expires_at, created_at, revoked_at
+                    FROM api.team_invites
+                    WHERE team_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 20
+                    """,
+                    (str(team_id),),
+                )
+                invites = cur.fetchall()
+                cur.execute(
+                    """
+                    SELECT r.id, r.role, r.user_id, r.created_at
+                    FROM api.team_join_requests r
+                    WHERE r.team_id = %s AND r.status = 'pending'
+                    ORDER BY r.created_at
+                    """,
+                    (str(team_id),),
+                )
+                join_requests = cur.fetchall() or []
+            try:
+                org_events = audit.list_org_for_team(cur, team_id)
+            except Exception:
+                org_events = []
+        if join_requests:
+            try:
+                with db.connect_admin() as aconn, aconn.cursor() as acur:
+                    for jr in join_requests:
+                        acur.execute(
+                            "SELECT email, name FROM private.users WHERE id = %s",
+                            (str(jr["user_id"]),),
+                        )
+                        u = acur.fetchone() or {}
+                        jr["email"] = u.get("email") or str(jr["user_id"])
+                        jr["name"] = u.get("name") or ""
+            except Exception:
+                for jr in join_requests:
+                    jr.setdefault("email", str(jr.get("user_id")))
+                    jr.setdefault("name", "")
         return render_template(
             "team.html",
             team=team,
@@ -133,6 +180,11 @@ def register(app):
             projects=projects,
             my_role=my_role,
             ldap_maps=ldap_maps,
+            invites=invites,
+            join_requests=join_requests,
+            org_events=org_events,
+            invite_roles=config.INVITE_ROLES,
+            new_invite_url=session.pop("new_invite_url", None),
             ldap_enabled=settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled")),
         )
 
@@ -153,6 +205,14 @@ def register(app):
             try:
                 cur.execute(
                     """
+                    SELECT role FROM api.team_members
+                    WHERE team_id = %s AND user_id = %s
+                    """,
+                    (str(team_id), str(u["id"])),
+                )
+                prev = cur.fetchone()
+                cur.execute(
+                    """
                     INSERT INTO api.team_members (team_id, user_id, role, source)
                     VALUES (%s, %s, %s, 'manual')
                     ON CONFLICT (team_id, user_id) DO UPDATE
@@ -164,7 +224,379 @@ def register(app):
                     flash("You don't have permission to do that", "error")
                     conn.rollback()
                 else:
+                    action = audit.ORG_MEMBER_ROLE if prev else audit.ORG_MEMBER_ADD
+                    detail = f"{email} → {role}"
+                    if prev:
+                        detail = f"{email}: {prev['role']} → {role}"
+                    audit.log_org(cur, team_id=team_id, action=action, detail=detail)
                     conn.commit()
+            except Exception as e:
+                flash(str(e), "error")
+        return redirect(url_for("team_detail", team_id=team_id))
+
+
+    @app.post("/teams/<uuid:team_id>/members/<uuid:user_id>/remove")
+    @authz.login_required
+    def remove_team_member(team_id, user_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(
+                    """
+                    SELECT role FROM api.team_members
+                    WHERE team_id = %s AND user_id = %s
+                    """,
+                    (str(team_id), str(user_id)),
+                )
+                row = cur.fetchone()
+                if not row:
+                    flash("Member not found", "error")
+                    return redirect(url_for("team_detail", team_id=team_id))
+                cur.execute(
+                    "DELETE FROM api.team_members WHERE team_id = %s AND user_id = %s",
+                    (str(team_id), str(user_id)),
+                )
+                if cur.rowcount == 0:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                else:
+                    audit.log_org(
+                        cur,
+                        team_id=team_id,
+                        action=audit.ORG_MEMBER_REMOVE,
+                        detail=f"user {user_id} ({row['role']})",
+                    )
+                    conn.commit()
+                    flash("Member removed", "ok")
+            except Exception as e:
+                flash(str(e), "error")
+        return redirect(url_for("team_detail", team_id=team_id))
+
+
+    @app.post("/teams/<uuid:team_id>/transfer")
+    @authz.login_required
+    def transfer_team_ownership(team_id):
+        email = (request.form.get("email") or "").strip().lower()
+        if not email:
+            flash("Email required", "error")
+            return redirect(url_for("team_detail", team_id=team_id))
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+            if (cur.fetchone() or {}).get("r") != "owner":
+                flash("Only owners can transfer ownership", "error")
+                return redirect(url_for("team_detail", team_id=team_id))
+            cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
+            u = cur.fetchone()
+            if not u or not u.get("id"):
+                flash("User not found — they must already be registered", "error")
+                return redirect(url_for("team_detail", team_id=team_id))
+            new_uid = str(u["id"])
+            if new_uid == session["user_id"]:
+                flash("Already owner", "ok")
+                return redirect(url_for("team_detail", team_id=team_id))
+            try:
+                # Promote new owner first (avoids last-owner guard)
+                cur.execute(
+                    """
+                    INSERT INTO api.team_members (team_id, user_id, role, source)
+                    VALUES (%s, %s, 'owner', 'manual')
+                    ON CONFLICT (team_id, user_id) DO UPDATE
+                      SET role = 'owner', source = 'manual'
+                    """,
+                    (str(team_id), new_uid),
+                )
+                cur.execute(
+                    """
+                    UPDATE api.team_members SET role = 'admin'
+                    WHERE team_id = %s AND user_id = %s AND role = 'owner'
+                    """,
+                    (str(team_id), session["user_id"]),
+                )
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_OWNERSHIP,
+                    detail=f"ownership → {email}",
+                )
+                conn.commit()
+                flash(f"Ownership transferred to {email}", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(url_for("team_detail", team_id=team_id))
+
+
+    @app.post("/teams/<uuid:team_id>/invites")
+    @authz.login_required
+    def create_team_invite(team_id):
+        role = request.form.get("role", "member")
+        if role not in config.INVITE_ROLES:
+            role = "member"
+        days = 7
+        raw_days = (request.form.get("expires_days") or "7").strip()
+        try:
+            days = max(1, min(90, int(raw_days)))
+        except ValueError:
+            days = 7
+        raw = secrets.token_urlsafe(24)
+        thash = hashlib.sha256(raw.encode()).hexdigest()
+        expires = datetime.now(timezone.utc) + timedelta(days=days)
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO api.team_invites
+                      (team_id, token_hash, role, expires_at, created_by)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (
+                        str(team_id),
+                        thash,
+                        role,
+                        expires,
+                        session["user_id"],
+                    ),
+                )
+                row = cur.fetchone()
+                if not row:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                    return redirect(url_for("team_detail", team_id=team_id))
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_INVITE_CREATE,
+                    detail=f"role={role} expires={days}d",
+                )
+                conn.commit()
+            except Exception as e:
+                flash(str(e), "error")
+                return redirect(url_for("team_detail", team_id=team_id))
+        session["new_invite_url"] = url_for("redeem_invite", token=raw, _external=True)
+        flash("Invite link created — copy it now (shown once)", "ok")
+        return redirect(url_for("team_detail", team_id=team_id))
+
+
+    @app.post("/teams/<uuid:team_id>/invites/<uuid:invite_id>/revoke")
+    @authz.login_required
+    def revoke_team_invite(team_id, invite_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE api.team_invites SET revoked_at = now()
+                WHERE id = %s AND team_id = %s AND revoked_at IS NULL
+                """,
+                (str(invite_id), str(team_id)),
+            )
+            if cur.rowcount:
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_INVITE_REVOKE,
+                    detail=str(invite_id),
+                )
+                conn.commit()
+                flash("Invite revoked", "ok")
+            else:
+                flash("Invite not found or already revoked", "error")
+        return redirect(url_for("team_detail", team_id=team_id))
+
+
+    @app.get("/invite/<token>")
+    @authz.login_required
+    def redeem_invite(token):
+        thash = hashlib.sha256(token.encode()).hexdigest()
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM private.lookup_invite(%s)", (thash,))
+            inv = cur.fetchone()
+            if not inv:
+                flash("Invite invalid or expired", "error")
+                return redirect(url_for("teams"))
+            # Already a member?
+            cur.execute(
+                """
+                SELECT role FROM api.team_members
+                WHERE team_id = %s AND user_id = %s
+                """,
+                (str(inv["team_id"]), session["user_id"]),
+            )
+            if cur.fetchone():
+                flash(f"You are already a member of {inv['team_name']}", "ok")
+                return redirect(url_for("team_detail", team_id=inv["team_id"]))
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO api.team_join_requests
+                      (team_id, invite_id, user_id, role, status)
+                    SELECT %s, %s, %s, %s, 'pending'
+                    WHERE NOT EXISTS (
+                      SELECT 1 FROM api.team_join_requests
+                      WHERE team_id = %s AND user_id = %s AND status = 'pending'
+                    )
+                    """,
+                    (
+                        str(inv["team_id"]),
+                        str(inv["invite_id"]),
+                        session["user_id"],
+                        inv["role"],
+                        str(inv["team_id"]),
+                        session["user_id"],
+                    ),
+                )
+                audit.log_org(
+                    cur,
+                    team_id=inv["team_id"],
+                    action=audit.ORG_JOIN_REQUEST,
+                    detail=f"via invite role={inv['role']}",
+                )
+                conn.commit()
+                flash(
+                    f"Join request sent for team “{inv['team_name']}”. "
+                    "An owner or admin must approve it.",
+                    "ok",
+                )
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(url_for("teams"))
+
+
+    @app.post("/teams/<uuid:team_id>/join-requests/<uuid:req_id>/approve")
+    @authz.login_required
+    def approve_join_request(team_id, req_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, user_id, role, status FROM api.team_join_requests
+                WHERE id = %s AND team_id = %s
+                """,
+                (str(req_id), str(team_id)),
+            )
+            req = cur.fetchone()
+            if not req or req["status"] != "pending":
+                flash("Request not found", "error")
+                return redirect(url_for("team_detail", team_id=team_id))
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO api.team_members (team_id, user_id, role, source)
+                    VALUES (%s, %s, %s, 'manual')
+                    ON CONFLICT (team_id, user_id) DO UPDATE
+                      SET role = EXCLUDED.role, source = 'manual'
+                    """,
+                    (str(team_id), str(req["user_id"]), req["role"]),
+                )
+                cur.execute(
+                    """
+                    UPDATE api.team_join_requests
+                    SET status = 'approved', resolved_at = now(), resolved_by = %s
+                    WHERE id = %s
+                    """,
+                    (session["user_id"], str(req_id)),
+                )
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_JOIN_APPROVE,
+                    detail=f"user={req['user_id']} role={req['role']}",
+                )
+                conn.commit()
+                flash("Join request approved", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(url_for("team_detail", team_id=team_id))
+
+
+    @app.post("/teams/<uuid:team_id>/join-requests/<uuid:req_id>/reject")
+    @authz.login_required
+    def reject_join_request(team_id, req_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE api.team_join_requests
+                SET status = 'rejected', resolved_at = now(), resolved_by = %s
+                WHERE id = %s AND team_id = %s AND status = 'pending'
+                """,
+                (session["user_id"], str(req_id), str(team_id)),
+            )
+            if cur.rowcount:
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_JOIN_REJECT,
+                    detail=str(req_id),
+                )
+                conn.commit()
+                flash("Join request rejected", "ok")
+            else:
+                flash("Request not found", "error")
+        return redirect(url_for("team_detail", team_id=team_id))
+
+
+    @app.post("/teams/<uuid:team_id>/settings")
+    @authz.login_required
+    def update_team_settings(team_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+            if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
+                flash("Only owners or admins can change team settings", "error")
+                return redirect(url_for("team_detail", team_id=team_id))
+            default_token_days = None
+            raw = (request.form.get("default_token_days") or "").strip()
+            if raw:
+                try:
+                    default_token_days = max(1, int(raw))
+                except ValueError:
+                    flash("Default token days must be a positive integer", "error")
+                    return redirect(url_for("team_detail", team_id=team_id))
+            class_on = request.form.get("classification_enabled") == "1"
+            class_text = (request.form.get("classification_text") or "").strip()
+            class_color = (request.form.get("classification_color") or "").strip()
+            class_fg = (request.form.get("classification_fg") or "").strip()
+            # empty override fields → store null enabled / empty strings (use server default)
+            if not request.form.get("use_classification_override"):
+                class_on_val = None
+                class_text = ""
+                class_color = ""
+                class_fg = ""
+            else:
+                class_on_val = class_on
+            try:
+                cur.execute(
+                    """
+                    UPDATE api.teams SET
+                      default_token_days = %s,
+                      classification_enabled = %s,
+                      classification_text = %s,
+                      classification_color = %s,
+                      classification_fg = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        default_token_days,
+                        class_on_val,
+                        class_text,
+                        class_color,
+                        class_fg,
+                        str(team_id),
+                    ),
+                )
+                if cur.rowcount == 0:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                else:
+                    audit.log_org(
+                        cur,
+                        team_id=team_id,
+                        action=audit.ORG_TEAM_SETTINGS,
+                        detail=(
+                            f"token_days={default_token_days or 'server'} "
+                            f"class_override={bool(request.form.get('use_classification_override'))}"
+                        ),
+                    )
+                    conn.commit()
+                    flash("Team settings saved", "ok")
             except Exception as e:
                 flash(str(e), "error")
         return redirect(url_for("team_detail", team_id=team_id))
@@ -190,6 +622,12 @@ def register(app):
                     """,
                     (str(team_id), ldap_group, role),
                 )
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_LDAP_MAP_ADD,
+                    detail=f"{ldap_group} → {role}",
+                )
                 conn.commit()
                 flash("LDAP group mapping saved — applies on next LDAP login", "ok")
             except Exception as e:
@@ -205,6 +643,13 @@ def register(app):
                 "DELETE FROM api.team_ldap_maps WHERE id = %s AND team_id = %s",
                 (str(map_id), str(team_id)),
             )
+            if cur.rowcount:
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_LDAP_MAP_DELETE,
+                    detail=str(map_id),
+                )
             conn.commit()
         return redirect(url_for("team_detail", team_id=team_id))
 

@@ -1213,10 +1213,11 @@ class TestTokens(unittest.TestCase):
         self.assertIn("CREATE TABLE api.secret_versions", init)
         self.assertIn("archive_secret_version", init)
         self.assertIn("expires_at", init)
-        self.assertIn("rotate_days", init)
+        self.assertNotIn("rotate_days", init)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("api.secret_versions", src)
         self.assertIn("archive_secret_version", src)
+        self.assertNotIn("rotate_days", src)
 
     def test_token_prefix_unique_constraint(self):
         from pathlib import Path
@@ -1225,6 +1226,49 @@ class TestTokens(unittest.TestCase):
         self.assertIn("token_prefix text NOT NULL UNIQUE", init)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("machine_tokens_token_prefix_key", src)
+
+
+class TestOrgAccess(unittest.TestCase):
+    """Project members, invites, org audit schema (no live DB)."""
+
+    def test_schema_has_invites_and_org_audit(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        init = (root / "db" / "init.sql").read_text()
+        self.assertIn("CREATE TABLE api.team_invites", init)
+        self.assertIn("CREATE TABLE api.team_join_requests", init)
+        self.assertIn("CREATE TABLE api.org_audit", init)
+        self.assertIn("guard_last_team_owner", init)
+        self.assertIn("private.project_member_rows", init)
+        self.assertIn("private.audit_org", init)
+        self.assertIn("default_token_days", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("api.team_invites", src)
+        self.assertIn("private.audit_org", src)
+
+    def test_log_org_calls_fn(self):
+        cur = MagicMock()
+        with store.app.test_request_context("/"):
+            from flask import session
+
+            session["email"] = "a@b.c"
+            audit.log_org(cur, team_id=uuid4(), action=audit.ORG_MEMBER_ADD, detail="x")
+        sql = cur.execute.call_args.args[0]
+        self.assertIn("private.audit_org", sql)
+
+    def test_project_roles_config(self):
+        self.assertIn("write", config.PROJECT_ROLES)
+        self.assertIn("member", config.INVITE_ROLES)
+        self.assertNotIn("owner", config.INVITE_ROLES)
+
+    def test_members_tab_requires_login(self):
+        r = store.app.test_client().get(f"/projects/{uuid4()}?tab=members")
+        self.assertEqual(r.status_code, 302)
+
+    def test_invite_redeem_requires_login(self):
+        r = store.app.test_client().get("/invite/not-a-real-token")
+        self.assertEqual(r.status_code, 302)
 
 
 class TestSecretLifecycle(unittest.TestCase):
@@ -1277,12 +1321,7 @@ class TestSecretLifecycle(unittest.TestCase):
             secret_due_status({"expires_at": now + timedelta(days=3)}), "soon"
         )
         self.assertIsNone(secret_due_status({"expires_at": now + timedelta(days=60)}))
-        self.assertEqual(
-            secret_due_status(
-                {"rotate_days": 7, "updated_at": now - timedelta(days=10)}
-            ),
-            "overdue",
-        )
+        self.assertIsNone(secret_due_status({"updated_at": now - timedelta(days=10)}))
         self.assertEqual(expires_status(now - timedelta(hours=1)), "overdue")
         self.assertEqual(expires_status(now + timedelta(days=2)), "soon")
         self.assertIsNone(expires_status(None))
@@ -1320,8 +1359,7 @@ class TestSecretLifecycle(unittest.TestCase):
         sid, vid = uuid4(), uuid4()
         conn, cur = _conn()
         cur.fetchone.side_effect = [
-            {"id": sid, "key": "K", "note": "", "updated_at": None,
-             "expires_at": None, "rotate_days": None},
+            {"id": sid, "key": "K", "note": "", "updated_at": None, "expires_at": None},
             {"w": True},
             {
                 "name": "prod",

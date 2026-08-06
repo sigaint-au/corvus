@@ -76,7 +76,13 @@ CREATE TABLE api.teams (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   created_by uuid REFERENCES private.users(id),
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  -- Team-level defaults / overrides (null = use server default)
+  default_token_days int CHECK (default_token_days IS NULL OR default_token_days > 0),
+  classification_enabled boolean,
+  classification_text text NOT NULL DEFAULT '',
+  classification_color text NOT NULL DEFAULT '',
+  classification_fg text NOT NULL DEFAULT ''
 );
 
 CREATE TABLE api.team_members (
@@ -98,6 +104,37 @@ CREATE TABLE api.team_ldap_maps (
   UNIQUE (team_id, ldap_group)
 );
 
+-- Invite links (share token; redeem creates a pending join request)
+CREATE TABLE api.team_invites (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
+  token_hash text NOT NULL UNIQUE,
+  role text NOT NULL DEFAULT 'member'
+    CHECK (role IN ('admin', 'member', 'read-only')),
+  expires_at timestamptz NOT NULL,
+  created_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  revoked_at timestamptz
+);
+CREATE INDEX team_invites_team_idx ON api.team_invites (team_id) WHERE revoked_at IS NULL;
+
+-- Pending self-service join requests (via invite link)
+CREATE TABLE api.team_join_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
+  invite_id uuid REFERENCES api.team_invites(id) ON DELETE SET NULL,
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  role text NOT NULL DEFAULT 'member'
+    CHECK (role IN ('admin', 'member', 'read-only')),
+  status text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  resolved_at timestamptz,
+  resolved_by uuid REFERENCES private.users(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX team_join_requests_pending_uidx
+  ON api.team_join_requests (team_id, user_id) WHERE status = 'pending';
+
 -- Projects (Bitwarden-style: access control surface)
 CREATE TABLE api.projects (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -114,6 +151,20 @@ CREATE TABLE api.project_members (
   PRIMARY KEY (project_id, user_id)
 );
 
+-- Membership / settings / access-control audit (not secret values)
+CREATE TABLE api.org_audit (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id uuid REFERENCES api.teams(id) ON DELETE CASCADE,
+  project_id uuid REFERENCES api.projects(id) ON DELETE CASCADE,
+  action text NOT NULL,
+  detail text NOT NULL DEFAULT '',
+  user_id uuid REFERENCES private.users(id) ON DELETE SET NULL,
+  actor_email text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX org_audit_team_created_idx ON api.org_audit (team_id, created_at DESC);
+CREATE INDEX org_audit_project_created_idx ON api.org_audit (project_id, created_at DESC);
+
 -- Secrets (value_enc = Fernet ciphertext from Flask)
 -- note is intentional plaintext (labels/search only — do not store secrets there)
 -- Soft-delete via deleted_at; live rows unique on (project_id, key)
@@ -124,7 +175,6 @@ CREATE TABLE api.secrets (
   value_enc text NOT NULL,
   note text NOT NULL DEFAULT '',  -- non-sensitive; not encrypted
   expires_at timestamptz,        -- hard expiry (optional)
-  rotate_days int,               -- soft "rotate every N days" hint from updated_at
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz
@@ -278,12 +328,46 @@ SET row_security = off AS $$
   );
 $$;
 
+-- Prevent removing the last team owner
+CREATE OR REPLACE FUNCTION api.guard_last_team_owner()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE remaining int;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.role = 'owner' THEN
+      SELECT count(*) INTO remaining FROM api.team_members
+      WHERE team_id = OLD.team_id AND role = 'owner' AND user_id <> OLD.user_id;
+      IF remaining = 0 THEN
+        RAISE EXCEPTION 'cannot remove the last team owner; transfer ownership first';
+      END IF;
+    END IF;
+    RETURN OLD;
+  ELSIF TG_OP = 'UPDATE' THEN
+    IF OLD.role = 'owner' AND NEW.role IS DISTINCT FROM 'owner' THEN
+      SELECT count(*) INTO remaining FROM api.team_members
+      WHERE team_id = OLD.team_id AND role = 'owner' AND user_id <> OLD.user_id;
+      IF remaining = 0 THEN
+        RAISE EXCEPTION 'cannot demote the last team owner; transfer ownership first';
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER team_members_guard_last_owner
+  BEFORE UPDATE OR DELETE ON api.team_members
+  FOR EACH ROW EXECUTE FUNCTION api.guard_last_team_owner();
+
 -- RLS
 ALTER TABLE api.teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.team_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.team_ldap_maps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.team_invites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.team_join_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.project_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.org_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_audit ENABLE ROW LEVEL SECURITY;
@@ -316,6 +400,32 @@ CREATE POLICY tlm_update ON api.team_ldap_maps FOR UPDATE TO authenticated
 CREATE POLICY tlm_delete ON api.team_ldap_maps FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('owner', 'admin'));
 
+CREATE POLICY team_invites_select ON api.team_invites FOR SELECT TO authenticated
+  USING (api.team_role(team_id) IN ('owner', 'admin'));
+CREATE POLICY team_invites_insert ON api.team_invites FOR INSERT TO authenticated
+  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
+CREATE POLICY team_invites_update ON api.team_invites FOR UPDATE TO authenticated
+  USING (api.team_role(team_id) IN ('owner', 'admin'));
+CREATE POLICY team_invites_delete ON api.team_invites FOR DELETE TO authenticated
+  USING (api.team_role(team_id) IN ('owner', 'admin'));
+
+CREATE POLICY team_join_requests_select ON api.team_join_requests FOR SELECT TO authenticated
+  USING (
+    api.team_role(team_id) IN ('owner', 'admin')
+    OR user_id = api.current_user_id()
+  );
+CREATE POLICY team_join_requests_insert ON api.team_join_requests FOR INSERT TO authenticated
+  WITH CHECK (user_id = api.current_user_id());
+CREATE POLICY team_join_requests_update ON api.team_join_requests FOR UPDATE TO authenticated
+  USING (api.team_role(team_id) IN ('owner', 'admin'));
+
+CREATE POLICY org_audit_select ON api.org_audit FOR SELECT TO authenticated
+  USING (
+    (team_id IS NOT NULL AND api.is_team_member(team_id))
+    OR (project_id IS NOT NULL AND api.can_read_project(project_id))
+  );
+-- INSERT only via private.audit_org
+
 -- Use team_id on the row (not can_read_project(id)) so INSERT … RETURNING works
 CREATE POLICY projects_select ON api.projects FOR SELECT TO authenticated
   USING (
@@ -336,6 +446,8 @@ CREATE POLICY pm_select ON api.project_members FOR SELECT TO authenticated
   USING (api.can_read_project(project_id));
 CREATE POLICY pm_insert ON api.project_members FOR INSERT TO authenticated
   WITH CHECK (api.can_write_project(project_id));
+CREATE POLICY pm_update ON api.project_members FOR UPDATE TO authenticated
+  USING (api.can_write_project(project_id));
 CREATE POLICY pm_delete ON api.project_members FOR DELETE TO authenticated
   USING (api.can_write_project(project_id));
 
@@ -383,6 +495,7 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO authenticated;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA api TO authenticated, anon;
 -- Audit rows must not be forgeable via PostgREST / authenticated INSERT
 REVOKE INSERT ON api.secret_audit FROM authenticated;
+REVOKE INSERT ON api.org_audit FROM authenticated;
 
 -- Auth helpers (SECURITY DEFINER; Flask/anon only)
 -- Never auto-promote first registrant; GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL does that in app.
@@ -465,6 +578,67 @@ SET row_security = off AS $$
   WHERE tm.team_id = p_team
     AND api.is_team_member(p_team)
   ORDER BY tm.role, u.email;
+$$;
+
+-- Project-level members with emails
+CREATE OR REPLACE FUNCTION private.project_member_rows(p_project uuid)
+RETURNS TABLE (role text, user_id uuid, email text, name text)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT pm.role, u.id, u.email, u.name
+  FROM api.project_members pm
+  JOIN private.users u ON u.id = pm.user_id
+  WHERE pm.project_id = p_project
+    AND api.can_read_project(p_project)
+  ORDER BY pm.role, u.email;
+$$;
+
+-- Org / membership audit insert (JWT actor only)
+CREATE OR REPLACE FUNCTION private.audit_org(
+  p_team uuid,
+  p_project uuid,
+  p_action text,
+  p_detail text DEFAULT '',
+  p_actor_email text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private AS $$
+DECLARE
+  uid uuid;
+  email text;
+BEGIN
+  IF p_action IS NULL OR btrim(p_action) = '' THEN
+    RAISE EXCEPTION 'invalid org audit action';
+  END IF;
+  BEGIN
+    uid := NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
+  EXCEPTION WHEN others THEN
+    uid := NULL;
+  END;
+  email := COALESCE(
+    (SELECT u.email FROM private.users u WHERE u.id = uid),
+    NULLIF(p_actor_email, ''),
+    ''
+  );
+  INSERT INTO api.org_audit (team_id, project_id, action, detail, user_id, actor_email)
+  VALUES (p_team, p_project, p_action, COALESCE(p_detail, ''), uid, email);
+END;
+$$;
+
+-- Resolve invite token → team (SECURITY DEFINER; hash is the gate)
+CREATE OR REPLACE FUNCTION private.lookup_invite(p_hash text)
+RETURNS TABLE (
+  invite_id uuid, team_id uuid, team_name text, role text, expires_at timestamptz
+)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT i.id, i.team_id, t.name, i.role, i.expires_at
+  FROM api.team_invites i
+  JOIN api.teams t ON t.id = i.team_id
+  WHERE i.token_hash = p_hash
+    AND i.revoked_at IS NULL
+    AND i.expires_at > now()
+  LIMIT 1;
 $$;
 
 -- Audit insert only via this function (not direct table INSERT for authenticated).
@@ -578,6 +752,9 @@ GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
 GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated;
+GRANT EXECUTE ON FUNCTION private.project_member_rows TO authenticator, authenticated;
+GRANT EXECUTE ON FUNCTION private.audit_org TO authenticator, authenticated;
+GRANT EXECUTE ON FUNCTION private.lookup_invite TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.audit_secret TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_role TO authenticator;

@@ -5,6 +5,13 @@
 <h1>{{ team.name }}</h1>
 <p class="muted">Your role: <strong>{{ my_role }}</strong></p>
 
+{% if new_invite_url %}
+<div class="token-once">
+  <strong>Invite link (copy now — shown once)</strong>
+  <pre>{{ new_invite_url }}</pre>
+</div>
+{% endif %}
+
 <section>
   <div class="section-head">
     <h2>Projects</h2>
@@ -73,18 +80,99 @@
   </form>
   {% endif %}
   <table>
-    <thead><tr><th>User</th><th>Role</th><th>Source</th></tr></thead>
+    <thead><tr><th>User</th><th>Role</th><th>Source</th>{% if my_role in ('owner', 'admin') %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for m in members %}
       <tr>
         <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
         <td>{{ m.role }}</td>
         <td class="muted">{{ m.source or 'manual' }}</td>
+        {% if my_role in ('owner', 'admin') %}
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('remove_team_member', team_id=team.id, user_id=m.user_id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove {{ m.email }} from this team?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
   </table>
 </section>
+
+{% if my_role in ('owner', 'admin') %}
+<section>
+  <h2>Invites &amp; join requests</h2>
+  <p class="muted">Share an invite link. Recipients must be signed in; they request to join and wait for approval.</p>
+  <form method="post" action="{{ url_for('create_team_invite', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Role
+      <select name="role">
+        {% for r in invite_roles %}
+        <option value="{{ r }}" {% if r == 'member' %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Expires (days) <input type="number" name="expires_days" min="1" max="90" value="7"></label>
+    <button type="submit">Create invite link</button>
+  </form>
+  {% if invites %}
+  <table>
+    <thead><tr><th>Role</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for i in invites %}
+      <tr>
+        <td>{{ i.role }}</td>
+        <td class="muted">{{ i.expires_at }}</td>
+        <td class="muted">{% if i.revoked_at %}revoked{% else %}active{% endif %}</td>
+        <td class="acts">
+          {% if not i.revoked_at %}
+          <form method="post" action="{{ url_for('revoke_team_invite', team_id=team.id, invite_id=i.id) }}"
+                class="inline" onsubmit="return confirm('Revoke this invite?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Revoke</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h3>Pending requests</h3>
+  {% if join_requests %}
+  <table>
+    <thead><tr><th>User</th><th>Role</th><th>Requested</th><th></th></tr></thead>
+    <tbody>
+    {% for r in join_requests %}
+      <tr>
+        <td>{{ r.name or r.email }} <span class="muted">{{ r.email }}</span></td>
+        <td>{{ r.role }}</td>
+        <td class="muted">{{ r.created_at }}</td>
+        <td class="acts">
+          <form method="post" action="{{ url_for('approve_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link">Approve</button>
+          </form>
+          <form method="post" action="{{ url_for('reject_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Reject</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No pending join requests.</p>
+  {% endif %}
+</section>
+{% endif %}
 
 {% if my_role in ('owner', 'admin') %}
 <section>
@@ -107,7 +195,7 @@
                 action="{{ url_for('delete_team_ldap_map', team_id=team.id, map_id=m.id) }}"
                 class="inline"
                 onsubmit="return confirm('Remove this LDAP mapping?')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Remove</button>
           </form>
         </td>
@@ -134,6 +222,70 @@
     </label>
     <button type="submit">Add map</button>
   </form>
+</section>
+
+<section>
+  <h2>Team settings</h2>
+  <form method="post" action="{{ url_for('update_team_settings', team_id=team.id) }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="row">
+      <label>Default machine-token expiry (days)
+        <input type="number" name="default_token_days" min="1"
+               value="{{ team.default_token_days or '' }}" placeholder="server default">
+      </label>
+    </div>
+    <p class="muted">Leave blank to use no default (tokens never expire unless set per token).</p>
+    <label class="check-row">
+      <input type="checkbox" name="use_classification_override" value="1"
+             {% if team.classification_enabled is not none %}checked{% endif %}>
+      Override server classification banner for this team
+    </label>
+    <div class="row">
+      <label>Enabled
+        <select name="classification_enabled">
+          <option value="1" {% if team.classification_enabled %}selected{% endif %}>on</option>
+          <option value="0" {% if team.classification_enabled is sameas false %}selected{% endif %}>off</option>
+        </select>
+      </label>
+      <label>Text <input type="text" name="classification_text" value="{{ team.classification_text or '' }}"></label>
+      <label>Background <input type="text" name="classification_color" value="{{ team.classification_color or '' }}" placeholder="#677381"></label>
+      <label>Foreground <input type="text" name="classification_fg" value="{{ team.classification_fg or '' }}" placeholder="#ffffff"></label>
+    </div>
+    <p style="margin-top:1rem;"><button type="submit">Save team settings</button></p>
+  </form>
+</section>
+{% endif %}
+
+{% if my_role == 'owner' %}
+<section>
+  <h2>Transfer ownership</h2>
+  <p class="muted">Promotes the user to owner and demotes you to admin. Prevents an ownerless team.</p>
+  <form method="post" action="{{ url_for('transfer_team_ownership', team_id=team.id) }}" class="row"
+        onsubmit="return confirm('Transfer ownership to this user?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>New owner email <input type="email" name="email" required placeholder="user@example.com"></label>
+    <button type="submit">Transfer</button>
+  </form>
+</section>
+{% endif %}
+
+{% if org_events %}
+<section>
+  <h2>Access activity</h2>
+  <p class="muted">Membership, invites, LDAP maps, and team settings changes.</p>
+  <table>
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for e in org_events %}
+      <tr>
+        <td class="muted">{{ e.created_at }}</td>
+        <td>{{ e.actor_email or 'unknown' }}</td>
+        <td><span class="audit-action">{{ e.action }}</span></td>
+        <td class="muted">{{ e.detail }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </section>
 {% endif %}
 
