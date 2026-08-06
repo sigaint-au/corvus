@@ -268,10 +268,7 @@
 </section>
 {% elif active_tab == 'settings' and can_settings %}
 <section>
-  <h2>Project settings</h2>
-  <p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
-
-  <h3>Members</h3>
+  <h2>Members</h2>
   <p class="muted">
     Grant access at project granularity (in addition to team membership).
     Roles: <strong>read</strong> (view), <strong>write</strong> (edit secrets), <strong>admin</strong> (write + manage members).
@@ -316,16 +313,17 @@
   {% else %}
   <p class="muted">No project-level members. Team members still have access via their team role.</p>
   {% endif %}
-
-  {% if can_delete %}
-  <h3>Danger zone</h3>
+</section>
+{% if can_delete %}
+<section>
+  <h2>Danger zone</h2>
   <p class="muted">Delete this project and all secrets, audit history, and machine tokens. Irreversible.</p>
   <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
         onsubmit="return confirm('Delete project “{{ project.name }}” and all its data? This cannot be undone.')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <button type="submit" class="danger">Delete project</button>
   </form>
-  {% endif %}
 </section>
+{% endif %}
 {% endif %}
 {% endblock %}

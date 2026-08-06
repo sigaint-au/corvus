@@ -987,10 +987,11 @@ class TestSecrets(unittest.TestCase):
         ):
             r = self.client.get(f"/projects/{self.pid}?tab=settings")
         self.assertEqual(r.status_code, 200)
-        self.assertIn(b"Project settings", r.data)
         self.assertIn(b"Members", r.data)
+        self.assertIn(b"Danger zone", r.data)
         self.assertIn(b"Delete project", r.data)
         self.assertIn(b"Settings", r.data)  # tab nav
+        self.assertNotIn(b"Project settings", r.data)
 
     def test_project_settings_visible_for_writer_without_delete(self):
         """Writers get Settings (members); only team owner/admin get danger zone."""
