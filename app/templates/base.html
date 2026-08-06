@@ -693,6 +693,12 @@
       overflow: hidden;
       vertical-align: middle;
     }
+    /* Keep whole row aligned when reveal/edit control is taller than plain text */
+    tr:has(td.secret-cell .reveal-edit) > td,
+    tr:has(td.secret-cell input.secret-value) > td,
+    tr:has(td.secret-cell .secret-saved) > td {
+      vertical-align: middle;
+    }
     input.secret-value {
       display: block;
       width: 100%;
@@ -728,6 +734,14 @@
       padding: 0 .55rem;
       font-size: .75rem;
       font-weight: 600;
+    }
+    .secret-saved {
+      display: inline-block;
+      margin-left: .4rem;
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--success);
+      vertical-align: middle;
     }
     form.inline { display: inline; }
     .acts { white-space: nowrap; }

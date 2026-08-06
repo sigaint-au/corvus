@@ -687,14 +687,9 @@ def register(app):
             )
             conn.commit()
         if authz.htmx():
-            return render_template(
-                "partials/reveal.html",
-                value=value,
-                secret_id=secret_id,
-                project_id=project_id,
-                editable=True,
-                can_write=True,
-            )
+            # Hide value again; show brief confirmation in the cell
+            return render_template("partials/reveal_saved.html")
+        flash("Secret updated", "ok")
         return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
 
 

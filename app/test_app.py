@@ -1140,8 +1140,9 @@ class TestSecrets(unittest.TestCase):
                 headers={"HX-Request": "true"},
             )
         self.assertEqual(r.status_code, 200)
-        self.assertIn(b"new-secret", r.data)
-        self.assertIn(b"Save", r.data)
+        self.assertNotIn(b"new-secret", r.data)
+        self.assertIn(b"*******", r.data)
+        self.assertIn(b"Updated", r.data)
         conn.commit.assert_called()
 
     def test_reveal_missing(self):
