@@ -11,6 +11,7 @@ ACTIONS = (
     "restored",
     "purged",
     "machine_upsert",
+    "exported",
 )
 
 # Common org_audit.action values (free text; these are conventions)

@@ -113,7 +113,10 @@ def register(app):
             lockout.clear_failures(email)
             _maybe_promote_bootstrap_admin(user["email"], user["id"])
             is_admin = authz.is_global_admin(str(user["id"]))
+            pending_invite = session.get("invite_token")
             _establish_session(user["id"], user["email"], user["name"], is_admin)
+            if pending_invite:
+                return redirect(url_for("redeem_invite", token=pending_invite))
             return redirect(url_for("teams"))
         return render_template(
             "login.html",
@@ -151,7 +154,10 @@ def register(app):
                 return render_template("register.html", setup_notice=notice), 400
             _maybe_promote_bootstrap_admin(email.lower(), uid)
             is_admin = authz.is_global_admin(str(uid))
+            pending_invite = session.get("invite_token")
             _establish_session(uid, email.lower(), name, is_admin)
+            if pending_invite:
+                return redirect(url_for("redeem_invite", token=pending_invite))
             return redirect(url_for("teams"))
         return render_template("register.html", setup_notice=notice)
 

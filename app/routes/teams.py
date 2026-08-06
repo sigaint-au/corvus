@@ -417,8 +417,12 @@ def register(app):
 
 
     @app.get("/invite/<token>")
-    @authz.login_required
     def redeem_invite(token):
+        # Preserve invite across login (bearer token in URL is lost if bounced without context)
+        if not session.get("user_id"):
+            session["invite_token"] = token
+            flash("Sign in to accept this team invite", "ok")
+            return redirect(url_for("login"))
         thash = hashlib.sha256(token.encode()).hexdigest()
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM private.lookup_invite(%s)", (thash,))
@@ -479,6 +483,10 @@ def register(app):
     @authz.login_required
     def approve_join_request(team_id, req_id):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+            if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
+                flash("Only owners or admins can approve join requests", "error")
+                return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute(
                 """
                 SELECT id, user_id, role, status FROM api.team_join_requests
@@ -526,6 +534,10 @@ def register(app):
     @authz.login_required
     def reject_join_request(team_id, req_id):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+            if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
+                flash("Only owners or admins can reject join requests", "error")
+                return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute(
                 """
                 UPDATE api.team_join_requests
@@ -560,22 +572,45 @@ def register(app):
             raw = (request.form.get("default_token_days") or "").strip()
             if raw:
                 try:
-                    default_token_days = max(1, int(raw))
+                    default_token_days = int(raw)
                 except ValueError:
                     flash("Default token days must be a positive integer", "error")
                     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
-            class_on = request.form.get("classification_enabled") == "1"
+                if default_token_days < 1 or default_token_days > 3650:
+                    flash("Default token days must be between 1 and 3650", "error")
+                    return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+            mode = (request.form.get("classification_mode") or "server").strip()
+            if mode not in ("server", "on", "off"):
+                mode = "server"
             class_text = (request.form.get("classification_text") or "").strip()
             class_color = (request.form.get("classification_color") or "").strip()
             class_fg = (request.form.get("classification_fg") or "").strip()
-            # empty override fields → store null enabled / empty strings (use server default)
-            if not request.form.get("use_classification_override"):
+            if mode == "server":
                 class_on_val = None
                 class_text = ""
                 class_color = ""
                 class_fg = ""
+            elif mode == "off":
+                class_on_val = False
+                class_text = ""
+                class_color = ""
+                class_fg = ""
             else:
-                class_on_val = class_on
+                # custom banner on
+                class_on_val = True
+                if not class_text:
+                    flash("Classification text is required for a custom banner", "error")
+                    return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+                if not class_color:
+                    class_color = "#677381"
+                if not class_fg:
+                    class_fg = "#ffffff"
+                if not config.HEX.match(class_color):
+                    flash("Classification background must be a #RRGGBB hex color", "error")
+                    return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+                if not config.HEX.match(class_fg):
+                    flash("Classification foreground must be a #RRGGBB hex color", "error")
+                    return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             try:
                 cur.execute(
                     """
@@ -606,7 +641,7 @@ def register(app):
                         action=audit.ORG_TEAM_SETTINGS,
                         detail=(
                             f"token_days={default_token_days or 'server'} "
-                            f"class_override={bool(request.form.get('use_classification_override'))}"
+                            f"class_mode={mode}"
                         ),
                     )
                     conn.commit()

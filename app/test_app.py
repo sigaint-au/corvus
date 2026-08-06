@@ -1294,9 +1294,11 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("private.project_member_rows", init)
         self.assertIn("private.audit_org", init)
         self.assertIn("default_token_days", init)
+        self.assertIn("'exported'", init)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("api.team_invites", src)
         self.assertIn("private.audit_org", src)
+        self.assertIn("exported", src)
 
     def test_log_org_calls_fn(self):
         cur = MagicMock()
@@ -1318,8 +1320,12 @@ class TestOrgAccess(unittest.TestCase):
         self.assertEqual(r.status_code, 302)
 
     def test_invite_redeem_requires_login(self):
-        r = store.app.test_client().get("/invite/not-a-real-token")
+        c = store.app.test_client()
+        r = c.get("/invite/not-a-real-token")
         self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location or "")
+        with c.session_transaction() as s:
+            self.assertEqual(s.get("invite_token"), "not-a-real-token")
 
 
 class TestSecretLifecycle(unittest.TestCase):
@@ -1386,12 +1392,16 @@ class TestSecretLifecycle(unittest.TestCase):
     def test_export_plain_env(self):
         enc = crypto.encrypt("secret-val")
         conn, cur = _conn()
-        cur.fetchall.return_value = [{"key": "K", "value_enc": enc, "note": ""}]
         cur.fetchone.return_value = {"r": True}
+        cur.fetchall.return_value = [{"key": "K", "value_enc": enc, "note": ""}]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{self.pid}/export?format=env&mode=plain")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"K=secret-val", r.data)
+        conn.commit.assert_called()
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("audit_secret", sql)
+        self.assertIn("exported", str(cur.execute.call_args_list))
 
     def test_import_env(self):
         sid = uuid4()

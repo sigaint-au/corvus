@@ -86,22 +86,24 @@ def inject_nav():
         except (KeyError, TypeError):
             continue
     base["nav_team_name"] = name
-    # Team-level classification override when set (enabled is not null)
+    # Team-level classification: NULL enabled = use server banner; True/False = override
     if active is not None:
         try:
-            if active.get("classification_enabled") is not None:
+            en = active.get("classification_enabled")
+            if en is not None:
                 from config import HEX
 
                 text = (active.get("classification_text") or "").strip()
-                color = active.get("classification_color") or banner["color"]
-                fg = active.get("classification_fg") or banner["fg"]
+                color = (active.get("classification_color") or "").strip() or "#677381"
+                fg = (active.get("classification_fg") or "").strip() or "#ffffff"
                 if not HEX.match(color):
-                    color = banner["color"]
+                    color = "#677381"
                 if not HEX.match(fg):
-                    fg = banner["fg"]
+                    fg = "#ffffff"
+                # en is True → show if text present; False → hide (even if server banner on)
                 base["classification"] = {
-                    "enabled": bool(active.get("classification_enabled")) and bool(text),
-                    "text": text,
+                    "enabled": bool(en) and bool(text),
+                    "text": text if en else "",
                     "color": color,
                     "fg": fg,
                 }

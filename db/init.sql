@@ -229,7 +229,8 @@ CREATE TABLE api.secret_audit (
   user_id uuid REFERENCES private.users(id) ON DELETE SET NULL,
   actor_email text NOT NULL DEFAULT '',
   action text NOT NULL CHECK (action IN (
-    'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
+    'created', 'updated', 'revealed', 'deleted', 'restored', 'purged',
+    'machine_upsert', 'exported'
   )),
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -658,7 +659,8 @@ DECLARE
   email text;
 BEGIN
   IF p_action NOT IN (
-    'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
+    'created', 'updated', 'revealed', 'deleted', 'restored', 'purged',
+    'machine_upsert', 'exported'
   ) THEN
     RAISE EXCEPTION 'invalid audit action: %', p_action;
   END IF;

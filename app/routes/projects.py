@@ -159,7 +159,7 @@ def _load_secrets_page(cur, project_id, page, q):
 
 
 def _parse_expires_at(form):
-    """Return expires_at datetime or None from form."""
+    """Return expires_at datetime or None from form (max 10 years ahead)."""
     raw = (form.get("expires_at") or "").strip()
     if not raw:
         return None
@@ -169,6 +169,9 @@ def _parse_expires_at(form):
         raise ValueError("expires_at must be YYYY-MM-DD or ISO datetime")
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
+    cap = datetime.now(timezone.utc) + timedelta(days=3650)
+    if expires_at > cap:
+        raise ValueError("expires_at must be within 10 years")
     return expires_at
 
 
@@ -793,6 +796,9 @@ def register(app):
         if mode not in ("plain", "enc"):
             mode = "plain"
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_read_project(%s) AS r", (str(project_id),))
+            if not (cur.fetchone() or {}).get("r"):
+                return "Not found", 404
             cur.execute(
                 """
                 SELECT key, value_enc, note FROM api.secrets
@@ -802,9 +808,14 @@ def register(app):
                 (str(project_id),),
             )
             rows = cur.fetchall()
-            cur.execute("SELECT api.can_read_project(%s) AS r", (str(project_id),))
-            if not (cur.fetchone() or {}).get("r"):
-                return "Not found", 404
+            # Bulk exfil must leave an audit trail (especially plaintext)
+            audit.log_secret(
+                cur,
+                project_id=project_id,
+                action="exported",
+                secret_key=f"{mode}/{fmt} n={len(rows)}",
+            )
+            conn.commit()
         if mode == "enc":
             payload = {
                 r["key"]: {"value_enc": r["value_enc"], "note": r["note"]} for r in rows

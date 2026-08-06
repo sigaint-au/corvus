@@ -228,33 +228,59 @@
 {% elif active_tab == 'settings' and is_admin %}
 <section>
   <h2>Team settings</h2>
-  <form method="post" action="{{ url_for('update_team_settings', team_id=team.id) }}">
+  <form method="post" action="{{ url_for('update_team_settings', team_id=team.id) }}" id="team-settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div class="row">
       <label>Default machine-token expiry (days)
-        <input type="number" name="default_token_days" min="1"
+        <input type="number" name="default_token_days" min="1" max="3650"
                value="{{ team.default_token_days or '' }}" placeholder="server default">
       </label>
     </div>
     <p class="muted">Leave blank to use no default (tokens never expire unless set per token).</p>
-    <label class="check-row">
-      <input type="checkbox" name="use_classification_override" value="1"
-             {% if team.classification_enabled is not none %}checked{% endif %}>
-      Override server classification banner for this team
-    </label>
+
+    <h3>Classification banner</h3>
+    <p class="muted">Optional override of the server-wide banner for members of this team (while this team is selected).</p>
     <div class="row">
-      <label>Enabled
-        <select name="classification_enabled">
-          <option value="1" {% if team.classification_enabled %}selected{% endif %}>on</option>
-          <option value="0" {% if team.classification_enabled is sameas false %}selected{% endif %}>off</option>
+      <label>Mode
+        <select name="classification_mode" id="class-mode">
+          <option value="server" {% if team.classification_enabled is none %}selected{% endif %}>Use server default</option>
+          <option value="on" {% if team.classification_enabled is sameas true %}selected{% endif %}>Show custom banner</option>
+          <option value="off" {% if team.classification_enabled is sameas false %}selected{% endif %}>Hide banner</option>
         </select>
       </label>
-      <label>Text <input type="text" name="classification_text" value="{{ team.classification_text or '' }}"></label>
-      <label>Background <input type="text" name="classification_color" value="{{ team.classification_color or '' }}" placeholder="#677381"></label>
-      <label>Foreground <input type="text" name="classification_fg" value="{{ team.classification_fg or '' }}" placeholder="#ffffff"></label>
+    </div>
+    <div class="row class-custom-fields" id="class-custom-fields">
+      <label>Text
+        <input type="text" name="classification_text" maxlength="120"
+               value="{{ team.classification_text or '' }}" placeholder="e.g. OFFICIAL: SENSITIVE">
+      </label>
+      <label>Background
+        <input type="text" name="classification_color" value="{{ team.classification_color or '' }}"
+               pattern="#[0-9A-Fa-f]{6}" placeholder="#677381">
+      </label>
+      <label>Foreground
+        <input type="text" name="classification_fg" value="{{ team.classification_fg or '' }}"
+               pattern="#[0-9A-Fa-f]{6}" placeholder="#ffffff">
+      </label>
     </div>
     <p style="margin-top:1rem;"><button type="submit">Save team settings</button></p>
   </form>
+  <script>
+  (function () {
+    var mode = document.getElementById('class-mode');
+    var fields = document.getElementById('class-custom-fields');
+    if (!mode || !fields) return;
+    function sync() {
+      var custom = mode.value === 'on';
+      fields.style.opacity = custom ? '1' : '0.45';
+      fields.querySelectorAll('input').forEach(function (inp) {
+        inp.disabled = !custom;
+      });
+    }
+    mode.addEventListener('change', sync);
+    sync();
+  })();
+  </script>
 </section>
 
 <section>

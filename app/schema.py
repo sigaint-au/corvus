@@ -370,7 +370,8 @@ def ensure_schema():
           ALTER TABLE api.secret_audit
             ADD CONSTRAINT secret_audit_action_check
             CHECK (action IN (
-              'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
+              'created', 'updated', 'revealed', 'deleted', 'restored', 'purged',
+              'machine_upsert', 'exported'
             ));
         EXCEPTION WHEN others THEN NULL;
         END $$
@@ -403,7 +404,8 @@ def ensure_schema():
           email text;
         BEGIN
           IF p_action NOT IN (
-            'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
+            'created', 'updated', 'revealed', 'deleted', 'restored', 'purged',
+            'machine_upsert', 'exported'
           ) THEN
             RAISE EXCEPTION 'invalid audit action: %', p_action;
           END IF;
