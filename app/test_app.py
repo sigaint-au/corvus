@@ -308,6 +308,24 @@ class TestRefuseInsecureDefaults(unittest.TestCase):
 
 
 class TestAudit(unittest.TestCase):
+    def test_describe_event_readable(self):
+        s = audit.describe_event(
+            {"actor_email": "a@b.c", "action": "revealed", "secret_key": "API_KEY"}
+        )
+        self.assertIn("a@b.c", s)
+        self.assertIn("revealed", s)
+        self.assertIn("API_KEY", s)
+
+    def test_filter_clause_actor_action_dates(self):
+        sql, params = audit._filter_clause(
+            actor="bob", action="revealed", since="2026-01-01", until="2026-01-02"
+        )
+        self.assertIn("actor_email", sql)
+        self.assertIn("action", sql)
+        self.assertIn("created_at", sql)
+        self.assertEqual(params[0], "%bob%")
+        self.assertEqual(params[1], "revealed")
+
     def test_invalid_action_raises(self):
         cur = MagicMock()
         with store.app.test_request_context("/"):

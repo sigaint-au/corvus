@@ -59,12 +59,15 @@
   </div>
   {% if can_write %}
   <form method="post"
-        action="{{ url_for('create_secret', project_id=project.id) }}"
+        action="{{ url_for('create_secret', project_id=project.id, page=secrets_pager.page if secrets_pager else 1, q=search_q or none) }}"
         hx-post="{{ url_for('create_secret', project_id=project.id) }}"
         hx-target="#secrets-list"
         hx-swap="innerHTML"
         class="row secret-create" id="secret-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    {# Preserve list filters across HTMX create round-trips #}
+    <input type="hidden" name="page" value="{{ secrets_pager.page if secrets_pager else 1 }}">
+    <input type="hidden" name="q" value="{{ search_q or '' }}">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
     <label class="value-label">Value
       <span class="input-with-btn">
@@ -150,40 +153,55 @@
 <section>
   <div class="section-head">
     <h2>Audit log</h2>
-    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
-      <input type="hidden" name="tab" value="audit">
-      <label class="search-field">
-        <span class="visually-hidden">Search audit log</span>
-        <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search audit log">
-      </label>
-      <button type="submit">Go</button>
-      {% if search_q %}
+  </div>
+  <p class="muted">Who did what to secrets in this project, and when.</p>
+  <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="audit-filters">
+    <input type="hidden" name="tab" value="audit">
+    <label>Search
+      <input type="search" name="q" value="{{ search_q or '' }}"
+             placeholder="Key, action, email…" autocomplete="off">
+    </label>
+    <label>Actor
+      <input type="search" name="actor" value="{{ audit_actor or '' }}"
+             placeholder="email…" autocomplete="off">
+    </label>
+    <label>Action
+      <select name="action">
+        <option value="">All actions</option>
+        {% for a in audit_actions %}
+        <option value="{{ a }}" {% if audit_action == a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>From
+      <input type="date" name="since" value="{{ audit_since or '' }}">
+    </label>
+    <label>To
+      <input type="date" name="until" value="{{ audit_until or '' }}">
+    </label>
+    <div class="audit-filter-actions">
+      <button type="submit">Filter</button>
+      {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
       <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}">Clear</a>
       {% endif %}
-    </form>
-  </div>
-  <p class="muted">Who created, updated, revealed, or deleted secrets in this project.</p>
+    </div>
+  </form>
   {% if audit_log %}
-  <table>
+  <table class="audit-table">
     <thead>
       <tr>
+        <th>What happened</th>
         <th>When</th>
-        <th>Who</th>
-        <th>Action</th>
-        <th>Secret</th>
       </tr>
     </thead>
     <tbody>
     {% for e in audit_log %}
       <tr>
-        <td class="muted">{{ e.created_at }}</td>
         <td>
-          {% if e.actor_name %}{{ e.actor_name }} <span class="muted">{{ e.actor_email }}</span>
-          {% else %}{{ e.actor_email or 'unknown' }}{% endif %}
+          <span class="audit-summary">{{ e.summary }}</span>
+          <span class="audit-action audit-{{ e.action }}">{{ e.action }}</span>
         </td>
-        <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
-        <td class="col-key"><code class="k">{{ e.secret_key }}</code></td>
+        <td class="muted" title="{{ e.created_at }}">{{ e.when_display }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -193,8 +211,10 @@
   {% endwith %}
   {% else %}
   <p class="muted">
-    {% if search_q %}No audit events match “{{ search_q }}”.
-    {% else %}No audit events yet. Activity appears here when secrets are saved, revealed, or deleted.
+    {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
+    No audit events match these filters.
+    {% else %}
+    No audit events yet. Activity appears here when secrets are saved, revealed, or deleted.
     {% endif %}
   </p>
   {% endif %}

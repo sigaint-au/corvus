@@ -412,7 +412,11 @@ def register(app):
         if tab not in ("secrets", "audit", "tokens", "import", "settings"):
             tab = "secrets"
         page = paging.page_arg("page")
-        q = (request.args.get("q") or "").strip()
+        q = paging.list_state_q()
+        audit_actor = (request.args.get("actor") or "").strip()
+        audit_action = (request.args.get("action") or "").strip()
+        audit_since = (request.args.get("since") or "").strip()
+        audit_until = (request.args.get("until") or "").strip()
         secrets_pager = None
         audit_pager = None
         secret_rows = []
@@ -448,18 +452,34 @@ def register(app):
             if tab == "secrets":
                 secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             elif tab == "audit":
-                total = audit.count_for_project(cur, project_id, q=q)
+                total = audit.count_for_project(
+                    cur,
+                    project_id,
+                    q=q,
+                    actor=audit_actor,
+                    action=audit_action,
+                    since=audit_since,
+                    until=audit_until,
+                )
                 audit_pager = paging.page_window(total, page)
                 audit_pager["endpoint"] = "project_detail"
                 audit_pager["project_id"] = project_id
                 audit_pager["tab"] = "audit"
                 audit_pager["q"] = q
+                audit_pager["actor"] = audit_actor
+                audit_pager["action"] = audit_action
+                audit_pager["since"] = audit_since
+                audit_pager["until"] = audit_until
                 audit_rows = audit.list_for_project(
                     cur,
                     project_id,
                     limit=audit_pager["limit"],
                     offset=audit_pager["offset"],
                     q=q,
+                    actor=audit_actor,
+                    action=audit_action,
+                    since=audit_since,
+                    until=audit_until,
                 )
             elif tab == "tokens":
                 cur.execute(
@@ -496,6 +516,11 @@ def register(app):
             can_settings=can_settings,
             active_tab=tab,
             search_q=q,
+            audit_actor=audit_actor,
+            audit_action=audit_action,
+            audit_since=audit_since,
+            audit_until=audit_until,
+            audit_actions=audit.ACTIONS,
             new_token=session.pop("new_token", None),
         )
 
@@ -570,7 +595,15 @@ def register(app):
                 flash(str(e), "error")
         if authz.htmx():
             return _secrets_partial(project_id)
-        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        return redirect(
+            url_for(
+                "project_detail",
+                project_id=project_id,
+                tab="secrets",
+                page=paging.page_arg("page"),
+                q=paging.list_state_q() or None,
+            )
+        )
 
 
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/delete")
@@ -610,7 +643,15 @@ def register(app):
                     conn.commit()
         if authz.htmx():
             return _secrets_partial(project_id)
-        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        return redirect(
+            url_for(
+                "project_detail",
+                project_id=project_id,
+                tab="secrets",
+                page=paging.page_arg("page"),
+                q=paging.list_state_q() or None,
+            )
+        )
 
 
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/reveal")
@@ -695,7 +736,7 @@ def register(app):
 
     def _secrets_partial(project_id):
         page = paging.page_arg("page")
-        q = (request.args.get("q") or request.form.get("q") or "").strip()
+        q = paging.list_state_q()
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))

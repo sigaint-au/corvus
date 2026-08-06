@@ -424,6 +424,39 @@
     .audit-action.audit-updated { color: var(--muted-foreground); }
     .audit-action.audit-deleted,
     .audit-action.audit-purged { color: var(--danger); }
+    .audit-action.audit-exported { color: var(--warning); }
+    .audit-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem .75rem;
+      align-items: end;
+      margin: 0 0 1rem;
+    }
+    .audit-filters label {
+      margin: 0;
+      font-size: .8rem;
+      color: var(--muted-foreground);
+      min-width: 7rem;
+    }
+    .audit-filters input,
+    .audit-filters select {
+      display: block;
+      margin-top: .2rem;
+      min-width: 8rem;
+      font-size: .875rem;
+    }
+    .audit-filter-actions {
+      display: flex;
+      gap: .5rem;
+      align-items: center;
+      padding-bottom: .1rem;
+    }
+    .audit-summary {
+      display: block;
+      margin-bottom: .2rem;
+      font-size: .925rem;
+    }
+    .audit-table td { vertical-align: middle; }
     .due-badge {
       display: inline-block;
       font-size: .7rem;

@@ -1,5 +1,7 @@
 """Secret and org (membership/settings) audit logging."""
 
+from datetime import datetime, time, timezone
+
 from flask import session
 
 # Actions written to api.secret_audit.action (must match DB CHECK + private.audit_secret)
@@ -30,6 +32,17 @@ ORG_TEAM_SETTINGS = "team_settings"
 ORG_PROJECT_MEMBER_ADD = "project_member_add"
 ORG_PROJECT_MEMBER_REMOVE = "project_member_remove"
 ORG_PROJECT_MEMBER_ROLE = "project_member_role"
+
+_ACTION_VERB = {
+    "created": "created",
+    "updated": "updated",
+    "revealed": "revealed",
+    "deleted": "deleted",
+    "restored": "restored",
+    "purged": "permanently deleted",
+    "machine_upsert": "upserted via machine token",
+    "exported": "exported secrets",
+}
 
 
 def log_secret(
@@ -109,26 +122,97 @@ def list_org_for_team(cur, team_id, limit=40):
     return cur.fetchall()
 
 
-def _search_clause(q: str):
-    """Return (sql_fragment, params) for optional audit search."""
+def _parse_day(s: str, *, end: bool = False):
+    """Parse YYYY-MM-DD to UTC datetime (start or end of day)."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    try:
+        d = datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    t = time(23, 59, 59, 999999) if end else time(0, 0, 0)
+    return datetime.combine(d, t, tzinfo=timezone.utc)
+
+
+def _filter_clause(
+    q: str = "",
+    actor: str = "",
+    action: str = "",
+    since: str = "",
+    until: str = "",
+):
+    """Return (sql_fragment, params) for audit list filters."""
+    parts = []
+    params = []
     q = (q or "").strip()
-    if not q:
-        return "", []
-    like = f"%{q}%"
-    return (
-        """
-        AND (
-          a.secret_key ILIKE %s
-          OR a.action ILIKE %s
-          OR a.actor_email ILIKE %s
+    if q:
+        like = f"%{q}%"
+        parts.append(
+            """
+            AND (
+              a.secret_key ILIKE %s
+              OR a.action ILIKE %s
+              OR a.actor_email ILIKE %s
+            )
+            """
         )
-        """,
-        [like, like, like],
-    )
+        params.extend([like, like, like])
+    actor = (actor or "").strip()
+    if actor:
+        parts.append(" AND a.actor_email ILIKE %s ")
+        params.append(f"%{actor}%")
+    action = (action or "").strip()
+    if action and action in ACTIONS:
+        parts.append(" AND a.action = %s ")
+        params.append(action)
+    since_dt = _parse_day(since, end=False)
+    if since_dt:
+        parts.append(" AND a.created_at >= %s ")
+        params.append(since_dt)
+    until_dt = _parse_day(until, end=True)
+    if until_dt:
+        parts.append(" AND a.created_at <= %s ")
+        params.append(until_dt)
+    return "".join(parts), params
 
 
-def count_for_project(cur, project_id, q: str = "") -> int:
-    extra, params = _search_clause(q)
+def describe_event(row) -> str:
+    """Human-readable who/what line for an audit row."""
+    who = (row.get("actor_email") or "").strip() or "Someone"
+    action = row.get("action") or ""
+    key = (row.get("secret_key") or "").strip()
+    verb = _ACTION_VERB.get(action, action or "acted on")
+    if action == "exported":
+        detail = f" ({key})" if key else ""
+        return f"{who} {verb}{detail}"
+    if action == "machine_upsert":
+        target = f" “{key}”" if key else " a secret"
+        return f"{who} {verb}{target}"
+    if key:
+        return f"{who} {verb} “{key}”"
+    return f"{who} {verb} a secret"
+
+
+def format_when(dt) -> str:
+    """Compact absolute timestamp for display."""
+    if dt is None:
+        return "—"
+    if getattr(dt, "tzinfo", None) is None:
+        return str(dt)
+    return dt.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def count_for_project(
+    cur,
+    project_id,
+    q: str = "",
+    actor: str = "",
+    action: str = "",
+    since: str = "",
+    until: str = "",
+) -> int:
+    extra, params = _filter_clause(q=q, actor=actor, action=action, since=since, until=until)
     cur.execute(
         f"""
         SELECT count(*) AS n
@@ -142,8 +226,18 @@ def count_for_project(cur, project_id, q: str = "") -> int:
     return int(row.get("n") or 0)
 
 
-def list_for_project(cur, project_id, limit=25, offset=0, q: str = ""):
-    extra, params = _search_clause(q)
+def list_for_project(
+    cur,
+    project_id,
+    limit=25,
+    offset=0,
+    q: str = "",
+    actor: str = "",
+    action: str = "",
+    since: str = "",
+    until: str = "",
+):
+    extra, params = _filter_clause(q=q, actor=actor, action=action, since=since, until=until)
     cur.execute(
         f"""
         SELECT a.id, a.secret_id, a.secret_key, a.action, a.created_at,
@@ -157,4 +251,8 @@ def list_for_project(cur, project_id, limit=25, offset=0, q: str = ""):
         """,
         (str(project_id), *params, limit, offset),
     )
-    return cur.fetchall()
+    rows = cur.fetchall()
+    for r in rows:
+        r["summary"] = describe_event(r)
+        r["when_display"] = format_when(r.get("created_at"))
+    return rows
