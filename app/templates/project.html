@@ -6,7 +6,7 @@
   <a href="{{ url_for('team_detail', team_id=project.team_id) }}">{{ project.team_name }}</a>
 </p>
 <h1>{{ project.name }}</h1>
-<p class="muted">Project ID: <code class="k">{{ project.id }}</code> — use this in OpenShift ExternalSecret paths.</p>
+<p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
 
 {% if new_token %}
 <div class="token-once">
@@ -15,8 +15,44 @@
 </div>
 {% endif %}
 
+<nav class="tabs" role="tablist" aria-label="Project sections">
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}"
+     class="tab {% if active_tab == 'secrets' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'secrets' else 'false' }}">Secrets</a>
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
+     class="tab {% if active_tab == 'audit' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'audit' else 'false' }}">Audit log</a>
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}"
+     class="tab {% if active_tab == 'tokens' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine tokens</a>
+  {% if can_delete %}
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
+     class="tab {% if active_tab == 'settings' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'settings' else 'false' }}">Settings</a>
+  {% endif %}
+</nav>
+
+{% if active_tab == 'secrets' %}
 <section>
-  <h2>Secrets</h2>
+  <div class="section-head">
+    <h2>Secrets</h2>
+    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="secrets">
+      <label class="search-field">
+        <span class="visually-hidden">Search secrets</span>
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search…" autocomplete="off" aria-label="Search secrets">
+      </label>
+      <button type="submit">Go</button>
+      {% if search_q %}
+      <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
   {% if can_write %}
   <form method="post"
         action="{{ url_for('create_secret', project_id=project.id) }}"
@@ -24,9 +60,10 @@
         hx-target="#secrets-list"
         hx-swap="innerHTML"
         class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
     <label>Value <input type="password" name="value" required placeholder="••••••••"></label>
-    <label>Note <input type="text" name="note" placeholder="optional"></label>
+    <label>Note <input type="text" name="note" placeholder="optional label (not encrypted)"></label>
     <button type="submit">Save</button>
   </form>
   {% endif %}
@@ -34,29 +71,94 @@
     {% include "partials/secrets.html" %}
   </div>
 </section>
-
+{% elif active_tab == 'audit' %}
 <section>
-  <h2>Machine tokens</h2>
-  <p class="muted">For OpenShift External Secrets Operator (webhook provider). Scoped to this project.</p>
+  <div class="section-head">
+    <h2>Audit log</h2>
+    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="audit">
+      <label class="search-field">
+        <span class="visually-hidden">Search audit log</span>
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search…" autocomplete="off" aria-label="Search audit log">
+      </label>
+      <button type="submit">Go</button>
+      {% if search_q %}
+      <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+  <p class="muted">Who created, updated, revealed, or deleted secrets in this project.</p>
+  {% if audit_log %}
+  <table>
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Who</th>
+        <th>Action</th>
+        <th>Secret</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for e in audit_log %}
+      <tr>
+        <td class="muted">{{ e.created_at }}</td>
+        <td>
+          {% if e.actor_name %}{{ e.actor_name }} <span class="muted">{{ e.actor_email }}</span>
+          {% else %}{{ e.actor_email or 'unknown' }}{% endif %}
+        </td>
+        <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
+        <td class="col-key"><code class="k">{{ e.secret_key }}</code></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% with pager=audit_pager %}
+    {% include "partials/pager.html" %}
+  {% endwith %}
+  {% else %}
+  <p class="muted">
+    {% if search_q %}No audit events match “{{ search_q }}”.
+    {% else %}No audit events yet. Activity appears here when secrets are saved, revealed, or deleted.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
+{% elif active_tab == 'tokens' %}
+<section>
+  <h2>Machine accounts</h2>
+  <p class="muted">For OpenShift External Secrets Operator / CI. Scoped to this project.
+    <strong>read-only</strong> can fetch secrets; <strong>write</strong> can also upsert via the machine API.</p>
   {% if can_write %}
   <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Name <input type="text" name="name" placeholder="openshift-prod" value="openshift"></label>
+    <label>Role
+      <select name="role">
+        <option value="read-only" selected>read-only</option>
+        <option value="write">write</option>
+      </select>
+    </label>
+    <label>Expires (days) <input type="number" name="expires_days" min="1" placeholder="never"></label>
     <button type="submit">Create token</button>
   </form>
   {% endif %}
   {% if tokens %}
   <table>
-    <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Prefix</th><th>Role</th><th>Created</th><th>Expires</th><th></th></tr></thead>
     <tbody>
     {% for t in tokens %}
       <tr>
         <td>{{ t.name }}</td>
         <td><code>{{ t.token_prefix }}…</code></td>
+        <td><span class="role-badge">{{ t.role or 'read-only' }}</span></td>
         <td class="muted">{{ t.created_at }}</td>
+        <td class="muted">{{ t.expires_at or 'never' }}</td>
         <td class="acts">
           {% if can_write %}
           <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
                 onsubmit="return confirm('Revoke token?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Revoke</button>
           </form>
           {% endif %}
@@ -66,7 +168,21 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No machine tokens.</p>
+  <p class="muted">No machine accounts.</p>
   {% endif %}
 </section>
+{% elif active_tab == 'settings' and can_delete %}
+<section>
+  <h2>Project settings</h2>
+  <p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
+
+  <h3>Danger zone</h3>
+  <p class="muted">Delete this project and all secrets, audit history, and machine tokens. Irreversible.</p>
+  <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
+        onsubmit="return confirm('Delete project “{{ project.name }}” and all its data? This cannot be undone.')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <button type="submit" class="danger">Delete project</button>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

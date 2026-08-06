@@ -1,0 +1,570 @@
+"""Idempotent schema upgrades for existing database volumes."""
+import logging
+
+from config import DATABASE_ADMIN_URL, bootstrap_admin_email
+import db
+
+log = logging.getLogger(__name__)
+
+# Session-level advisory lock key for ensure_schema (arbitrary stable int4 pair).
+_ENSURE_LOCK_K1 = 834201
+_ENSURE_LOCK_K2 = 1
+
+
+def ensure_schema():
+    """Idempotent upgrades for existing volumes (init.sql only runs once)."""
+    if not DATABASE_ADMIN_URL:
+        # Do not fall back to the app/authenticator role — policy DDL would fail
+        # and hide misconfiguration. Compose sets DATABASE_ADMIN_URL explicitly.
+        raise RuntimeError(
+            "DATABASE_ADMIN_URL is not set; schema upgrades require a superuser DSN"
+        )
+
+    stmts = [
+        """
+        ALTER TABLE private.users
+          ADD COLUMN IF NOT EXISTS is_global_admin boolean NOT NULL DEFAULT false
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS private.server_settings (
+          key text PRIMARY KEY,
+          value text NOT NULL DEFAULT ''
+        )
+        """,
+        """
+        INSERT INTO private.server_settings (key, value) VALUES
+          ('classification_enabled', 'false'),
+          ('classification_text', 'OFFICIAL'),
+          ('classification_color', '#677381'),
+          ('classification_fg', '#ffffff'),
+          ('registration_enabled', 'true'),
+          ('user_team_creation_enabled', 'true'),
+          ('ldap_enabled', 'false'),
+          ('ldap_url', ''),
+          ('ldap_start_tls', 'false'),
+          ('ldap_bind_dn', ''),
+          ('ldap_bind_password', ''),
+          ('ldap_user_base', ''),
+          ('ldap_user_filter', '(|(mail={login})(uid={login}))'),
+          ('ldap_email_attr', 'mail'),
+          ('ldap_name_attr', 'displayName'),
+          ('ldap_group_base', ''),
+          ('ldap_group_filter', '(member={dn})'),
+          ('ldap_use_memberof', 'true')
+        ON CONFLICT (key) DO NOTHING
+        """,
+        """
+        CREATE OR REPLACE FUNCTION api.is_global_admin() RETURNS boolean
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT COALESCE(
+            (SELECT is_global_admin FROM private.users WHERE id = api.current_user_id()),
+            false
+          );
+        $$
+        """,
+        """
+        CREATE OR REPLACE FUNCTION api.is_team_member(tid uuid) RETURNS boolean
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT api.is_global_admin() OR EXISTS (
+            SELECT 1 FROM api.team_members
+            WHERE team_id = tid AND user_id = api.current_user_id()
+          );
+        $$
+        """,
+        """
+        CREATE OR REPLACE FUNCTION api.team_role(tid uuid) RETURNS text
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT CASE
+            WHEN api.is_global_admin() THEN 'owner'
+            ELSE (SELECT role FROM api.team_members
+                  WHERE team_id = tid AND user_id = api.current_user_id())
+          END;
+        $$
+        """,
+        """
+        CREATE OR REPLACE FUNCTION api.can_read_project(pid uuid) RETURNS boolean
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT api.is_global_admin() OR EXISTS (
+            SELECT 1 FROM api.projects p
+            JOIN api.team_members tm ON tm.team_id = p.team_id
+            WHERE p.id = pid AND tm.user_id = api.current_user_id()
+          ) OR EXISTS (
+            SELECT 1 FROM api.project_members
+            WHERE project_id = pid AND user_id = api.current_user_id()
+          );
+        $$
+        """,
+        """
+        CREATE OR REPLACE FUNCTION api.can_write_project(pid uuid) RETURNS boolean
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT api.is_global_admin() OR EXISTS (
+            SELECT 1 FROM api.projects p
+            JOIN api.team_members tm ON tm.team_id = p.team_id
+            WHERE p.id = pid AND tm.user_id = api.current_user_id()
+              AND tm.role IN ('owner', 'admin', 'member')
+          ) OR EXISTS (
+            SELECT 1 FROM api.project_members
+            WHERE project_id = pid AND user_id = api.current_user_id()
+              AND role IN ('admin', 'write')
+          );
+        $$
+        """,
+        # team role: read-only (view secrets; no mutate)
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.team_members DROP CONSTRAINT IF EXISTS team_members_role_check;
+          ALTER TABLE api.team_members
+            ADD CONSTRAINT team_members_role_check
+            CHECK (role IN ('owner', 'admin', 'member', 'read-only'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.team_ldap_maps DROP CONSTRAINT IF EXISTS team_ldap_maps_role_check;
+          ALTER TABLE api.team_ldap_maps
+            ADD CONSTRAINT team_ldap_maps_role_check
+            CHECK (role IN ('owner', 'admin', 'member', 'read-only'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        "DROP POLICY IF EXISTS projects_insert ON api.projects",
+        """
+        CREATE POLICY projects_insert ON api.projects FOR INSERT TO authenticated
+          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin', 'member'))
+        """,
+        "DROP POLICY IF EXISTS projects_update ON api.projects",
+        """
+        CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin', 'member'))
+        """,
+        """
+        ALTER TABLE private.users
+          ADD COLUMN IF NOT EXISTS auth_source text NOT NULL DEFAULT 'local'
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE private.users ALTER COLUMN password_hash DROP NOT NULL;
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
+        CREATE OR REPLACE FUNCTION private.register_user(p_email text, p_password text, p_name text)
+        RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
+        DECLARE uid uuid;
+        BEGIN
+          INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
+          VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), false, 'local')
+          RETURNING id INTO uid;
+          RETURN uid;
+        END;
+        $$
+        """,
+        "DROP FUNCTION IF EXISTS private.verify_user(text, text)",
+        """
+        CREATE OR REPLACE FUNCTION private.verify_user(p_email text, p_password text)
+        RETURNS TABLE (id uuid, email text, name text, is_global_admin boolean)
+        LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
+        BEGIN
+          RETURN QUERY
+          SELECT u.id, u.email, u.name, u.is_global_admin FROM private.users u
+          WHERE u.email = lower(p_email)
+            AND u.password_hash IS NOT NULL
+            AND u.password_hash = crypt(p_password, u.password_hash);
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator",
+        """
+        CREATE OR REPLACE FUNCTION private.upsert_ldap_user(p_email text, p_name text)
+        RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
+        DECLARE uid uuid;
+        BEGIN
+          SELECT id INTO uid FROM private.users WHERE email = lower(p_email);
+          IF uid IS NULL THEN
+            INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
+            VALUES (lower(p_email), NULL, COALESCE(p_name, ''), false, 'ldap')
+            RETURNING id INTO uid;
+          ELSE
+            UPDATE private.users
+            SET name = CASE WHEN COALESCE(p_name, '') <> '' THEN p_name ELSE name END,
+                auth_source = 'ldap'
+            WHERE id = uid;
+          END IF;
+          RETURN uid;
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator",
+        """
+        CREATE TABLE IF NOT EXISTS private.ldap_role_maps (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          ldap_group text NOT NULL,
+          role text NOT NULL CHECK (role IN ('global_admin')),
+          created_at timestamptz NOT NULL DEFAULT now(),
+          UNIQUE (ldap_group)
+        )
+        """,
+        """
+        ALTER TABLE api.team_members
+          ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'manual'
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS api.team_ldap_maps (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
+          ldap_group text NOT NULL,
+          role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'read-only')),
+          created_at timestamptz NOT NULL DEFAULT now(),
+          UNIQUE (team_id, ldap_group)
+        )
+        """,
+        "ALTER TABLE api.team_ldap_maps ENABLE ROW LEVEL SECURITY",
+        "DROP POLICY IF EXISTS tlm_select ON api.team_ldap_maps",
+        """
+        CREATE POLICY tlm_select ON api.team_ldap_maps FOR SELECT TO authenticated
+          USING (api.is_team_member(team_id))
+        """,
+        "DROP POLICY IF EXISTS tlm_insert ON api.team_ldap_maps",
+        """
+        CREATE POLICY tlm_insert ON api.team_ldap_maps FOR INSERT TO authenticated
+          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        "DROP POLICY IF EXISTS tlm_update ON api.team_ldap_maps",
+        """
+        CREATE POLICY tlm_update ON api.team_ldap_maps FOR UPDATE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        "DROP POLICY IF EXISTS tlm_delete ON api.team_ldap_maps",
+        """
+        CREATE POLICY tlm_delete ON api.team_ldap_maps FOR DELETE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_ldap_maps TO authenticated",
+        "GRANT ALL ON api.team_ldap_maps TO authenticator",
+        "DROP FUNCTION IF EXISTS private.get_setting(text)",
+        "DROP FUNCTION IF EXISTS private.set_setting(text, text)",
+        "DROP FUNCTION IF EXISTS private.all_settings()",
+        "DROP VIEW IF EXISTS api.user_directory",
+        """
+        CREATE VIEW api.user_directory AS
+          SELECT id, email, name, is_global_admin, created_at FROM private.users
+        """,
+        # No SELECT for authenticated — prevents user enumeration via PostgREST
+        "REVOKE ALL ON api.user_directory FROM authenticated",
+        "GRANT SELECT ON api.user_directory TO authenticator",
+        "GRANT ALL ON api.user_directory TO authenticator",
+        "GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon",
+        """
+        CREATE OR REPLACE FUNCTION private.lookup_user(p_email text)
+        RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = private
+        SET row_security = off AS $$
+          SELECT id FROM private.users WHERE email = lower(p_email) LIMIT 1;
+        $$
+        """,
+        "GRANT USAGE ON SCHEMA private TO authenticator, authenticated",
+        "GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated",
+        """
+        CREATE OR REPLACE FUNCTION private.team_member_rows(p_team uuid)
+        RETURNS TABLE (role text, source text, user_id uuid, email text, name text)
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT tm.role, tm.source, u.id, u.email, u.name
+          FROM api.team_members tm
+          JOIN private.users u ON u.id = tm.user_id
+          WHERE tm.team_id = p_team
+            AND api.is_team_member(p_team)
+          ORDER BY tm.role, u.email;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated",
+        # teams SELECT for global admin (recreate policy safely)
+        "DROP POLICY IF EXISTS teams_select ON api.teams",
+        """
+        CREATE POLICY teams_select ON api.teams FOR SELECT TO authenticated
+          USING (api.is_global_admin() OR api.is_team_member(id))
+        """,
+        "DROP POLICY IF EXISTS teams_insert ON api.teams",
+        """
+        CREATE POLICY teams_insert ON api.teams FOR INSERT TO authenticated
+          WITH CHECK (created_by = api.current_user_id() OR api.is_global_admin())
+        """,
+        # team_members INSERT: owners/admins only (no self-join escape hatch).
+        # Team creators use SECURITY DEFINER private.create_team instead.
+        "DROP POLICY IF EXISTS tm_insert ON api.team_members",
+        """
+        CREATE POLICY tm_insert ON api.team_members FOR INSERT TO authenticated
+          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        # Soft-delete for secrets (trash + restore)
+        """
+        ALTER TABLE api.secrets
+          ADD COLUMN IF NOT EXISTS deleted_at timestamptz
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.secrets DROP CONSTRAINT IF EXISTS secrets_project_id_key_key;
+        EXCEPTION WHEN undefined_object THEN NULL;
+        END $$
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS secrets_project_key_live
+          ON api.secrets (project_id, key) WHERE deleted_at IS NULL
+        """,
+        """
+        CREATE OR REPLACE FUNCTION private.machine_get_enc(p_project uuid, p_hash text, p_key text)
+        RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
+        BEGIN
+          IF NOT private.auth_machine(p_project, p_hash) THEN
+            RETURN NULL;
+          END IF;
+          RETURN (
+            SELECT value_enc FROM api.secrets
+            WHERE project_id = p_project AND key = p_key AND deleted_at IS NULL
+          );
+        END;
+        $$
+        """,
+        """
+        CREATE OR REPLACE FUNCTION private.machine_list_enc(p_project uuid, p_hash text)
+        RETURNS TABLE (key text, value_enc text)
+        LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
+        BEGIN
+          IF NOT private.auth_machine(p_project, p_hash) THEN
+            RETURN;
+          END IF;
+          RETURN QUERY
+            SELECT s.key, s.value_enc FROM api.secrets s
+            WHERE s.project_id = p_project AND s.deleted_at IS NULL;
+        END;
+        $$
+        """,
+        # Secret audit log
+        """
+        CREATE TABLE IF NOT EXISTS api.secret_audit (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
+          secret_id uuid,
+          secret_key text NOT NULL DEFAULT '',
+          user_id uuid REFERENCES private.users(id) ON DELETE SET NULL,
+          actor_email text NOT NULL DEFAULT '',
+          action text NOT NULL DEFAULT 'created',
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.secret_audit DROP CONSTRAINT IF EXISTS secret_audit_action_check;
+          ALTER TABLE api.secret_audit
+            ADD CONSTRAINT secret_audit_action_check
+            CHECK (action IN (
+              'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
+            ));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS secret_audit_project_created_idx
+          ON api.secret_audit (project_id, created_at DESC)
+        """,
+        "ALTER TABLE api.secret_audit ENABLE ROW LEVEL SECURITY",
+        "DROP POLICY IF EXISTS secret_audit_select ON api.secret_audit",
+        """
+        CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
+          USING (api.can_read_project(project_id))
+        """,
+        "DROP POLICY IF EXISTS secret_audit_insert ON api.secret_audit",
+        "REVOKE INSERT ON api.secret_audit FROM authenticated",
+        "GRANT SELECT ON api.secret_audit TO authenticated",
+        "GRANT ALL ON api.secret_audit TO authenticator",
+        """
+        CREATE OR REPLACE FUNCTION private.audit_secret(
+          p_project uuid,
+          p_secret_id uuid,
+          p_secret_key text,
+          p_action text,
+          p_user_id uuid DEFAULT NULL,
+          p_actor_email text DEFAULT NULL
+        ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private AS $$
+        DECLARE
+          uid uuid;
+          email text;
+        BEGIN
+          IF p_action NOT IN (
+            'created', 'updated', 'revealed', 'deleted', 'restored', 'purged', 'machine_upsert'
+          ) THEN
+            RAISE EXCEPTION 'invalid audit action: %', p_action;
+          END IF;
+          -- Never trust caller-supplied p_user_id; always derive from JWT
+          BEGIN
+            uid := NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
+          EXCEPTION WHEN others THEN
+            uid := NULL;
+          END;
+          email := COALESCE(
+            (SELECT u.email FROM private.users u WHERE u.id = uid),
+            NULLIF(p_actor_email, ''),
+            ''
+          );
+          INSERT INTO api.secret_audit
+            (project_id, secret_id, secret_key, user_id, actor_email, action)
+          VALUES (p_project, p_secret_id, COALESCE(p_secret_key, ''), uid, email, p_action);
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.audit_secret TO authenticator, authenticated",
+        # login lockout + token expiry
+        """
+        CREATE TABLE IF NOT EXISTS private.login_failures (
+          id bigserial PRIMARY KEY,
+          email text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS login_failures_email_created_idx
+          ON private.login_failures (email, created_at)
+        """,
+        """
+        ALTER TABLE api.machine_tokens
+          ADD COLUMN IF NOT EXISTS expires_at timestamptz
+        """,
+        """
+        ALTER TABLE api.machine_tokens
+          ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'read-only'
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.machine_tokens
+            ADD CONSTRAINT machine_tokens_token_prefix_key UNIQUE (token_prefix);
+        EXCEPTION WHEN duplicate_table OR duplicate_object OR unique_violation THEN NULL;
+        END $$
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.machine_tokens DROP CONSTRAINT IF EXISTS machine_tokens_role_check;
+          ALTER TABLE api.machine_tokens
+            ADD CONSTRAINT machine_tokens_role_check
+            CHECK (role IN ('read-only', 'write'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
+        CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
+        RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
+          SELECT EXISTS (
+            SELECT 1 FROM api.machine_tokens
+            WHERE project_id = p_project AND token_hash = p_hash
+              AND (expires_at IS NULL OR expires_at > now())
+          );
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator",
+        """
+        CREATE OR REPLACE FUNCTION private.machine_role(p_project uuid, p_hash text)
+        RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
+          SELECT role FROM api.machine_tokens
+          WHERE project_id = p_project AND token_hash = p_hash
+            AND (expires_at IS NULL OR expires_at > now())
+          LIMIT 1;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.machine_role TO authenticator",
+        """
+        CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
+          p_project uuid, p_hash text, p_key text, p_value_enc text, p_note text
+        )
+        RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api AS $$
+        DECLARE sid uuid;
+        BEGIN
+          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+            RETURN NULL;
+          END IF;
+          IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
+            RETURN NULL;
+          END IF;
+          INSERT INTO api.secrets (project_id, key, value_enc, note)
+          VALUES (p_project, p_key, p_value_enc, COALESCE(p_note, ''))
+          ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+            SET value_enc = EXCLUDED.value_enc,
+                note = EXCLUDED.note
+          RETURNING id INTO sid;
+          RETURN sid;
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.machine_upsert_enc TO authenticator",
+        # Machine tokens: project readers may SELECT; only writers INSERT/DELETE
+        "DROP POLICY IF EXISTS mt_select ON api.machine_tokens",
+        """
+        CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated
+          USING (api.can_read_project(project_id))
+        """,
+        "DROP POLICY IF EXISTS mt_insert ON api.machine_tokens",
+        """
+        CREATE POLICY mt_insert ON api.machine_tokens FOR INSERT TO authenticated
+          WITH CHECK (api.can_write_project(project_id))
+        """,
+        "DROP POLICY IF EXISTS mt_delete ON api.machine_tokens",
+        """
+        CREATE POLICY mt_delete ON api.machine_tokens FOR DELETE TO authenticated
+          USING (api.can_write_project(project_id))
+        """,
+        # secrets.updated_at maintained by trigger (not app-layer now())
+        """
+        CREATE OR REPLACE FUNCTION api.touch_updated_at()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          NEW.updated_at := now();
+          RETURN NEW;
+        END;
+        $$
+        """,
+        "DROP TRIGGER IF EXISTS secrets_touch_updated_at ON api.secrets",
+        """
+        CREATE TRIGGER secrets_touch_updated_at
+          BEFORE UPDATE ON api.secrets
+          FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at()
+        """,
+    ]
+    try:
+        with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:
+            # Serialize workers so concurrent DROP POLICY / CREATE POLICY pairs
+            # cannot race across gunicorn processes.
+            cur.execute(
+                "SELECT pg_advisory_lock(%s, %s)",
+                (_ENSURE_LOCK_K1, _ENSURE_LOCK_K2),
+            )
+            try:
+                for sql in stmts:
+                    cur.execute(sql)
+                # Bootstrap: only explicit GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL
+                # (never auto-promote the first registrant — race / takeover risk)
+                boot = bootstrap_admin_email()
+                if boot:
+                    cur.execute(
+                        "UPDATE private.users SET is_global_admin = true WHERE email = %s",
+                        (boot,),
+                    )
+            finally:
+                cur.execute(
+                    "SELECT pg_advisory_unlock(%s, %s)",
+                    (_ENSURE_LOCK_K1, _ENSURE_LOCK_K2),
+                )
+        log.info("schema ensure complete")
+    except Exception:
+        log.exception("ensure_schema failed")
+        raise
+

@@ -1,62 +1,48 @@
 # Sigaint Secret Server
 
-Minimal Bitwarden-style secrets manager: **teams → projects → secrets**, membership, machine tokens for **OpenShift External Secrets Operator**.
+A small **team secrets store** for people and platforms.
 
-Stack: **Flask + HTMX + oat.ink** UI · **Postgres RLS** · **PostgREST** · **Podman Compose**.
+## What it does
 
-**Roles:** team `owner` / `admin` / `member`, plus **global admin** (server-wide). The first registered user becomes global admin; only global admins can open **Server settings** (classification banner, promote admins).
+- Stores secrets as **team → project → key/value** (Bitwarden-shaped, not a full vault product).
+- Lets humans manage secrets in a browser (Flask + HTMX).
+- Lets **OpenShift External Secrets Operator** (and other machines) pull secrets with a project-scoped bearer token.
+- Enforces access in **Postgres RLS** (not only in the app), with optional **PostgREST** for API clients.
+- Supports optional **LDAP** login and group → team role maps.
+
+Values are encrypted at rest with `MASTER_KEY`. Notes are plain labels for search — do not put credentials in notes.
+
+## Why it exists
+
+Teams need a place for shared app secrets that is:
+
+1. **Simpler than enterprise vaults** when you only need projects, membership, and ESO webhooks.
+2. **Safe by default at the database** — membership and write rights live in RLS, so a buggy route cannot “just SELECT *”.
+3. **Built for the cluster path** — machine accounts for ESO/CI, with **read-only** tokens for fetch and optional **write** tokens for automation upserts.
+
+It is not a password manager for individuals, a full PAM platform, or a multi-cloud secrets fabric. It is a focused secrets server for org teams and OpenShift-style consumers.
+
+## Roles (short)
+
+| Who | Can do |
+|-----|--------|
+| Team `owner` | Manage members, projects, secrets; **delete team** |
+| Team `admin` | Manage members, projects, secrets; **delete projects** |
+| Team `member` | Read + write secrets; create projects |
+| Team `read-only` | View secrets only |
+| Global admin | Server settings, all teams |
+| Machine `read-only` | ESO fetch / list |
+| Machine `write` | Fetch + machine upsert API |
 
 ## Quick start
 
 ```bash
-cd secretstore
-podman-compose up -d --build
-# UI:  http://localhost:8080
-# API: http://localhost:3000  (PostgREST; JWT from /api/token after login)
+# Bootstrap admin: that email becomes global admin on register/login (no first-user race).
+export GLOBAL_ADMIN_EMAIL=you@example.com
+ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
+# UI: http://localhost:8080 — register as you@example.com
 ```
 
-1. Register at `/register`
-2. Create a team → project → secrets
-3. Create a machine token on the project (copy once)
-4. Point OpenShift ESO webhook at `/eso/v1/projects/<PROJECT_ID>/secrets/<KEY>`
+Without `GLOBAL_ADMIN_EMAIL` (or `BOOTSTRAP_ADMIN_EMAIL`) and no existing admin, registration stays closed until you set one.
 
-See `examples/openshift-eso.yaml`.
-
-## Model
-
-| Concept | Notes |
-|--------|--------|
-| Team | Org unit; members have `owner` / `admin` / `member` |
-| Project | Secret collection (primary access surface) |
-| Secret | Key/value; value Fernet-encrypted at rest (`MASTER_KEY`) |
-| Machine token | Project-scoped bearer for ESO / CI |
-
-## ESO webhook
-
-```
-GET /eso/v1/projects/{id}/secrets/{key}
-Authorization: Bearer ss_…
-→ {"value":"…"}   # jsonPath: $.value
-```
-
-## Env
-
-| Variable | Default |
-|----------|---------|
-| `JWT_SECRET` | shared Flask ↔ PostgREST |
-| `MASTER_KEY` | secret encryption |
-| `SECRET_KEY` | Flask session |
-| `GLOBAL_ADMIN_EMAIL` | optional; promotes that user on startup |
-| `DATABASE_ADMIN_URL` | superuser DSN for schema upgrades (compose default: postgres) |
-
-Change the secrets in production.
-
-## PostgREST
-
-After login, `GET /api/token` returns a JWT. Use:
-
-```bash
-curl -H "Authorization: Bearer $JWT" http://localhost:3000/projects
-```
-
-RLS enforces team/project membership.
+Deploy, env vars, ESO examples: **[docs/deploy.md](docs/deploy.md)** · **[docs/openshift-eso.yaml](docs/openshift-eso.yaml)**

@@ -5,17 +5,20 @@
 {% if not team %}
 <p class="muted">Select a team in the sidebar.</p>
 {% else %}
-<p class="muted">Team: <strong>{{ team.name }}</strong> — tokens for OpenShift ESO / CI.</p>
+<p class="muted">Team: <strong>{{ team.name }}</strong> — tokens for OpenShift ESO / CI.
+  Prefer <strong>read-only</strong> for ESO; use <strong>write</strong> only for automation that must push secrets.</p>
 {% if tokens %}
 <table>
-  <thead><tr><th>Name</th><th>Project</th><th>Prefix</th><th>Created</th></tr></thead>
+  <thead><tr><th>Name</th><th>Project</th><th>Prefix</th><th>Role</th><th>Created</th><th>Expires</th></tr></thead>
   <tbody>
   {% for t in tokens %}
     <tr>
       <td>{{ t.name }}</td>
       <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
       <td><code>{{ t.token_prefix }}…</code></td>
+      <td><span class="role-badge">{{ t.role or 'read-only' }}</span></td>
       <td class="muted">{{ t.created_at }}</td>
+      <td class="muted">{{ t.expires_at or 'never' }}</td>
     </tr>
   {% endfor %}
   </tbody>

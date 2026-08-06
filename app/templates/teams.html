@@ -1,13 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Teams — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>Teams</h1>
+<div class="section-head">
+  <h1 style="margin:0">Teams</h1>
+  <form method="get" action="{{ url_for('teams') }}" class="toolbar" role="search">
+    <label class="search-field">
+      <span class="visually-hidden">Search teams</span>
+      <input type="search" name="q" value="{{ search_q or '' }}"
+             placeholder="Search…" autocomplete="off" aria-label="Search teams">
+    </label>
+    <button type="submit">Go</button>
+    {% if search_q %}
+    <a class="btn-clear" href="{{ url_for('teams') }}">Clear</a>
+    {% endif %}
+  </form>
+</div>
 <p class="muted">Teams own projects. Access is by team membership (Bitwarden-style).</p>
 
+{% if can_create_team %}
 <form method="post" action="{{ url_for('create_team') }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <label>New team <input type="text" name="name" required placeholder="e.g. Platform"></label>
   <button type="submit">Create</button>
 </form>
+{% else %}
+<p class="muted">Team creation is restricted to global admins.</p>
+{% endif %}
 
 {% if teams %}
 <table>
@@ -23,6 +41,6 @@
   </tbody>
 </table>
 {% else %}
-<p>No teams yet. Create one.</p>
+<p>{% if search_q %}No teams match “{{ search_q }}”.{% elif can_create_team %}No teams yet. Create one.{% else %}No teams yet.{% endif %}</p>
 {% endif %}
 {% endblock %}

@@ -29,7 +29,7 @@ services:
       - "3000:3000"
 
   app:
-    build: ./app
+    build: .
     depends_on:
       db:
         condition: service_healthy
@@ -43,6 +43,9 @@ services:
       SECRET_KEY: ${SECRET_KEY:-flask-session-secret-change-me}
       POSTGREST_URL: http://postgrest:3000
       GLOBAL_ADMIN_EMAIL: ${GLOBAL_ADMIN_EMAIL:-}
+      # Opt-in only — default off so refuse_insecure_defaults() actually runs.
+      # For local play with baked-in secrets: ALLOW_INSECURE_DEFAULTS=1
+      ALLOW_INSECURE_DEFAULTS: ${ALLOW_INSECURE_DEFAULTS:-0}
     ports:
       - "8080:8080"
 
