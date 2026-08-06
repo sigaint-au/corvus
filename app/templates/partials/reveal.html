@@ -23,9 +23,4 @@
             data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
   </span>
   {% endif %}
-  {% if editable is defined %}
-  <span class="reveal-actions">
-    {% include "partials/pin_button.html" %}
-  </span>
-  {% endif %}
 </div>

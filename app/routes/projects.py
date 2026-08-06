@@ -789,17 +789,22 @@ def register(app):
             else:
                 pins.pin(cur, session["user_id"], secret_id)
                 pinned = True
+            pin_rows = pins.list_pins(cur, session["user_id"])
             conn.commit()
         if authz.htmx():
-            return render_template(
+            btn = render_template(
                 "partials/pin_button.html",
                 project_id=project_id,
                 secret_id=secret_id,
                 is_pinned=pinned,
             )
-        return redirect(
-            url_for("project_detail", project_id=project_id, tab="secrets")
-        )
+            oob = render_template(
+                "partials/side_pins.html",
+                nav_pins=pin_rows,
+                oob=True,
+            )
+            return btn + oob
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
 
 
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/value")

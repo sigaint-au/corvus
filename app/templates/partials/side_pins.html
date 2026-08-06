@@ -1,0 +1,12 @@
+<div id="side-pins" class="side-list{% if not nav_pins %} is-empty{% endif %}"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if nav_pins %}
+  <div class="side-list-label">Pinned</div>
+  {% for s in nav_pins %}
+  <a class="side-list-item" href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}"
+     title="{{ s.team_name }} / {{ s.project_name }}">
+    <span class="side-list-key">{{ s.key }}</span>
+    <span class="side-list-meta">{{ s.project_name }}</span>
+  </a>
+  {% endfor %}
+  {% endif %}
+</div>

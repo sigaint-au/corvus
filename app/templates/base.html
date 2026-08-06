@@ -256,17 +256,27 @@
     .reveal-wrap { display: flex; align-items: center; gap: .35rem; min-width: 0; }
     .reveal-wrap .input-with-btn { flex: 1; min-width: 0; }
     .reveal-actions { flex: 0 0 auto; }
+    th.pin-col,
+    td.pin-col {
+      width: 2rem;
+      max-width: 2.25rem;
+      padding-left: .35rem;
+      padding-right: .15rem;
+      text-align: center;
+      vertical-align: middle;
+    }
     .pin-btn {
       background: none;
       border: none;
       color: var(--muted-foreground);
       cursor: pointer;
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       line-height: 1;
-      padding: .15rem .25rem;
+      padding: .15rem .2rem;
     }
     .pin-btn.pinned { color: var(--warning); }
     .pin-btn:hover { color: var(--foreground); }
+    #side-pins.is-empty { display: none; }
     .copy-btn { font-size: .7rem; font-weight: 600; width: auto !important; padding: 0 .45rem !important; }
     .side-team label {
       display: block;
@@ -997,20 +1007,9 @@
          class="{% if request.endpoint == 'server_settings' %}active{% endif %}">Server settings</a>
       {% endif %}
     </nav>
-    {% if nav_pins %}
-    <div class="side-list">
-      <div class="side-list-label">Pinned</div>
-      {% for s in nav_pins %}
-      <a class="side-list-item" href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}"
-         title="{{ s.team_name }} / {{ s.project_name }}">
-        <span class="side-list-key">{{ s.key }}</span>
-        <span class="side-list-meta">{{ s.project_name }}</span>
-      </a>
-      {% endfor %}
-    </div>
-    {% endif %}
+    {% include "partials/side_pins.html" %}
     {% if nav_recent %}
-    <div class="side-list">
+    <div class="side-list" id="side-recent">
       <div class="side-list-label">Recent</div>
       {% for s in nav_recent %}
       <a class="side-list-item" href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}"
