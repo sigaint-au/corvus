@@ -674,7 +674,8 @@ def register(app):
                 return "Not found", 404
             cur.execute(
                 """
-                SELECT id, note, created_at FROM api.secret_versions
+                SELECT id, note, created_at
+                FROM api.secret_versions
                 WHERE secret_id = %s
                 ORDER BY created_at DESC
                 LIMIT 50
@@ -699,6 +700,41 @@ def register(app):
             secret=secret,
             versions=versions,
             can_write=can_write,
+            project_id=project_id,
+        )
+
+
+    @app.get(
+        "/projects/<uuid:project_id>/secrets/<uuid:secret_id>/versions/<uuid:version_id>/reveal"
+    )
+    @authz.login_required
+    def reveal_secret_version(project_id, secret_id, version_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT v.value_enc, s.key, s.id AS secret_id
+                FROM api.secret_versions v
+                JOIN api.secrets s ON s.id = v.secret_id
+                WHERE v.id = %s AND s.id = %s AND s.project_id = %s
+                  AND s.deleted_at IS NULL
+                """,
+                (str(version_id), str(secret_id), str(project_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                return "Not found", 404
+            audit.log_secret(
+                cur,
+                project_id=project_id,
+                secret_id=row["secret_id"],
+                secret_key=row["key"],
+                action="revealed",
+            )
+            conn.commit()
+        return render_template(
+            "partials/reveal.html",
+            value=crypto.decrypt(row["value_enc"]),
+            secret_id=secret_id,
             project_id=project_id,
         )
 
@@ -729,7 +765,7 @@ def register(app):
                 SET value_enc = %s, note = %s
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
-                (row["value_enc"], row["note"], str(secret_id), str(project_id)),
+                (row["value_enc"], row["note"] or "", str(secret_id), str(project_id)),
             )
             if cur.rowcount == 0:
                 flash("You don't have permission to do that", "error")

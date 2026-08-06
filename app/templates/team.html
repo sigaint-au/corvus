@@ -12,10 +12,33 @@
 </div>
 {% endif %}
 
+<nav class="tabs" role="tablist" aria-label="Team sections">
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}"
+     class="tab {% if active_tab == 'projects' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'projects' else 'false' }}">Projects</a>
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='members') }}"
+     class="tab {% if active_tab == 'members' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'members' else 'false' }}">Members</a>
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='activity') }}"
+     class="tab {% if active_tab == 'activity' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'activity' else 'false' }}">Activity</a>
+  {% if is_admin %}
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
+     class="tab {% if active_tab == 'settings' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'settings' else 'false' }}">Settings</a>
+  {% endif %}
+</nav>
+
+{% if active_tab == 'projects' %}
 <section>
   <div class="section-head">
     <h2>Projects</h2>
     <form method="get" action="{{ url_for('team_detail', team_id=team.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="projects">
       <label class="search-field">
         <span class="visually-hidden">Search projects</span>
         <input type="search" name="q" value="{{ search_q or '' }}"
@@ -23,7 +46,7 @@
       </label>
       <button type="submit">Go</button>
       {% if search_q %}
-      <a class="btn-clear" href="{{ url_for('team_detail', team_id=team.id) }}">Clear</a>
+      <a class="btn-clear" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Clear</a>
       {% endif %}
     </form>
   </div>
@@ -62,9 +85,10 @@
   {% endif %}
 </section>
 
+{% elif active_tab == 'members' %}
 <section>
   <h2>Members</h2>
-  {% if my_role in ('owner', 'admin') %}
+  {% if is_admin %}
   <form method="post" action="{{ url_for('add_team_member', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Email <input type="email" name="email" required placeholder="user@example.com"></label>
@@ -79,15 +103,16 @@
     <button type="submit">Add</button>
   </form>
   {% endif %}
+  {% if members %}
   <table>
-    <thead><tr><th>User</th><th>Role</th><th>Source</th>{% if my_role in ('owner', 'admin') %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>User</th><th>Role</th><th>Source</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for m in members %}
       <tr>
         <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
         <td>{{ m.role }}</td>
         <td class="muted">{{ m.source or 'manual' }}</td>
-        {% if my_role in ('owner', 'admin') %}
+        {% if is_admin %}
         <td class="acts">
           <form method="post"
                 action="{{ url_for('remove_team_member', team_id=team.id, user_id=m.user_id) }}"
@@ -102,9 +127,12 @@
     {% endfor %}
     </tbody>
   </table>
+  {% else %}
+  <p class="muted">No members listed.</p>
+  {% endif %}
 </section>
 
-{% if my_role in ('owner', 'admin') %}
+{% if is_admin %}
 <section>
   <h2>Invites &amp; join requests</h2>
   <p class="muted">Share an invite link. Recipients must be signed in; they request to join and wait for approval.</p>
@@ -174,7 +202,61 @@
 </section>
 {% endif %}
 
-{% if my_role in ('owner', 'admin') %}
+{% elif active_tab == 'activity' %}
+<section>
+  <h2>Access activity</h2>
+  <p class="muted">Membership, invites, LDAP maps, and team settings changes.</p>
+  {% if org_events %}
+  <table>
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for e in org_events %}
+      <tr>
+        <td class="muted">{{ e.created_at }}</td>
+        <td>{{ e.actor_email or 'unknown' }}</td>
+        <td><span class="audit-action">{{ e.action }}</span></td>
+        <td class="muted">{{ e.detail }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No activity yet.</p>
+  {% endif %}
+</section>
+
+{% elif active_tab == 'settings' and is_admin %}
+<section>
+  <h2>Team settings</h2>
+  <form method="post" action="{{ url_for('update_team_settings', team_id=team.id) }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="row">
+      <label>Default machine-token expiry (days)
+        <input type="number" name="default_token_days" min="1"
+               value="{{ team.default_token_days or '' }}" placeholder="server default">
+      </label>
+    </div>
+    <p class="muted">Leave blank to use no default (tokens never expire unless set per token).</p>
+    <label class="check-row">
+      <input type="checkbox" name="use_classification_override" value="1"
+             {% if team.classification_enabled is not none %}checked{% endif %}>
+      Override server classification banner for this team
+    </label>
+    <div class="row">
+      <label>Enabled
+        <select name="classification_enabled">
+          <option value="1" {% if team.classification_enabled %}selected{% endif %}>on</option>
+          <option value="0" {% if team.classification_enabled is sameas false %}selected{% endif %}>off</option>
+        </select>
+      </label>
+      <label>Text <input type="text" name="classification_text" value="{{ team.classification_text or '' }}"></label>
+      <label>Background <input type="text" name="classification_color" value="{{ team.classification_color or '' }}" placeholder="#677381"></label>
+      <label>Foreground <input type="text" name="classification_fg" value="{{ team.classification_fg or '' }}" placeholder="#ffffff"></label>
+    </div>
+    <p style="margin-top:1rem;"><button type="submit">Save team settings</button></p>
+  </form>
+</section>
+
 <section>
   <h2>LDAP group membership</h2>
   <p class="muted">
@@ -224,38 +306,6 @@
   </form>
 </section>
 
-<section>
-  <h2>Team settings</h2>
-  <form method="post" action="{{ url_for('update_team_settings', team_id=team.id) }}">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <div class="row">
-      <label>Default machine-token expiry (days)
-        <input type="number" name="default_token_days" min="1"
-               value="{{ team.default_token_days or '' }}" placeholder="server default">
-      </label>
-    </div>
-    <p class="muted">Leave blank to use no default (tokens never expire unless set per token).</p>
-    <label class="check-row">
-      <input type="checkbox" name="use_classification_override" value="1"
-             {% if team.classification_enabled is not none %}checked{% endif %}>
-      Override server classification banner for this team
-    </label>
-    <div class="row">
-      <label>Enabled
-        <select name="classification_enabled">
-          <option value="1" {% if team.classification_enabled %}selected{% endif %}>on</option>
-          <option value="0" {% if team.classification_enabled is sameas false %}selected{% endif %}>off</option>
-        </select>
-      </label>
-      <label>Text <input type="text" name="classification_text" value="{{ team.classification_text or '' }}"></label>
-      <label>Background <input type="text" name="classification_color" value="{{ team.classification_color or '' }}" placeholder="#677381"></label>
-      <label>Foreground <input type="text" name="classification_fg" value="{{ team.classification_fg or '' }}" placeholder="#ffffff"></label>
-    </div>
-    <p style="margin-top:1rem;"><button type="submit">Save team settings</button></p>
-  </form>
-</section>
-{% endif %}
-
 {% if my_role == 'owner' %}
 <section>
   <h2>Transfer ownership</h2>
@@ -267,29 +317,7 @@
     <button type="submit">Transfer</button>
   </form>
 </section>
-{% endif %}
 
-{% if org_events %}
-<section>
-  <h2>Access activity</h2>
-  <p class="muted">Membership, invites, LDAP maps, and team settings changes.</p>
-  <table>
-    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
-    <tbody>
-    {% for e in org_events %}
-      <tr>
-        <td class="muted">{{ e.created_at }}</td>
-        <td>{{ e.actor_email or 'unknown' }}</td>
-        <td><span class="audit-action">{{ e.action }}</span></td>
-        <td class="muted">{{ e.detail }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-
-{% if my_role == 'owner' %}
 <section>
   <h2>Danger zone</h2>
   <p class="muted">Delete this team and all projects, secrets, members, and machine tokens. Irreversible.</p>
@@ -299,5 +327,6 @@
     <button type="submit" class="danger">Delete team</button>
   </form>
 </section>
+{% endif %}
 {% endif %}
 {% endblock %}

@@ -694,6 +694,37 @@ class TestTeams(unittest.TestCase):
             r = self.client.get(f"/teams/{tid}")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b">T<", r.data)
+        self.assertIn(b"?tab=projects", r.data)
+        self.assertIn(b"?tab=members", r.data)
+        self.assertIn(b"?tab=settings", r.data)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        # Default tab loads projects, not members
+        self.assertIn("from api.projects", sql)
+        self.assertNotIn("team_member_rows", sql)
+
+    def test_team_detail_members_tab(self):
+        tid = uuid4()
+        last_sql = {"s": ""}
+
+        def execute(sql, params=None):
+            last_sql["s"] = " ".join(str(sql).lower().split())
+
+        def fetchone():
+            s = last_sql["s"]
+            if "from api.teams" in s and "where id" in s:
+                return {"id": tid, "name": "T"}
+            if "select role from api.team_members" in s:
+                return {"role": "owner"}
+            return None
+
+        conn, cur = _conn(fetchone=fetchone, fetchall=[])
+        cur.execute.side_effect = execute
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ):
+            r = self.client.get(f"/teams/{tid}?tab=members")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Invites", r.data)
         sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
         self.assertIn("team_member_rows", sql)
 
@@ -1379,7 +1410,13 @@ class TestSecretLifecycle(unittest.TestCase):
         sid, vid = uuid4(), uuid4()
         conn, cur = _conn()
         cur.fetchone.side_effect = [
-            {"id": sid, "key": "K", "note": "", "updated_at": None, "expires_at": None},
+            {
+                "id": sid,
+                "key": "K",
+                "note": "current note",
+                "updated_at": "2026-01-02",
+                "expires_at": None,
+            },
             {"w": True},
             {
                 "name": "prod",
@@ -1389,13 +1426,31 @@ class TestSecretLifecycle(unittest.TestCase):
             },
         ]
         cur.fetchall.return_value = [
-            {"id": vid, "note": "old", "created_at": "2020-01-01"}
+            {"id": vid, "note": "old note", "created_at": "2020-01-01"}
         ]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{self.pid}/secrets/{sid}/history")
         self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Current", r.data)
+        self.assertIn(b"Prior versions", r.data)
+        self.assertIn(b"current note", r.data)
+        self.assertIn(b"old note", r.data)
+        self.assertIn(b"Reveal", r.data)
         self.assertIn(b"Rollback", r.data)
-        self.assertIn(b"History", r.data)
+        self.assertIn(b"versions/", r.data)  # version reveal URL
+
+    def test_reveal_secret_version(self):
+        sid, vid = uuid4(), uuid4()
+        enc = crypto.encrypt("prior-secret")
+        conn, cur = _conn(
+            fetchone={"value_enc": enc, "key": "K", "secret_id": sid}
+        )
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/versions/{vid}/reveal"
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"prior-secret", r.data)
 
 
 # ── PostgREST token API ────────────────────────────────────────────

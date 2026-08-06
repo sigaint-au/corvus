@@ -86,32 +86,17 @@ def register(app):
     @authz.login_required
     def team_detail(team_id):
         session["team_id"] = str(team_id)
+        tab = (request.args.get("tab") or "projects").strip().lower()
+        if tab not in ("projects", "members", "activity", "settings"):
+            tab = "projects"
         q = (request.args.get("q") or "").strip()
+        members, projects, ldap_maps = [], [], []
+        invites, join_requests, org_events = [], [], []
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
             team = cur.fetchone()
             if not team:
                 return "Not found", 404
-            cur.execute(
-                "SELECT * FROM private.team_member_rows(%s::uuid)",
-                (str(team_id),),
-            )
-            members = cur.fetchall()
-            if q:
-                cur.execute(
-                    """
-                    SELECT * FROM api.projects
-                    WHERE team_id = %s AND name ILIKE %s
-                    ORDER BY name
-                    """,
-                    (str(team_id), f"%{q}%"),
-                )
-            else:
-                cur.execute(
-                    "SELECT * FROM api.projects WHERE team_id = %s ORDER BY name",
-                    (str(team_id),),
-                )
-            projects = cur.fetchall()
             cur.execute(
                 "SELECT role FROM api.team_members WHERE team_id = %s AND user_id = %s",
                 (str(team_id), session["user_id"]),
@@ -120,43 +105,70 @@ def register(app):
             my_role = my["role"] if my else None
             if session.get("is_global_admin") and not my_role:
                 my_role = "owner"
-            cur.execute(
-                """
-                SELECT id, ldap_group, role, created_at
-                FROM api.team_ldap_maps
-                WHERE team_id = %s
-                ORDER BY ldap_group
-                """,
-                (str(team_id),),
-            )
-            ldap_maps = cur.fetchall()
-            invites, join_requests, org_events = [], [], []
-            if my_role in ("owner", "admin"):
+            is_admin = my_role in ("owner", "admin")
+            if tab == "settings" and not is_admin:
+                tab = "projects"
+
+            if tab == "projects":
+                if q:
+                    cur.execute(
+                        """
+                        SELECT * FROM api.projects
+                        WHERE team_id = %s AND name ILIKE %s
+                        ORDER BY name
+                        """,
+                        (str(team_id), f"%{q}%"),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT * FROM api.projects WHERE team_id = %s ORDER BY name",
+                        (str(team_id),),
+                    )
+                projects = cur.fetchall()
+            elif tab == "members":
+                cur.execute(
+                    "SELECT * FROM private.team_member_rows(%s::uuid)",
+                    (str(team_id),),
+                )
+                members = cur.fetchall()
+                if is_admin:
+                    cur.execute(
+                        """
+                        SELECT id, role, expires_at, created_at, revoked_at
+                        FROM api.team_invites
+                        WHERE team_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT 20
+                        """,
+                        (str(team_id),),
+                    )
+                    invites = cur.fetchall()
+                    cur.execute(
+                        """
+                        SELECT r.id, r.role, r.user_id, r.created_at
+                        FROM api.team_join_requests r
+                        WHERE r.team_id = %s AND r.status = 'pending'
+                        ORDER BY r.created_at
+                        """,
+                        (str(team_id),),
+                    )
+                    join_requests = cur.fetchall() or []
+            elif tab == "activity":
+                try:
+                    org_events = audit.list_org_for_team(cur, team_id)
+                except Exception:
+                    org_events = []
+            elif tab == "settings" and is_admin:
                 cur.execute(
                     """
-                    SELECT id, role, expires_at, created_at, revoked_at
-                    FROM api.team_invites
+                    SELECT id, ldap_group, role, created_at
+                    FROM api.team_ldap_maps
                     WHERE team_id = %s
-                    ORDER BY created_at DESC
-                    LIMIT 20
+                    ORDER BY ldap_group
                     """,
                     (str(team_id),),
                 )
-                invites = cur.fetchall()
-                cur.execute(
-                    """
-                    SELECT r.id, r.role, r.user_id, r.created_at
-                    FROM api.team_join_requests r
-                    WHERE r.team_id = %s AND r.status = 'pending'
-                    ORDER BY r.created_at
-                    """,
-                    (str(team_id),),
-                )
-                join_requests = cur.fetchall() or []
-            try:
-                org_events = audit.list_org_for_team(cur, team_id)
-            except Exception:
-                org_events = []
+                ldap_maps = cur.fetchall()
         if join_requests:
             try:
                 with db.connect_admin() as aconn, aconn.cursor() as acur:
@@ -186,6 +198,8 @@ def register(app):
             invite_roles=config.INVITE_ROLES,
             new_invite_url=session.pop("new_invite_url", None),
             ldap_enabled=settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled")),
+            active_tab=tab,
+            is_admin=is_admin,
         )
 
 
@@ -201,7 +215,7 @@ def register(app):
             u = cur.fetchone()
             if not u or not u.get("id"):
                 flash("User not found — they must register or sign in via LDAP first", "error")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             try:
                 cur.execute(
                     """
@@ -232,7 +246,7 @@ def register(app):
                     conn.commit()
             except Exception as e:
                 flash(str(e), "error")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
     @app.post("/teams/<uuid:team_id>/members/<uuid:user_id>/remove")
@@ -250,7 +264,7 @@ def register(app):
                 row = cur.fetchone()
                 if not row:
                     flash("Member not found", "error")
-                    return redirect(url_for("team_detail", team_id=team_id))
+                    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
                 cur.execute(
                     "DELETE FROM api.team_members WHERE team_id = %s AND user_id = %s",
                     (str(team_id), str(user_id)),
@@ -269,7 +283,7 @@ def register(app):
                     flash("Member removed", "ok")
             except Exception as e:
                 flash(str(e), "error")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
     @app.post("/teams/<uuid:team_id>/transfer")
@@ -278,21 +292,21 @@ def register(app):
         email = (request.form.get("email") or "").strip().lower()
         if not email:
             flash("Email required", "error")
-            return redirect(url_for("team_detail", team_id=team_id))
+            return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             if (cur.fetchone() or {}).get("r") != "owner":
                 flash("Only owners can transfer ownership", "error")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
             u = cur.fetchone()
             if not u or not u.get("id"):
                 flash("User not found — they must already be registered", "error")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             new_uid = str(u["id"])
             if new_uid == session["user_id"]:
                 flash("Already owner", "ok")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             try:
                 # Promote new owner first (avoids last-owner guard)
                 cur.execute(
@@ -322,7 +336,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
 
     @app.post("/teams/<uuid:team_id>/invites")
@@ -361,7 +375,7 @@ def register(app):
                 if not row:
                     flash("You don't have permission to do that", "error")
                     conn.rollback()
-                    return redirect(url_for("team_detail", team_id=team_id))
+                    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
                 audit.log_org(
                     cur,
                     team_id=team_id,
@@ -371,10 +385,10 @@ def register(app):
                 conn.commit()
             except Exception as e:
                 flash(str(e), "error")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="members"))
         session["new_invite_url"] = url_for("redeem_invite", token=raw, _external=True)
         flash("Invite link created — copy it now (shown once)", "ok")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
     @app.post("/teams/<uuid:team_id>/invites/<uuid:invite_id>/revoke")
@@ -399,7 +413,7 @@ def register(app):
                 flash("Invite revoked", "ok")
             else:
                 flash("Invite not found or already revoked", "error")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
     @app.get("/invite/<token>")
@@ -475,7 +489,7 @@ def register(app):
             req = cur.fetchone()
             if not req or req["status"] != "pending":
                 flash("Request not found", "error")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             try:
                 cur.execute(
                     """
@@ -505,7 +519,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
     @app.post("/teams/<uuid:team_id>/join-requests/<uuid:req_id>/reject")
@@ -531,7 +545,7 @@ def register(app):
                 flash("Join request rejected", "ok")
             else:
                 flash("Request not found", "error")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
     @app.post("/teams/<uuid:team_id>/settings")
@@ -541,7 +555,7 @@ def register(app):
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
                 flash("Only owners or admins can change team settings", "error")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             default_token_days = None
             raw = (request.form.get("default_token_days") or "").strip()
             if raw:
@@ -549,7 +563,7 @@ def register(app):
                     default_token_days = max(1, int(raw))
                 except ValueError:
                     flash("Default token days must be a positive integer", "error")
-                    return redirect(url_for("team_detail", team_id=team_id))
+                    return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             class_on = request.form.get("classification_enabled") == "1"
             class_text = (request.form.get("classification_text") or "").strip()
             class_color = (request.form.get("classification_color") or "").strip()
@@ -599,7 +613,7 @@ def register(app):
                     flash("Team settings saved", "ok")
             except Exception as e:
                 flash(str(e), "error")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
 
     @app.post("/teams/<uuid:team_id>/ldap-maps")
@@ -611,7 +625,7 @@ def register(app):
             role = "member"
         if not ldap_group:
             flash("LDAP group required", "error")
-            return redirect(url_for("team_detail", team_id=team_id))
+            return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
                 cur.execute(
@@ -632,7 +646,7 @@ def register(app):
                 flash("LDAP group mapping saved — applies on next LDAP login", "ok")
             except Exception as e:
                 flash(str(e), "error")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
 
     @app.post("/teams/<uuid:team_id>/ldap-maps/<uuid:map_id>/delete")
@@ -651,7 +665,7 @@ def register(app):
                     detail=str(map_id),
                 )
             conn.commit()
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
 
     @app.post("/teams/<uuid:team_id>/projects")
@@ -668,12 +682,12 @@ def register(app):
                 if not row:
                     flash("You don't have permission to do that", "error")
                     conn.rollback()
-                    return redirect(url_for("team_detail", team_id=team_id))
+                    return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
                 pid = row["id"]
                 conn.commit()
             except Exception as e:
                 flash(str(e), "error")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
         return redirect(url_for("project_detail", project_id=pid))
 
 
@@ -686,12 +700,12 @@ def register(app):
             row = cur.fetchone()
             if not row or row["r"] != "owner":
                 flash("Only team owners can delete a team", "error")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             cur.execute("DELETE FROM api.teams WHERE id = %s", (str(team_id),))
             if cur.rowcount == 0:
                 flash("You don't have permission to do that", "error")
                 conn.rollback()
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             conn.commit()
         if session.get("team_id") == str(team_id):
             session.pop("team_id", None)
@@ -708,7 +722,7 @@ def register(app):
             row = cur.fetchone()
             if not row or row["r"] not in ("owner", "admin"):
                 flash("Only team owners or admins can delete projects", "error")
-                return redirect(url_for("team_detail", team_id=team_id))
+                return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
             cur.execute(
                 "DELETE FROM api.projects WHERE id = %s AND team_id = %s",
                 (str(project_id), str(team_id)),
@@ -719,6 +733,6 @@ def register(app):
             else:
                 conn.commit()
                 flash("Project deleted", "ok")
-        return redirect(url_for("team_detail", team_id=team_id))
+        return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
 
 
