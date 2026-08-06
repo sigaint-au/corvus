@@ -72,6 +72,13 @@ INVITE_ROLES = ("admin", "member", "read-only")
 PROJECT_ROLES = ("admin", "write", "read")
 # Machine accounts / ESO tokens: read-only (fetch) or write (fetch + upsert API)
 MACHINE_TOKEN_ROLES = ("read-only", "write")
+# Clipboard auto-clear after copy (seconds); 0 disables
+CLIPBOARD_CLEAR_SECONDS = max(
+    0, int(os.environ.get("CLIPBOARD_CLEAR_SECONDS", "30") or "30")
+)
+# Sidebar lists
+SIDEBAR_PINS_LIMIT = 8
+SIDEBAR_RECENT_LIMIT = 8
 LDAP_SETTING_KEYS = (
     "ldap_enabled",
     "ldap_url",

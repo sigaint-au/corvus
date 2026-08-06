@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Search — {{ app_name }}{% endblock %}
+{% block body %}
+<h1>Search</h1>
+<form method="get" action="{{ url_for('global_search') }}" class="toolbar" role="search" style="justify-content:flex-start;margin-bottom:1.25rem;">
+  <label class="search-field">
+    <span class="visually-hidden">Search everything</span>
+    <input type="search" name="q" value="{{ search_q or '' }}"
+           placeholder="Teams, projects, secrets…" autocomplete="off"
+           autofocus aria-label="Global search" style="width:18rem;max-width:70vw;">
+  </label>
+  <button type="submit">Search</button>
+  {% if search_q %}
+  <a class="btn-clear" href="{{ url_for('global_search') }}">Clear</a>
+  {% endif %}
+</form>
+
+{% if not search_q %}
+<p class="muted">Search across all teams, projects, and secrets you can access.</p>
+{% else %}
+
+<section>
+  <h2>Teams <span class="muted">({{ teams|length }})</span></h2>
+  {% if teams %}
+  <table>
+    <thead><tr><th>Name</th></tr></thead>
+    <tbody>
+    {% for t in teams %}
+      <tr><td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No teams match.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Projects <span class="muted">({{ projects|length }})</span></h2>
+  {% if projects %}
+  <table>
+    <thead><tr><th>Project</th><th>Team</th></tr></thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
+        <td class="muted"><a href="{{ url_for('team_detail', team_id=p.team_id) }}">{{ p.team_name }}</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No projects match.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Secrets <span class="muted">({{ secrets|length }})</span></h2>
+  {% if secrets %}
+  <table>
+    <thead><tr><th>Key</th><th>Project</th><th>Team</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for s in secrets %}
+      <tr>
+        <td class="col-key">
+          <a href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}">
+            <code class="k">{{ s.key }}</code>
+          </a>
+        </td>
+        <td><a href="{{ url_for('project_detail', project_id=s.project_id) }}">{{ s.project_name }}</a></td>
+        <td class="muted">{{ s.team_name }}</td>
+        <td class="col-note muted">{{ s.note }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No secrets match.</p>
+  {% endif %}
+</section>
+
+{% endif %}
+{% endblock %}

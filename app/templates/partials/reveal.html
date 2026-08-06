@@ -1,15 +1,31 @@
-{% if editable and can_write %}
-<form class="reveal-edit"
-      hx-post="{{ url_for('update_secret_value', project_id=project_id, secret_id=secret_id) }}"
-      hx-target="closest .secret-cell"
-      hx-swap="innerHTML">
-  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+<div class="reveal-wrap">
+  {% if editable and can_write %}
+  <form class="reveal-edit"
+        hx-post="{{ url_for('update_secret_value', project_id=project_id, secret_id=secret_id) }}"
+        hx-target="closest .secret-cell"
+        hx-swap="innerHTML">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <span class="input-with-btn">
+      <input type="text" name="value" id="secret-val-{{ secret_id }}" class="secret-value"
+             value="{{ value }}" autocomplete="off" required>
+      <button type="button" class="icon-btn copy-btn" title="Copy"
+              data-copy-target="secret-val-{{ secret_id }}"
+              data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
+      <button type="submit" class="icon-btn save-btn" title="Save value">Save</button>
+    </span>
+  </form>
+  {% else %}
   <span class="input-with-btn">
-    <input type="text" name="value" class="secret-value" value="{{ value }}"
-           autocomplete="off" required>
-    <button type="submit" class="icon-btn save-btn" title="Save value">Save</button>
+    <input type="text" id="secret-val-{{ secret_id }}" class="secret-value"
+           value="{{ value }}" readonly onclick="this.select()" title="Click to select">
+    <button type="button" class="icon-btn copy-btn" title="Copy"
+            data-copy-target="secret-val-{{ secret_id }}"
+            data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
   </span>
-</form>
-{% else %}
-<input type="text" class="secret-value" value="{{ value }}" readonly onclick="this.select()" title="Click to select">
-{% endif %}
+  {% endif %}
+  {% if editable is defined %}
+  <span class="reveal-actions">
+    {% include "partials/pin_button.html" %}
+  </span>
+  {% endif %}
+</div>

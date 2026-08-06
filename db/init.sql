@@ -151,6 +151,23 @@ CREATE TABLE api.project_members (
   PRIMARY KEY (project_id, user_id)
 );
 
+-- Per-user pins (favorites) and recently accessed secrets
+CREATE TABLE api.secret_pins (
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, secret_id)
+);
+
+CREATE TABLE api.secret_recent (
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+  accessed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, secret_id)
+);
+CREATE INDEX secret_recent_user_accessed_idx
+  ON api.secret_recent (user_id, accessed_at DESC);
+
 -- Membership / settings / access-control audit (not secret values)
 CREATE TABLE api.org_audit (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -368,6 +385,8 @@ ALTER TABLE api.team_invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.team_join_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.project_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_pins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_recent ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.org_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_versions ENABLE ROW LEVEL SECURITY;
@@ -451,6 +470,51 @@ CREATE POLICY pm_update ON api.project_members FOR UPDATE TO authenticated
   USING (api.can_write_project(project_id));
 CREATE POLICY pm_delete ON api.project_members FOR DELETE TO authenticated
   USING (api.can_write_project(project_id));
+
+-- Pins / recent: own rows only, and only if secret is still readable
+CREATE POLICY secret_pins_select ON api.secret_pins FOR SELECT TO authenticated
+  USING (
+    user_id = api.current_user_id()
+    AND EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND s.deleted_at IS NULL
+        AND api.can_read_project(s.project_id)
+    )
+  );
+CREATE POLICY secret_pins_insert ON api.secret_pins FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = api.current_user_id()
+    AND EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND s.deleted_at IS NULL
+        AND api.can_read_project(s.project_id)
+    )
+  );
+CREATE POLICY secret_pins_delete ON api.secret_pins FOR DELETE TO authenticated
+  USING (user_id = api.current_user_id());
+
+CREATE POLICY secret_recent_select ON api.secret_recent FOR SELECT TO authenticated
+  USING (
+    user_id = api.current_user_id()
+    AND EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND s.deleted_at IS NULL
+        AND api.can_read_project(s.project_id)
+    )
+  );
+CREATE POLICY secret_recent_insert ON api.secret_recent FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = api.current_user_id()
+    AND EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND s.deleted_at IS NULL
+        AND api.can_read_project(s.project_id)
+    )
+  );
+CREATE POLICY secret_recent_update ON api.secret_recent FOR UPDATE TO authenticated
+  USING (user_id = api.current_user_id());
+CREATE POLICY secret_recent_delete ON api.secret_recent FOR DELETE TO authenticated
+  USING (user_id = api.current_user_id());
 
 CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
   USING (api.can_read_project(project_id));

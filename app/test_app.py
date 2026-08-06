@@ -316,6 +316,10 @@ class TestAudit(unittest.TestCase):
         self.assertIn("revealed", s)
         self.assertIn("API_KEY", s)
 
+    def test_global_search_requires_login(self):
+        r = store.app.test_client().get("/search?q=x")
+        self.assertEqual(r.status_code, 302)
+
     def test_filter_clause_actor_action_dates(self):
         sql, params = audit._filter_clause(
             actor="bob", action="revealed", since="2026-01-01", until="2026-01-02"
@@ -960,8 +964,10 @@ class TestSecrets(unittest.TestCase):
             fo.append({"n": total})
         if tab == "settings":
             fa = [[]]  # project_member_rows
+        elif tab == "secrets":
+            fa = [rows, []]  # secrets page + pin lookup
         else:
-            fa = [rows] if tab in ("secrets", "audit", "tokens") else []
+            fa = [rows] if tab in ("audit", "tokens") else []
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         cur.fetchall.side_effect = fa if fa else [[]]

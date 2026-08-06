@@ -1,0 +1,9 @@
+<button type="button"
+        class="pin-btn {% if is_pinned %}pinned{% endif %}"
+        title="{% if is_pinned %}Unpin{% else %}Pin{% endif %}"
+        aria-label="{% if is_pinned %}Unpin secret{% else %}Pin secret{% endif %}"
+        hx-post="{{ url_for('toggle_secret_pin', project_id=project_id, secret_id=secret_id) }}"
+        hx-swap="outerHTML"
+        hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
+  {% if is_pinned %}★{% else %}☆{% endif %}
+</button>

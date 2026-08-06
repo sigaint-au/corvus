@@ -25,6 +25,7 @@ import config
 import crypto
 import db
 import paging
+import pins
 
 log = logging.getLogger(__name__)
 
@@ -153,8 +154,22 @@ def _load_secrets_page(cur, project_id, page, q):
         (*params, pager["limit"], pager["offset"]),
     )
     rows = cur.fetchall()
+    # Mark favorites for this page (single query)
+    ids = [str(r["id"]) for r in rows]
+    pinned = set()
+    if ids:
+        cur.execute(
+            """
+            SELECT secret_id FROM api.secret_pins
+            WHERE user_id = api.current_user_id()
+              AND secret_id = ANY(%s::uuid[])
+            """,
+            (ids,),
+        )
+        pinned = {str(x["secret_id"]) for x in (cur.fetchall() or [])}
     for r in rows:
         r["due"] = secret_due_status(r)
+        r["is_pinned"] = str(r["id"]) in pinned
     return rows, pager
 
 
@@ -229,6 +244,61 @@ def _upsert_secret(
 
 def register(app):
     # ── Projects / Secrets ─────────────────────────────────────────────
+
+
+    @app.get("/search")
+    @authz.login_required
+    def global_search():
+        """Search teams, projects, and secrets the user can access."""
+        q = (request.args.get("q") or "").strip()
+        teams, projects, secrets = [], [], []
+        if q:
+            like = f"%{q}%"
+            with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, name FROM api.teams
+                    WHERE name ILIKE %s
+                    ORDER BY name
+                    LIMIT 25
+                    """,
+                    (like,),
+                )
+                teams = cur.fetchall()
+                cur.execute(
+                    """
+                    SELECT p.id, p.name, t.name AS team_name, t.id AS team_id
+                    FROM api.projects p
+                    JOIN api.teams t ON t.id = p.team_id
+                    WHERE p.name ILIKE %s
+                    ORDER BY t.name, p.name
+                    LIMIT 40
+                    """,
+                    (like,),
+                )
+                projects = cur.fetchall()
+                cur.execute(
+                    """
+                    SELECT s.id, s.key, s.note, s.project_id,
+                           p.name AS project_name, t.name AS team_name
+                    FROM api.secrets s
+                    JOIN api.projects p ON p.id = s.project_id
+                    JOIN api.teams t ON t.id = p.team_id
+                    WHERE s.deleted_at IS NULL
+                      AND (s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s)
+                    ORDER BY t.name, p.name, s.key
+                    LIMIT 50
+                    """,
+                    (like, like, like),
+                )
+                secrets = cur.fetchall()
+        return render_template(
+            "search.html",
+            search_q=q,
+            teams=teams,
+            projects=projects,
+            secrets=secrets,
+        )
 
 
     @app.get("/projects")
@@ -670,6 +740,15 @@ def register(app):
                 return "Not found", 404
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             can_write = bool(cur.fetchone()["w"])
+            try:
+                pins.touch_recent(cur, session["user_id"], secret_id)
+            except Exception:
+                pass
+            is_fav = False
+            try:
+                is_fav = pins.is_pinned(cur, session["user_id"], secret_id)
+            except Exception:
+                pass
             audit.log_secret(
                 cur,
                 project_id=project_id,
@@ -685,6 +764,41 @@ def register(app):
             project_id=project_id,
             editable=True,
             can_write=can_write,
+            is_pinned=is_fav,
+            clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
+        )
+
+
+    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/pin")
+    @authz.login_required
+    def toggle_secret_pin(project_id, secret_id):
+        """Pin or unpin a secret for the current user."""
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id FROM api.secrets
+                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                """,
+                (str(secret_id), str(project_id)),
+            )
+            if not cur.fetchone():
+                return "Not found", 404
+            if pins.is_pinned(cur, session["user_id"], secret_id):
+                pins.unpin(cur, session["user_id"], secret_id)
+                pinned = False
+            else:
+                pins.pin(cur, session["user_id"], secret_id)
+                pinned = True
+            conn.commit()
+        if authz.htmx():
+            return render_template(
+                "partials/pin_button.html",
+                project_id=project_id,
+                secret_id=secret_id,
+                is_pinned=pinned,
+            )
+        return redirect(
+            url_for("project_detail", project_id=project_id, tab="secrets")
         )
 
 
@@ -832,6 +946,8 @@ def register(app):
             project_id=project_id,
             editable=False,
             can_write=False,
+            is_pinned=False,
+            clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
         )
 
 

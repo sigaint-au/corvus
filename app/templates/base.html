@@ -171,9 +171,103 @@
       background: var(--side-active);
       color: #fff;
     }
+    .side-search {
+      padding: 0 .35rem .65rem;
+    }
+    .side-search input {
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--side-active);
+      color: #fff;
+      border: 1px solid var(--side-border);
+      border-radius: 6px;
+      padding: .4rem .5rem;
+      font-size: .8rem;
+    }
+    .side-search input::placeholder { color: var(--side-muted); }
+    .side-list {
+      padding: .35rem .35rem .5rem;
+      border-top: 1px solid var(--side-border);
+      margin-top: .25rem;
+    }
+    .side-list-label {
+      font-size: .65rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--side-muted);
+      padding: .25rem .3rem .35rem;
+    }
+    .side-list-item {
+      display: block;
+      padding: .35rem .4rem;
+      border-radius: 5px;
+      color: var(--side-ink);
+      text-decoration: none;
+      font-size: .8rem;
+      line-height: 1.25;
+    }
+    .side-list-item:hover {
+      background: var(--side-active);
+      text-decoration: none;
+      color: #fff;
+    }
+    .side-list-key {
+      display: block;
+      font-family: ui-monospace, monospace;
+      font-size: .75rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .side-list-meta {
+      display: block;
+      color: var(--side-muted);
+      font-size: .68rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .side-team {
       padding: 0 .35rem .75rem;
     }
+    .toast-host {
+      position: fixed;
+      bottom: 1.25rem;
+      right: 1.25rem;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+      pointer-events: none;
+    }
+    .toast {
+      background: var(--foreground);
+      color: var(--background);
+      font-size: .85rem;
+      font-weight: 600;
+      padding: .55rem .85rem;
+      border-radius: 6px;
+      box-shadow: 0 6px 20px color-mix(in srgb, #000 25%, transparent);
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity .15s ease, transform .15s ease;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .reveal-wrap { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+    .reveal-wrap .input-with-btn { flex: 1; min-width: 0; }
+    .reveal-actions { flex: 0 0 auto; }
+    .pin-btn {
+      background: none;
+      border: none;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: .15rem .25rem;
+    }
+    .pin-btn.pinned { color: var(--warning); }
+    .pin-btn:hover { color: var(--foreground); }
+    .copy-btn { font-size: .7rem; font-weight: 600; width: auto !important; padding: 0 .45rem !important; }
     .side-team label {
       display: block;
       font-size: .7rem;
@@ -863,6 +957,12 @@
       Sigaint
       <span class="brand-sub">Secret Server</span>
     </a>
+    <form class="side-search" method="get" action="{{ url_for('global_search') }}" role="search">
+      <label for="side-search-q" class="visually-hidden">Search</label>
+      <input type="search" id="side-search-q" name="q"
+             placeholder="Search…" autocomplete="off"
+             value="{{ request.args.get('q','') if request.endpoint == 'global_search' else '' }}">
+    </form>
     <form class="side-team" method="post" action="{{ url_for('select_team') }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="next" value="{{ request.path }}">
@@ -887,6 +987,8 @@
          class="{% if request.endpoint == 'machines_list' %}active{% endif %}">Machine accounts</a>
       <a href="{{ url_for('trash') }}"
          class="{% if request.endpoint == 'trash' %}active{% endif %}">Trash</a>
+      <a href="{{ url_for('global_search') }}"
+         class="{% if request.endpoint == 'global_search' %}active{% endif %}">Search</a>
       <div class="nav-sep"></div>
       <a href="{{ url_for('teams') }}"
          class="{% if request.endpoint in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}">Teams</a>
@@ -895,6 +997,30 @@
          class="{% if request.endpoint == 'server_settings' %}active{% endif %}">Server settings</a>
       {% endif %}
     </nav>
+    {% if nav_pins %}
+    <div class="side-list">
+      <div class="side-list-label">Pinned</div>
+      {% for s in nav_pins %}
+      <a class="side-list-item" href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}"
+         title="{{ s.team_name }} / {{ s.project_name }}">
+        <span class="side-list-key">{{ s.key }}</span>
+        <span class="side-list-meta">{{ s.project_name }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if nav_recent %}
+    <div class="side-list">
+      <div class="side-list-label">Recent</div>
+      {% for s in nav_recent %}
+      <a class="side-list-item" href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}"
+         title="{{ s.team_name }} / {{ s.project_name }}">
+        <span class="side-list-key">{{ s.key }}</span>
+        <span class="side-list-meta">{{ s.project_name }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="sidebar-foot">
       <div class="who">
         <span class="who-email" title="{{ session.email }}">{{ session.email }}</span>
@@ -929,5 +1055,59 @@
   {% else %}
   </div>
   {% endif %}
+  <div class="toast-host" id="toast-host" aria-live="polite"></div>
+  <script>
+  (function () {
+    var clearTimer = null;
+    var lastCopied = null;
+    function toast(msg) {
+      var host = document.getElementById('toast-host');
+      if (!host) return;
+      var el = document.createElement('div');
+      el.className = 'toast';
+      el.textContent = msg;
+      host.appendChild(el);
+      requestAnimationFrame(function () { el.classList.add('show'); });
+      setTimeout(function () {
+        el.classList.remove('show');
+        setTimeout(function () { el.remove(); }, 200);
+      }, 1800);
+    }
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('.copy-btn');
+      if (!btn) return;
+      e.preventDefault();
+      var id = btn.getAttribute('data-copy-target');
+      var inp = id ? document.getElementById(id) : null;
+      var text = inp ? inp.value : '';
+      if (!text) return;
+      var secs = parseInt(btn.getAttribute('data-clear-seconds') || '30', 10);
+      function done() {
+        toast('Copied');
+        lastCopied = text;
+        if (clearTimer) clearTimeout(clearTimer);
+        if (secs > 0 && navigator.clipboard && navigator.clipboard.writeText) {
+          clearTimer = setTimeout(function () {
+            navigator.clipboard.readText().then(function (cur) {
+              if (cur === lastCopied) {
+                return navigator.clipboard.writeText('');
+              }
+            }).catch(function () {});
+            clearTimer = null;
+          }, secs * 1000);
+        }
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () {
+          if (inp) { inp.select(); document.execCommand('copy'); done(); }
+        });
+      } else if (inp) {
+        inp.select();
+        document.execCommand('copy');
+        done();
+      }
+    });
+  })();
+  </script>
 </body>
 </html>

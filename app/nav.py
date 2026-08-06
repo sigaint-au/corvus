@@ -2,8 +2,9 @@
 from flask import session
 
 import authz
-from config import APP_NAME
+from config import APP_NAME, CLIPBOARD_CLEAR_SECONDS
 import db
+import pins
 from settings_svc import classification
 
 
@@ -57,6 +58,9 @@ def inject_nav():
         "nav_teams": [],
         "nav_team_id": session.get("team_id"),
         "nav_team_name": None,
+        "nav_pins": [],
+        "nav_recent": [],
+        "clipboard_clear_seconds": CLIPBOARD_CLEAR_SECONDS,
         "csrf_token": authz.csrf_token(),
     }
     if not session.get("user_id"):
@@ -109,4 +113,10 @@ def inject_nav():
                 }
         except (KeyError, TypeError, AttributeError):
             pass
+    try:
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            base["nav_pins"] = pins.list_pins(cur, session["user_id"])
+            base["nav_recent"] = pins.list_recent(cur, session["user_id"])
+    except Exception:
+        pass
     return base
