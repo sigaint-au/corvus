@@ -579,38 +579,32 @@ def register(app):
                 if default_token_days < 1 or default_token_days > 3650:
                     flash("Default token days must be between 1 and 3650", "error")
                     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
-            mode = (request.form.get("classification_mode") or "server").strip()
-            if mode not in ("server", "on", "off"):
-                mode = "server"
-            class_text = (request.form.get("classification_text") or "").strip()
+            # Same fields as server settings; optional override flag
+            class_text = (request.form.get("classification_text") or "").strip()[:120]
             class_color = (request.form.get("classification_color") or "").strip()
             class_fg = (request.form.get("classification_fg") or "").strip()
-            if mode == "server":
+            class_show = bool(request.form.get("classification_enabled"))
+            if not request.form.get("use_classification_override"):
                 class_on_val = None
                 class_text = ""
                 class_color = ""
                 class_fg = ""
-            elif mode == "off":
-                class_on_val = False
-                class_text = ""
-                class_color = ""
-                class_fg = ""
             else:
-                # custom banner on
-                class_on_val = True
-                if not class_text:
-                    flash("Classification text is required for a custom banner", "error")
-                    return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+                # Mirror server_settings validation
                 if not class_color:
                     class_color = "#677381"
                 if not class_fg:
                     class_fg = "#ffffff"
                 if not config.HEX.match(class_color):
-                    flash("Classification background must be a #RRGGBB hex color", "error")
+                    flash("Banner colour must be a hex value like #677381", "error")
                     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
                 if not config.HEX.match(class_fg):
-                    flash("Classification foreground must be a #RRGGBB hex color", "error")
+                    flash("Text colour must be a hex value like #ffffff", "error")
                     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+                if class_show and not class_text:
+                    flash("Banner text is required when the banner is shown", "error")
+                    return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+                class_on_val = class_show
             try:
                 cur.execute(
                     """
@@ -641,7 +635,8 @@ def register(app):
                         action=audit.ORG_TEAM_SETTINGS,
                         detail=(
                             f"token_days={default_token_days or 'server'} "
-                            f"class_mode={mode}"
+                            f"class_override={class_on_val is not None} "
+                            f"class_enabled={class_on_val}"
                         ),
                     )
                     conn.commit()

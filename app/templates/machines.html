@@ -5,8 +5,7 @@
 {% if not team %}
 <p class="muted">Select a team in the sidebar.</p>
 {% else %}
-<p class="muted">Team: <strong>{{ team.name }}</strong> — tokens for OpenShift ESO / CI.
-  Prefer <strong>read-only</strong> for ESO; <strong>write</strong> tokens can create/update secrets.</p>
+<p class="muted">Team: <strong>{{ team.name }}</strong></p>
 {% if tokens %}
 <table>
   <thead><tr><th>Name</th><th>Project</th><th>Prefix</th><th>Role</th><th>Created</th><th>Expires</th></tr></thead>

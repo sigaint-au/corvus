@@ -1113,13 +1113,36 @@ class TestSecrets(unittest.TestCase):
     def test_reveal_secret(self):
         sid = uuid4()
         enc = crypto.encrypt("super-secret")
-        conn, _ = _conn(
-            fetchone={"id": sid, "key": "API_KEY", "value_enc": enc}
-        )
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"id": sid, "key": "API_KEY", "value_enc": enc},
+            {"w": True},
+        ]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{self.pid}/secrets/{sid}/reveal")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"super-secret", r.data)
+        self.assertIn(b"Save", r.data)
+        self.assertIn(b"/value", r.data)
+
+    def test_update_secret_value(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"w": True},
+            {"id": sid, "key": "API_KEY"},
+        ]
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/secrets/{sid}/value",
+                data={"value": "new-secret"},
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"new-secret", r.data)
+        self.assertIn(b"Save", r.data)
+        conn.commit.assert_called()
 
     def test_reveal_missing(self):
         conn, _ = _conn(fetchone=None)

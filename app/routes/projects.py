@@ -627,6 +627,8 @@ def register(app):
             row = cur.fetchone()
             if not row:
                 return "Not found", 404
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            can_write = bool(cur.fetchone()["w"])
             audit.log_secret(
                 cur,
                 project_id=project_id,
@@ -640,7 +642,60 @@ def register(app):
             value=crypto.decrypt(row["value_enc"]),
             secret_id=secret_id,
             project_id=project_id,
+            editable=True,
+            can_write=can_write,
         )
+
+
+    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/value")
+    @authz.login_required
+    def update_secret_value(project_id, secret_id):
+        """In-place update after reveal (archives prior value via trigger)."""
+        value = request.form.get("value")
+        if value is None:
+            return "Value required", 400
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            if not cur.fetchone()["w"]:
+                return "Forbidden", 403
+            cur.execute(
+                """
+                SELECT id, key FROM api.secrets
+                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                """,
+                (str(secret_id), str(project_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                return "Not found", 404
+            cur.execute(
+                """
+                UPDATE api.secrets SET value_enc = %s
+                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                """,
+                (crypto.encrypt(value), str(secret_id), str(project_id)),
+            )
+            if cur.rowcount == 0:
+                conn.rollback()
+                return "Forbidden", 403
+            audit.log_secret(
+                cur,
+                project_id=project_id,
+                secret_id=row["id"],
+                secret_key=row["key"],
+                action="updated",
+            )
+            conn.commit()
+        if authz.htmx():
+            return render_template(
+                "partials/reveal.html",
+                value=value,
+                secret_id=secret_id,
+                project_id=project_id,
+                editable=True,
+                can_write=True,
+            )
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
 
 
     def _secrets_partial(project_id):
@@ -739,6 +794,8 @@ def register(app):
             value=crypto.decrypt(row["value_enc"]),
             secret_id=secret_id,
             project_id=project_id,
+            editable=False,
+            can_write=False,
         )
 
 

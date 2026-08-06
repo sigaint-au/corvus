@@ -239,47 +239,113 @@
     <p class="muted">Leave blank to use no default (tokens never expire unless set per token).</p>
 
     <h3>Classification banner</h3>
-    <p class="muted">Optional override of the server-wide banner for members of this team (while this team is selected).</p>
-    <div class="row">
-      <label>Mode
-        <select name="classification_mode" id="class-mode">
-          <option value="server" {% if team.classification_enabled is none %}selected{% endif %}>Use server default</option>
-          <option value="on" {% if team.classification_enabled is sameas true %}selected{% endif %}>Show custom banner</option>
-          <option value="off" {% if team.classification_enabled is sameas false %}selected{% endif %}>Hide banner</option>
-        </select>
+    <p class="muted">Optional override of the server-wide banner while this team is selected in the sidebar.</p>
+    <label class="check-row">
+      <input type="checkbox" name="use_classification_override" id="class-override" value="1"
+             {% if team.classification_enabled is not none %}checked{% endif %}
+             onchange="syncTeamClassForm()">
+      Override server classification banner for this team
+    </label>
+    <div id="team-banner-fields">
+      <label>
+        <input type="checkbox" name="classification_enabled" id="classification_enabled" value="1"
+               {% if team.classification_enabled %}checked{% endif %}
+               onchange="updateTeamBannerPreview()">
+        Show classification banner
       </label>
-    </div>
-    <div class="row class-custom-fields" id="class-custom-fields">
-      <label>Text
-        <input type="text" name="classification_text" maxlength="120"
-               value="{{ team.classification_text or '' }}" placeholder="e.g. OFFICIAL: SENSITIVE">
+      <label>Banner text
+        <input type="text" name="classification_text" id="classification_text" maxlength="120"
+               value="{{ team.classification_text or classification.text or 'OFFICIAL' }}"
+               placeholder="OFFICIAL — SENSITIVE"
+               oninput="updateTeamBannerPreview()">
       </label>
-      <label>Background
-        <input type="text" name="classification_color" value="{{ team.classification_color or '' }}"
-               pattern="#[0-9A-Fa-f]{6}" placeholder="#677381">
-      </label>
-      <label>Foreground
-        <input type="text" name="classification_fg" value="{{ team.classification_fg or '' }}"
-               pattern="#[0-9A-Fa-f]{6}" placeholder="#ffffff">
-      </label>
+      <div class="row">
+        <div>
+          <label>Background colour</label>
+          <div class="color-field">
+            <input type="color" id="classification_color_picker"
+                   value="{{ team.classification_color or classification.color or '#677381' }}"
+                   oninput="document.getElementById('classification_color').value=this.value; updateTeamBannerPreview();">
+            <input type="text" name="classification_color" id="classification_color"
+                   value="{{ team.classification_color or classification.color or '#677381' }}"
+                   pattern="#[0-9A-Fa-f]{6}"
+                   oninput="syncTeamColor('classification_color'); updateTeamBannerPreview();">
+          </div>
+        </div>
+        <div>
+          <label>Text colour</label>
+          <div class="color-field">
+            <input type="color" id="classification_fg_picker"
+                   value="{{ team.classification_fg or classification.fg or '#ffffff' }}"
+                   oninput="document.getElementById('classification_fg').value=this.value; updateTeamBannerPreview();">
+            <input type="text" name="classification_fg" id="classification_fg"
+                   value="{{ team.classification_fg or classification.fg or '#ffffff' }}"
+                   pattern="#[0-9A-Fa-f]{6}"
+                   oninput="syncTeamColor('classification_fg'); updateTeamBannerPreview();">
+          </div>
+        </div>
+      </div>
+      <p class="muted" style="margin:.5rem 0 .25rem;">Presets</p>
+      <div class="swatch-row">
+        <button type="button" class="swatch" style="background:#000000" title="Black"
+                onclick="applyTeamPreset('#000000','#ffffff')"></button>
+        <button type="button" class="swatch" style="background:#677381" title="Slate"
+                onclick="applyTeamPreset('#677381','#ffffff')"></button>
+        <button type="button" class="swatch" style="background:#47817F" title="Teal-grey"
+                onclick="applyTeamPreset('#47817F','#ffffff')"></button>
+        <button type="button" class="swatch" style="background:#c62828" title="Red"
+                onclick="applyTeamPreset('#c62828','#ffffff')"></button>
+        <button type="button" class="swatch" style="background:#ef6c00" title="Orange"
+                onclick="applyTeamPreset('#ef6c00','#000000')"></button>
+        <button type="button" class="swatch" style="background:#f9a825" title="Amber"
+                onclick="applyTeamPreset('#f9a825','#000000')"></button>
+        <button type="button" class="swatch" style="background:#1565c0" title="Blue"
+                onclick="applyTeamPreset('#1565c0','#ffffff')"></button>
+        <button type="button" class="swatch" style="background:#ffffff;border-color:#d4d4d8" title="White"
+                onclick="applyTeamPreset('#ffffff','#000000')"></button>
+      </div>
+      <div class="banner-preview" id="team-banner-preview"
+           style="background: {{ team.classification_color or classification.color or '#677381' }}; color: {{ team.classification_fg or classification.fg or '#ffffff' }};">
+        {{ team.classification_text or classification.text or 'Preview' }}
+      </div>
     </div>
     <p style="margin-top:1rem;"><button type="submit">Save team settings</button></p>
   </form>
   <script>
-  (function () {
-    var mode = document.getElementById('class-mode');
-    var fields = document.getElementById('class-custom-fields');
-    if (!mode || !fields) return;
-    function sync() {
-      var custom = mode.value === 'on';
-      fields.style.opacity = custom ? '1' : '0.45';
-      fields.querySelectorAll('input').forEach(function (inp) {
-        inp.disabled = !custom;
-      });
+  function applyTeamPreset(bg, fg) {
+    document.getElementById('classification_color').value = bg;
+    document.getElementById('classification_color_picker').value = bg;
+    document.getElementById('classification_fg').value = fg;
+    document.getElementById('classification_fg_picker').value = fg;
+    updateTeamBannerPreview();
+  }
+  function syncTeamColor(id) {
+    var v = document.getElementById(id).value;
+    if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+      document.getElementById(id + '_picker').value = v;
     }
-    mode.addEventListener('change', sync);
-    sync();
-  })();
+  }
+  function updateTeamBannerPreview() {
+    var el = document.getElementById('team-banner-preview');
+    if (!el) return;
+    var text = document.getElementById('classification_text').value || 'Preview';
+    el.textContent = text;
+    el.style.background = document.getElementById('classification_color').value;
+    el.style.color = document.getElementById('classification_fg').value;
+    el.style.opacity = document.getElementById('classification_enabled').checked ? '1' : '0.45';
+  }
+  function syncTeamClassForm() {
+    var on = document.getElementById('class-override').checked;
+    var box = document.getElementById('team-banner-fields');
+    box.style.opacity = on ? '1' : '0.45';
+    box.querySelectorAll('input, button').forEach(function (el) {
+      if (el.type === 'hidden') return;
+      el.disabled = !on;
+    });
+    if (on) updateTeamBannerPreview();
+  }
+  syncTeamClassForm();
+  updateTeamBannerPreview();
   </script>
 </section>
 
