@@ -421,7 +421,10 @@ SET row_security = off AS $$
   ORDER BY tm.role, u.email;
 $$;
 
--- Audit insert only via this function (not direct table INSERT for authenticated)
+-- Audit insert only via this function (not direct table INSERT for authenticated).
+-- p_user_id is ignored: actor is always taken from JWT claims (defense-in-depth
+-- against forged attribution if this function is ever exposed). Machine/system
+-- callers with no JWT leave user_id NULL and may set p_actor_email (e.g. 'machine').
 CREATE OR REPLACE FUNCTION private.audit_secret(
   p_project uuid,
   p_secret_id uuid,
@@ -439,17 +442,15 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'invalid audit action: %', p_action;
   END IF;
-  uid := p_user_id;
-  IF uid IS NULL THEN
-    BEGIN
-      uid := NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
-    EXCEPTION WHEN others THEN
-      uid := NULL;
-    END;
-  END IF;
+  -- Never trust caller-supplied p_user_id
+  BEGIN
+    uid := NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
+  EXCEPTION WHEN others THEN
+    uid := NULL;
+  END;
   email := COALESCE(
-    NULLIF(p_actor_email, ''),
     (SELECT u.email FROM private.users u WHERE u.id = uid),
+    NULLIF(p_actor_email, ''),
     ''
   );
   INSERT INTO api.secret_audit (project_id, secret_id, secret_key, user_id, actor_email, action)

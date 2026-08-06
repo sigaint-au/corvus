@@ -407,17 +407,15 @@ def ensure_schema():
           ) THEN
             RAISE EXCEPTION 'invalid audit action: %', p_action;
           END IF;
-          uid := p_user_id;
-          IF uid IS NULL THEN
-            BEGIN
-              uid := NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
-            EXCEPTION WHEN others THEN
-              uid := NULL;
-            END;
-          END IF;
+          -- Never trust caller-supplied p_user_id; always derive from JWT
+          BEGIN
+            uid := NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
+          EXCEPTION WHEN others THEN
+            uid := NULL;
+          END;
           email := COALESCE(
-            NULLIF(p_actor_email, ''),
             (SELECT u.email FROM private.users u WHERE u.id = uid),
+            NULLIF(p_actor_email, ''),
             ''
           );
           INSERT INTO api.secret_audit

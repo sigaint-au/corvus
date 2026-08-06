@@ -21,18 +21,21 @@ def log_secret(
     action: str,
     secret_key: str = "",
     secret_id=None,
-    user_id=None,
     actor_email: str | None = None,
 ):
-    """Insert an audit row via SECURITY DEFINER private.audit_secret (no direct INSERT)."""
+    """Insert an audit row via SECURITY DEFINER private.audit_secret (no direct INSERT).
+
+    Actor user_id is taken from JWT claims inside the DB function (as_user connections).
+    Optional actor_email is only used when there is no JWT user (e.g. machine paths).
+    """
     if action not in ACTIONS:
         raise ValueError(f"invalid audit action: {action}")
-    uid = user_id if user_id is not None else session.get("user_id")
+    # p_user_id is ignored by private.audit_secret; pass NULL for clarity.
     email = actor_email if actor_email is not None else (session.get("email") or "")
     cur.execute(
         """
         SELECT private.audit_secret(
-          %s::uuid, %s::uuid, %s, %s, %s::uuid, %s
+          %s::uuid, %s::uuid, %s, %s, NULL::uuid, %s
         )
         """,
         (
@@ -40,7 +43,6 @@ def log_secret(
             str(secret_id) if secret_id else None,
             secret_key or "",
             action,
-            str(uid) if uid else None,
             email or "",
         ),
     )

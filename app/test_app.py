@@ -326,9 +326,12 @@ class TestAudit(unittest.TestCase):
                 cur, project_id=pid, secret_id=sid, secret_key="K", action="revealed"
             )
         self.assertEqual(cur.execute.call_count, 1)
-        sql = cur.execute.call_args.args[0]
+        sql, params = cur.execute.call_args.args[0], cur.execute.call_args.args[1]
         self.assertIn("private.audit_secret", sql)
+        self.assertIn("NULL::uuid", sql)
         self.assertNotIn("INSERT INTO api.secret_audit", sql)
+        # actor email still passed; user_id is never supplied (JWT inside DB)
+        self.assertEqual(params[-1], "a@b.c")
 
     def test_schema_revokes_secret_audit_insert(self):
         from pathlib import Path
@@ -336,9 +339,11 @@ class TestAudit(unittest.TestCase):
         init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
         self.assertIn("REVOKE INSERT ON api.secret_audit FROM authenticated", init)
         self.assertIn("CREATE OR REPLACE FUNCTION private.audit_secret", init)
+        self.assertIn("Never trust caller-supplied p_user_id", init)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("REVOKE INSERT ON api.secret_audit FROM authenticated", src)
         self.assertIn("private.audit_secret", src)
+        self.assertIn("Never trust caller-supplied p_user_id", src)
 
 
 # ── Auth routes ────────────────────────────────────────────────────
