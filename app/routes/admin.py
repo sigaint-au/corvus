@@ -142,31 +142,50 @@ def register(app):
                             (uid,),
                         )
                     flash("Global admin removed", "ok")
-            return redirect(url_for("server_settings"))
+            # Stay on the relevant tab after save
+            tab_for = {
+                "registration": "general",
+                "team_creation": "general",
+                "classification": "banner",
+                "promote": "admins",
+                "demote": "admins",
+                "ldap": "ldap",
+                "ldap_role_map_add": "ldap",
+                "ldap_role_map_delete": "ldap",
+            }
+            tab = tab_for.get(action, "general")
+            return redirect(url_for("server_settings", tab=tab))
 
+        tab = (request.args.get("tab") or "general").strip().lower()
+        if tab not in ("general", "banner", "admins", "ldap"):
+            tab = "general"
         settings = settings_svc.get_settings()
         # never show raw bind password in the form
         settings = dict(settings)
         settings["ldap_bind_password_set"] = bool((settings.get("ldap_bind_password") or "").strip())
         settings["ldap_bind_password"] = ""
+        users, ldap_role_maps = [], []
         with db.connect_admin() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, email, name, is_global_admin, auth_source, created_at
-                FROM private.users
-                ORDER BY is_global_admin DESC, email
-                """
-            )
-            users = cur.fetchall()
-            cur.execute(
-                "SELECT id, ldap_group, role, created_at FROM private.ldap_role_maps ORDER BY ldap_group"
-            )
-            ldap_role_maps = cur.fetchall()
+            if tab == "admins":
+                cur.execute(
+                    """
+                    SELECT id, email, name, is_global_admin, auth_source, created_at
+                    FROM private.users
+                    ORDER BY is_global_admin DESC, email
+                    """
+                )
+                users = cur.fetchall()
+            if tab == "ldap":
+                cur.execute(
+                    "SELECT id, ldap_group, role, created_at FROM private.ldap_role_maps ORDER BY ldap_group"
+                )
+                ldap_role_maps = cur.fetchall()
         return render_template(
             "settings.html",
             settings=settings,
             users=users,
             ldap_role_maps=ldap_role_maps,
             classification=settings_svc.classification(),
+            active_tab=tab,
         )
 

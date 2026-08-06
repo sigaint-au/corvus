@@ -171,20 +171,6 @@
       background: var(--side-active);
       color: #fff;
     }
-    .side-search {
-      padding: 0 .35rem .65rem;
-    }
-    .side-search input {
-      width: 100%;
-      box-sizing: border-box;
-      background: var(--side-active);
-      color: #fff;
-      border: 1px solid var(--side-border);
-      border-radius: 6px;
-      padding: .4rem .5rem;
-      font-size: .8rem;
-    }
-    .side-search input::placeholder { color: var(--side-muted); }
     .side-list {
       padding: .35rem .35rem .5rem;
       border-top: 1px solid var(--side-border);
@@ -967,12 +953,6 @@
       Sigaint
       <span class="brand-sub">Secret Server</span>
     </a>
-    <form class="side-search" method="get" action="{{ url_for('global_search') }}" role="search">
-      <label for="side-search-q" class="visually-hidden">Search</label>
-      <input type="search" id="side-search-q" name="q"
-             placeholder="Search…" autocomplete="off"
-             value="{{ request.args.get('q','') if request.endpoint == 'global_search' else '' }}">
-    </form>
     <form class="side-team" method="post" action="{{ url_for('select_team') }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="next" value="{{ request.path }}">
@@ -997,8 +977,6 @@
          class="{% if request.endpoint == 'machines_list' %}active{% endif %}">Machine accounts</a>
       <a href="{{ url_for('trash') }}"
          class="{% if request.endpoint == 'trash' %}active{% endif %}">Trash</a>
-      <a href="{{ url_for('global_search') }}"
-         class="{% if request.endpoint == 'global_search' %}active{% endif %}">Search</a>
       <div class="nav-sep"></div>
       <a href="{{ url_for('teams') }}"
          class="{% if request.endpoint in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}">Teams</a>

@@ -1990,25 +1990,16 @@ class TestSettings(unittest.TestCase):
             s["user_id"] = self.uid
             s["email"] = "admin@ex.com"
             s["is_global_admin"] = True
-        conn, _ = _conn(
-            fetchall=[
-                {
-                    "id": self.uid,
-                    "email": "admin@ex.com",
-                    "name": "Admin",
-                    "is_global_admin": True,
-                    "created_at": "now",
-                }
-            ]
-        )
         settings = {
+            "registration_enabled": "true",
+            "user_team_creation_enabled": "true",
             "classification_enabled": "true",
             "classification_text": "SECRET",
             "classification_color": "#c62828",
             "classification_fg": "#ffffff",
         }
-        with patch.object(db, "as_user", return_value=conn), patch.object(
-            db, "connect_admin", return_value=conn
+        with patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]), patch.object(
+            db, "connect_admin", return_value=_conn(fetchall=[])[0]
         ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
             settings_svc, "get_settings", return_value=settings
         ), patch.object(
@@ -2023,8 +2014,74 @@ class TestSettings(unittest.TestCase):
         ):
             r = self.client.get("/settings")
         self.assertEqual(r.status_code, 200)
+        # Tab navigation present
+        self.assertIn(b"?tab=general", r.data)
+        self.assertIn(b"?tab=banner", r.data)
+        self.assertIn(b"?tab=admins", r.data)
+        self.assertIn(b"?tab=ldap", r.data)
+        # Default tab is general
+        self.assertIn(b"Account registration", r.data)
+        self.assertIn(b"Team creation", r.data)
+        self.assertNotIn(b"Save banner", r.data)
+        self.assertNotIn(b"Make global admin", r.data)
+
+    def test_settings_banner_tab(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        settings = {
+            "classification_enabled": "true",
+            "classification_text": "SECRET",
+            "classification_color": "#c62828",
+            "classification_fg": "#ffffff",
+        }
+        with patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]), patch.object(
+            db, "connect_admin", return_value=_conn(fetchall=[])[0]
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "get_settings", return_value=settings
+        ), patch.object(
+            settings_svc,
+            "classification",
+            return_value={
+                "enabled": True,
+                "text": "SECRET",
+                "color": "#c62828",
+                "fg": "#ffffff",
+            },
+        ):
+            r = self.client.get("/settings?tab=banner")
+        self.assertEqual(r.status_code, 200)
         self.assertIn(b"Classification banner", r.data)
         self.assertIn(b"SECRET", r.data)
+
+    def test_settings_admins_tab(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, _ = _conn(
+            fetchall=[
+                {
+                    "id": self.uid,
+                    "email": "admin@ex.com",
+                    "name": "Admin",
+                    "is_global_admin": True,
+                    "created_at": "now",
+                }
+            ]
+        )
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            db, "connect_admin", return_value=conn
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "get_settings", return_value={}
+        ), patch.object(
+            settings_svc,
+            "classification",
+            return_value={"enabled": False, "text": "", "color": "#000", "fg": "#fff"},
+        ):
+            r = self.client.get("/settings?tab=admins")
+        self.assertEqual(r.status_code, 200)
         self.assertIn(b"Global admins", r.data)
 
     def test_save_classification(self):
@@ -2053,6 +2110,7 @@ class TestSettings(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 302)
         self.assertIn("/settings", r.location)
+        self.assertIn("tab=banner", r.location)
         self.assertEqual(
             dict(sets),
             {

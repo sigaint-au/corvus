@@ -4,6 +4,26 @@
 <h1>Server settings</h1>
 <p class="muted">Global admin only. Changes apply immediately for all users.</p>
 
+<nav class="tabs" role="tablist" aria-label="Server settings sections">
+  <a href="{{ url_for('server_settings', tab='general') }}"
+     class="tab {% if active_tab == 'general' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'general' else 'false' }}">General</a>
+  <a href="{{ url_for('server_settings', tab='banner') }}"
+     class="tab {% if active_tab == 'banner' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'banner' else 'false' }}">Classification</a>
+  <a href="{{ url_for('server_settings', tab='admins') }}"
+     class="tab {% if active_tab == 'admins' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'admins' else 'false' }}">Admins</a>
+  <a href="{{ url_for('server_settings', tab='ldap') }}"
+     class="tab {% if active_tab == 'ldap' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'ldap' else 'false' }}">LDAP</a>
+</nav>
+
+{% if active_tab == 'general' %}
 <section>
   <h2>Account registration</h2>
   <p class="muted">
@@ -39,6 +59,7 @@
   </form>
 </section>
 
+{% elif active_tab == 'banner' %}
 <section>
   <h2>Classification banner</h2>
   <p class="muted">Shown at the top of every page when enabled.</p>
@@ -105,7 +126,31 @@
     <p style="margin-top:1rem;"><button type="submit">Save banner</button></p>
   </form>
 </section>
+<script>
+function applyPreset(bg, fg) {
+  document.getElementById('classification_color').value = bg;
+  document.getElementById('classification_color_picker').value = bg;
+  document.getElementById('classification_fg').value = fg;
+  document.getElementById('classification_fg_picker').value = fg;
+  updatePreview();
+}
+function syncColor(id) {
+  var v = document.getElementById(id).value;
+  if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+    document.getElementById(id + '_picker').value = v;
+  }
+}
+function updatePreview() {
+  var el = document.getElementById('banner-preview');
+  var text = document.querySelector('[name=classification_text]').value || 'Preview';
+  el.textContent = text;
+  el.style.background = document.getElementById('classification_color').value;
+  el.style.color = document.getElementById('classification_fg').value;
+}
+document.querySelector('[name=classification_text]').addEventListener('input', updatePreview);
+</script>
 
+{% elif active_tab == 'admins' %}
 <section>
   <h2>Global admins</h2>
   <p class="muted">Global admins can access every team, project, and server settings.</p>
@@ -123,7 +168,7 @@
         <td>
           {% if u.id|string != session.user_id %}
           <form method="post" class="inline" onsubmit="return confirm('Remove global admin?');">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="demote">
             <input type="hidden" name="user_id" value="{{ u.id }}">
             <button type="submit">Remove</button>
@@ -148,6 +193,7 @@
   </form>
 </section>
 
+{% elif active_tab == 'ldap' %}
 <section>
   <h2>LDAP authentication</h2>
   <p class="muted">
@@ -229,7 +275,7 @@
         <td class="acts">
           <form method="post" class="inline"
                 onsubmit="return confirm('Remove this mapping?')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="ldap_role_map_delete">
             <input type="hidden" name="map_id" value="{{ m.id }}">
             <button type="submit" class="link danger">Remove</button>
@@ -257,28 +303,5 @@
     <button type="submit">Add map</button>
   </form>
 </section>
-
-<script>
-function applyPreset(bg, fg) {
-  document.getElementById('classification_color').value = bg;
-  document.getElementById('classification_color_picker').value = bg;
-  document.getElementById('classification_fg').value = fg;
-  document.getElementById('classification_fg_picker').value = fg;
-  updatePreview();
-}
-function syncColor(id) {
-  var v = document.getElementById(id).value;
-  if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
-    document.getElementById(id + '_picker').value = v;
-  }
-}
-function updatePreview() {
-  var el = document.getElementById('banner-preview');
-  var text = document.querySelector('[name=classification_text]').value || 'Preview';
-  el.textContent = text;
-  el.style.background = document.getElementById('classification_color').value;
-  el.style.color = document.getElementById('classification_fg').value;
-}
-document.querySelector('[name=classification_text]').addEventListener('input', updatePreview);
-</script>
+{% endif %}
 {% endblock %}
