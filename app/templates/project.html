@@ -28,15 +28,11 @@
      class="tab {% if active_tab == 'tokens' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine tokens</a>
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='members') }}"
-     class="tab {% if active_tab == 'members' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'members' else 'false' }}">Members</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
      class="tab {% if active_tab == 'import' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'import' else 'false' }}">Import / Export</a>
-  {% if can_delete %}
+  {% if can_settings %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
      role="tab"
@@ -270,9 +266,12 @@
   <p class="muted">No machine accounts.</p>
   {% endif %}
 </section>
-{% elif active_tab == 'members' %}
+{% elif active_tab == 'settings' and can_settings %}
 <section>
-  <h2>Project members</h2>
+  <h2>Project settings</h2>
+  <p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
+
+  <h3>Members</h3>
   <p class="muted">
     Grant access at project granularity (in addition to team membership).
     Roles: <strong>read</strong> (view), <strong>write</strong> (edit secrets), <strong>admin</strong> (write + manage members).
@@ -317,12 +316,8 @@
   {% else %}
   <p class="muted">No project-level members. Team members still have access via their team role.</p>
   {% endif %}
-</section>
-{% elif active_tab == 'settings' and can_delete %}
-<section>
-  <h2>Project settings</h2>
-  <p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
 
+  {% if can_delete %}
   <h3>Danger zone</h3>
   <p class="muted">Delete this project and all secrets, audit history, and machine tokens. Irreversible.</p>
   <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
@@ -330,6 +325,7 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <button type="submit" class="danger">Delete project</button>
   </form>
+  {% endif %}
 </section>
 {% endif %}
 {% endblock %}

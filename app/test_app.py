@@ -909,7 +909,10 @@ class TestSecrets(unittest.TestCase):
         fo = [project, {"w": can_write}, {"r": team_role}]
         if tab in ("secrets", "audit"):
             fo.append({"n": total})
-        fa = [rows] if tab in ("secrets", "audit", "tokens") else []
+        if tab == "settings":
+            fa = [[]]  # project_member_rows
+        else:
+            fa = [rows] if tab in ("secrets", "audit", "tokens") else []
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         cur.fetchall.side_effect = fa if fa else [[]]
@@ -978,19 +981,35 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(str(self.pid), r.location)
         conn.commit.assert_not_called()
 
-    def test_project_settings_tab_shows_delete_for_owner(self):
+    def test_project_settings_tab_shows_members_and_delete_for_owner(self):
         with patch.object(
             db, "as_user", return_value=self._project_conn(tab="settings", team_role="owner")
         ):
             r = self.client.get(f"/projects/{self.pid}?tab=settings")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Project settings", r.data)
+        self.assertIn(b"Members", r.data)
         self.assertIn(b"Delete project", r.data)
         self.assertIn(b"Settings", r.data)  # tab nav
 
-    def test_project_settings_tab_hidden_for_member(self):
+    def test_project_settings_visible_for_writer_without_delete(self):
+        """Writers get Settings (members); only team owner/admin get danger zone."""
         with patch.object(
-            db, "as_user", return_value=self._project_conn(team_role="member", can_write=True)
+            db,
+            "as_user",
+            return_value=self._project_conn(
+                tab="settings", team_role="member", can_write=True
+            ),
+        ):
+            r = self.client.get(f"/projects/{self.pid}?tab=settings")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"?tab=settings", r.data)
+        self.assertIn(b"Members", r.data)
+        self.assertNotIn(b"Delete project", r.data)
+
+    def test_project_settings_tab_hidden_for_read_only(self):
+        with patch.object(
+            db, "as_user", return_value=self._project_conn(team_role="read-only", can_write=False)
         ):
             r = self.client.get(f"/projects/{self.pid}")
         self.assertEqual(r.status_code, 200)
@@ -1263,7 +1282,7 @@ class TestOrgAccess(unittest.TestCase):
         self.assertNotIn("owner", config.INVITE_ROLES)
 
     def test_members_tab_requires_login(self):
-        r = store.app.test_client().get(f"/projects/{uuid4()}?tab=members")
+        r = store.app.test_client().get(f"/projects/{uuid4()}?tab=settings")
         self.assertEqual(r.status_code, 302)
 
     def test_invite_redeem_requires_login(self):
@@ -1636,8 +1655,7 @@ class TestUIShell(unittest.TestCase):
         self.assertIn(b"Machine accounts", r.data)
         self.assertIn(b"Trash", r.data)
         self.assertIn(b"side-team-select", r.data)
-        self.assertIn(b"Active team", r.data)
-        self.assertIn(b"Switch team", r.data)
+        self.assertNotIn(b"Active team", r.data)
         self.assertNotIn(b"Server settings", r.data)
 
     def test_global_admin_sees_settings_nav(self):

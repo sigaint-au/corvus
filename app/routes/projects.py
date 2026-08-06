@@ -406,7 +406,7 @@ def register(app):
     @authz.login_required
     def project_detail(project_id):
         tab = (request.args.get("tab") or "secrets").strip().lower()
-        if tab not in ("secrets", "audit", "tokens", "import", "members", "settings"):
+        if tab not in ("secrets", "audit", "tokens", "import", "settings"):
             tab = "secrets"
         page = paging.page_arg("page")
         q = (request.args.get("q") or "").strip()
@@ -438,8 +438,9 @@ def register(app):
             team_role = (cur.fetchone() or {}).get("r")
             # Project delete: team owner/admin (matches projects_delete RLS)
             can_delete = team_role in ("owner", "admin")
+            can_settings = bool(can_write or can_delete)
 
-            if tab == "settings" and not can_delete:
+            if tab == "settings" and not can_settings:
                 tab = "secrets"
             if tab == "secrets":
                 secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
@@ -468,13 +469,13 @@ def register(app):
                     (str(project_id),),
                 )
                 tokens = _annotate_token_expiry(cur.fetchall())
-            elif tab == "members":
+            elif tab == "settings":
                 cur.execute(
                     "SELECT * FROM private.project_member_rows(%s::uuid)",
                     (str(project_id),),
                 )
                 project_members = cur.fetchall()
-            # settings / import: no extra queries
+            # import: no extra queries
         return render_template(
             "project.html",
             project=project,
@@ -489,6 +490,7 @@ def register(app):
             default_token_days=default_token_days,
             can_write=can_write,
             can_delete=can_delete,
+            can_settings=can_settings,
             active_tab=tab,
             search_q=q,
             new_token=session.pop("new_token", None),
@@ -951,17 +953,17 @@ def register(app):
             role = "read"
         if not email:
             flash("Email required", "error")
-            return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+            return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             if not cur.fetchone()["w"]:
                 flash("You don't have permission to do that", "error")
-                return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+                return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
             cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
             u = cur.fetchone()
             if not u or not u.get("id"):
                 flash("User not found — they must register or sign in via LDAP first", "error")
-                return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+                return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
             cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
             proj = cur.fetchone()
             try:
@@ -1005,7 +1007,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+        return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
 
 
     @app.post("/projects/<uuid:project_id>/members/<uuid:user_id>/remove")
@@ -1015,7 +1017,7 @@ def register(app):
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             if not cur.fetchone()["w"]:
                 flash("You don't have permission to do that", "error")
-                return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+                return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
             cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
             proj = cur.fetchone()
             cur.execute(
@@ -1037,5 +1039,5 @@ def register(app):
                 )
                 conn.commit()
                 flash("Project member removed", "ok")
-        return redirect(url_for("project_detail", project_id=project_id, tab="members"))
+        return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
 

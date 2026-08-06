@@ -172,32 +172,7 @@
       color: #fff;
     }
     .side-team {
-      padding: 0 .35rem .85rem;
-      border-bottom: 1px solid var(--side-border);
-      margin-bottom: .35rem;
-    }
-    .side-team-active {
-      margin-bottom: .55rem;
-    }
-    .side-team-label {
-      display: block;
-      font-size: .7rem;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--side-muted);
-      margin-bottom: .2rem;
-    }
-    .side-team-name {
-      display: block;
-      color: #fff;
-      font-size: 1rem;
-      font-weight: 650;
-      line-height: 1.25;
-      word-break: break-word;
-    }
-    .side-team-name.is-empty {
-      color: var(--side-muted);
-      font-weight: 500;
+      padding: 0 .35rem .75rem;
     }
     .side-team label {
       display: block;
@@ -215,10 +190,6 @@
       border-radius: 6px;
       padding: .45rem .5rem;
       font-size: .875rem;
-    }
-    .side-team select:focus {
-      outline: 2px solid #fff;
-      outline-offset: 1px;
     }
     .warn-inline {
       color: var(--warning);
@@ -832,19 +803,11 @@
     <form class="side-team" method="post" action="{{ url_for('select_team') }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="next" value="{{ request.path }}">
-      <div class="side-team-active">
-        <span class="side-team-label">Active team</span>
-        {% if nav_team_name %}
-        <strong class="side-team-name" title="{{ nav_team_name }}">{{ nav_team_name }}</strong>
-        {% else %}
-        <strong class="side-team-name is-empty">No team selected</strong>
-        {% endif %}
-      </div>
-      <label for="side-team-select">Switch team</label>
+      <label for="side-team-select">Team</label>
       <select id="side-team-select" name="team_id" onchange="this.form.submit()"
-              aria-label="Switch team">
+              aria-label="Team">
         {% if not nav_teams %}
-        <option value="">No teams available</option>
+        <option value="">No teams</option>
         {% else %}
         {% for t in nav_teams %}
         <option value="{{ t.id }}" {% if nav_team_id == t.id|string %}selected{% endif %}>{{ t.name }}</option>
