@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}My profile — {{ app_name }}{% endblock %}
+{% block body %}
+<h1>My profile</h1>
+<p class="muted">Your account, memberships, and recent activity in Secret Server.</p>
+
+<section>
+  <h2>Account</h2>
+  <dl class="profile-dl">
+    <div>
+      <dt>Name</dt>
+      <dd>{{ user.name or '—' }}</dd>
+    </div>
+    <div>
+      <dt>Email</dt>
+      <dd>{{ user.email }}</dd>
+    </div>
+    <div>
+      <dt>Sign-in</dt>
+      <dd>
+        {% if user.auth_source == 'ldap' %}
+        LDAP directory
+        {% else %}
+        Local password
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>Role</dt>
+      <dd>
+        {% if user.is_global_admin %}
+        <span class="role-badge">Global admin</span>
+        {% else %}
+        User
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>Member since</dt>
+      <dd class="muted">{{ user.created_at or '—' }}</dd>
+    </div>
+  </dl>
+</section>
+
+<section>
+  <h2>At a glance</h2>
+  <div class="profile-stats">
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.teams }}</span>
+      <span class="profile-stat-l">Teams</span>
+    </div>
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.projects }}</span>
+      <span class="profile-stat-l">Projects</span>
+    </div>
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.secrets }}</span>
+      <span class="profile-stat-l">Secrets</span>
+    </div>
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.pins }}</span>
+      <span class="profile-stat-l">Pinned</span>
+    </div>
+    {% if stats.pending_joins %}
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.pending_joins }}</span>
+      <span class="profile-stat-l">Pending joins</span>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>Teams</h2>
+    <a href="{{ url_for('teams') }}" class="muted">All teams →</a>
+  </div>
+  {% if teams %}
+  <table>
+    <thead>
+      <tr>
+        <th>Team</th>
+        <th>Your role</th>
+        <th>Source</th>
+        <th>Projects</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in teams %}
+      <tr>
+        <td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td>
+        <td><span class="role-badge">{{ t.role }}</span></td>
+        <td class="muted">{{ t.source or 'manual' }}</td>
+        <td>{{ t.project_count }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">You are not a member of any teams yet.</p>
+  {% endif %}
+</section>
+
+<section>
+  <div class="section-head">
+    <h2>Projects</h2>
+    <a href="{{ url_for('projects_list') }}" class="muted">All projects →</a>
+  </div>
+  {% if projects %}
+  <table>
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th>Team</th>
+        <th>Access</th>
+        <th>Secrets</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
+        <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}">{{ p.team_name }}</a></td>
+        <td>
+          {% if p.project_role %}
+          <span class="role-badge" title="Project-level role">{{ p.project_role }}</span>
+          {% elif p.team_role %}
+          <span class="role-badge" title="Via team membership">team {{ p.team_role }}</span>
+          {% elif user.is_global_admin %}
+          <span class="role-badge">global admin</span>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>{{ p.secret_count }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No projects available to you yet.</p>
+  {% endif %}
+</section>
+
+{% if pending_joins %}
+<section>
+  <h2>Pending join requests</h2>
+  <p class="muted">Waiting for a team owner or admin to approve.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Team</th>
+        <th>Requested role</th>
+        <th>Requested</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in pending_joins %}
+      <tr>
+        <td>{{ r.team_name }}</td>
+        <td><span class="role-badge">{{ r.role }}</span></td>
+        <td class="muted">{{ r.created_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section>
+  <h2>Pinned secrets</h2>
+  {% if pins %}
+  <table>
+    <thead>
+      <tr>
+        <th>Key</th>
+        <th>Project</th>
+        <th>Team</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in pins %}
+      <tr>
+        <td>
+          <a href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}">
+            <code>{{ s.key }}</code>
+          </a>
+        </td>
+        <td>{{ s.project_name }}</td>
+        <td class="muted">{{ s.team_name }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No pinned secrets. Pin keys from a project secrets list to keep them handy.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Recently accessed</h2>
+  {% if recent %}
+  <table>
+    <thead>
+      <tr>
+        <th>Key</th>
+        <th>Project</th>
+        <th>Team</th>
+        <th>When</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in recent %}
+      <tr>
+        <td>
+          <a href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}">
+            <code>{{ s.key }}</code>
+          </a>
+        </td>
+        <td>{{ s.project_name }}</td>
+        <td class="muted">{{ s.team_name }}</td>
+        <td class="muted">{{ s.accessed_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No recent secret access yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -66,13 +66,17 @@
       --input:               light-dark(#d4d4d8, #2a2f34);
       --ring:                light-dark(#000000, #f5f5f5);   /* pure black/white focus */
 
-      /* App shell */
-      --side-bg:             #0a0a0a;
-      --side-ink:            #f5f5f5;
-      --side-muted:          #8b929a;
-      --side-active:         #1c1f23;
-      --side-border:         #2a2f34;
-      --side-w:              15rem;
+      /* App shell — dark slate, brand teal accent */
+      --side-bg:             #0c0e10;
+      --side-ink:            #e8eaed;
+      --side-muted:          #9aa1a9;
+      --side-faint:          #6b727a;
+      --side-hover:          #161a1f;
+      --side-active:         #1a2228;
+      --side-accent:         #47817F;
+      --side-border:         #252a30;
+      --side-input:          #121518;
+      --side-w:              15.5rem;
       --radius:              8px;
     }
 
@@ -116,10 +120,10 @@
     .sidebar {
       display: flex;
       flex-direction: column;
-      gap: .25rem;
+      gap: .15rem;
       background: var(--side-bg);
       color: var(--side-ink);
-      padding: 1.25rem 0.85rem;
+      padding: 1.1rem .7rem 1rem;
       min-height: 100vh;
       position: sticky;
       top: 0;
@@ -130,91 +134,216 @@
       top: 2.2rem;
     }
     .sidebar a.brand {
-      color: #fff;
+      color: var(--side-ink);
       font-weight: 700;
       font-size: .95rem;
       text-decoration: none;
       letter-spacing: -.02em;
-      padding: .35rem .65rem .9rem;
+      padding: .3rem .55rem .75rem;
       line-height: 1.25;
+      border-radius: 6px;
+      transition: color .12s ease, background .12s ease;
     }
-    .sidebar a.brand:hover { text-decoration: none; opacity: .85; color: #fff; }
+    .sidebar a.brand:hover {
+      text-decoration: none;
+      color: #fff;
+      background: transparent;
+    }
     .sidebar a.brand .brand-sub {
       display: block;
       font-weight: 500;
-      font-size: .7rem;
-      letter-spacing: .04em;
+      font-size: .68rem;
+      letter-spacing: .05em;
       text-transform: uppercase;
-      color: var(--side-muted);
+      color: var(--side-faint);
       margin-top: .15rem;
     }
     .sidebar nav {
       display: flex;
       flex-direction: column;
-      gap: .15rem;
+      gap: .45rem;
       flex: 1;
+      min-height: 0;
     }
-    .sidebar nav a {
-      color: var(--side-muted);
-      text-decoration: none;
-      padding: .55rem .65rem;
-      border-radius: 6px;
-      font-size: .925rem;
-      font-weight: 500;
+    /* Shared interactive row language */
+    .sidebar a,
+    .sidebar summary,
+    .sidebar .side-nav-link,
+    .sidebar .side-list-item {
+      border-bottom: none !important;
     }
-    .sidebar nav a:hover {
-      background: var(--side-active);
-      color: #fff;
-      text-decoration: none;
-    }
-    .sidebar nav a.active {
-      background: var(--side-active);
-      color: #fff;
-    }
-    .side-list {
-      padding: .35rem .35rem .5rem;
-      border-top: 1px solid var(--side-border);
-      margin-top: .25rem;
-    }
-    .side-list-label {
-      font-size: .65rem;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--side-muted);
-      padding: .25rem .3rem .35rem;
-    }
-    .side-list-item {
+    .sidebar .side-nav-link,
+    .sidebar .side-list-item {
       display: block;
-      padding: .35rem .4rem;
-      border-radius: 5px;
+      text-decoration: none;
+      border: none;
+      border-radius: 6px;
+      transition: background .12s ease, color .12s ease;
+    }
+    .sidebar .side-nav-link {
+      color: var(--side-muted);
+      padding: .42rem .55rem .42rem .6rem;
+      font-size: .875rem;
+      font-weight: 500;
+      line-height: 1.3;
+    }
+    .sidebar .side-nav-link:hover {
+      background: var(--side-hover);
       color: var(--side-ink);
       text-decoration: none;
+    }
+    .sidebar .side-nav-link:focus-visible {
+      outline: 2px solid var(--side-muted);
+      outline-offset: 1px;
+    }
+    .sidebar .side-nav-link.active {
+      background: var(--side-active);
+      color: var(--side-ink);
+      font-weight: 600;
+    }
+    .sidebar .side-nav-link.active:hover {
+      background: color-mix(in srgb, var(--side-active) 80%, var(--side-hover));
+      color: var(--side-ink);
+    }
+    .side-group {
+      margin: 0;
+      border: none;
+      padding: 0;
+      border-radius: 8px;
+    }
+    .side-group > summary {
+      list-style: none;
+      cursor: pointer;
+      color: var(--side-faint);
+      font-size: .65rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 650;
+      padding: .4rem .5rem;
+      margin: 0;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .35rem;
+      border-radius: 6px;
+      transition: color .12s ease, background .12s ease;
+    }
+    .side-group > summary::-webkit-details-marker { display: none; }
+    .side-group > summary::after {
+      content: "›";
+      border: none;
+      flex: 0 0 auto;
+      font-size: .95rem;
+      font-weight: 500;
+      line-height: 1;
+      opacity: .65;
+      transform: none;
+      transition: transform .15s ease, opacity .12s ease;
+      margin-right: .05rem;
+    }
+    .side-group[open] > summary {
+      color: var(--side-muted);
+    }
+    .side-group[open] > summary::after {
+      transform: rotate(90deg);
+      opacity: .9;
+      margin-top: 0;
+    }
+    .side-group > summary:hover {
+      color: var(--side-muted);
+      background: var(--side-hover);
+    }
+    .side-group > summary:focus-visible {
+      outline: 2px solid var(--side-muted);
+      outline-offset: 1px;
+    }
+    .side-group-body {
+      display: flex;
+      flex-direction: column;
+      gap: .08rem;
+      padding: .1rem 0 .15rem .1rem;
+    }
+    .side-search {
+      padding: 0 .25rem .5rem;
+    }
+    .side-search input,
+    .side-team select {
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--side-input);
+      color: var(--side-ink);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: .42rem .55rem;
+      font-size: .8rem;
+      transition: background .12s ease, box-shadow .12s ease;
+    }
+    .side-search input::placeholder { color: var(--side-faint); }
+    .side-search input:hover,
+    .side-team select:hover {
+      background: var(--side-hover);
+    }
+    .side-search input:focus,
+    .side-team select:focus {
+      outline: none;
+      background: var(--side-hover);
+      box-shadow: 0 0 0 1px var(--side-border);
+    }
+    .side-list.side-group {
+      padding: .35rem .1rem .15rem;
+      margin-top: .4rem;
+      border: none;
+      border-radius: 0;
+    }
+    .side-list-label,
+    .side-list.side-group > summary.side-list-label {
+      font-size: .65rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--side-faint);
+      font-weight: 650;
+      padding: .4rem .5rem;
+    }
+    .side-list-item {
+      padding: .4rem .55rem .4rem .6rem;
+      color: var(--side-ink);
       font-size: .8rem;
       line-height: 1.25;
     }
     .side-list-item:hover {
-      background: var(--side-active);
+      background: var(--side-hover);
       text-decoration: none;
-      color: #fff;
+      color: var(--side-ink);
+    }
+    .side-list-item:focus-visible {
+      outline: 2px solid var(--side-muted);
+      outline-offset: 1px;
     }
     .side-list-key {
       display: block;
-      font-family: ui-monospace, monospace;
-      font-size: .75rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .74rem;
+      color: var(--side-ink);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .side-list-meta {
       display: block;
-      color: var(--side-muted);
-      font-size: .68rem;
+      color: var(--side-faint);
+      font-size: .66rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      margin-top: .08rem;
+      transition: color .12s ease;
+    }
+    .side-list-item:hover .side-list-meta {
+      color: var(--side-muted);
     }
     .side-team {
-      padding: 0 .35rem .75rem;
+      padding: 0 .25rem .65rem;
     }
     .toast-host {
       position: fixed;
@@ -266,20 +395,21 @@
     .copy-btn { font-size: .7rem; font-weight: 600; width: auto !important; padding: 0 .45rem !important; }
     .side-team label {
       display: block;
-      font-size: .7rem;
+      font-size: .65rem;
       text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--side-muted);
+      letter-spacing: .06em;
+      font-weight: 650;
+      color: var(--side-faint);
       margin-bottom: .3rem;
+      padding: 0 .15rem;
     }
     .side-team select {
-      width: 100%;
-      background: var(--side-active);
-      color: #fff;
-      border: 1px solid var(--side-border);
-      border-radius: 6px;
-      padding: .45rem .5rem;
-      font-size: .875rem;
+      font-size: .85rem;
+      cursor: pointer;
+    }
+    .side-team select option {
+      background: var(--side-bg);
+      color: var(--side-ink);
     }
     .warn-inline {
       color: var(--warning);
@@ -307,12 +437,12 @@
       margin: .45rem .35rem;
     }
     .sidebar-foot {
-      border-top: 1px solid var(--side-border);
-      padding: .9rem .65rem 0;
-      margin-top: .5rem;
+      border-top: none;
+      padding: .75rem .35rem 0;
+      margin-top: auto;
       display: flex;
       flex-direction: column;
-      gap: .5rem;
+      gap: .4rem;
     }
     .sidebar-foot .who {
       display: flex;
@@ -320,10 +450,12 @@
       flex-wrap: nowrap;
       align-items: center;
       gap: .4rem;
-      font-size: .8rem;
+      font-size: .78rem;
       color: var(--side-muted);
       min-width: 0;
       width: 100%;
+      padding: .2rem .25rem;
+      border-radius: 6px;
     }
     .sidebar-foot .who .who-email {
       flex: 1 1 auto;
@@ -331,35 +463,99 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      color: var(--side-muted);
+      text-decoration: none;
+      border-radius: 4px;
+      transition: color .12s ease;
+    }
+    .sidebar-foot .who a.who-email:hover {
+      color: var(--side-ink);
+      text-decoration: none;
+    }
+    .sidebar-foot .who a.who-email:focus-visible {
+      outline: 2px solid var(--side-muted);
+      outline-offset: 2px;
+    }
+    .profile-dl {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+      gap: .85rem 1.25rem;
+      margin: 0;
+    }
+    .profile-dl > div { min-width: 0; }
+    .profile-dl dt {
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+      color: var(--muted-foreground);
+      margin: 0 0 .2rem;
+    }
+    .profile-dl dd { margin: 0; font-size: .95rem; }
+    .profile-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .75rem;
+    }
+    .profile-stat {
+      flex: 1 1 6rem;
+      min-width: 5.5rem;
+      max-width: 9rem;
+      padding: .65rem .75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--muted);
+      text-align: center;
+    }
+    .profile-stat-n {
+      display: block;
+      font-size: 1.35rem;
+      font-weight: 650;
+      line-height: 1.2;
+    }
+    .profile-stat-l {
+      display: block;
+      font-size: .75rem;
+      color: var(--muted-foreground);
+      margin-top: .15rem;
     }
     .sidebar-foot .who .role-badge {
       display: inline-block;
       flex: 0 0 auto;
-      font-size: .6rem;
+      font-size: .58rem;
       line-height: 1.2;
       text-transform: uppercase;
-      letter-spacing: .03em;
-      color: #a3a9b0;
-      border: 1px solid var(--side-border);
+      letter-spacing: .04em;
+      color: var(--side-muted);
+      border: none;
+      background: var(--side-active);
       border-radius: 4px;
-      padding: .15rem .35rem;
+      padding: .18rem .35rem;
       white-space: nowrap;
     }
     .sidebar-foot .logout-link {
       background: none;
       border: none;
-      padding: 0;
+      padding: .3rem .25rem;
       font: inherit;
-      font-size: .85rem;
+      font-size: .8rem;
       font-weight: 500;
-      color: var(--side-muted);
+      color: var(--side-faint);
       cursor: pointer;
       text-decoration: none;
       text-align: left;
+      border-radius: 6px;
+      transition: color .12s ease, background .12s ease;
+      width: 100%;
     }
     .sidebar-foot .logout-link:hover {
-      color: #fff;
-      text-decoration: underline;
+      color: var(--side-ink);
+      background: var(--side-hover);
+      text-decoration: none;
+    }
+    .sidebar-foot .logout-link:focus-visible {
+      outline: 2px solid var(--side-muted);
+      outline-offset: 1px;
     }
     .main {
       padding: 1.5rem 2rem 3rem;
@@ -921,19 +1117,37 @@
         align-items: center;
         gap: .35rem .5rem;
         padding: .75rem 1rem;
+        border: none;
       }
       body.app:has(.class-banner) .sidebar { min-height: auto; top: auto; }
       .sidebar a.brand { padding: .25rem .4rem; flex: 1; }
-      .sidebar nav { flex: none; flex-direction: row; }
+      .sidebar nav {
+        flex: 1 1 100%;
+        flex-direction: column;
+        gap: .25rem;
+      }
+      .side-group { width: 100%; }
+      .side-group-body {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: .15rem .25rem;
+      }
+      .sidebar .side-nav-link {
+        padding: .4rem .55rem;
+      }
+      .side-list.side-group {
+        flex: 1 1 100%;
+        border: none;
+      }
       .sidebar-foot {
         flex-direction: row;
         align-items: center;
-        border-top: none;
-        border-left: 1px solid var(--side-border);
+        border: none;
         margin: 0;
         padding: 0 0 0 .75rem;
         gap: .5rem;
       }
+      .sidebar-foot .logout-link { width: auto; }
 
       .main { padding: 1rem 1rem 2.5rem; }
     }
@@ -953,6 +1167,12 @@
       Sigaint
       <span class="brand-sub">Secret Server</span>
     </a>
+    <form class="side-search" method="get" action="{{ url_for('global_search') }}" role="search">
+      <label for="side-search-q" class="visually-hidden">Search</label>
+      <input type="search" id="side-search-q" name="q"
+             placeholder="Search…" autocomplete="off"
+             value="{{ request.args.get('q','') if request.endpoint == 'global_search' else '' }}">
+    </form>
     <form class="side-team" method="post" action="{{ url_for('select_team') }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="next" value="{{ request.path }}">
@@ -968,27 +1188,53 @@
         {% endif %}
       </select>
     </form>
-    <nav>
-      <a href="{{ url_for('projects_list') }}"
-         class="{% if request.endpoint in ('projects_list', 'project_detail', 'create_secret', 'delete_secret', 'reveal_secret', 'create_token', 'delete_token', 'create_project') %}active{% endif %}">Projects</a>
-      <a href="{{ url_for('secrets_list') }}"
-         class="{% if request.endpoint == 'secrets_list' %}active{% endif %}">Secrets</a>
-      <a href="{{ url_for('machines_list') }}"
-         class="{% if request.endpoint == 'machines_list' %}active{% endif %}">Machine accounts</a>
-      <a href="{{ url_for('trash') }}"
-         class="{% if request.endpoint == 'trash' %}active{% endif %}">Trash</a>
-      <div class="nav-sep"></div>
-      <a href="{{ url_for('teams') }}"
-         class="{% if request.endpoint in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}">Teams</a>
-      {% if is_global_admin %}
-      <a href="{{ url_for('server_settings') }}"
-         class="{% if request.endpoint == 'server_settings' %}active{% endif %}">Server settings</a>
-      {% endif %}
+    {% set ep = request.endpoint or '' %}
+    {% set workspace_eps = (
+      'projects_list', 'project_detail', 'create_secret', 'delete_secret',
+      'reveal_secret', 'create_token', 'delete_token', 'create_project',
+      'secrets_list', 'machines_list', 'trash', 'global_search'
+    ) %}
+    {% set account_eps = (
+      'teams', 'create_team', 'team_detail', 'add_team_member',
+      'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team',
+      'delete_project_from_team', 'profile', 'server_settings'
+    ) %}
+    {# Server defaults only used until localStorage preference is set #}
+    {% set workspace_open = ep in workspace_eps or ep not in account_eps %}
+    {% set account_open = ep in account_eps %}
+    <nav aria-label="Main">
+      <details class="side-group" data-side-group="workspace"{% if workspace_open %} open{% endif %}>
+        <summary>Workspace</summary>
+        <div class="side-group-body">
+          <a class="side-nav-link {% if ep in ('projects_list', 'project_detail', 'create_secret', 'delete_secret', 'reveal_secret', 'create_token', 'delete_token', 'create_project') %}active{% endif %}"
+             href="{{ url_for('projects_list') }}">Projects</a>
+          <a class="side-nav-link {% if ep == 'secrets_list' %}active{% endif %}"
+             href="{{ url_for('secrets_list') }}">Secrets</a>
+          <a class="side-nav-link {% if ep == 'machines_list' %}active{% endif %}"
+             href="{{ url_for('machines_list') }}">Machine accounts</a>
+          <a class="side-nav-link {% if ep == 'trash' %}active{% endif %}"
+             href="{{ url_for('trash') }}">Trash</a>
+        </div>
+      </details>
+      <details class="side-group" data-side-group="account"{% if account_open %} open{% endif %}>
+        <summary>Account</summary>
+        <div class="side-group-body">
+          <a class="side-nav-link {% if ep in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}"
+             href="{{ url_for('teams') }}">Teams</a>
+          <a class="side-nav-link {% if ep == 'profile' %}active{% endif %}"
+             href="{{ url_for('profile') }}">My profile</a>
+          {% if is_global_admin %}
+          <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}"
+             href="{{ url_for('server_settings') }}">Server settings</a>
+          {% endif %}
+        </div>
+      </details>
     </nav>
     {% include "partials/side_pins.html" %}
     {% if nav_recent %}
-    <div class="side-list" id="side-recent">
-      <div class="side-list-label">Recent</div>
+    <details class="side-list side-group" id="side-recent" data-side-group="recent" open>
+      <summary class="side-list-label">Recent</summary>
+      <div class="side-group-body">
       {% for s in nav_recent %}
       <a class="side-list-item" href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}"
          title="{{ s.team_name }} / {{ s.project_name }}">
@@ -996,11 +1242,12 @@
         <span class="side-list-meta">{{ s.project_name }}</span>
       </a>
       {% endfor %}
-    </div>
+      </div>
+    </details>
     {% endif %}
     <div class="sidebar-foot">
       <div class="who">
-        <span class="who-email" title="{{ session.email }}">{{ session.email }}</span>
+        <a class="who-email" href="{{ url_for('profile') }}" title="{{ session.email }} — My profile">{{ session.email }}</a>
         {% if is_global_admin %}<span class="role-badge">Global admin</span>{% endif %}
       </div>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
@@ -1009,6 +1256,50 @@
       </form>
     </div>
   </aside>
+  <script>
+  /* Persist sidebar <details> open/closed across full page navigations. */
+  (function () {
+    var KEY = 'secretstore.sidebar.groups';
+    function load() {
+      try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; }
+      catch (e) { return {}; }
+    }
+    function save(state) {
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    }
+    function apply(root) {
+      var state = load();
+      (root || document).querySelectorAll('[data-side-group]').forEach(function (el) {
+        var id = el.getAttribute('data-side-group');
+        if (!id || !Object.prototype.hasOwnProperty.call(state, id)) return;
+        el.open = !!state[id];
+      });
+    }
+    function bind(root) {
+      (root || document).querySelectorAll('[data-side-group]').forEach(function (el) {
+        if (el.dataset.sideBound === '1') return;
+        el.dataset.sideBound = '1';
+        el.addEventListener('toggle', function () {
+          var id = el.getAttribute('data-side-group');
+          if (!id) return;
+          var state = load();
+          state[id] = !!el.open;
+          save(state);
+        });
+      });
+    }
+    function sync(root) {
+      apply(root);
+      bind(root);
+    }
+    sync(document);
+    document.addEventListener('htmx:afterSwap', function (e) {
+      sync(e && e.target ? e.target : document);
+      // OOB swaps may replace nodes outside the swap target
+      sync(document);
+    });
+  })();
+  </script>
   <div class="main">
   {% else %}
   <div class="auth-wrap">

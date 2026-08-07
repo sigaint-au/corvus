@@ -8,6 +8,7 @@ from config import bootstrap_admin_email
 import db
 import ldap_auth
 import lockout
+import pins
 import settings_svc
 
 
@@ -166,3 +167,125 @@ def register(app):
     def logout():
         session.clear()
         return redirect(url_for("login"))
+
+
+    @app.get("/profile")
+    @authz.login_required
+    def profile():
+        """My profile: account info, memberships, projects, and activity."""
+        uid = session["user_id"]
+        user = None
+        try:
+            with db.connect_admin() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, email, name, is_global_admin, auth_source, created_at
+                    FROM private.users
+                    WHERE id = %s::uuid
+                    """,
+                    (uid,),
+                )
+                user = cur.fetchone()
+        except Exception:
+            log.exception("profile: load user failed")
+        if not user:
+            flash("Could not load your profile", "error")
+            return redirect(url_for("projects_list"))
+
+        teams, projects, pending, pins_list, recent = [], [], [], [], []
+        secret_count = pin_count = 0
+        try:
+            with db.as_user(uid) as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT t.id, t.name, tm.role, tm.source, t.created_at,
+                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id)
+                        AS project_count
+                    FROM api.teams t
+                    JOIN api.team_members tm ON tm.team_id = t.id
+                    WHERE tm.user_id = %s
+                    ORDER BY t.name
+                    """,
+                    (uid,),
+                )
+                teams = cur.fetchall() or []
+
+                cur.execute(
+                    """
+                    SELECT p.id, p.name, p.created_at,
+                           t.id AS team_id, t.name AS team_name,
+                           tm.role AS team_role,
+                           pm.role AS project_role,
+                      (SELECT count(*) FROM api.secrets s
+                       WHERE s.project_id = p.id AND s.deleted_at IS NULL)
+                        AS secret_count
+                    FROM api.projects p
+                    JOIN api.teams t ON t.id = p.team_id
+                    LEFT JOIN api.team_members tm
+                      ON tm.team_id = t.id AND tm.user_id = %s
+                    LEFT JOIN api.project_members pm
+                      ON pm.project_id = p.id AND pm.user_id = %s
+                    ORDER BY t.name, p.name
+                    """,
+                    (uid, uid),
+                )
+                projects = cur.fetchall() or []
+
+                cur.execute(
+                    """
+                    SELECT count(*) AS n FROM api.secrets
+                    WHERE deleted_at IS NULL
+                    """
+                )
+                row = cur.fetchone()
+                secret_count = int(row["n"]) if row else 0
+
+                cur.execute(
+                    """
+                    SELECT count(*) AS n FROM api.secret_pins
+                    WHERE user_id = %s
+                    """,
+                    (uid,),
+                )
+                row = cur.fetchone()
+                pin_count = int(row["n"]) if row else 0
+
+                cur.execute(
+                    """
+                    SELECT r.id, r.role, r.status, r.created_at,
+                           t.id AS team_id, t.name AS team_name
+                    FROM api.team_join_requests r
+                    JOIN api.teams t ON t.id = r.team_id
+                    WHERE r.user_id = %s AND r.status = 'pending'
+                    ORDER BY r.created_at DESC
+                    """,
+                    (uid,),
+                )
+                pending = cur.fetchall() or []
+
+                pins_list = pins.list_pins(cur, uid)
+                recent = pins.list_recent(cur, uid)
+        except Exception:
+            log.exception("profile: load memberships failed")
+
+        # Prefer DB values for session-display consistency
+        session["email"] = user.get("email") or session.get("email")
+        session["name"] = user.get("name") or session.get("name") or ""
+        session["is_global_admin"] = bool(user.get("is_global_admin"))
+
+        return render_template(
+            "profile.html",
+            user=user,
+            teams=teams,
+            projects=projects,
+            pending_joins=pending,
+            pins=pins_list,
+            recent=recent,
+            stats={
+                "teams": len(teams),
+                "projects": len(projects),
+                "secrets": secret_count,
+                "pins": pin_count,
+                "pending_joins": len(pending),
+            },
+        )

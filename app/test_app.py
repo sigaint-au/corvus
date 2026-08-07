@@ -626,6 +626,119 @@ class TestAuth(unittest.TestCase):
         with self.client.session_transaction() as s:
             self.assertNotIn("user_id", s)
 
+    def test_profile_requires_login(self):
+        r = self.client.get("/profile")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_profile_ok(self):
+        uid = uuid4()
+        tid = uuid4()
+        pid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uid)
+            s["email"] = "a@b.c"
+            s["name"] = "Ada"
+            s["is_global_admin"] = False
+
+        admin_conn, _ = _conn(
+            fetchone={
+                "id": uid,
+                "email": "a@b.c",
+                "name": "Ada Lovelace",
+                "is_global_admin": False,
+                "auth_source": "local",
+                "created_at": "2026-01-01",
+            }
+        )
+        last_sql = {"s": ""}
+
+        def execute(sql, params=None):
+            last_sql["s"] = " ".join(str(sql).lower().split())
+
+        def fetchone():
+            s = last_sql["s"]
+            if "from api.secrets" in s and "count" in s:
+                return {"n": 3}
+            if "from api.secret_pins" in s and "count" in s:
+                return {"n": 1}
+            return None
+
+        def fetchall():
+            s = last_sql["s"]
+            if "from api.teams t" in s and "team_members" in s:
+                return [
+                    {
+                        "id": tid,
+                        "name": "Platform",
+                        "role": "owner",
+                        "source": "manual",
+                        "created_at": "2026-01-02",
+                        "project_count": 1,
+                    }
+                ]
+            if "from api.projects p" in s:
+                return [
+                    {
+                        "id": pid,
+                        "name": "API",
+                        "created_at": "2026-01-03",
+                        "team_id": tid,
+                        "team_name": "Platform",
+                        "team_role": "owner",
+                        "project_role": None,
+                        "secret_count": 3,
+                    }
+                ]
+            if "team_join_requests" in s:
+                return []
+            if "secret_pins pin" in s or "from api.secret_pins pin" in s:
+                return []
+            if "secret_recent" in s:
+                return []
+            return []
+
+        user_conn, cur = _conn(fetchone=fetchone)
+        cur.execute.side_effect = execute
+        cur.fetchall.side_effect = fetchall
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ):
+            r = self.client.get("/profile")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"My profile", r.data)
+        self.assertIn(b"Ada Lovelace", r.data)
+        self.assertIn(b"a@b.c", r.data)
+        self.assertIn(b"Local password", r.data)
+        self.assertIn(b"Platform", r.data)
+        self.assertIn(b"API", r.data)
+        self.assertIn(b"At a glance", r.data)
+
+    def test_profile_shows_ldap_and_admin(self):
+        uid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uid)
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        admin_conn, _ = _conn(
+            fetchone={
+                "id": uid,
+                "email": "admin@ex.com",
+                "name": "Admin",
+                "is_global_admin": True,
+                "auth_source": "ldap",
+                "created_at": "2025-06-01",
+            }
+        )
+        user_conn, _ = _conn(fetchone={"n": 0}, fetchall=[])
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ):
+            r = self.client.get("/profile")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"LDAP directory", r.data)
+        self.assertIn(b"Global admin", r.data)
+
 
 # ── Teams ──────────────────────────────────────────────────────────
 
