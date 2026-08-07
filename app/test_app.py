@@ -1468,7 +1468,6 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(b"Save", r.data)
         self.assertIn(b"/value", r.data)
         self.assertIn(b"expires_at", r.data)
-        self.assertIn(b"90d", r.data)
 
     def test_update_secret_value(self):
         sid = uuid4()

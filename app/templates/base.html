@@ -1326,31 +1326,6 @@
   <div class="toast-host" id="toast-host" aria-live="polite"></div>
   <datalist id="user-suggest-list"></datalist>
   <script>
-  /* Expiry presets (create form + reveal edit) */
-  (function () {
-    function ymd(d) {
-      var m = String(d.getUTCMonth() + 1).padStart(2, '0');
-      var day = String(d.getUTCDate()).padStart(2, '0');
-      return d.getUTCFullYear() + '-' + m + '-' + day;
-    }
-    document.addEventListener('click', function (e) {
-      var btn = e.target.closest('.exp-preset');
-      if (!btn) return;
-      e.preventDefault();
-      var wrap = btn.closest('.exp-presets');
-      var id = wrap && wrap.getAttribute('data-target');
-      var inp = id ? document.getElementById(id) : null;
-      if (!inp) return;
-      var days = parseInt(btn.getAttribute('data-days') || '0', 10);
-      if (!days) {
-        inp.value = '';
-        return;
-      }
-      var d = new Date();
-      d.setUTCDate(d.getUTCDate() + days);
-      inp.value = ymd(d);
-    });
-  })();
   /* User email autocomplete for member fields */
   (function () {
     var list = document.getElementById('user-suggest-list');

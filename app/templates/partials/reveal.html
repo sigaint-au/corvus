@@ -17,13 +17,6 @@
         <input type="date" name="expires_at" id="exp-{{ secret_id }}"
                value="{{ expires_at or '' }}">
       </label>
-      <span class="exp-presets" data-target="exp-{{ secret_id }}">
-        <button type="button" class="link exp-preset" data-days="30">30d</button>
-        <button type="button" class="link exp-preset" data-days="90">90d</button>
-        <button type="button" class="link exp-preset" data-days="180">180d</button>
-        <button type="button" class="link exp-preset" data-days="365">1y</button>
-        <button type="button" class="link exp-preset" data-days="0">Never</button>
-      </span>
       <button type="submit" class="icon-btn save-btn" title="Save value and expiry">Save</button>
     </div>
   </form>
