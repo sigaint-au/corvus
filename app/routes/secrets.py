@@ -14,9 +14,7 @@ import pins
 from secret_kinds import (
     STRUCTURED_VIEW_KINDS,
     as_utc,
-    detect_secret_kind,
-    note_with_kind,
-    note_without_kind,
+    normalize_kind,
     parse_database_url,
     parse_kv_lines,
     parse_pem_blocks,
@@ -46,7 +44,7 @@ def register(app):
                 team = cur.fetchone()
                 if team:
                     sql = """
-                        SELECT s.id, s.key, s.note, s.updated_at,
+                        SELECT s.id, s.key, s.note, s.kind, s.updated_at,
                                p.id AS project_id, p.name AS project_name
                         FROM api.secrets s
                         JOIN api.projects p ON p.id = s.project_id
@@ -192,6 +190,7 @@ def register(app):
         key = request.form["key"].strip()
         value = request.form["value"]
         note = request.form.get("note", "").strip()
+        kind = normalize_kind(request.form.get("kind"))
         if not key or value is None:
             flash("Key and value required", "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
@@ -209,6 +208,7 @@ def register(app):
                     value,
                     note=note,
                     expires_at=expires_at,
+                    kind=kind,
                 )
                 if not sid:
                     flash("You don't have permission to do that", "error")
@@ -342,7 +342,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, key, value_enc, note, expires_at FROM api.secrets
+                SELECT id, key, value_enc, note, kind, expires_at FROM api.secrets
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
                 (str(secret_id), str(project_id)),
@@ -362,7 +362,7 @@ def register(app):
             except Exception:
                 pass
             plaintext = crypto.decrypt(row["value_enc"])
-            kind = detect_secret_kind(plaintext, row.get("note") or "")
+            kind = normalize_kind(row.get("kind"))
             if kind in STRUCTURED_VIEW_KINDS and not force_inline:
                 # Audit on the view page; navigate in the current window.
                 conn.commit()
@@ -436,7 +436,7 @@ def register(app):
                 project_name=row.get("project_name") or "",
                 secret_id=secret_id,
                 secret_key=row["key"],
-                note=note_without_kind(row.get("note") or ""),
+                note=(row.get("note") or ""),
                 kind=kind,
                 value=plaintext,
                 is_version=is_version,
@@ -465,7 +465,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT s.id, s.key, s.value_enc, s.note, s.expires_at,
+                SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
                        p.name AS project_name
                 FROM api.secrets s
                 JOIN api.projects p ON p.id = s.project_id
@@ -504,20 +504,16 @@ def register(app):
                             secret_id=secret_id,
                         )
                     )
-                kind = (request.form.get("kind") or "plain").strip().lower()
-                if kind not in config.SECRET_KINDS:
-                    kind = detect_secret_kind(
-                        crypto.decrypt(row["value_enc"]), row.get("note") or ""
-                    )
-                value, kind_label = compose_secret_value(kind, request.form)
+                kind = normalize_kind(request.form.get("kind") or row.get("kind"))
+                value = compose_secret_value(kind, request.form)
                 if kind == "plain":
                     value = request.form.get("plain_value") or value or ""
                 if kind == "ssh" and not value:
                     value = (request.form.get("ssh_key") or "").strip()
-                note_in = (request.form.get("note") or "").strip()
-                note = note_with_kind(note_in, kind_label)
+                note = (request.form.get("note") or "").strip()
                 row_view = dict(row)
-                row_view["note"] = note_in
+                row_view["note"] = note
+                row_view["kind"] = kind
                 row_view["project_name"] = row.get("project_name") or ""
                 if not value:
                     flash("Value is required", "error")
@@ -548,13 +544,14 @@ def register(app):
                 cur.execute(
                     """
                     UPDATE api.secrets
-                    SET value_enc = %s, note = %s, expires_at = %s
+                    SET value_enc = %s, note = %s, expires_at = %s, kind = %s
                     WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                     """,
                     (
                         crypto.encrypt(value),
                         note,
                         expires_at,
+                        kind,
                         str(secret_id),
                         str(project_id),
                     ),
@@ -595,7 +592,7 @@ def register(app):
             )
             conn.commit()
         plaintext = crypto.decrypt(value_enc)
-        kind = detect_secret_kind(plaintext, row.get("note") or "")
+        kind = normalize_kind(row.get("kind"))
         body, code = _render_secret_view(
             project_id=project_id,
             secret_id=secret_id,
@@ -810,7 +807,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT v.value_enc, s.key, s.note, s.id AS secret_id
+                SELECT v.value_enc, s.key, s.note, s.kind, s.id AS secret_id
                 FROM api.secret_versions v
                 JOIN api.secrets s ON s.id = v.secret_id
                 WHERE v.id = %s AND s.id = %s AND s.project_id = %s
@@ -830,7 +827,7 @@ def register(app):
             )
             conn.commit()
         plaintext = crypto.decrypt(row["value_enc"])
-        kind = detect_secret_kind(plaintext, row.get("note") or "")
+        kind = normalize_kind(row.get("kind"))
         if kind in STRUCTURED_VIEW_KINDS and not force_inline:
             view_url = url_for(
                 "secret_view",
@@ -1066,13 +1063,12 @@ def register(app):
                 note="",
                 expires_at="",
                 kv_pairs=[("", "")],
+                secret_kinds=config.SECRET_KINDS,
             )
-        kind = (request.form.get("kind") or "plain").strip().lower()
-        if kind not in config.SECRET_KINDS:
-            kind = "plain"
+        kind = normalize_kind(request.form.get("kind"))
         key = (request.form.get("key") or "").strip()
         note = (request.form.get("note") or "").strip()
-        value, kind_label = compose_secret_value(kind, request.form)
+        value = compose_secret_value(kind, request.form)
         kv_pairs = parse_kv_lines(value) if kind == "kv" else []
         if not key or not value:
             flash("Key and value are required", "error")
@@ -1084,8 +1080,8 @@ def register(app):
                 note=note,
                 expires_at=request.form.get("expires_at") or "",
                 kv_pairs=kv_pairs or [("", "")],
+                secret_kinds=config.SECRET_KINDS,
             ), 400
-        note = note_with_kind(note, kind_label)
         try:
             expires_at = _parse_expires_at(request.form)
         except (ValueError, TypeError) as e:
@@ -1098,11 +1094,12 @@ def register(app):
                 note=note,
                 expires_at=request.form.get("expires_at") or "",
                 kv_pairs=kv_pairs or [("", "")],
+                secret_kinds=config.SECRET_KINDS,
             ), 400
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
                 sid, was_new = _upsert_secret(
-                    cur, project_id, key, value, note=note, expires_at=expires_at
+                    cur, project_id, key, value, note=note, expires_at=expires_at, kind=kind
                 )
                 if not sid:
                     flash("You don't have permission to do that", "error")
@@ -1130,6 +1127,7 @@ def register(app):
                     note=note,
                     expires_at=request.form.get("expires_at") or "",
                     kv_pairs=kv_pairs or [("", "")],
+                    secret_kinds=config.SECRET_KINDS,
                 ), 400
         return redirect(
             url_for("project_detail", project_id=project_id, tab="secrets")

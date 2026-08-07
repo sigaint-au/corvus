@@ -12,7 +12,7 @@ import authz
 import config
 import crypto
 import db
-from secret_kinds import parse_secret_pairs
+from secret_kinds import detect_secret_kind, parse_secret_pairs
 from secret_ops import _upsert_secret
 
 log = logging.getLogger(__name__)
@@ -206,16 +206,19 @@ def register(app):
                             key,
                             item["value_enc"],
                             note=item.get("note") or "",
+                            kind=item.get("kind") or "plain",
                             already_enc=True,
                             touch_meta=False,
                         )
                     else:
+                        val = item.get("value") or ""
                         sid, was_new = _upsert_secret(
                             cur,
                             project_id,
                             key,
-                            item.get("value") or "",
+                            val,
                             note=item.get("note") or "",
+                            kind=item.get("kind") or detect_secret_kind(val),
                             touch_meta=False,
                         )
                     if sid:

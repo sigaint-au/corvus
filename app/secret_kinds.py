@@ -1,4 +1,4 @@
-"""Secret kind detection, parsing, and note tags."""
+"""Secret kind detection, parsing, and display helpers."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import re
 from datetime import datetime, timedelta, timezone
 
 _SOON_DAYS = 14
-# Allow dots in keys for KV; .env import stays stricter via allow_dots=False
 _KEY_LINE = re.compile(
     r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*(.*)$"
 )
@@ -21,7 +20,10 @@ _DB_URL = re.compile(
     r"^(?P<scheme>postgresql|postgres|mysql|mongodb|redis|amqp|http|https)://",
     re.I,
 )
-_STRUCTURED_VIEW_KINDS = frozenset({"kv", "certificate", "ssh", "database"})
+STRUCTURED_VIEW_KINDS = frozenset({"kv", "certificate", "ssh", "database"})
+VALID_KINDS = frozenset({"plain", "database", "certificate", "ssh", "kv"})
+_TYPE_TAG_RE = re.compile(r"\s*\(\s*type:[a-z]+\s*\)\s*", re.I)
+_TYPE_BARE_RE = re.compile(r"\btype:([a-z]+)\b", re.I)
 
 
 def env_line_match(line: str, *, allow_dots: bool = False):
@@ -29,21 +31,18 @@ def env_line_match(line: str, *, allow_dots: bool = False):
     m = _KEY_LINE.match(line)
     if not m:
         return None
-    if not allow_dots and any(c in m.group(1) for c in ".-"):
-        # Strict .env: reject keys with . or - (legacy _ENV_LINE behavior used [A-Za-z0-9_]* only)
-        # Actually old _ENV was [A-Za-z_][A-Za-z0-9_]*  and _KV allowed . -
-        # Re-check: if allow_dots False, key must match [A-Za-z_][A-Za-z0-9_]*
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", m.group(1)):
-            return None
+    if not allow_dots and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", m.group(1)):
+        return None
     return m
 
 
 def detect_secret_kind(value: str, note: str = "") -> str:
-    """Infer secret shape from note tag and/or value content."""
-    note_l = (note or "").lower()
-    for kind in ("certificate", "kv", "ssh", "database", "plain"):
-        if f"type:{kind}" in note_l:
-            return kind
+    """
+    Infer kind from value content (creation-time auto-suggest / one-shot backfill).
+
+    ``note`` is ignored for inference; kept optional for call-site compatibility.
+    """
+    del note  # not used — kind is stored explicitly
     v = value or ""
     if "BEGIN CERTIFICATE" in v:
         return "certificate"
@@ -65,6 +64,28 @@ def detect_secret_kind(value: str, note: str = "") -> str:
     if len(lines) == 1 and env_line_match(lines[0], allow_dots=True) and "\n" in v:
         return "kv"
     return "plain"
+
+
+def kind_from_legacy_note(note: str) -> str | None:
+    """Read legacy type: tag from note (migration backfill only)."""
+    note_l = (note or "").lower()
+    for kind in ("certificate", "kv", "ssh", "database", "plain"):
+        if f"type:{kind}" in note_l:
+            return kind
+    return None
+
+
+def strip_legacy_type_tags(note: str) -> str:
+    """Remove legacy type: tags from a note (migration / display cleanup)."""
+    note = (note or "").strip()
+    note = _TYPE_TAG_RE.sub(" ", note)
+    note = _TYPE_BARE_RE.sub("", note)
+    return re.sub(r"\s{2,}", " ", note).strip(" -|,")
+
+
+def normalize_kind(kind: str | None, default: str = "plain") -> str:
+    k = (kind or default).strip().lower()
+    return k if k in VALID_KINDS else default
 
 
 def parse_kv_lines(value: str) -> list[tuple[str, str]]:
@@ -123,24 +144,6 @@ def parse_database_url(value: str) -> dict:
         "database": (u.path or "").lstrip("/"),
         "query": u.query or "",
     }
-
-
-def note_with_kind(note: str, kind_label: str) -> str:
-    """Ensure non-plain secrets keep a type: tag for later reveal detection."""
-    kind_label = (kind_label or "plain").strip().lower()
-    note = note_without_kind(note)
-    if kind_label == "plain":
-        return note
-    tag = f"type:{kind_label}"
-    return f"{note} ({tag})".strip() if note else tag
-
-
-def note_without_kind(note: str) -> str:
-    """Strip type: tags so the user-facing note field stays clean."""
-    note = (note or "").strip()
-    note = re.sub(r"\s*\(\s*type:[a-z]+\s*\)\s*", " ", note, flags=re.I)
-    note = re.sub(r"\btype:[a-z]+\b", "", note, flags=re.I)
-    return re.sub(r"\s{2,}", " ", note).strip(" -|,")
 
 
 def split_cert_and_key(value: str) -> tuple[str, str]:
@@ -239,10 +242,7 @@ def parse_secret_pairs(text: str) -> list[tuple[str, str]]:
         if not m:
             continue
         k, v = m.group(1), m.group(2).strip()
-        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\'\"":
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
             v = v[1:-1]
         out.append((k, v))
     return out
-
-
-STRUCTURED_VIEW_KINDS = _STRUCTURED_VIEW_KINDS

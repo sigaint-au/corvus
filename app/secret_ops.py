@@ -29,7 +29,7 @@ def _load_secrets_page(cur, project_id, page, q):
     )
     cur.execute(
         f"""
-        SELECT id, key, note, created_at, updated_at, expires_at
+        SELECT id, key, note, kind, created_at, updated_at, expires_at
         FROM api.secrets
         WHERE {where}
         ORDER BY key
@@ -86,11 +86,15 @@ def _upsert_secret(
     value_or_enc,
     note="",
     expires_at=None,
+    kind="plain",
     *,
     already_enc=False,
     touch_meta=True,
 ):
     """Insert/update one secret; returns (id, was_new)."""
+    from secret_kinds import normalize_kind
+
+    kind = normalize_kind(kind)
     enc = value_or_enc if already_enc else crypto.encrypt(str(value_or_enc))
     cur.execute(
         """
@@ -104,37 +108,40 @@ def _upsert_secret(
         cur.execute(
             """
             INSERT INTO api.secrets
-              (project_id, key, value_enc, note, expires_at)
-            VALUES (%s, %s, %s, %s, %s)
+              (project_id, key, value_enc, note, expires_at, kind)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
               SET value_enc = EXCLUDED.value_enc,
                   note = EXCLUDED.note,
-                  expires_at = EXCLUDED.expires_at
+                  expires_at = EXCLUDED.expires_at,
+                  kind = EXCLUDED.kind
             RETURNING id
             """,
-            (str(project_id), key, enc, note or "", expires_at),
+            (str(project_id), key, enc, note or "", expires_at, kind),
         )
     else:
         cur.execute(
             """
-            INSERT INTO api.secrets (project_id, key, value_enc, note)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO api.secrets (project_id, key, value_enc, note, kind)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
               SET value_enc = EXCLUDED.value_enc,
                   note = CASE WHEN EXCLUDED.note = '' THEN api.secrets.note
-                              ELSE EXCLUDED.note END
+                              ELSE EXCLUDED.note END,
+                  kind = EXCLUDED.kind
             RETURNING id
             """,
-            (str(project_id), key, enc, note or ""),
+            (str(project_id), key, enc, note or "", kind),
         )
     row = cur.fetchone()
     return (row["id"] if row else None), (existing is None)
 
 
+def compose_secret_value(kind: str, form) -> str:
+    """Build plaintext value from advanced form fields for the given kind."""
+    from secret_kinds import normalize_kind
 
-def compose_secret_value(kind: str, form) -> tuple[str, str]:
-    """Build (value, kind_label) from advanced form fields."""
-    kind = (kind or "plain").strip().lower()
+    kind = normalize_kind(kind)
     if kind == "database":
         scheme = (form.get("db_scheme") or "postgresql").strip()
         host = (form.get("db_host") or "").strip()
@@ -154,14 +161,14 @@ def compose_secret_value(kind: str, form) -> tuple[str, str]:
         if port:
             hostpart += f":{port}"
         path = f"/{dbname}" if dbname else ""
-        return f"{scheme}://{auth}{hostpart}{path}", "database"
+        return f"{scheme}://{auth}{hostpart}{path}"
     if kind == "certificate":
         cert = (form.get("cert_pem") or "").strip()
         key = (form.get("cert_key") or "").strip()
         parts = [p for p in (cert, key) if p]
-        return "\n\n".join(parts), "certificate"
+        return "\n\n".join(parts)
     if kind == "ssh":
-        return (form.get("ssh_key") or "").strip(), "ssh"
+        return (form.get("ssh_key") or "").strip()
     if kind == "kv":
         keys = form.getlist("kv_keys")
         values = form.getlist("kv_values")
@@ -174,7 +181,6 @@ def compose_secret_value(kind: str, form) -> tuple[str, str]:
                 v = values[i] if i < len(values) else ""
                 lines.append(f"{k}={v}")
         if lines:
-            return "\n".join(lines), "kv"
-        # Back-compat: single textarea paste
-        return (form.get("kv_block") or "").strip(), "kv"
-    return form.get("plain_value") or "", "plain"
+            return "\n".join(lines)
+        return (form.get("kv_block") or "").strip()
+    return form.get("plain_value") or form.get("value") or ""

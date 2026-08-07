@@ -2068,6 +2068,19 @@ class TestSecretLifecycle(unittest.TestCase):
         self.assertEqual(expires_status(now + timedelta(days=2)), "soon")
         self.assertIsNone(expires_status(None))
 
+    def test_secret_kind_helpers(self):
+        import secret_kinds as sk
+
+        # Value-based detect only (note type: tags are not used for inference)
+        self.assertEqual(sk.detect_secret_kind("secret", "type:ssh"), "plain")
+        self.assertEqual(
+            sk.detect_secret_kind("postgresql://u:p@h/db"), "database"
+        )
+        self.assertEqual(sk.kind_from_legacy_note("prod (type:ssh)"), "ssh")
+        self.assertEqual(sk.strip_legacy_type_tags("prod (type:ssh)"), "prod")
+        self.assertEqual(sk.normalize_kind("KV"), "kv")
+        self.assertEqual(sk.normalize_kind("nope"), "plain")
+
     def test_history_requires_login(self):
         r = store.app.test_client().get(
             f"/projects/{uuid4()}/secrets/{uuid4()}/history"
