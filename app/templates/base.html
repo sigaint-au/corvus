@@ -1187,22 +1187,48 @@
       margin: 0;
       padding-bottom: .05rem;
     }
+    /* Shared control size so primary / secondary / danger match in form-actions */
+    a.btn-primary,
+    button.btn-primary,
     a.btn-secondary,
     button.btn-secondary {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: .45rem .75rem;
-      border: 1px solid var(--border);
+      box-sizing: border-box;
+      min-height: 2.35rem;
+      padding: .5rem .9rem;
       border-radius: 6px;
-      background: var(--background);
-      color: var(--foreground);
       font-size: .875rem;
-      font-weight: 500;
+      font-weight: 600;
       font-family: inherit;
+      line-height: 1.25;
       text-decoration: none;
       cursor: pointer;
-      line-height: 1.2;
+      border: 1px solid transparent;
+    }
+    a.btn-primary,
+    button.btn-primary {
+      background: var(--primary);
+      color: var(--primary-foreground);
+      border-color: var(--primary);
+    }
+    a.btn-primary:hover,
+    button.btn-primary:hover {
+      filter: brightness(1.08);
+      text-decoration: none;
+    }
+    a.btn-primary:focus-visible,
+    button.btn-primary:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: 1px;
+    }
+    a.btn-secondary,
+    button.btn-secondary {
+      background: var(--background);
+      color: var(--foreground);
+      border-color: var(--border);
+      font-weight: 500;
     }
     a.btn-secondary:hover,
     button.btn-secondary:hover {
@@ -1213,6 +1239,15 @@
     button.btn-secondary:focus-visible {
       outline: 2px solid var(--ring);
       outline-offset: 1px;
+    }
+    .form-actions > button:not(.link):not(.btn-toolbar),
+    .form-actions > a.btn-secondary,
+    .form-actions > a.btn-primary {
+      min-height: 2.35rem;
+      padding: .5rem .9rem;
+      font-size: .875rem;
+      line-height: 1.25;
+      box-sizing: border-box;
     }
     button.danger,
     button.btn-danger {
@@ -1301,6 +1336,26 @@
       outline: 2px solid var(--ring);
       outline-offset: 1px;
     }
+    a.btn-toolbar-danger,
+    button.btn-toolbar-danger {
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+    }
+    a.btn-toolbar-danger:hover,
+    button.btn-toolbar-danger:hover {
+      background: color-mix(in srgb, var(--danger) 12%, var(--background));
+      color: var(--danger);
+      text-decoration: none;
+    }
+    a.btn-toolbar-danger:focus-visible,
+    button.btn-toolbar-danger:focus-visible {
+      outline: 2px solid var(--danger);
+      outline-offset: 1px;
+    }
+    .section-tools form.inline {
+      display: inline;
+      margin: 0;
+    }
     .kind-fields { margin-top: .75rem; }
     .kind-fields[hidden] { display: none !important; }
     .mono-area {
@@ -1316,7 +1371,7 @@
     .kv-row {
       display: flex;
       flex-wrap: wrap;
-      align-items: flex-end;
+      align-items: flex-start;
       gap: .5rem .65rem;
       padding: .35rem 0;
       border: none;
@@ -1329,15 +1384,23 @@
     }
     .kv-row .kv-key { flex: 0 1 12rem; }
     .kv-row .kv-val { flex: 1 1 14rem; }
-    .kv-row .kv-remove {
+    .kv-row .kv-remove,
+    .section-head-actions .kv-remove {
       flex: 0 0 auto;
-      margin-bottom: .35rem;
       background: none;
       border: none;
       font: inherit;
-      font-size: .8rem;
+      font-size: .875rem;
+      font-weight: 550;
       cursor: pointer;
       padding: 0;
+      margin: 0;
+      color: var(--danger, #b42318);
+      text-decoration: none;
+    }
+    .kv-row .kv-remove:hover,
+    .section-head-actions .kv-remove:hover {
+      text-decoration: underline;
     }
     .kind-badge {
       display: inline-block;
@@ -1357,7 +1420,92 @@
     .secret-view .kv-view-table td { vertical-align: middle; }
     .secret-view .input-with-btn { max-width: 100%; }
     .secret-view .secret-value { max-width: none; width: 100%; }
-    .pem-card { margin: 0 0 1rem; }
+    .pem-card,
+    .pem-field,
+    .value-field { margin: 0 0 1rem; }
+    .value-field .section-head label,
+    .value-field .section-head .field-label,
+    .value-field .section-head h2,
+    .value-field .section-head h3,
+    .value-field .section-head dt,
+    .pem-field .section-head label {
+      margin: 0;
+      font-weight: 600;
+      font-size: .875rem;
+      color: var(--muted-foreground);
+    }
+    .value-field .section-head h2 {
+      font-size: 1rem;
+      color: var(--foreground);
+    }
+    .value-field .section-head .copy-btn,
+    .pem-field .section-head .copy-btn,
+    .pem-card .section-head .copy-btn,
+    .secret-view .section-head .copy-btn,
+    .secret-view-form .section-head .copy-btn,
+    .secret-view-form .form-actions .copy-btn {
+      color: var(--muted-foreground);
+      text-decoration: none;
+      font-size: .875rem;
+      font-weight: 550;
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    .value-field .section-head .copy-btn:hover,
+    .pem-field .section-head .copy-btn:hover,
+    .pem-card .section-head .copy-btn:hover,
+    .secret-view .section-head .copy-btn:hover,
+    .secret-view-form .section-head .copy-btn:hover,
+    .secret-view-form .form-actions .copy-btn:hover {
+      color: var(--foreground);
+      text-decoration: underline;
+    }
+    .value-field > input,
+    .value-field > textarea,
+    .value-field > .secret-value,
+    .pem-field textarea.mono-area {
+      display: block;
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      box-sizing: border-box;
+    }
+    /* Plain / full-width value fields on secret page: full width, no muted fill */
+    .secret-view-form .value-field > input.secret-value,
+    .secret-view .value-field > input.secret-value {
+      width: 100%;
+      max-width: none;
+      background: var(--background);
+      overflow: visible;
+      text-overflow: clip;
+    }
+    .value-field.db-pass-field {
+      flex: 1 1 12rem;
+      min-width: 10rem;
+    }
+    .kv-row .kv-val.value-field {
+      flex: 1 1 14rem;
+      min-width: 12rem;
+      margin: 0;
+    }
+    .kv-val.value-field .section-head-actions {
+      gap: .65rem;
+    }
+    .kv-view-table .value-field {
+      margin: 0;
+    }
+    .kv-view-table .value-field .section-head {
+      margin-bottom: .25rem;
+      justify-content: flex-end;
+    }
+    .db-pass-block { display: block; }
+    .db-pass-block dd { margin: 0; }
+    .section-head-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem .75rem;
+      margin-left: auto;
+    }
     .pem-block {
       margin: 0;
       padding: .75rem .85rem;
@@ -1375,6 +1523,7 @@
     .db-view-dl { margin-bottom: 1rem; }
     .secret-view-form .kv-val .input-with-btn { width: 100%; }
     .secret-view-form textarea.mono-area { margin-top: .25rem; }
+    .secret-view-form .pem-field textarea.mono-area { margin-top: 0; }
     .secret-view-form .secret-meta-section,
     .secret-view-form .secret-value-section {
       margin: 1rem 0 0;
@@ -2197,20 +2346,45 @@
       }, 2200);
     }
     window.ssToast = toast;
+    function readCopyText(el, attrText) {
+      if (attrText) return attrText;
+      if (!el) return '';
+      // Prefer form value for inputs/textareas; PRE/DIV use text content.
+      var tag = (el.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        return el.value || '';
+      }
+      return (el.innerText != null ? el.innerText : el.textContent) || '';
+    }
+    function fallbackCopy(text, el) {
+      // Input/textarea can select in place; PRE/structured views need a temp field.
+      if (el && typeof el.select === 'function' && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+        try {
+          el.focus();
+          el.select();
+          if (el.setSelectionRange) el.setSelectionRange(0, (el.value || '').length);
+          if (document.execCommand('copy')) return true;
+        } catch (err) { /* fall through */ }
+      }
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
     document.addEventListener('click', function (e) {
       var btn = e.target.closest('.copy-btn');
       if (!btn) return;
       e.preventDefault();
       var id = btn.getAttribute('data-copy-target');
       var el = id ? document.getElementById(id) : null;
-      var text = btn.getAttribute('data-copy-text') || '';
-      if (!text && el) {
-        if ('value' in el && el.tagName !== 'PRE' && el.tagName !== 'DIV') {
-          text = el.value;
-        } else {
-          text = el.textContent || '';
-        }
-      }
+      var text = readCopyText(el, btn.getAttribute('data-copy-text') || '');
       if (!text) return;
       var secs = parseInt(btn.getAttribute('data-clear-seconds') || '30', 10);
       function done() {
@@ -2228,13 +2402,13 @@
           }, secs * 1000);
         }
       }
+      // Clipboard API often unavailable on HTTP / non-secure contexts; always
+      // fall back so certificate/ssh PRE blocks still copy.
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done).catch(function () {
-          if (el && el.select) { el.select(); document.execCommand('copy'); done(); }
+          if (fallbackCopy(text, el)) done();
         });
-      } else if (el && el.select) {
-        el.select();
-        document.execCommand('copy');
+      } else if (fallbackCopy(text, el)) {
         done();
       }
     });
