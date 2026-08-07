@@ -509,16 +509,6 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
              {% if settings.oidc_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Enable OIDC login
     </label>
-    <label>
-      <input type="checkbox" name="oidc_require_email_verified" value="1"
-             {% if settings.oidc_require_email_verified not in ('false', '0', 'no', 'off') %}checked{% endif %}>
-      Require verified email (<code class="k">email_verified</code> claim)
-    </label>
-    <p class="muted" style="margin-top:0;">
-      When enabled (recommended), SSO is rejected if the IdP does not assert a verified email.
-      Turn off only if your provider never sends <code class="k">email_verified</code>
-      and you trust its email claim (account linking is by email).
-    </p>
     <label>Issuer URL
       <input type="url" name="oidc_issuer" value="{{ settings.oidc_issuer }}"
              placeholder="https://keycloak.example.com/realms/myrealm">
@@ -557,6 +547,16 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     <p class="muted" style="margin-top:0;">
       Claim path for group names (Keycloak: add a “Group Membership” mapper named
       <code class="k">groups</code>). Also reads <code class="k">realm_access.roles</code> when present.
+    </p>
+    <label>
+      <input type="checkbox" name="oidc_require_email_verified" value="1"
+             {% if settings.oidc_require_email_verified not in ('false', '0', 'no', 'off') %}checked{% endif %}>
+      Require verified email (<code class="k">email_verified</code> claim)
+    </label>
+    <p class="muted" style="margin-top:0;">
+      When enabled (recommended), SSO is rejected if the IdP does not assert a verified email.
+      Turn off only if your provider never sends <code class="k">email_verified</code>
+      and you trust its email claim (account linking is by email).
     </p>
     <p style="margin-top:1rem;"><button type="submit">Save OIDC settings</button></p>
   </form>
