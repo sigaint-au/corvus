@@ -640,7 +640,14 @@ def register(app):
     @authz.login_required
     def project_detail(project_id):
         tab = (request.args.get("tab") or "secrets").strip().lower()
-        if tab not in ("secrets", "audit", "tokens", "import", "settings"):
+        if tab not in (
+            "secrets",
+            "audit",
+            "tokens",
+            "import",
+            "integrations",
+            "settings",
+        ):
             tab = "secrets"
         page = paging.page_arg("page")
         q = paging.list_state_q()
@@ -751,6 +758,7 @@ def register(app):
                 )
                 project_members = cur.fetchall()
             # import: no extra queries
+        public_base = (request.url_root or "").rstrip("/")
         return render_template(
             "project.html",
             project=project,
@@ -778,6 +786,8 @@ def register(app):
             due_overdue=due_overdue if tab == "secrets" else [],
             due_soon=due_soon if tab == "secrets" else [],
             soon_days=_SOON_DAYS,
+            public_base_url=public_base,
+            max_expiry_days=config.MAX_EXPIRY_DAYS,
         )
 
 
@@ -2083,6 +2093,22 @@ def register(app):
         role = (request.form.get("role") or "read-only").strip()
         if role not in config.MACHINE_TOKEN_ROLES:
             role = "read-only"
+        return_tab = (request.form.get("return_tab") or "tokens").strip().lower()
+        if return_tab not in (
+            "secrets",
+            "audit",
+            "tokens",
+            "import",
+            "integrations",
+            "settings",
+        ):
+            return_tab = "tokens"
+
+        def _token_redirect():
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab=return_tab)
+            )
+
         expires_at = None
         days_raw = (request.form.get("expires_days") or "").strip()
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -2090,7 +2116,7 @@ def register(app):
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             if not cur.fetchone()["w"]:
                 flash("You don't have permission to do that", "error")
-                return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
+                return _token_redirect()
             if not days_raw:
                 cur.execute(
                     """
@@ -2108,17 +2134,13 @@ def register(app):
                     days = int(days_raw)
                 except ValueError:
                     flash("Expires days must be a positive integer", "error")
-                    return redirect(
-                        url_for("project_detail", project_id=project_id, tab="tokens")
-                    )
+                    return _token_redirect()
                 if days < 1 or days > config.MAX_EXPIRY_DAYS:
                     flash(
                         f"Expires days must be between 1 and {config.MAX_EXPIRY_DAYS}",
                         "error",
                     )
-                    return redirect(
-                        url_for("project_detail", project_id=project_id, tab="tokens")
-                    )
+                    return _token_redirect()
                 expires_at = datetime.now(timezone.utc) + timedelta(days=days)
             raw = "ss_" + secrets.token_urlsafe(32)
             thash = hashlib.sha256(raw.encode()).hexdigest()
@@ -2135,13 +2157,14 @@ def register(app):
                 if cur.rowcount == 0:
                     flash("You don't have permission to do that", "error")
                     conn.rollback()
-                    return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
+                    return _token_redirect()
                 conn.commit()
             except Exception as e:
                 flash(str(e), "error")
-                return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
+                return _token_redirect()
         session["new_token"] = raw  # shown once
-        return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))
+        flash("Machine account created — copy the token now; it is shown once", "ok")
+        return _token_redirect()
 
 
     @app.post("/projects/<uuid:project_id>/tokens/<uuid:token_id>/delete")
