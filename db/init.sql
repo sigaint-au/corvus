@@ -88,7 +88,7 @@ CREATE TABLE api.teams (
 CREATE TABLE api.team_members (
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
-  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'read-only')),
+  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
   source text NOT NULL DEFAULT 'manual'
     CHECK (source IN ('manual', 'ldap')),
   PRIMARY KEY (team_id, user_id)
@@ -99,7 +99,7 @@ CREATE TABLE api.team_ldap_maps (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   ldap_group text NOT NULL,
-  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'read-only')),
+  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, ldap_group)
 );
@@ -110,7 +110,7 @@ CREATE TABLE api.team_invites (
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   token_hash text NOT NULL UNIQUE,
   role text NOT NULL DEFAULT 'member'
-    CHECK (role IN ('admin', 'member', 'read-only')),
+    CHECK (role IN ('admin', 'member', 'viewer')),
   expires_at timestamptz NOT NULL,
   created_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -125,7 +125,7 @@ CREATE TABLE api.team_join_requests (
   invite_id uuid REFERENCES api.team_invites(id) ON DELETE SET NULL,
   user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
   role text NOT NULL DEFAULT 'member'
-    CHECK (role IN ('admin', 'member', 'read-only')),
+    CHECK (role IN ('admin', 'member', 'viewer')),
   status text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -316,34 +316,76 @@ SET row_security = off AS $$
   END;
 $$;
 
+-- Project access: when a project_members row exists for the user, that role
+-- is authoritative (overrides the team default). Otherwise team role applies.
 CREATE OR REPLACE FUNCTION api.can_read_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
-  SELECT api.is_global_admin() OR EXISTS (
-    SELECT 1 FROM api.projects p
-    JOIN api.team_members tm ON tm.team_id = p.team_id
-    WHERE p.id = pid AND tm.user_id = api.current_user_id()
-  ) OR EXISTS (
-    SELECT 1 FROM api.project_members
-    WHERE project_id = pid AND user_id = api.current_user_id()
-  );
+  SELECT api.is_global_admin()
+    OR EXISTS (
+      SELECT 1 FROM api.project_members
+      WHERE project_id = pid AND user_id = api.current_user_id()
+    )
+    OR (
+      NOT EXISTS (
+        SELECT 1 FROM api.project_members
+        WHERE project_id = pid AND user_id = api.current_user_id()
+      )
+      AND EXISTS (
+        SELECT 1 FROM api.projects p
+        JOIN api.team_members tm ON tm.team_id = p.team_id
+        WHERE p.id = pid AND tm.user_id = api.current_user_id()
+      )
+    );
 $$;
 
 CREATE OR REPLACE FUNCTION api.can_write_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
-  SELECT api.is_global_admin() OR EXISTS (
-    SELECT 1 FROM api.projects p
-    JOIN api.team_members tm ON tm.team_id = p.team_id
-    WHERE p.id = pid AND tm.user_id = api.current_user_id()
-      AND tm.role IN ('owner', 'admin', 'member')
-  ) OR EXISTS (
-    SELECT 1 FROM api.project_members
-    WHERE project_id = pid AND user_id = api.current_user_id()
-      AND role IN ('admin', 'write')
-  );
+  SELECT api.is_global_admin()
+    OR EXISTS (
+      SELECT 1 FROM api.project_members
+      WHERE project_id = pid AND user_id = api.current_user_id()
+        AND role IN ('admin', 'write')
+    )
+    OR (
+      NOT EXISTS (
+        SELECT 1 FROM api.project_members
+        WHERE project_id = pid AND user_id = api.current_user_id()
+      )
+      AND EXISTS (
+        SELECT 1 FROM api.projects p
+        JOIN api.team_members tm ON tm.team_id = p.team_id
+        WHERE p.id = pid AND tm.user_id = api.current_user_id()
+          AND tm.role IN ('owner', 'admin', 'member')
+      )
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION api.can_admin_project(pid uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT api.is_global_admin()
+    OR EXISTS (
+      SELECT 1 FROM api.project_members
+      WHERE project_id = pid AND user_id = api.current_user_id()
+        AND role = 'admin'
+    )
+    OR (
+      NOT EXISTS (
+        SELECT 1 FROM api.project_members
+        WHERE project_id = pid AND user_id = api.current_user_id()
+      )
+      AND EXISTS (
+        SELECT 1 FROM api.projects p
+        JOIN api.team_members tm ON tm.team_id = p.team_id
+        WHERE p.id = pid AND tm.user_id = api.current_user_id()
+          AND tm.role IN ('owner', 'admin')
+      )
+    );
 $$;
 
 -- Prevent removing the last team owner
@@ -465,11 +507,11 @@ CREATE POLICY projects_delete ON api.projects FOR DELETE TO authenticated
 CREATE POLICY pm_select ON api.project_members FOR SELECT TO authenticated
   USING (api.can_read_project(project_id));
 CREATE POLICY pm_insert ON api.project_members FOR INSERT TO authenticated
-  WITH CHECK (api.can_write_project(project_id));
+  WITH CHECK (api.can_admin_project(project_id));
 CREATE POLICY pm_update ON api.project_members FOR UPDATE TO authenticated
-  USING (api.can_write_project(project_id));
+  USING (api.can_admin_project(project_id));
 CREATE POLICY pm_delete ON api.project_members FOR DELETE TO authenticated
-  USING (api.can_write_project(project_id));
+  USING (api.can_admin_project(project_id));
 
 -- Pins / recent: own rows only, and only if secret is still readable
 CREATE POLICY secret_pins_select ON api.secret_pins FOR SELECT TO authenticated
@@ -828,6 +870,9 @@ GRANT EXECUTE ON FUNCTION private.machine_get_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_list_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_upsert_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.can_read_project TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.can_write_project TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.can_admin_project TO authenticated, anon;
 
 -- PostgREST needs table privileges via authenticator switching roles
 GRANT ALL ON ALL TABLES IN SCHEMA api TO authenticator;

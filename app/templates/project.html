@@ -287,13 +287,15 @@
   {% endif %}
 </section>
 {% elif active_tab == 'settings' and can_settings %}
+{% if can_admin %}
 <section>
   <h2>Members</h2>
   <p class="muted">
-    Grant access at project granularity (in addition to team membership).
-    Roles: <strong>read</strong> (view), <strong>write</strong> (edit secrets), <strong>admin</strong> (write + manage members).
+    Optional project-level roles. When present for a user, the project role
+    <strong>overrides</strong> their team default on this project only.
+    Roles: <strong>read</strong> (view), <strong>write</strong> (edit secrets),
+    <strong>admin</strong> (write + manage members).
   </p>
-  {% if can_write %}
   <form method="post" action="{{ url_for('add_project_member', project_id=project.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Email <input type="email" name="email" required placeholder="user@example.com"></label>
@@ -306,16 +308,14 @@
     </label>
     <button type="submit">Add</button>
   </form>
-  {% endif %}
   {% if project_members %}
   <table>
-    <thead><tr><th>User</th><th>Role</th>{% if can_write %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>User</th><th>Role</th><th></th></tr></thead>
     <tbody>
     {% for m in project_members %}
       <tr>
         <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
         <td><span class="role-badge">{{ m.role }}</span></td>
-        {% if can_write %}
         <td class="acts">
           <form method="post"
                 action="{{ url_for('remove_project_member', project_id=project.id, user_id=m.user_id) }}"
@@ -325,7 +325,6 @@
             <button type="submit" class="link danger">Remove</button>
           </form>
         </td>
-        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
@@ -334,6 +333,7 @@
   <p class="muted">No project-level members. Team members still have access via their team role.</p>
   {% endif %}
 </section>
+{% endif %}
 {% if can_delete %}
 <section>
   <h2>Danger zone</h2>

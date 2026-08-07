@@ -964,22 +964,22 @@ class TestTeams(unittest.TestCase):
         self.assertIn("api.team_role(team_id) IN ('owner', 'admin')", ensure_chunk)
         self.assertNotIn("user_id = api.current_user_id()", ensure_chunk)
 
-    def test_team_roles_include_read_only(self):
-        self.assertIn("read-only", config.TEAM_ROLES)
-        self.assertLess(config.ROLE_RANK["read-only"], config.ROLE_RANK["member"])
+    def test_team_roles_include_viewer(self):
+        self.assertIn("viewer", config.TEAM_ROLES)
+        self.assertLess(config.ROLE_RANK["viewer"], config.ROLE_RANK["member"])
 
-    def test_add_member_read_only_role(self):
+    def test_add_member_viewer_role(self):
         tid, uid = uuid4(), uuid4()
         conn, cur = _conn(fetchone={"id": uid})
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/teams/{tid}/members",
-                data={"email": "ro@ex.com", "role": "read-only"},
+                data={"email": "ro@ex.com", "role": "viewer"},
                 follow_redirects=False,
             )
         self.assertEqual(r.status_code, 302)
         sql = " ".join(str(c) for c in cur.execute.call_args_list)
-        self.assertIn("read-only", sql)
+        self.assertIn("viewer", sql)
 
     def test_create_project(self):
         tid, pid = uuid4(), uuid4()
@@ -1010,7 +1010,7 @@ class TestTeams(unittest.TestCase):
 
     def test_delete_team_non_owner_denied(self):
         tid = uuid4()
-        for role in ("admin", "member", "read-only"):
+        for role in ("admin", "member", "viewer"):
             conn, cur = _conn(fetchone={"r": role})
             with patch.object(db, "as_user", return_value=conn):
                 r = self.client.post(f"/teams/{tid}/delete", follow_redirects=False)
@@ -1069,6 +1069,7 @@ class TestSecrets(unittest.TestCase):
         self,
         tab="secrets",
         can_write=True,
+        can_admin=None,
         team_role="owner",
         secrets=None,
         tokens=None,
@@ -1082,10 +1083,12 @@ class TestSecrets(unittest.TestCase):
             "team_name": "Ops",
             "team_id": uuid4(),
         }
+        if can_admin is None:
+            can_admin = team_role in ("owner", "admin")
         rows = secrets or [] if tab == "secrets" else (audit_log or [] if tab == "audit" else (tokens or []))
         if total is None:
             total = len(rows)
-        fo = [project, {"w": can_write}, {"r": team_role}]
+        fo = [project, {"w": can_write}, {"a": can_admin}, {"r": team_role}]
         if tab in ("secrets", "audit"):
             fo.append({"n": total})
         if tab == "settings":
@@ -1150,9 +1153,9 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(str(tid), r.location)
         conn.commit.assert_called()
 
-    def test_delete_project_route_read_only_denied(self):
+    def test_delete_project_route_viewer_denied(self):
         tid = uuid4()
-        conn, _ = _conn(fetchone={"team_id": tid, "r": "read-only"})
+        conn, _ = _conn(fetchone={"team_id": tid, "r": "viewer"})
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/delete",
@@ -1174,28 +1177,48 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(b"Settings", r.data)  # tab nav
         self.assertNotIn(b"Project settings", r.data)
 
-    def test_project_settings_visible_for_writer_without_delete(self):
-        """Writers get Settings (members); only team owner/admin get danger zone."""
+    def test_project_settings_hidden_for_writer_without_admin(self):
+        """Project write without admin cannot manage members; Settings tab hidden."""
         with patch.object(
             db,
             "as_user",
             return_value=self._project_conn(
-                tab="settings", team_role="member", can_write=True
+                team_role="member", can_write=True, can_admin=False
             ),
-        ):
-            r = self.client.get(f"/projects/{self.pid}?tab=settings")
-        self.assertEqual(r.status_code, 200)
-        self.assertIn(b"?tab=settings", r.data)
-        self.assertIn(b"Members", r.data)
-        self.assertNotIn(b"Delete project", r.data)
-
-    def test_project_settings_tab_hidden_for_read_only(self):
-        with patch.object(
-            db, "as_user", return_value=self._project_conn(team_role="read-only", can_write=False)
         ):
             r = self.client.get(f"/projects/{self.pid}")
         self.assertEqual(r.status_code, 200)
         self.assertNotIn(b"?tab=settings", r.data)
+        self.assertNotIn(b"Delete project", r.data)
+
+    def test_project_settings_tab_hidden_for_viewer(self):
+        with patch.object(
+            db,
+            "as_user",
+            return_value=self._project_conn(
+                team_role="viewer", can_write=False, can_admin=False
+            ),
+        ):
+            r = self.client.get(f"/projects/{self.pid}")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b"?tab=settings", r.data)
+        self.assertNotIn(b"Delete project", r.data)
+
+    def test_project_admin_settings_members_without_delete(self):
+        """Project admin can manage members; team member cannot delete project."""
+        with patch.object(
+            db,
+            "as_user",
+            return_value=self._project_conn(
+                tab="settings",
+                team_role="member",
+                can_write=True,
+                can_admin=True,
+            ),
+        ):
+            r = self.client.get(f"/projects/{self.pid}?tab=settings")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Members", r.data)
         self.assertNotIn(b"Delete project", r.data)
 
     def test_project_secrets_tab_no_danger_zone(self):
@@ -1417,6 +1440,131 @@ class TestTokens(unittest.TestCase):
         ins_start = init_sql.index("CREATE POLICY mt_insert ON api.machine_tokens")
         ins_end = init_sql.index(";", ins_start)
         self.assertIn("can_write_project", init_sql[ins_start:ins_end])
+
+    def test_pm_policies_use_can_admin_project(self):
+        """Member management requires project admin, not mere write."""
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        init_sql = (root / "db" / "init.sql").read_text()
+        schema_src = (root / "app" / "schema.py").read_text()
+        for name in ("pm_insert", "pm_update", "pm_delete"):
+            start = init_sql.index(f"CREATE POLICY {name} ON api.project_members")
+            end = init_sql.index(";", start)
+            chunk = init_sql[start:end]
+            self.assertIn("can_admin_project", chunk, msg=name)
+            self.assertNotIn("can_write_project", chunk, msg=name)
+        self.assertIn("can_admin_project", schema_src)
+        self.assertIn("pm_insert ON api.project_members", schema_src)
+        self.assertIn("pm_delete ON api.project_members", schema_src)
+
+    def test_can_write_project_most_specific_wins(self):
+        """Project role overrides team default when a project_members row exists."""
+        from pathlib import Path
+
+        init_sql = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        start = init_sql.index("CREATE OR REPLACE FUNCTION api.can_write_project")
+        end = init_sql.index("$$;", start) + 3
+        body = init_sql[start:end]
+        # Project write/admin grants write
+        self.assertIn("role IN ('admin', 'write')", body)
+        # Team default only when NOT a project member
+        self.assertIn("NOT EXISTS", body)
+        self.assertIn("tm.role IN ('owner', 'admin', 'member')", body)
+        # Old OR-both-paths pattern is gone (no bare team join without NOT EXISTS guard)
+        # Presence of project_members check before team fallback is the authority rule.
+        self.assertLess(
+            body.index("FROM api.project_members"),
+            body.index("FROM api.projects p"),
+        )
+
+    def test_can_read_project_most_specific_wins(self):
+        from pathlib import Path
+
+        init_sql = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        start = init_sql.index("CREATE OR REPLACE FUNCTION api.can_read_project")
+        end = init_sql.index("$$;", start) + 3
+        body = init_sql[start:end]
+        self.assertIn("NOT EXISTS", body)
+        self.assertIn("FROM api.project_members", body)
+
+    def test_can_admin_project_defined(self):
+        from pathlib import Path
+
+        init_sql = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("CREATE OR REPLACE FUNCTION api.can_admin_project", init_sql)
+        start = init_sql.index("CREATE OR REPLACE FUNCTION api.can_admin_project")
+        end = init_sql.index("$$;", start) + 3
+        body = init_sql[start:end]
+        self.assertIn("role = 'admin'", body)
+        self.assertIn("tm.role IN ('owner', 'admin')", body)
+        self.assertIn("NOT EXISTS", body)
+
+    def test_add_project_member_requires_admin(self):
+        """Project write members cannot add project members."""
+        conn, cur = _conn(fetchone={"a": False})
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/members",
+                data={"email": "x@ex.com", "role": "read"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        self.assertIn("can_admin_project", sql)
+        self.assertNotIn("insert into api.project_members", sql)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(
+            any("permission" in msg.lower() for _c, msg in flashes),
+            f"expected permission flash, got {flashes!r}",
+        )
+
+    def test_add_project_member_ok_for_admin(self):
+        uid = uuid4()
+        tid = uuid4()
+        last = {"s": ""}
+
+        def execute(sql, params=None):
+            last["s"] = " ".join(str(sql).lower().split())
+
+        def fetchone():
+            s = last["s"]
+            if "can_admin_project" in s:
+                return {"a": True}
+            if "lookup_user" in s:
+                return {"id": uid}
+            if "from api.projects" in s and "team_id" in s:
+                return {"team_id": tid}
+            if "from api.project_members" in s and "select role" in s:
+                return None
+            return None
+
+        conn, cur = _conn(fetchone=fetchone)
+        cur.execute.side_effect = execute
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/members",
+                data={"email": "x@ex.com", "role": "write"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        self.assertIn("insert into api.project_members", sql)
+        self.assertIn("can_admin_project", sql)
+
+    def test_remove_project_member_requires_admin(self):
+        conn, cur = _conn(fetchone={"a": False})
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/members/{uuid4()}/remove",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        self.assertIn("can_admin_project", sql)
+        self.assertNotIn("delete from api.project_members", sql)
 
     def test_secrets_updated_at_trigger_defined(self):
         from pathlib import Path

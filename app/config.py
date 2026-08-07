@@ -64,10 +64,10 @@ DEFAULT_SETTINGS = {
     "ldap_group_filter": "(member={dn})",
     "ldap_use_memberof": "true",
 }
-TEAM_ROLES = ("owner", "admin", "member", "read-only")
-ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "read-only": 1}
+TEAM_ROLES = ("owner", "admin", "member", "viewer")
+ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}
 # Invite / join-request roles (cannot self-invite as owner)
-INVITE_ROLES = ("admin", "member", "read-only")
+INVITE_ROLES = ("admin", "member", "viewer")
 # Project-scoped membership (in addition to team roles)
 PROJECT_ROLES = ("admin", "write", "read")
 # Machine accounts / ESO tokens: read-only (fetch) or write (fetch + upsert API)

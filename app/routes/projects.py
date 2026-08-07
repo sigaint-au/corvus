@@ -511,11 +511,14 @@ def register(app):
             default_token_days = project.get("default_token_days")
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             can_write = cur.fetchone()["w"]
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            can_admin = cur.fetchone()["a"]
             cur.execute("SELECT api.team_role(%s) AS r", (str(project["team_id"]),))
             team_role = (cur.fetchone() or {}).get("r")
             # Project delete: team owner/admin (matches projects_delete RLS)
             can_delete = team_role in ("owner", "admin")
-            can_settings = bool(can_write or can_delete)
+            # Settings: project admins manage members; team owner/admin also see danger zone
+            can_settings = bool(can_admin or can_delete)
 
             if tab == "settings" and not can_settings:
                 tab = "secrets"
@@ -582,6 +585,7 @@ def register(app):
             project_roles=config.PROJECT_ROLES,
             default_token_days=default_token_days,
             can_write=can_write,
+            can_admin=can_admin,
             can_delete=can_delete,
             can_settings=can_settings,
             active_tab=tab,
@@ -1216,8 +1220,8 @@ def register(app):
             flash("Email required", "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
-            if not cur.fetchone()["w"]:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not cur.fetchone()["a"]:
                 flash("You don't have permission to do that", "error")
                 return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
             cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
@@ -1275,8 +1279,8 @@ def register(app):
     @authz.login_required
     def remove_project_member(project_id, user_id):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
-            if not cur.fetchone()["w"]:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not cur.fetchone()["a"]:
                 flash("You don't have permission to do that", "error")
                 return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
             cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))

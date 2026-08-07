@@ -92,14 +92,22 @@ def ensure_schema():
         LANGUAGE sql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
-          SELECT api.is_global_admin() OR EXISTS (
-            SELECT 1 FROM api.projects p
-            JOIN api.team_members tm ON tm.team_id = p.team_id
-            WHERE p.id = pid AND tm.user_id = api.current_user_id()
-          ) OR EXISTS (
-            SELECT 1 FROM api.project_members
-            WHERE project_id = pid AND user_id = api.current_user_id()
-          );
+          SELECT api.is_global_admin()
+            OR EXISTS (
+              SELECT 1 FROM api.project_members
+              WHERE project_id = pid AND user_id = api.current_user_id()
+            )
+            OR (
+              NOT EXISTS (
+                SELECT 1 FROM api.project_members
+                WHERE project_id = pid AND user_id = api.current_user_id()
+              )
+              AND EXISTS (
+                SELECT 1 FROM api.projects p
+                JOIN api.team_members tm ON tm.team_id = p.team_id
+                WHERE p.id = pid AND tm.user_id = api.current_user_id()
+              )
+            );
         $$
         """,
         """
@@ -107,34 +115,104 @@ def ensure_schema():
         LANGUAGE sql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
-          SELECT api.is_global_admin() OR EXISTS (
-            SELECT 1 FROM api.projects p
-            JOIN api.team_members tm ON tm.team_id = p.team_id
-            WHERE p.id = pid AND tm.user_id = api.current_user_id()
-              AND tm.role IN ('owner', 'admin', 'member')
-          ) OR EXISTS (
-            SELECT 1 FROM api.project_members
-            WHERE project_id = pid AND user_id = api.current_user_id()
-              AND role IN ('admin', 'write')
-          );
+          SELECT api.is_global_admin()
+            OR EXISTS (
+              SELECT 1 FROM api.project_members
+              WHERE project_id = pid AND user_id = api.current_user_id()
+                AND role IN ('admin', 'write')
+            )
+            OR (
+              NOT EXISTS (
+                SELECT 1 FROM api.project_members
+                WHERE project_id = pid AND user_id = api.current_user_id()
+              )
+              AND EXISTS (
+                SELECT 1 FROM api.projects p
+                JOIN api.team_members tm ON tm.team_id = p.team_id
+                WHERE p.id = pid AND tm.user_id = api.current_user_id()
+                  AND tm.role IN ('owner', 'admin', 'member')
+              )
+            );
         $$
         """,
-        # team role: read-only (view secrets; no mutate)
+        """
+        CREATE OR REPLACE FUNCTION api.can_admin_project(pid uuid) RETURNS boolean
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT api.is_global_admin()
+            OR EXISTS (
+              SELECT 1 FROM api.project_members
+              WHERE project_id = pid AND user_id = api.current_user_id()
+                AND role = 'admin'
+            )
+            OR (
+              NOT EXISTS (
+                SELECT 1 FROM api.project_members
+                WHERE project_id = pid AND user_id = api.current_user_id()
+              )
+              AND EXISTS (
+                SELECT 1 FROM api.projects p
+                JOIN api.team_members tm ON tm.team_id = p.team_id
+                WHERE p.id = pid AND tm.user_id = api.current_user_id()
+                  AND tm.role IN ('owner', 'admin')
+              )
+            );
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION api.can_read_project TO authenticated, anon",
+        "GRANT EXECUTE ON FUNCTION api.can_write_project TO authenticated, anon",
+        "GRANT EXECUTE ON FUNCTION api.can_admin_project TO authenticated, anon",
+        # team_members / ldap maps: rename read-only → viewer (drop role CHECKs, migrate, re-add)
+        """
+        DO $$
+        DECLARE r record;
+        BEGIN
+          FOR r IN
+            SELECT c.conname
+            FROM pg_constraint c
+            JOIN pg_class t ON c.conrelid = t.oid
+            JOIN pg_namespace n ON t.relnamespace = n.oid
+            WHERE n.nspname = 'api' AND t.relname = 'team_members'
+              AND c.contype = 'c'
+              AND pg_get_constraintdef(c.oid) ILIKE '%role%'
+          LOOP
+            EXECUTE format('ALTER TABLE api.team_members DROP CONSTRAINT %I', r.conname);
+          END LOOP;
+        END $$
+        """,
+        """
+        DO $$
+        DECLARE r record;
+        BEGIN
+          FOR r IN
+            SELECT c.conname
+            FROM pg_constraint c
+            JOIN pg_class t ON c.conrelid = t.oid
+            JOIN pg_namespace n ON t.relnamespace = n.oid
+            WHERE n.nspname = 'api' AND t.relname = 'team_ldap_maps'
+              AND c.contype = 'c'
+              AND pg_get_constraintdef(c.oid) ILIKE '%role%'
+          LOOP
+            EXECUTE format('ALTER TABLE api.team_ldap_maps DROP CONSTRAINT %I', r.conname);
+          END LOOP;
+        END $$
+        """,
+        "UPDATE api.team_members SET role = 'viewer' WHERE role = 'read-only'",
+        "UPDATE api.team_ldap_maps SET role = 'viewer' WHERE role = 'read-only'",
         """
         DO $$ BEGIN
-          ALTER TABLE api.team_members DROP CONSTRAINT IF EXISTS team_members_role_check;
           ALTER TABLE api.team_members
             ADD CONSTRAINT team_members_role_check
-            CHECK (role IN ('owner', 'admin', 'member', 'read-only'));
+            CHECK (role IN ('owner', 'admin', 'member', 'viewer'));
         EXCEPTION WHEN others THEN NULL;
         END $$
         """,
         """
         DO $$ BEGIN
-          ALTER TABLE api.team_ldap_maps DROP CONSTRAINT IF EXISTS team_ldap_maps_role_check;
           ALTER TABLE api.team_ldap_maps
             ADD CONSTRAINT team_ldap_maps_role_check
-            CHECK (role IN ('owner', 'admin', 'member', 'read-only'));
+            CHECK (role IN ('owner', 'admin', 'member', 'viewer'));
         EXCEPTION WHEN others THEN NULL;
         END $$
         """,
@@ -224,7 +302,7 @@ def ensure_schema():
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
           ldap_group text NOT NULL,
-          role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'read-only')),
+          role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
           created_at timestamptz NOT NULL DEFAULT now(),
           UNIQUE (team_id, ldap_group)
         )
@@ -626,7 +704,7 @@ def ensure_schema():
           team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
           token_hash text NOT NULL UNIQUE,
           role text NOT NULL DEFAULT 'member'
-            CHECK (role IN ('admin', 'member', 'read-only')),
+            CHECK (role IN ('admin', 'member', 'viewer')),
           expires_at timestamptz NOT NULL,
           created_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
           created_at timestamptz NOT NULL DEFAULT now(),
@@ -644,13 +722,51 @@ def ensure_schema():
           invite_id uuid REFERENCES api.team_invites(id) ON DELETE SET NULL,
           user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
           role text NOT NULL DEFAULT 'member'
-            CHECK (role IN ('admin', 'member', 'read-only')),
+            CHECK (role IN ('admin', 'member', 'viewer')),
           status text NOT NULL DEFAULT 'pending'
             CHECK (status IN ('pending', 'approved', 'rejected')),
           created_at timestamptz NOT NULL DEFAULT now(),
           resolved_at timestamptz,
           resolved_by uuid REFERENCES private.users(id) ON DELETE SET NULL
         )
+        """,
+        # Migrate invite/join role read-only → viewer after tables exist
+        """
+        DO $$
+        DECLARE r record;
+        BEGIN
+          FOR r IN
+            SELECT t.relname AS tbl, c.conname
+            FROM pg_constraint c
+            JOIN pg_class t ON c.conrelid = t.oid
+            JOIN pg_namespace n ON t.relnamespace = n.oid
+            WHERE n.nspname = 'api'
+              AND t.relname IN ('team_invites', 'team_join_requests')
+              AND c.contype = 'c'
+              AND pg_get_constraintdef(c.oid) ILIKE '%role%'
+              AND pg_get_constraintdef(c.oid) NOT ILIKE '%status%'
+          LOOP
+            EXECUTE format('ALTER TABLE api.%I DROP CONSTRAINT %I', r.tbl, r.conname);
+          END LOOP;
+        END $$
+        """,
+        "UPDATE api.team_invites SET role = 'viewer' WHERE role = 'read-only'",
+        "UPDATE api.team_join_requests SET role = 'viewer' WHERE role = 'read-only'",
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.team_invites
+            ADD CONSTRAINT team_invites_role_check
+            CHECK (role IN ('admin', 'member', 'viewer'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.team_join_requests
+            ADD CONSTRAINT team_join_requests_role_check
+            CHECK (role IN ('admin', 'member', 'viewer'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
         """,
         """
         CREATE UNIQUE INDEX IF NOT EXISTS team_join_requests_pending_uidx
@@ -766,10 +882,20 @@ def ensure_schema():
         "GRANT SELECT, INSERT, UPDATE ON api.team_join_requests TO authenticated",
         "GRANT ALL ON api.team_invites TO authenticator",
         "GRANT ALL ON api.team_join_requests TO authenticator",
+        "DROP POLICY IF EXISTS pm_insert ON api.project_members",
+        """
+        CREATE POLICY pm_insert ON api.project_members FOR INSERT TO authenticated
+          WITH CHECK (api.can_admin_project(project_id))
+        """,
         "DROP POLICY IF EXISTS pm_update ON api.project_members",
         """
         CREATE POLICY pm_update ON api.project_members FOR UPDATE TO authenticated
-          USING (api.can_write_project(project_id))
+          USING (api.can_admin_project(project_id))
+        """,
+        "DROP POLICY IF EXISTS pm_delete ON api.project_members",
+        """
+        CREATE POLICY pm_delete ON api.project_members FOR DELETE TO authenticated
+          USING (api.can_admin_project(project_id))
         """,
         """
         CREATE OR REPLACE FUNCTION private.project_member_rows(p_project uuid)

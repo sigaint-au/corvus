@@ -24,12 +24,17 @@ It is not a password manager for individuals, a full PAM platform, or a multi-cl
 
 ## Roles (short)
 
+**Rule:** when a user has a **project role**, that role is authoritative on that project and **overrides** their team default. With no project role, the team role’s default applies.
+
 | Who | Can do |
 |-----|--------|
 | Team `owner` | Manage members, projects, secrets; **delete team** |
 | Team `admin` | Manage members, projects, secrets; **delete projects** |
-| Team `member` | Read + write secrets; create projects |
-| Team `read-only` | View secrets only |
+| Team `member` | Default writer: read + write secrets; create projects |
+| Team `viewer` | Read-only default: view secrets only |
+| Project `admin` | Write secrets + manage project members (overrides team) |
+| Project `write` | Write secrets on that project only (overrides team) |
+| Project `read` | Read-only on that project only (can restrict a team member) |
 | Global admin | Server settings, all teams |
 | Machine `read-only` | ESO fetch / list |
 | Machine `write` | Fetch + machine upsert API |
