@@ -63,6 +63,11 @@ def validate_registered_session():
     if not uid:
         return None
 
+    if is_account_disabled(uid):
+        session.clear()
+        flash("Your account has been disabled. Contact an administrator.", "error")
+        return redirect(url_for("login"))
+
     # Forced enrollment for global admins
     if session.get("totp_setup_required"):
         if request.endpoint in _TOTP_SETUP_OK or (
@@ -127,6 +132,22 @@ def is_global_admin(user_id: str) -> bool:
             )
             row = cur.fetchone()
             return bool(row and row.get("is_global_admin"))
+    except Exception:
+        return False
+
+
+def is_account_disabled(user_id: str) -> bool:
+    """True when a global admin has disabled this account."""
+    if not user_id:
+        return False
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT disabled_at FROM private.users WHERE id = %s::uuid",
+                (str(user_id),),
+            )
+            row = cur.fetchone()
+            return bool(row and row.get("disabled_at"))
     except Exception:
         return False
 

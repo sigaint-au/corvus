@@ -21,6 +21,15 @@ import user_sessions
 
 log = __import__("logging").getLogger(__name__)
 
+PROFILE_TABS = ("account", "security", "teams", "projects", "activity")
+
+
+def _profile_url(tab: str = "account") -> str:
+    tab = (tab or "account").strip().lower()
+    if tab not in PROFILE_TABS:
+        tab = "account"
+    return url_for("profile", tab=tab)
+
 
 def _maybe_promote_bootstrap_admin(email: str, user_id) -> bool:
     """Promote email to global admin if it matches bootstrap config. Returns new is_global_admin."""
@@ -186,6 +195,14 @@ def register(app):
                     registration_enabled=settings_svc.registration_enabled(),
                     setup_notice=notice,
                 ), 401
+            if authz.is_account_disabled(str(user["id"])):
+                flash("This account has been disabled. Contact an administrator.", "error")
+                return render_template(
+                    "login.html",
+                    ldap_enabled=ldap_on,
+                    registration_enabled=settings_svc.registration_enabled(),
+                    setup_notice=notice,
+                ), 403
             lockout.clear_failures(email)
             return _post_password_login(user)
         return render_template(
@@ -200,6 +217,10 @@ def register(app):
     def login_2fa():
         uid = session.get("pending_2fa_uid")
         if not uid:
+            return redirect(url_for("login"))
+        if authz.is_account_disabled(uid):
+            session.clear()
+            flash("This account has been disabled. Contact an administrator.", "error")
             return redirect(url_for("login"))
         email = session.get("pending_2fa_email") or ""
         if request.method == "POST":
@@ -372,11 +393,11 @@ def register(app):
         conf = request.form.get("new_password_confirm") or ""
         if new != conf:
             flash("New passwords do not match", "error")
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         ok, err = passwords.change_password(uid, old, new)
         if not ok:
             flash(err or "Could not change password", "error")
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         # Keep current session; sign out other devices after password change
         sid = session.get("sid")
         if sid:
@@ -387,7 +408,7 @@ def register(app):
                 flash("Password updated.", "ok")
         else:
             flash("Password updated.", "ok")
-        return redirect(url_for("profile"))
+        return redirect(_profile_url("security"))
 
 
     @app.post("/profile/sessions/revoke-others")
@@ -397,10 +418,10 @@ def register(app):
         sid = session.get("sid")
         if not sid:
             flash("No active session registry entry for this browser", "error")
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         n = user_sessions.revoke_other_sessions(uid, sid)
         flash(f"Signed out {n} other session(s).", "ok")
-        return redirect(url_for("profile"))
+        return redirect(_profile_url("security"))
 
 
     @app.post("/profile/sessions/<uuid:session_id>/revoke")
@@ -417,7 +438,7 @@ def register(app):
             flash("Session signed out.", "ok")
         else:
             flash("Session not found or already signed out.", "error")
-        return redirect(url_for("profile"))
+        return redirect(_profile_url("security"))
 
 
     @app.get("/profile/2fa")
@@ -427,7 +448,7 @@ def register(app):
         uid = session["user_id"]
         if totp_svc.is_enabled(uid) and not session.get("totp_setup_required"):
             flash("Two-factor authentication is already enabled", "ok")
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         secret = session.get("pending_totp_secret")
         if not secret:
             secret = totp_svc.new_secret()
@@ -478,7 +499,7 @@ def register(app):
     def totp_recovery_codes():
         codes = session.pop("new_recovery_codes", None)
         if not codes:
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         return render_template("totp_recovery.html", codes=codes)
 
 
@@ -491,23 +512,23 @@ def register(app):
             return redirect(url_for("totp_setup"))
         if not totp_svc.is_enabled(uid):
             flash("Two-factor authentication is not enabled", "error")
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         # When enforce is on, global admins cannot disable
         if session.get("is_global_admin") and totp_svc.enforce_global_admins():
             flash(
                 "Global admins cannot disable two-factor authentication while it is enforced",
                 "error",
             )
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         code = request.form.get("code") or ""
         ok, _method = totp_svc.verify_user_code(uid, code)
         if not ok:
             flash("Invalid authentication or recovery code", "error")
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         totp_svc.disable(uid)
         session.pop("pending_totp_secret", None)
         flash("Two-factor authentication disabled", "ok")
-        return redirect(url_for("profile"))
+        return redirect(_profile_url("security"))
 
 
     @app.post("/profile/2fa/recovery-codes/regenerate")
@@ -516,12 +537,12 @@ def register(app):
         uid = session["user_id"]
         if not totp_svc.is_enabled(uid):
             flash("Enable two-factor authentication first", "error")
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         code = request.form.get("code") or ""
         ok, _method = totp_svc.verify_user_code(uid, code)
         if not ok:
             flash("Invalid authentication or recovery code", "error")
-            return redirect(url_for("profile"))
+            return redirect(_profile_url("security"))
         codes = totp_svc.regenerate_recovery_codes(uid)
         session["new_recovery_codes"] = codes
         flash("New recovery codes generated — save them now", "ok")
@@ -531,7 +552,11 @@ def register(app):
     @app.get("/profile")
     @authz.login_required
     def profile():
-        """My profile: account info, memberships, projects, and activity."""
+        """My profile: account info, memberships, projects, and activity (tabbed)."""
+        tab = (request.args.get("tab") or "account").strip().lower()
+        if tab not in PROFILE_TABS:
+            tab = "account"
+
         uid = session["user_id"]
         user = None
         try:
@@ -558,81 +583,82 @@ def register(app):
             user.get("is_global_admin") and totp_svc.enforce_global_admins()
         )
 
-        active_sessions = user_sessions.list_sessions(uid)
+        active_sessions = user_sessions.list_sessions(uid) if tab == "security" else []
         current_sid = session.get("sid")
         teams, projects, pending, pins_list, recent = [], [], [], [], []
         secret_count = pin_count = 0
         try:
             with db.as_user(uid) as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT t.id, t.name, tm.role, tm.source, t.created_at,
-                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id)
-                        AS project_count
-                    FROM api.teams t
-                    JOIN api.team_members tm ON tm.team_id = t.id
-                    WHERE tm.user_id = %s
-                    ORDER BY t.name
-                    """,
-                    (uid,),
-                )
-                teams = cur.fetchall() or []
+                if tab in ("account", "teams"):
+                    cur.execute(
+                        """
+                        SELECT t.id, t.name, tm.role, tm.source, t.created_at,
+                          (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id)
+                            AS project_count
+                        FROM api.teams t
+                        JOIN api.team_members tm ON tm.team_id = t.id
+                        WHERE tm.user_id = %s
+                        ORDER BY t.name
+                        """,
+                        (uid,),
+                    )
+                    teams = cur.fetchall() or []
 
-                cur.execute(
-                    """
-                    SELECT p.id, p.name, p.created_at,
-                           t.id AS team_id, t.name AS team_name,
-                           tm.role AS team_role,
-                           pm.role AS project_role,
-                      (SELECT count(*) FROM api.secrets s
-                       WHERE s.project_id = p.id AND s.deleted_at IS NULL)
-                        AS secret_count
-                    FROM api.projects p
-                    JOIN api.teams t ON t.id = p.team_id
-                    LEFT JOIN api.team_members tm
-                      ON tm.team_id = t.id AND tm.user_id = %s
-                    LEFT JOIN api.project_members pm
-                      ON pm.project_id = p.id AND pm.user_id = %s
-                    ORDER BY t.name, p.name
-                    """,
-                    (uid, uid),
-                )
-                projects = cur.fetchall() or []
+                if tab in ("account", "projects"):
+                    cur.execute(
+                        """
+                        SELECT p.id, p.name, p.created_at,
+                               t.id AS team_id, t.name AS team_name,
+                               tm.role AS team_role,
+                               pm.role AS project_role,
+                          (SELECT count(*) FROM api.secrets s
+                           WHERE s.project_id = p.id AND s.deleted_at IS NULL)
+                            AS secret_count
+                        FROM api.projects p
+                        JOIN api.teams t ON t.id = p.team_id
+                        LEFT JOIN api.team_members tm
+                          ON tm.team_id = t.id AND tm.user_id = %s
+                        LEFT JOIN api.project_members pm
+                          ON pm.project_id = p.id AND pm.user_id = %s
+                        ORDER BY t.name, p.name
+                        """,
+                        (uid, uid),
+                    )
+                    projects = cur.fetchall() or []
 
-                cur.execute(
-                    """
-                    SELECT count(*) AS n FROM api.secrets
-                    WHERE deleted_at IS NULL
-                    """
-                )
-                row = cur.fetchone()
-                secret_count = int(row["n"]) if row else 0
+                if tab == "account":
+                    cur.execute(
+                        "SELECT count(*) AS n FROM api.secrets WHERE deleted_at IS NULL"
+                    )
+                    row = cur.fetchone()
+                    secret_count = int(row["n"]) if row else 0
+                    cur.execute(
+                        """
+                        SELECT count(*) AS n FROM api.secret_pins
+                        WHERE user_id = %s
+                        """,
+                        (uid,),
+                    )
+                    row = cur.fetchone()
+                    pin_count = int(row["n"]) if row else 0
 
-                cur.execute(
-                    """
-                    SELECT count(*) AS n FROM api.secret_pins
-                    WHERE user_id = %s
-                    """,
-                    (uid,),
-                )
-                row = cur.fetchone()
-                pin_count = int(row["n"]) if row else 0
+                if tab in ("account", "teams"):
+                    cur.execute(
+                        """
+                        SELECT r.id, r.role, r.status, r.created_at,
+                               t.id AS team_id, t.name AS team_name
+                        FROM api.team_join_requests r
+                        JOIN api.teams t ON t.id = r.team_id
+                        WHERE r.user_id = %s AND r.status = 'pending'
+                        ORDER BY r.created_at DESC
+                        """,
+                        (uid,),
+                    )
+                    pending = cur.fetchall() or []
 
-                cur.execute(
-                    """
-                    SELECT r.id, r.role, r.status, r.created_at,
-                           t.id AS team_id, t.name AS team_name
-                    FROM api.team_join_requests r
-                    JOIN api.teams t ON t.id = r.team_id
-                    WHERE r.user_id = %s AND r.status = 'pending'
-                    ORDER BY r.created_at DESC
-                    """,
-                    (uid,),
-                )
-                pending = cur.fetchall() or []
-
-                pins_list = pins.list_pins(cur, uid)
-                recent = pins.list_recent(cur, uid)
+                if tab == "activity":
+                    pins_list = pins.list_pins(cur, uid)
+                    recent = pins.list_recent(cur, uid)
         except Exception:
             log.exception("profile: load memberships failed")
 
@@ -644,9 +670,9 @@ def register(app):
         return render_template(
             "profile.html",
             user=user,
-            teams=teams,
-            projects=projects,
-            pending_joins=pending,
+            teams=teams if tab == "teams" else [],
+            projects=projects if tab == "projects" else [],
+            pending_joins=pending if tab == "teams" else [],
             pins=pins_list,
             recent=recent,
             active_sessions=active_sessions,
@@ -654,6 +680,7 @@ def register(app):
             totp_enabled=totp_on,
             totp_recovery_remaining=recovery_left,
             totp_enforced_for_user=totp_enforced,
+            active_tab=tab,
             stats={
                 "teams": len(teams),
                 "projects": len(projects),

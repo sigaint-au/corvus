@@ -34,6 +34,7 @@ CREATE TABLE private.users (
     CHECK (auth_source IN ('local', 'ldap')),
   totp_secret_enc text,          -- Fernet-encrypted TOTP secret when 2FA enabled
   totp_enabled_at timestamptz,   -- null = 2FA off
+  disabled_at timestamptz,       -- null = active; set by global admin
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -655,6 +656,7 @@ BEGIN
   SELECT u.id, u.email, u.name, u.is_global_admin FROM private.users u
   WHERE u.email = lower(p_email)
     AND u.password_hash IS NOT NULL
+    AND u.disabled_at IS NULL
     AND u.password_hash = crypt(p_password, u.password_hash);
 END;
 $$;

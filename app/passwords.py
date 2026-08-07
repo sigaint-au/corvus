@@ -45,9 +45,6 @@ def create_reset_token(email: str) -> str | None:
     email = (email or "").strip().lower()
     if not email:
         return None
-    token = secrets.token_urlsafe(32)
-    th = hash_token(token)
-    expires = datetime.now(timezone.utc) + timedelta(hours=RESET_TOKEN_HOURS)
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
@@ -56,33 +53,73 @@ def create_reset_token(email: str) -> str | None:
                 WHERE email = %s
                   AND auth_source = 'local'
                   AND password_hash IS NOT NULL
+                  AND disabled_at IS NULL
                 """,
                 (email,),
             )
             user = cur.fetchone()
             if not user:
                 return None
-            # Invalidate prior unused tokens
-            cur.execute(
-                """
-                UPDATE private.password_reset_tokens
-                SET used_at = now()
-                WHERE user_id = %s::uuid AND used_at IS NULL
-                """,
-                (str(user["id"]),),
-            )
-            cur.execute(
-                """
-                INSERT INTO private.password_reset_tokens
-                  (user_id, token_hash, expires_at)
-                VALUES (%s::uuid, %s, %s)
-                """,
-                (str(user["id"]), th, expires),
-            )
-            return token
+            return _insert_reset_token(cur, str(user["id"]))
     except Exception:
         log.exception("create_reset_token failed")
         return None
+
+
+def create_reset_token_for_user(user_id: str) -> tuple[str | None, str]:
+    """
+    Admin: create a password-reset token for a local account.
+    Returns (token, error_message).
+    """
+    if not user_id:
+        return None, "User required"
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, auth_source, password_hash, disabled_at
+                FROM private.users
+                WHERE id = %s::uuid
+                """,
+                (str(user_id),),
+            )
+            user = cur.fetchone()
+            if not user:
+                return None, "User not found"
+            if user.get("disabled_at"):
+                return None, "Account is disabled — enable it before resetting password"
+            if user.get("auth_source") != "local" or not user.get("password_hash"):
+                return None, "Password reset only applies to local password accounts"
+            token = _insert_reset_token(cur, str(user["id"]))
+            if not token:
+                return None, "Could not create reset token"
+            return token, ""
+    except Exception as e:
+        log.exception("create_reset_token_for_user failed")
+        return None, str(e)
+
+
+def _insert_reset_token(cur, user_id: str) -> str | None:
+    token = secrets.token_urlsafe(32)
+    th = hash_token(token)
+    expires = datetime.now(timezone.utc) + timedelta(hours=RESET_TOKEN_HOURS)
+    cur.execute(
+        """
+        UPDATE private.password_reset_tokens
+        SET used_at = now()
+        WHERE user_id = %s::uuid AND used_at IS NULL
+        """,
+        (user_id,),
+    )
+    cur.execute(
+        """
+        INSERT INTO private.password_reset_tokens
+          (user_id, token_hash, expires_at)
+        VALUES (%s::uuid, %s, %s)
+        """,
+        (user_id, th, expires),
+    )
+    return token
 
 
 def consume_reset_token(token: str, new_password: str) -> tuple[bool, str]:

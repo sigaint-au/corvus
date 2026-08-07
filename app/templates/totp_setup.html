@@ -34,6 +34,6 @@
 </section>
 
 {% if not required %}
-<p class="muted"><a href="{{ url_for('profile') }}">Cancel</a></p>
+<p class="muted"><a href="{{ url_for('profile', tab='security') }}">Cancel</a></p>
 {% endif %}
 {% endblock %}

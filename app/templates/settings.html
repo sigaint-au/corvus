@@ -17,6 +17,10 @@
      class="tab {% if active_tab == 'admins' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'admins' else 'false' }}">Admins</a>
+  <a href="{{ url_for('server_settings', tab='users') }}"
+     class="tab {% if active_tab == 'users' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'users' else 'false' }}">Users</a>
   <a href="{{ url_for('server_settings', tab='ldap') }}"
      class="tab {% if active_tab == 'ldap' %}active{% endif %}"
      role="tab"
@@ -171,6 +175,108 @@ function updatePreview() {
 }
 document.querySelector('[name=classification_text]').addEventListener('input', updatePreview);
 </script>
+
+{% elif active_tab == 'users' %}
+<section>
+  <h2>Platform users</h2>
+  <p class="muted">
+    All accounts on this server. Disable blocks sign-in and revokes sessions.
+    Password reset issues a one-time link (emailed when SMTP is configured).
+    Reset 2FA clears TOTP and recovery codes.
+  </p>
+  {% if all_users %}
+  <table>
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Source</th>
+        <th>Role</th>
+        <th>2FA</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for u in all_users %}
+      <tr>
+        <td>
+          {{ u.name or '—' }}
+          <span class="muted">{{ u.email }}</span>
+          {% if u.id|string == session.user_id %}
+          <span class="role-badge">you</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ u.auth_source or 'local' }}</td>
+        <td>
+          {% if u.is_global_admin %}
+          <span class="role-badge">Global admin</span>
+          {% else %}
+          <span class="muted">User</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.totp_enabled_at %}
+          <span class="role-badge">On</span>
+          {% else %}
+          <span class="muted">Off</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.disabled_at %}
+          <span class="role-badge" title="{{ u.disabled_at }}">Disabled</span>
+          {% else %}
+          <span class="muted">Active</span>
+          {% endif %}
+        </td>
+        <td class="acts">
+          {% if u.id|string != session.user_id %}
+            {% if u.disabled_at %}
+            <form method="post" class="inline"
+                  onsubmit="return confirm('Re-enable this account?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <input type="hidden" name="action" value="user_enable">
+              <input type="hidden" name="user_id" value="{{ u.id }}">
+              <button type="submit" class="link">Enable</button>
+            </form>
+            {% else %}
+            <form method="post" class="inline"
+                  onsubmit="return confirm('Disable this account? They will be signed out.')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <input type="hidden" name="action" value="user_disable">
+              <input type="hidden" name="user_id" value="{{ u.id }}">
+              <button type="submit" class="link danger">Disable</button>
+            </form>
+            {% endif %}
+            {% if u.auth_source == 'local' and not u.disabled_at %}
+            <form method="post" class="inline"
+                  onsubmit="return confirm('Issue a password reset for this user? All sessions will be signed out.')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <input type="hidden" name="action" value="user_reset_password">
+              <input type="hidden" name="user_id" value="{{ u.id }}">
+              <button type="submit" class="link">Reset password</button>
+            </form>
+            {% endif %}
+            {% if u.totp_enabled_at %}
+            <form method="post" class="inline"
+                  onsubmit="return confirm('Clear 2FA for this user? Sessions will be signed out.')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <input type="hidden" name="action" value="user_reset_2fa">
+              <input type="hidden" name="user_id" value="{{ u.id }}">
+              <button type="submit" class="link danger">Reset 2FA</button>
+            </form>
+            {% endif %}
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No users found.</p>
+  {% endif %}
+</section>
 
 {% elif active_tab == 'admins' %}
 <section>

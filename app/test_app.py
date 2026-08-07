@@ -716,6 +716,7 @@ class TestAuth(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 302)
         self.assertIn("/profile", r.location)
+        self.assertIn("tab=security", r.location)
 
     def test_change_password_mismatch(self):
         uid = str(uuid4())
@@ -850,14 +851,42 @@ class TestAuth(unittest.TestCase):
             r = self.client.get("/profile")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"My profile", r.data)
+        # Tab nav
+        self.assertIn(b"?tab=account", r.data)
+        self.assertIn(b"?tab=security", r.data)
+        self.assertIn(b"?tab=teams", r.data)
+        self.assertIn(b"?tab=projects", r.data)
+        self.assertIn(b"?tab=activity", r.data)
+        # Default tab is Account
         self.assertIn(b"Ada Lovelace", r.data)
         self.assertIn(b"a@b.c", r.data)
         self.assertIn(b"Local password", r.data)
-        self.assertIn(b"Change password", r.data)
-        self.assertIn(b"Active sessions", r.data)
-        self.assertIn(b"Platform", r.data)
-        self.assertIn(b"API", r.data)
         self.assertIn(b"At a glance", r.data)
+        self.assertNotIn(b"Change password", r.data)
+        self.assertNotIn(b"Active sessions", r.data)
+
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ), patch("user_sessions.list_sessions", return_value=[]):
+            r_sec = self.client.get("/profile?tab=security")
+        self.assertEqual(r_sec.status_code, 200)
+        self.assertIn(b"Change password", r_sec.data)
+        self.assertIn(b"Active sessions", r_sec.data)
+        self.assertIn(b"Two-factor authentication", r_sec.data)
+
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ):
+            r_teams = self.client.get("/profile?tab=teams")
+        self.assertEqual(r_teams.status_code, 200)
+        self.assertIn(b"Platform", r_teams.data)
+
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ):
+            r_proj = self.client.get("/profile?tab=projects")
+        self.assertEqual(r_proj.status_code, 200)
+        self.assertIn(b"API", r_proj.data)
 
     def test_profile_shows_ldap_and_admin(self):
         uid = uuid4()
@@ -879,12 +908,14 @@ class TestAuth(unittest.TestCase):
         with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
             db, "as_user", return_value=user_conn
         ), patch("user_sessions.list_sessions", return_value=[]):
-            r = self.client.get("/profile")
+            r = self.client.get("/profile?tab=account")
+            r_sec = self.client.get("/profile?tab=security")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"LDAP directory", r.data)
         self.assertIn(b"Global admin", r.data)
-        self.assertIn(b"LDAP", r.data)
-        self.assertNotIn(b"name=\"current_password\"", r.data)
+        self.assertEqual(r_sec.status_code, 200)
+        self.assertIn(b"LDAP", r_sec.data)
+        self.assertNotIn(b"name=\"current_password\"", r_sec.data)
 
 
 # ── Teams ──────────────────────────────────────────────────────────
@@ -2494,6 +2525,7 @@ class TestSettings(unittest.TestCase):
         self.assertIn(b"?tab=general", r.data)
         self.assertIn(b"?tab=banner", r.data)
         self.assertIn(b"?tab=admins", r.data)
+        self.assertIn(b"?tab=users", r.data)
         self.assertIn(b"?tab=ldap", r.data)
         self.assertIn(b"?tab=email", r.data)
         # Default tab is general
@@ -2687,6 +2719,143 @@ class TestSettings(unittest.TestCase):
         self.assertEqual(r.status_code, 302)
         self.assertIn("tab=email", r.location)
         send.assert_called_once_with("admin@ex.com")
+
+    def test_users_tab_lists_accounts(self):
+        other = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        users = [
+            {
+                "id": self.uid,
+                "email": "admin@ex.com",
+                "name": "Admin",
+                "is_global_admin": True,
+                "auth_source": "local",
+                "totp_enabled_at": None,
+                "disabled_at": None,
+                "created_at": "now",
+            },
+            {
+                "id": other,
+                "email": "user@ex.com",
+                "name": "User",
+                "is_global_admin": False,
+                "auth_source": "local",
+                "totp_enabled_at": "2026-01-01",
+                "disabled_at": None,
+                "created_at": "now",
+            },
+        ]
+        conn, _ = _conn(fetchall=users)
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            db, "connect_admin", return_value=conn
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "get_settings", return_value={}
+        ), patch.object(
+            settings_svc,
+            "classification",
+            return_value={"enabled": False, "text": "", "color": "#000", "fg": "#fff"},
+        ):
+            r = self.client.get("/settings?tab=users")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Platform users", r.data)
+        self.assertIn(b"user@ex.com", r.data)
+        self.assertIn(b"Disable", r.data)
+        self.assertIn(b"Reset password", r.data)
+        self.assertIn(b"Reset 2FA", r.data)
+
+    def test_user_disable_action(self):
+        other = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, cur = _conn(fetchone={"email": "user@ex.com"})
+        cur.rowcount = 1
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=conn
+        ), patch.object(db, "connect_admin", return_value=conn), patch(
+            "user_sessions.revoke_all_sessions", return_value=2
+        ) as rev:
+            r = self.client.post(
+                "/settings",
+                data={"action": "user_disable", "user_id": other},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=users", r.location)
+        rev.assert_called_once_with(other)
+
+    def test_user_cannot_disable_self(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=_conn()[0]
+        ):
+            r = self.client.post(
+                "/settings",
+                data={"action": "user_disable", "user_id": self.uid},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(any("own" in msg.lower() for _c, msg in flashes))
+
+    def test_user_reset_password_action(self):
+        other = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, _ = _conn(fetchone={"email": "user@ex.com"})
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=conn
+        ), patch.object(db, "connect_admin", return_value=conn), patch(
+            "passwords.create_reset_token_for_user", return_value=("tok123", "")
+        ), patch("mailer.smtp_configured", return_value=False), patch(
+            "user_sessions.revoke_all_sessions", return_value=0
+        ):
+            r = self.client.post(
+                "/settings",
+                data={"action": "user_reset_password", "user_id": other},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=users", r.location)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(
+            any("reset" in msg.lower() and "tok123" in msg for _c, msg in flashes),
+            flashes,
+        )
+
+    def test_user_reset_2fa_action(self):
+        other = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, _ = _conn(fetchone={"email": "user@ex.com"})
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=conn
+        ), patch.object(db, "connect_admin", return_value=conn), patch(
+            "totp_svc.is_enabled", return_value=True
+        ), patch("totp_svc.disable") as dis, patch(
+            "user_sessions.revoke_all_sessions", return_value=1
+        ):
+            r = self.client.post(
+                "/settings",
+                data={"action": "user_reset_2fa", "user_id": other},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=users", r.location)
+        dis.assert_called_once_with(other)
 
 
 class TestTotp(unittest.TestCase):

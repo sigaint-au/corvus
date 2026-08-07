@@ -26,6 +26,10 @@ def ensure_schema():
           ADD COLUMN IF NOT EXISTS is_global_admin boolean NOT NULL DEFAULT false
         """,
         """
+        ALTER TABLE private.users
+          ADD COLUMN IF NOT EXISTS disabled_at timestamptz
+        """,
+        """
         CREATE TABLE IF NOT EXISTS private.server_settings (
           key text PRIMARY KEY,
           value text NOT NULL DEFAULT ''
@@ -268,6 +272,7 @@ def ensure_schema():
           SELECT u.id, u.email, u.name, u.is_global_admin FROM private.users u
           WHERE u.email = lower(p_email)
             AND u.password_hash IS NOT NULL
+            AND u.disabled_at IS NULL
             AND u.password_hash = crypt(p_password, u.password_hash);
         END;
         $$
@@ -1158,6 +1163,10 @@ def ensure_schema():
         """
         ALTER TABLE private.users
           ADD COLUMN IF NOT EXISTS totp_enabled_at timestamptz
+        """,
+        """
+        ALTER TABLE private.users
+          ADD COLUMN IF NOT EXISTS disabled_at timestamptz
         """,
         """
         CREATE TABLE IF NOT EXISTS private.totp_recovery_codes (

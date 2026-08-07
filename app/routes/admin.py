@@ -8,7 +8,10 @@ import crypto
 import db
 import ldap_auth
 import mailer
+import passwords
 import settings_svc
+import totp_svc
+import user_sessions
 
 
 log = __import__("logging").getLogger(__name__)
@@ -219,6 +222,106 @@ def register(app):
                             (uid,),
                         )
                     flash("Global admin removed", "ok")
+            elif action == "user_disable":
+                uid = (request.form.get("user_id") or "").strip()
+                if not uid:
+                    flash("User required", "error")
+                elif uid == session.get("user_id"):
+                    flash("You cannot disable your own account", "error")
+                else:
+                    with db.connect_admin() as conn, conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE private.users
+                            SET disabled_at = now()
+                            WHERE id = %s::uuid AND disabled_at IS NULL
+                            RETURNING email
+                            """,
+                            (uid,),
+                        )
+                        row = cur.fetchone()
+                    if row:
+                        n = user_sessions.revoke_all_sessions(uid)
+                        flash(
+                            f"Disabled {row['email']}"
+                            + (f" and signed out {n} session(s)" if n else ""),
+                            "ok",
+                        )
+                    else:
+                        flash("User not found or already disabled", "error")
+            elif action == "user_enable":
+                uid = (request.form.get("user_id") or "").strip()
+                if not uid:
+                    flash("User required", "error")
+                else:
+                    with db.connect_admin() as conn, conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE private.users
+                            SET disabled_at = NULL
+                            WHERE id = %s::uuid AND disabled_at IS NOT NULL
+                            RETURNING email
+                            """,
+                            (uid,),
+                        )
+                        row = cur.fetchone()
+                    if row:
+                        flash(f"Re-enabled {row['email']}", "ok")
+                    else:
+                        flash("User not found or already active", "error")
+            elif action == "user_reset_password":
+                uid = (request.form.get("user_id") or "").strip()
+                token, err = passwords.create_reset_token_for_user(uid)
+                if not token:
+                    flash(err or "Could not create password reset", "error")
+                else:
+                    link = url_for("reset_password", token=token, _external=True)
+                    email = ""
+                    with db.connect_admin() as conn, conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT email FROM private.users WHERE id = %s::uuid",
+                            (uid,),
+                        )
+                        row = cur.fetchone()
+                        email = (row or {}).get("email") or ""
+                    mailed = False
+                    if email and mailer.smtp_configured():
+                        ok, merr = mailer.send_password_reset(email, link)
+                        mailed = ok
+                        if not ok:
+                            log.warning("admin password reset email failed: %s", merr)
+                    user_sessions.revoke_all_sessions(uid)
+                    if mailed:
+                        flash(f"Password reset email sent to {email}", "ok")
+                    else:
+                        # Surface link once for admin to share (SMTP optional)
+                        flash(
+                            f"Password reset link for {email or 'user'} (share securely; "
+                            f"expires in 1 hour): {link}",
+                            "ok",
+                        )
+            elif action == "user_reset_2fa":
+                uid = (request.form.get("user_id") or "").strip()
+                if not uid:
+                    flash("User required", "error")
+                elif not totp_svc.is_enabled(uid):
+                    flash("User does not have two-factor authentication enabled", "error")
+                else:
+                    email = ""
+                    with db.connect_admin() as conn, conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT email FROM private.users WHERE id = %s::uuid",
+                            (uid,),
+                        )
+                        row = cur.fetchone()
+                        email = (row or {}).get("email") or uid
+                    totp_svc.disable(uid)
+                    user_sessions.revoke_all_sessions(uid)
+                    flash(
+                        f"Two-factor authentication reset for {email}. "
+                        "They must set up 2FA again at next sign-in if required.",
+                        "ok",
+                    )
             # Stay on the relevant tab after save
             tab_for = {
                 "registration": "general",
@@ -232,12 +335,16 @@ def register(app):
                 "ldap_role_map_delete": "ldap",
                 "smtp": "email",
                 "smtp_test": "email",
+                "user_disable": "users",
+                "user_enable": "users",
+                "user_reset_password": "users",
+                "user_reset_2fa": "users",
             }
             tab = tab_for.get(action, "general")
             return redirect(url_for("server_settings", tab=tab))
 
         tab = (request.args.get("tab") or "general").strip().lower()
-        if tab not in ("general", "banner", "admins", "ldap", "email"):
+        if tab not in ("general", "banner", "admins", "users", "ldap", "email"):
             tab = "general"
         settings = settings_svc.get_settings()
         # never show raw passwords in the form
@@ -246,7 +353,7 @@ def register(app):
         settings["ldap_bind_password"] = ""
         settings["smtp_password_set"] = bool((settings.get("smtp_password") or "").strip())
         settings["smtp_password"] = ""
-        users, ldap_role_maps = [], []
+        users, all_users, ldap_role_maps = [], [], []
         with db.connect_admin() as conn, conn.cursor() as cur:
             if tab == "admins":
                 cur.execute(
@@ -257,6 +364,19 @@ def register(app):
                     """
                 )
                 users = cur.fetchall()
+            if tab == "users":
+                cur.execute(
+                    """
+                    SELECT id, email, name, is_global_admin, auth_source,
+                           totp_enabled_at, disabled_at, created_at
+                    FROM private.users
+                    ORDER BY
+                      CASE WHEN disabled_at IS NOT NULL THEN 1 ELSE 0 END,
+                      is_global_admin DESC,
+                      email
+                    """
+                )
+                all_users = cur.fetchall() or []
             if tab == "ldap":
                 cur.execute(
                     "SELECT id, ldap_group, role, created_at FROM private.ldap_role_maps ORDER BY ldap_group"
@@ -266,6 +386,7 @@ def register(app):
             "settings.html",
             settings=settings,
             users=users,
+            all_users=all_users,
             ldap_role_maps=ldap_role_maps,
             classification=settings_svc.classification(),
             active_tab=tab,
