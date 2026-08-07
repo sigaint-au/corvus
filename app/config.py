@@ -93,6 +93,8 @@ DEFAULT_SETTINGS = {
     "oidc_username_claim": "preferred_username",
     # Claim name for group list (Keycloak: "groups" with Group Membership mapper)
     "oidc_groups_claim": "groups",
+    # Require email_verified claim before linking/creating accounts (recommended)
+    "oidc_require_email_verified": "true",
 }
 TEAM_ROLES = ("owner", "admin", "member", "viewer")
 ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}

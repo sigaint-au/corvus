@@ -444,6 +444,12 @@ def register(app):
                     settings_svc.set_setting(
                         "oidc_groups_claim", gclaim or "groups"
                     )
+                    require_ev = (
+                        "true"
+                        if request.form.get("oidc_require_email_verified")
+                        else "false"
+                    )
+                    settings_svc.set_setting("oidc_require_email_verified", require_ev)
                     new_secret = request.form.get("oidc_client_secret") or ""
                     if new_secret.strip():
                         settings_svc.set_setting(

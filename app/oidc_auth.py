@@ -59,6 +59,7 @@ def oidc_cfg() -> dict:
         "oidc_username_claim": (s.get("oidc_username_claim") or "preferred_username").strip()
         or "preferred_username",
         "oidc_groups_claim": (s.get("oidc_groups_claim") or "groups").strip() or "groups",
+        "oidc_require_email_verified": s.get("oidc_require_email_verified", "true"),
     }
 
 
@@ -234,10 +235,13 @@ def claims_to_identity(claims: dict) -> dict:
     if not email or "@" not in email:
         # Do not treat preferred_username as email — that claim is for username.
         raise RuntimeError("OIDC token has no usable email claim (need email scope)")
-    if not _email_verified(claims):
+    if settings_svc.truthy(cfg.get("oidc_require_email_verified", "true")) and not _email_verified(
+        claims
+    ):
         raise RuntimeError(
             "OIDC email is not verified (email_verified claim required); "
-            "fix identity provider email verification"
+            "fix identity provider email verification, or disable "
+            "“Require verified email” in OIDC settings"
         )
     # Username → display name: configured claim (default preferred_username), then name, then email local-part
     username_claim = cfg.get("oidc_username_claim") or "preferred_username"
@@ -413,4 +417,19 @@ if __name__ == "__main__":
         raise SystemExit("expected unverified email to fail")
     except RuntimeError:
         pass
+    # Optional path when setting is off
+    import unittest.mock as mock
+
+    with mock.patch(
+        "settings_svc.get_settings",
+        return_value={
+            "oidc_require_email_verified": "false",
+            "oidc_username_claim": "preferred_username",
+            "oidc_groups_claim": "groups",
+        },
+    ):
+        loose = claims_to_identity(
+            {"email": "x@y.com", "email_verified": False, "sub": "1"}
+        )
+        assert loose["email"] == "x@y.com"
     print("ok")
