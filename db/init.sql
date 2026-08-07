@@ -397,13 +397,17 @@ SET row_security = off AS $$
     );
 $$;
 
--- Prevent removing the last team owner
+-- Prevent removing the last team owner (except when the team itself is deleted)
 CREATE OR REPLACE FUNCTION api.guard_last_team_owner()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE remaining int;
 BEGIN
   IF TG_OP = 'DELETE' THEN
     IF OLD.role = 'owner' THEN
+      -- ON DELETE CASCADE from api.teams runs after the team row is gone; allow that.
+      IF NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id) THEN
+        RETURN OLD;
+      END IF;
       SELECT count(*) INTO remaining FROM api.team_members
       WHERE team_id = OLD.team_id AND role = 'owner' AND user_id <> OLD.user_id;
       IF remaining = 0 THEN

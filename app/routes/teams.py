@@ -731,12 +731,18 @@ def register(app):
             if not row or row["r"] != "owner":
                 flash("Only team owners can delete a team", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
-            cur.execute("DELETE FROM api.teams WHERE id = %s", (str(team_id),))
-            if cur.rowcount == 0:
-                flash("You don't have permission to do that", "error")
+            try:
+                cur.execute("DELETE FROM api.teams WHERE id = %s", (str(team_id),))
+                if cur.rowcount == 0:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                    return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+                conn.commit()
+            except Exception as e:
                 conn.rollback()
+                log.exception("delete_team failed")
+                flash(str(e), "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
-            conn.commit()
         if session.get("team_id") == str(team_id):
             session.pop("team_id", None)
         flash("Team deleted", "ok")

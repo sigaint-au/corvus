@@ -1722,6 +1722,12 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("CREATE TABLE api.team_join_requests", init)
         self.assertIn("CREATE TABLE api.org_audit", init)
         self.assertIn("guard_last_team_owner", init)
+        # Cascade team delete must not be blocked by last-owner guard
+        self.assertIn("NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id)", init)
+        self.assertIn(
+            "NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id)",
+            Path(schema_mod.__file__).read_text(),
+        )
         self.assertIn("private.project_member_rows", init)
         self.assertIn("private.audit_org", init)
         self.assertIn("default_token_days", init)

@@ -808,6 +808,10 @@ def ensure_schema():
         BEGIN
           IF TG_OP = 'DELETE' THEN
             IF OLD.role = 'owner' THEN
+              -- ON DELETE CASCADE from api.teams runs after the team row is gone; allow that.
+              IF NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id) THEN
+                RETURN OLD;
+              END IF;
               SELECT count(*) INTO remaining FROM api.team_members
               WHERE team_id = OLD.team_id AND role = 'owner' AND user_id <> OLD.user_id;
               IF remaining = 0 THEN
