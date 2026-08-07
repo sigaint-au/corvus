@@ -244,6 +244,34 @@ def ensure_schema():
         ALTER TABLE private.users
           ADD COLUMN IF NOT EXISTS auth_source text NOT NULL DEFAULT 'local'
         """,
+        # Fresh installs may already have a CHECK without 'oidc'; always re-bind.
+        """
+        DO $$ BEGIN
+          ALTER TABLE private.users DROP CONSTRAINT IF EXISTS users_auth_source_check;
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
+        DO $$
+        DECLARE r record;
+        BEGIN
+          FOR r IN
+            SELECT c.conname
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = 'private' AND t.relname = 'users'
+              AND c.contype = 'c'
+              AND pg_get_constraintdef(c.oid) ILIKE '%auth_source%'
+          LOOP
+            EXECUTE format('ALTER TABLE private.users DROP CONSTRAINT %I', r.conname);
+          END LOOP;
+          ALTER TABLE private.users
+            ADD CONSTRAINT users_auth_source_check
+            CHECK (auth_source IN ('local', 'ldap', 'oidc'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
         """
         DO $$ BEGIN
           ALTER TABLE private.users ALTER COLUMN password_hash DROP NOT NULL;
@@ -324,6 +352,23 @@ def ensure_schema():
         """,
         "GRANT EXECUTE ON FUNCTION private.upsert_oidc_user TO authenticator",
         """
+        CREATE TABLE IF NOT EXISTS private.personal_access_tokens (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+          name text NOT NULL,
+          token_hash text NOT NULL,
+          token_prefix text NOT NULL,
+          expires_at timestamptz,
+          last_used_at timestamptz,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          UNIQUE (token_hash)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS personal_access_tokens_user_idx
+          ON private.personal_access_tokens (user_id, created_at DESC)
+        """,
+        """
         CREATE TABLE IF NOT EXISTS private.ldap_role_maps (
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           ldap_group text NOT NULL,
@@ -335,6 +380,28 @@ def ensure_schema():
         """
         ALTER TABLE api.team_members
           ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'manual'
+        """,
+        """
+        DO $$
+        DECLARE r record;
+        BEGIN
+          FOR r IN
+            SELECT c.conname
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = 'api' AND t.relname = 'team_members'
+              AND c.contype = 'c'
+              AND pg_get_constraintdef(c.oid) ILIKE '%source%'
+              AND pg_get_constraintdef(c.oid) NOT ILIKE '%role%'
+          LOOP
+            EXECUTE format('ALTER TABLE api.team_members DROP CONSTRAINT %I', r.conname);
+          END LOOP;
+          ALTER TABLE api.team_members
+            ADD CONSTRAINT team_members_source_check
+            CHECK (source IN ('manual', 'ldap', 'oidc'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
         """,
         """
         CREATE TABLE IF NOT EXISTS api.team_ldap_maps (

@@ -7,6 +7,7 @@ from flask import flash, redirect, render_template, request, session, url_for
 import psycopg
 
 import authz
+import config
 from config import bootstrap_admin_email
 import db
 import ldap_auth
@@ -14,6 +15,7 @@ import lockout
 import mailer
 import oidc_auth
 import passwords
+import pats
 import pins
 import settings_svc
 import totp_svc
@@ -103,7 +105,12 @@ def _post_password_login(user):
     """
     _maybe_promote_bootstrap_admin(user["email"], user["id"])
     is_admin = authz.is_global_admin(str(user["id"]))
-    step = totp_svc.needs_challenge(str(user["id"]), is_admin)
+    try:
+        step = totp_svc.needs_challenge(str(user["id"]), is_admin)
+    except totp_svc.TotpStoreError:
+        log.exception("TOTP check failed during login")
+        flash("Sign-in temporarily unavailable. Try again shortly.", "error")
+        return redirect(url_for("login"))
     if step == "verify":
         _begin_2fa_challenge(user["id"], user["email"], user.get("name") or "", is_admin)
         return redirect(url_for("login_2fa"))
@@ -432,6 +439,38 @@ def register(app):
         return render_template("reset_password.html", token=token)
 
 
+    @app.post("/profile/tokens")
+    @authz.login_required
+    def create_personal_token():
+        name = (request.form.get("name") or "").strip()
+        days_raw = (request.form.get("expires_days") or "").strip()
+        expires_days = None
+        if days_raw:
+            try:
+                expires_days = int(days_raw)
+            except ValueError:
+                flash("Expires days must be a positive integer", "error")
+                return redirect(_profile_url("security"))
+        try:
+            raw = pats.create(session["user_id"], name, expires_days=expires_days)
+            session["new_pat"] = raw
+            flash("Personal access token created — copy it now; it is shown once", "ok")
+        except ValueError as e:
+            flash(str(e), "error")
+        except Exception as e:
+            log.exception("create PAT failed")
+            flash(str(e), "error")
+        return redirect(_profile_url("security"))
+
+    @app.post("/profile/tokens/<uuid:token_id>/delete")
+    @authz.login_required
+    def delete_personal_token(token_id):
+        if pats.revoke(session["user_id"], str(token_id)):
+            flash("Token revoked", "ok")
+        else:
+            flash("Token not found", "error")
+        return redirect(_profile_url("security"))
+
     @app.post("/profile/password")
     @authz.login_required
     def change_password():
@@ -633,6 +672,13 @@ def register(app):
 
         active_sessions = user_sessions.list_sessions(uid) if tab == "security" else []
         current_sid = session.get("sid")
+        personal_tokens = []
+        if tab == "security":
+            try:
+                personal_tokens = pats.list_for_user(uid)
+            except Exception:
+                log.exception("profile: list PATs failed")
+                personal_tokens = []
         teams, projects, pending, pins_list, recent = [], [], [], [], []
         secret_count = pin_count = 0
         try:
@@ -725,10 +771,13 @@ def register(app):
             recent=recent,
             active_sessions=active_sessions,
             current_sid=current_sid,
+            personal_tokens=personal_tokens,
+            new_pat=session.pop("new_pat", None),
             totp_enabled=totp_on,
             totp_recovery_remaining=recovery_left,
             totp_enforced_for_user=totp_enforced,
             active_tab=tab,
+            postgrest_url=config.POSTGREST_URL,
             stats={
                 "teams": len(teams),
                 "projects": len(projects),

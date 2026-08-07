@@ -420,9 +420,15 @@ def export_org_audit(
 
 
 def purge_old_audit(cur, retention_days: int) -> dict:
-    """Delete secret + org audit rows older than retention_days. Returns counts."""
+    """Delete audit/login-failure rows older than retention_days. Returns counts."""
     if retention_days <= 0:
-        return {"secret_audit": 0, "org_audit": 0, "skipped": True}
+        return {
+            "secret_audit": 0,
+            "org_audit": 0,
+            "login_failures": 0,
+            "skipped": True,
+        }
+    days = str(int(retention_days))
     cur.execute(
         """
         WITH d AS (
@@ -432,7 +438,7 @@ def purge_old_audit(cur, retention_days: int) -> dict:
         )
         SELECT count(*)::int AS n FROM d
         """,
-        (str(int(retention_days)),),
+        (days,),
     )
     n_secret = int((cur.fetchone() or {}).get("n") or 0)
     cur.execute(
@@ -444,10 +450,32 @@ def purge_old_audit(cur, retention_days: int) -> dict:
         )
         SELECT count(*)::int AS n FROM d
         """,
-        (str(int(retention_days)),),
+        (days,),
     )
     n_org = int((cur.fetchone() or {}).get("n") or 0)
-    return {"secret_audit": n_secret, "org_audit": n_org, "skipped": False}
+    n_login = 0
+    try:
+        cur.execute(
+            """
+            WITH d AS (
+              DELETE FROM private.login_failures
+              WHERE created_at < now() - (%s || ' days')::interval
+              RETURNING 1
+            )
+            SELECT count(*)::int AS n FROM d
+            """,
+            (days,),
+        )
+        n_login = int((cur.fetchone() or {}).get("n") or 0)
+    except Exception:
+        # Table may be missing on very old DBs; audit purge still succeeds
+        pass
+    return {
+        "secret_audit": n_secret,
+        "org_audit": n_org,
+        "login_failures": n_login,
+        "skipped": False,
+    }
 
 
 def audit_counts(cur) -> dict:

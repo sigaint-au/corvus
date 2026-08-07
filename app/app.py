@@ -110,22 +110,26 @@ def purge_audit_command(days, dry_run):
                   (SELECT count(*)::int FROM api.secret_audit
                    WHERE created_at < now() - (%s || ' days')::interval) AS secret_audit,
                   (SELECT count(*)::int FROM api.org_audit
-                   WHERE created_at < now() - (%s || ' days')::interval) AS org_audit
+                   WHERE created_at < now() - (%s || ' days')::interval) AS org_audit,
+                  (SELECT count(*)::int FROM private.login_failures
+                   WHERE created_at < now() - (%s || ' days')::interval) AS login_failures
                 """,
-                (str(days), str(days)),
+                (str(days), str(days), str(days)),
             )
             row = cur.fetchone() or {}
             click.echo(
                 f"dry-run retention={days}d would purge "
                 f"secret_audit={row.get('secret_audit', 0)} "
-                f"org_audit={row.get('org_audit', 0)}"
+                f"org_audit={row.get('org_audit', 0)} "
+                f"login_failures={row.get('login_failures', 0)}"
             )
             return
         result = _audit.purge_old_audit(cur, days)
     click.echo(
         f"purged retention={days}d "
         f"secret_audit={result.get('secret_audit', 0)} "
-        f"org_audit={result.get('org_audit', 0)}"
+        f"org_audit={result.get('org_audit', 0)} "
+        f"login_failures={result.get('login_failures', 0)}"
     )
 
 

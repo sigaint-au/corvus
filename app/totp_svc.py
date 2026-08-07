@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import io
 import logging
 import re
@@ -14,7 +15,7 @@ import pyotp
 import qrcode
 import qrcode.image.svg
 
-from config import APP_NAME
+from config import APP_NAME, SECRET_KEY
 from settings_svc import branding
 from crypto import decrypt, encrypt
 import db
@@ -23,8 +24,12 @@ from settings_svc import get_settings, truthy
 log = logging.getLogger(__name__)
 
 RECOVERY_CODE_COUNT = 10
-# Display as xxxx-xxxx (8 hex chars)
-RECOVERY_CODE_BYTES = 4
+# 16 random bytes → 32 hex chars (128-bit); displayed as 8×4 groups
+RECOVERY_CODE_BYTES = 16
+
+
+class TotpStoreError(Exception):
+    """TOTP state could not be read (fail closed — do not skip 2FA)."""
 
 
 def enforce_global_admins() -> bool:
@@ -32,6 +37,7 @@ def enforce_global_admins() -> bool:
 
 
 def user_totp_row(user_id: str) -> dict | None:
+    """Load user TOTP fields. Raises TotpStoreError on DB failure (never fail open)."""
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
@@ -44,9 +50,9 @@ def user_totp_row(user_id: str) -> dict | None:
                 (str(user_id),),
             )
             return cur.fetchone()
-    except Exception:
-        log.debug("user_totp_row failed", exc_info=True)
-        return None
+    except Exception as e:
+        log.exception("user_totp_row failed for %s", user_id)
+        raise TotpStoreError("totp store unavailable") from e
 
 
 def is_enabled(user_id: str) -> bool:
@@ -58,6 +64,7 @@ def needs_challenge(user_id: str, is_global_admin: bool) -> str | None:
     """
     After password auth: return 'verify', 'enroll', or None.
     enroll = global admin must set up TOTP before using the app.
+    Raises TotpStoreError if 2FA state cannot be determined (caller must block login).
     """
     enabled = is_enabled(user_id)
     if enabled:
@@ -110,15 +117,34 @@ def _normalize_recovery(code: str) -> str:
 
 
 def hash_recovery_code(code: str) -> str:
+    """HMAC-SHA256 with SECRET_KEY so DB leaks alone are not offline-bruteforceable."""
+    raw = _normalize_recovery(code)
+    key = (SECRET_KEY or "secretstore").encode("utf-8")
+    return hmac.new(key, raw.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _legacy_hash_recovery_code(code: str) -> str:
+    """Unsalted SHA-256 used before SECRET_KEY HMAC (accept until codes regenerated)."""
     raw = _normalize_recovery(code)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def recovery_hash_matches(code: str, stored: str) -> bool:
+    if not stored:
+        return False
+    if hmac.compare_digest(hash_recovery_code(code), stored):
+        return True
+    # Temporary dual-verify for pre-migration codes
+    return hmac.compare_digest(_legacy_hash_recovery_code(code), stored)
 
 
 def generate_recovery_codes(n: int = RECOVERY_CODE_COUNT) -> list[str]:
     codes = []
     for _ in range(n):
         h = secrets.token_hex(RECOVERY_CODE_BYTES)
-        codes.append(f"{h[:4]}-{h[4:]}")
+        # Group as xxxx-xxxx-... for readability
+        parts = [h[i : i + 4] for i in range(0, len(h), 4)]
+        codes.append("-".join(parts))
     return codes
 
 
@@ -233,22 +259,25 @@ def verify_user_code(user_id: str, code: str) -> tuple[bool, str]:
             return True, "totp"
         return False, ""
 
-    # Recovery code path
+    # Recovery code path (new: 32 hex / 16 bytes; legacy: 8 hex / 4 bytes)
     raw = _normalize_recovery(code)
-    if len(raw) != RECOVERY_CODE_BYTES * 2:
+    if len(raw) not in (8, RECOVERY_CODE_BYTES * 2):
         return False, ""
-    ch = hash_recovery_code(raw)
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id FROM private.totp_recovery_codes
-                WHERE user_id = %s::uuid AND code_hash = %s AND used_at IS NULL
-                LIMIT 1
+                SELECT id, code_hash FROM private.totp_recovery_codes
+                WHERE user_id = %s::uuid AND used_at IS NULL
                 """,
-                (str(user_id), ch),
+                (str(user_id),),
             )
-            hit = cur.fetchone()
+            rows = cur.fetchall() or []
+            hit = None
+            for r in rows:
+                if recovery_hash_matches(raw, r.get("code_hash") or ""):
+                    hit = r
+                    break
             if not hit:
                 return False, ""
             cur.execute(

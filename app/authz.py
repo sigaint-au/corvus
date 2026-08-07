@@ -53,6 +53,14 @@ def validate_registered_session():
     if current_app.config.get("TESTING"):
         return None
 
+    # Personal access token exchange does not need a browser session
+    if request.endpoint == "api_token":
+        auth = request.headers.get("Authorization") or ""
+        if auth.lower().startswith("bearer "):
+            raw = auth.split(None, 1)[-1].strip()
+            if raw.startswith("pat_"):
+                return None
+
     # Mid-login 2FA: no full session yet
     if session.get("pending_2fa_uid"):
         if request.endpoint in _PENDING_2FA_OK or request.endpoint is None:
@@ -166,6 +174,9 @@ def csrf_protect():
         return
     # Bearer-token ESO/machine API — not session-cookie CSRF surface
     if request.path.startswith("/eso/"):
+        return
+    # PAT exchange / JSON API token minting is GET-only; keep path free for future POSTs
+    if request.path.startswith("/api/token"):
         return
     # Unit tests skip unless CSRF_TESTING is set
     if current_app.config.get("TESTING") and not current_app.config.get("CSRF_TESTING"):

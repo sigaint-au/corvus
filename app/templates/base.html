@@ -938,6 +938,23 @@
     .secret-view-form .secret-meta-section .row {
       margin: 0;
     }
+    input.session-jwt-field {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .85rem;
+      padding: .3rem .45rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--foreground);
+    }
+    input.session-jwt-field:focus {
+      outline: 2px solid var(--ring);
+      outline-offset: 1px;
+    }
     .eso-integration > section {
       margin-top: 1rem;
     }

@@ -31,7 +31,7 @@ CREATE TABLE private.users (
   name text NOT NULL DEFAULT '',
   is_global_admin boolean NOT NULL DEFAULT false,
   auth_source text NOT NULL DEFAULT 'local'
-    CHECK (auth_source IN ('local', 'ldap')),
+    CHECK (auth_source IN ('local', 'ldap', 'oidc')),
   totp_secret_enc text,          -- Fernet-encrypted TOTP secret when 2FA enabled
   totp_enabled_at timestamptz,   -- null = 2FA off
   disabled_at timestamptz,       -- null = active; set by global admin
@@ -117,7 +117,7 @@ CREATE TABLE api.team_members (
   user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
   role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
   source text NOT NULL DEFAULT 'manual'
-    CHECK (source IN ('manual', 'ldap')),
+    CHECK (source IN ('manual', 'ldap', 'oidc')),
   PRIMARY KEY (team_id, user_id)
 );
 
@@ -748,6 +748,73 @@ BEGIN
 END;
 $$;
 
+-- Provision / refresh OIDC SSO user (no password stored)
+CREATE OR REPLACE FUNCTION private.upsert_oidc_user(p_email text, p_name text)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
+DECLARE uid uuid;
+BEGIN
+  SELECT id INTO uid FROM private.users WHERE email = lower(p_email);
+  IF uid IS NULL THEN
+    INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
+    VALUES (lower(p_email), NULL, COALESCE(p_name, ''), false, 'oidc')
+    RETURNING id INTO uid;
+  ELSE
+    UPDATE private.users
+    SET name = CASE WHEN COALESCE(p_name, '') <> '' THEN p_name ELSE name END,
+        auth_source = CASE
+          WHEN auth_source = 'local' AND password_hash IS NOT NULL THEN auth_source
+          ELSE 'oidc'
+        END
+    WHERE id = uid;
+  END IF;
+  RETURN uid;
+END;
+$$;
+
+-- Global role maps from OIDC groups
+CREATE TABLE private.oidc_role_maps (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  oidc_group text NOT NULL,
+  role text NOT NULL CHECK (role IN ('global_admin')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (oidc_group)
+);
+
+-- Team membership maps from OIDC groups
+CREATE TABLE api.team_oidc_maps (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
+  oidc_group text NOT NULL,
+  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (team_id, oidc_group)
+);
+ALTER TABLE api.team_oidc_maps ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tom_select ON api.team_oidc_maps FOR SELECT TO authenticated
+  USING (api.is_team_member(team_id));
+CREATE POLICY tom_insert ON api.team_oidc_maps FOR INSERT TO authenticated
+  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
+CREATE POLICY tom_update ON api.team_oidc_maps FOR UPDATE TO authenticated
+  USING (api.team_role(team_id) IN ('owner', 'admin'));
+CREATE POLICY tom_delete ON api.team_oidc_maps FOR DELETE TO authenticated
+  USING (api.team_role(team_id) IN ('owner', 'admin'));
+GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_oidc_maps TO authenticated;
+GRANT ALL ON api.team_oidc_maps TO authenticator;
+
+-- Personal access tokens (user-scoped)
+CREATE TABLE private.personal_access_tokens (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  token_hash text NOT NULL UNIQUE,
+  token_prefix text NOT NULL,
+  expires_at timestamptz,
+  last_used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX personal_access_tokens_user_idx
+  ON private.personal_access_tokens (user_id, created_at DESC);
+
 CREATE OR REPLACE FUNCTION private.create_team(p_user uuid, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private AS $$
 DECLARE tid uuid;
@@ -958,6 +1025,7 @@ GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.change_password TO authenticator;
 GRANT EXECUTE ON FUNCTION private.set_local_password TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator;
+GRANT EXECUTE ON FUNCTION private.upsert_oidc_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
 GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated;

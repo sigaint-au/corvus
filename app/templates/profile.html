@@ -100,24 +100,122 @@
 
 {% elif active_tab == 'security' %}
 <section>
-  <h2>Two-factor authentication (TOTP)</h2>
+  <h2>API access</h2>
+  <p class="muted">Short-lived JWT for PostgREST (<code class="k">GET /api/token</code>).</p>
+  <label>Session JWT
+    <input type="text" id="session-jwt" class="session-jwt-field"
+           value="" readonly placeholder="Not loaded" autocomplete="off">
+  </label>
+  <p class="acts" style="margin:.35rem 0 0;">
+    <button type="button" class="link" id="show-session-jwt">Show</button>
+    <button type="button" class="link copy-btn" data-copy-target="session-jwt"
+            data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
+  </p>
+  <script>
+  (function () {
+    var btn = document.getElementById('show-session-jwt');
+    var inp = document.getElementById('session-jwt');
+    if (!btn || !inp) return;
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      fetch('{{ url_for("api_token") }}', {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function (data) {
+          inp.value = data.access_token || '';
+          if (window.ssToast) window.ssToast('JWT loaded');
+        })
+        .catch(function () {
+          if (window.ssToast) window.ssToast('Could not load JWT');
+        })
+        .finally(function () { btn.disabled = false; });
+    });
+  })();
+  </script>
+</section>
+
+{% if new_pat %}
+<div class="token-once">
+  <strong>New token (copy now)</strong>
+  <pre id="new-pat-value">{{ new_pat }}</pre>
+  <p style="margin:.5rem 0 0;">
+    <button type="button" class="link copy-btn" data-copy-target="new-pat-value"
+            data-clear-seconds="0">Copy</button>
+  </p>
+</div>
+{% endif %}
+
+<section>
+  <h2>Personal access tokens</h2>
+  <p class="muted">Long-lived <code class="k">pat_…</code> tokens for CLI. Exchange via <code class="k">/api/token</code>.</p>
+  <form method="post" action="{{ url_for('create_personal_token') }}" class="row" style="align-items:end;">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label style="flex:2;">Name
+      <input type="text" name="name" required maxlength="80" placeholder="laptop-cli" autocomplete="off">
+    </label>
+    <label>Expires (days)
+      <input type="number" name="expires_days" min="1" max="3650" placeholder="never">
+    </label>
+    <button type="submit">Create token</button>
+  </form>
+  {% if personal_tokens %}
+  <table style="margin-top:1rem;">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Prefix</th>
+        <th>Created</th>
+        <th>Expires</th>
+        <th>Last used</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in personal_tokens %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td><code class="k">{{ t.token_prefix }}…</code></td>
+        <td class="muted" title="{{ t.created_at }}">{{ t.created_at|time_ago if t.created_at else '—' }}</td>
+        <td class="muted">{{ t.expires_at or 'never' }}</td>
+        <td class="muted" title="{{ t.last_used_at }}">
+          {% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}—{% endif %}
+        </td>
+        <td class="acts">
+          <form method="post" action="{{ url_for('delete_personal_token', token_id=t.id) }}" class="inline"
+                onsubmit="return confirm('Revoke token “{{ t.name }}”?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Revoke</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin-top:1rem;">None yet.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Two-factor authentication</h2>
   {% if totp_enabled %}
   <p>
     <span class="role-badge">Enabled</span>
     {% if user.totp_enabled_at %}
     <span class="muted">since {{ user.totp_enabled_at }}</span>
     {% endif %}
-  </p>
-  <p class="muted">
-    Recovery codes remaining: <strong>{{ totp_recovery_remaining }}</strong>
-    {% if totp_enforced_for_user %}
-    — required for global admins on this server.
-    {% endif %}
+    · {{ totp_recovery_remaining }} recovery codes left
+    {% if totp_enforced_for_user %}<span class="muted">(required for global admins)</span>{% endif %}
   </p>
   <form method="post" action="{{ url_for('totp_regenerate_recovery') }}" class="row"
         style="margin-top:1rem;">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label style="flex:2;">Confirm with authenticator or recovery code
+    <label style="flex:2;">Confirm with code
       <input type="text" name="code" required autocomplete="one-time-code"
              placeholder="123456 or xxxx-xxxx">
     </label>
@@ -127,7 +225,7 @@
   <form method="post" action="{{ url_for('totp_disable') }}" style="margin-top:1.5rem;"
         onsubmit="return confirm('Disable two-factor authentication?')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Disable 2FA — confirm with code
+    <label>Disable — confirm with code
       <input type="text" name="code" required autocomplete="one-time-code"
              placeholder="123456 or xxxx-xxxx">
     </label>
@@ -136,10 +234,8 @@
   {% endif %}
   {% else %}
   <p class="muted">
-    Add a second step at sign-in with an authenticator app.
-    {% if totp_enforced_for_user %}
-    <strong>Required for global admins on this server.</strong>
-    {% endif %}
+    Authenticator app at sign-in.
+    {% if totp_enforced_for_user %}<strong>Required for global admins.</strong>{% endif %}
   </p>
   <p><a href="{{ url_for('totp_setup') }}"><button type="button">Set up 2FA</button></a></p>
   {% endif %}
@@ -148,7 +244,7 @@
 {% if user.auth_source == 'local' %}
 <section>
   <h2>Change password</h2>
-  <p class="muted">Updates your local password. Other signed-in devices are signed out.</p>
+  <p class="muted">Signs out other devices.</p>
   <form method="post" action="{{ url_for('change_password') }}">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Current password
@@ -166,13 +262,17 @@
 {% else %}
 <section>
   <h2>Password</h2>
-  <p class="muted">This account uses LDAP. Change your password in the directory, not here.</p>
+  <p class="muted">
+    {% if user.auth_source == 'oidc' %}Managed by OIDC SSO.
+    {% elif user.auth_source == 'ldap' %}Managed in the LDAP directory.
+    {% else %}Managed by your identity provider.{% endif %}
+  </p>
 </section>
 {% endif %}
 
 <section>
   <div class="section-head">
-    <h2>Active sessions</h2>
+    <h2 style="margin:0">Active sessions</h2>
     {% if active_sessions and active_sessions|length > 1 %}
     <form method="post" action="{{ url_for('revoke_other_sessions') }}" class="inline"
           onsubmit="return confirm('Sign out all other devices?')">
@@ -181,7 +281,7 @@
     </form>
     {% endif %}
   </div>
-  <p class="muted">Devices currently signed in to your account.</p>
+  <p class="muted">Signed-in devices.</p>
   {% if active_sessions %}
   <table>
     <thead>

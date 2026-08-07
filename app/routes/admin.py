@@ -104,8 +104,10 @@ def register(app):
                     if not conn.autocommit:
                         conn.commit()
                 flash(
-                    f"Purged {result['secret_audit']} secret audit row(s) and "
-                    f"{result['org_audit']} org audit row(s) older than {days} days",
+                    f"Purged {result['secret_audit']} secret audit, "
+                    f"{result['org_audit']} org audit, and "
+                    f"{result.get('login_failures', 0)} login-failure row(s) "
+                    f"older than {days} days",
                     "ok",
                 )
                 return redirect(url_for("admin_audit", tab="export"))
@@ -349,14 +351,9 @@ def register(app):
             if action == "server_url":
                 raw = (request.form.get("server_url") or "").strip().rstrip("/")
                 if raw and not (
-                    raw.startswith("https://")
-                    or raw.startswith("http://localhost")
-                    or raw.startswith("http://127.0.0.1")
+                    raw.startswith("https://") or raw.startswith("http://")
                 ):
-                    flash(
-                        "Server URL must be https:// (or http://localhost for development)",
-                        "error",
-                    )
+                    flash("Server URL must start with http:// or https://", "error")
                 else:
                     settings_svc.set_setting("server_url", raw)
                     flash("Server URL saved", "ok")

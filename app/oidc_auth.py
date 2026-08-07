@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,8 +25,25 @@ from ldap_auth import group_matches
 
 log = logging.getLogger(__name__)
 
-_discovery_cache: dict[str, dict] = {}
+# issuer -> (fetched_at_monotonic, doc)
+_discovery_cache: dict[str, tuple[float, dict]] = {}
 _jwks_clients: dict[str, PyJWKClient] = {}
+_DISCOVERY_TTL_SEC = 3600
+
+# Never accept symmetric/none algs from discovery (alg-confusion)
+_ALLOWED_ID_TOKEN_ALGS = frozenset(
+    {
+        "RS256",
+        "RS384",
+        "RS512",
+        "ES256",
+        "ES384",
+        "ES512",
+        "PS256",
+        "PS384",
+        "PS512",
+    }
+)
 
 
 def oidc_cfg() -> dict:
@@ -58,7 +76,11 @@ def _client_secret_plain() -> str:
     try:
         return crypto.decrypt(enc)
     except Exception:
-        # allow plaintext during transition / mis-save
+        # Mis-saved plaintext or MASTER_KEY rotation — do not silently treat as OK forever.
+        log.warning(
+            "OIDC client secret decrypt failed; using stored value as plaintext "
+            "(re-save secret in Server settings after fixing MASTER_KEY)"
+        )
         return enc
 
 
@@ -86,13 +108,15 @@ def discover(issuer: str | None = None) -> dict:
     issuer = (issuer or oidc_cfg()["oidc_issuer"]).rstrip("/")
     if not issuer:
         raise RuntimeError("OIDC issuer not configured")
-    if issuer in _discovery_cache:
-        return _discovery_cache[issuer]
+    now = time.monotonic()
+    cached = _discovery_cache.get(issuer)
+    if cached and (now - cached[0]) < _DISCOVERY_TTL_SEC:
+        return cached[1]
     url = issuer + "/.well-known/openid-configuration"
     doc = _http_json("GET", url)
     if not doc.get("authorization_endpoint") or not doc.get("token_endpoint"):
         raise RuntimeError("OIDC discovery missing endpoints")
-    _discovery_cache[issuer] = doc
+    _discovery_cache[issuer] = (now, doc)
     return doc
 
 
@@ -153,11 +177,14 @@ def verify_id_token(id_token: str, *, nonce: str) -> dict[str, Any]:
         client = PyJWKClient(jwks_uri, cache_keys=True)
         _jwks_clients[jwks_uri] = client
     key = client.get_signing_key_from_jwt(id_token)
-    algs = doc.get("id_token_signing_alg_values_supported") or ["RS256"]
+    advertised = doc.get("id_token_signing_alg_values_supported") or ["RS256"]
+    algs = [a for a in advertised if a in _ALLOWED_ID_TOKEN_ALGS]
+    if not algs:
+        algs = ["RS256"]
     claims = jwt.decode(
         id_token,
         key.key,
-        algorithms=list(algs),
+        algorithms=algs,
         audience=c["oidc_client_id"],
         issuer=issuer,
         options={"require": ["exp", "iat", "sub"]},
@@ -191,12 +218,27 @@ def _claim_value(claims: dict, claim_name: str) -> str:
     return str(val).strip()
 
 
+def _email_verified(claims: dict) -> bool:
+    """Accept only explicit true / "true" (reject missing/false for account linking)."""
+    v = claims.get("email_verified")
+    if v is True:
+        return True
+    if isinstance(v, str) and v.strip().lower() in ("true", "1", "yes"):
+        return True
+    return False
+
+
 def claims_to_identity(claims: dict) -> dict:
     cfg = oidc_cfg()
     email = (claims.get("email") or "").strip().lower()
     if not email or "@" not in email:
         # Do not treat preferred_username as email — that claim is for username.
         raise RuntimeError("OIDC token has no usable email claim (need email scope)")
+    if not _email_verified(claims):
+        raise RuntimeError(
+            "OIDC email is not verified (email_verified claim required); "
+            "fix identity provider email verification"
+        )
     # Username → display name: configured claim (default preferred_username), then name, then email local-part
     username_claim = cfg.get("oidc_username_claim") or "preferred_username"
     username = _claim_value(claims, username_claim)
@@ -352,6 +394,7 @@ if __name__ == "__main__":
     idt = claims_to_identity(
         {
             "email": "A@B.COM",
+            "email_verified": True,
             "preferred_username": "ada.l",
             "name": "Ada Lovelace",
             "nonce": "n",
@@ -365,4 +408,9 @@ if __name__ == "__main__":
     assert idt["username"] == "ada.l"
     assert "admins" in idt["groups"] and "eng" in idt["groups"]
     assert group_matches("admins", idt["groups"])
+    try:
+        claims_to_identity({"email": "x@y.com", "email_verified": False, "sub": "1"})
+        raise SystemExit("expected unverified email to fail")
+    except RuntimeError:
+        pass
     print("ok")

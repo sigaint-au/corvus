@@ -63,11 +63,25 @@ Authorization: Bearer ss_…
 
 ## PostgREST
 
-After browser login, `GET /api/token` returns a JWT:
+After browser login, `GET /api/token` returns a short-lived JWT (also available from
+**My profile → Security → API access → Show JWT**):
 
 ```bash
 curl -H "Authorization: Bearer $JWT" http://localhost:3000/projects
 ```
+
+### Personal access tokens
+
+For scripts without a browser session, create a PAT under **My profile → Security**.
+Tokens start with `pat_` and are shown once. Exchange for a JWT:
+
+```bash
+JWT=$(curl -s -H "Authorization: Bearer pat_…" https://secrets.example.com/api/token \
+  | jq -r .access_token)
+curl -H "Authorization: Bearer $JWT" http://localhost:3000/projects
+```
+
+PATs act as that user under RLS. Machine tokens (`ss_…`) remain for project ESO/CI.
 
 RLS enforces team/project membership.
 
@@ -101,7 +115,8 @@ Authorization-code login for any OpenID Connect IdP. Configure under
 | Redirect URI | `{server_url}/login/oidc/callback` |
 
 Create a confidential OIDC client with the authorization code flow and the redirect URI
-above. Users are upserted by email (`auth_source=oidc`). Local password login still works.
+above. Users are upserted by email (`auth_source=oidc`) only when the ID token includes
+`email_verified=true` (prevents self-asserted email takeover). Local password login still works.
 
 **Group → role maps** (same idea as LDAP):
 

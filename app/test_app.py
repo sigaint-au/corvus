@@ -22,6 +22,7 @@ import db  # noqa: E402
 import ldap_auth  # noqa: E402
 import lockout  # noqa: E402
 import paging  # noqa: E402
+import pats  # noqa: E402
 import schema as schema_mod  # noqa: E402
 import settings_svc  # noqa: E402
 import user_sessions  # noqa: E402
@@ -96,6 +97,130 @@ class TestJWT(unittest.TestCase):
         self.assertEqual(claims["sub"], uid)
         self.assertEqual(claims["role"], "authenticated")
         self.assertIn("exp", claims)
+
+
+# ── Personal access tokens ─────────────────────────────────────────
+
+
+class TestPatsUnit(unittest.TestCase):
+    def test_mint_raw_shape(self):
+        raw, thash, prefix = pats.mint_raw()
+        self.assertTrue(raw.startswith("pat_"))
+        self.assertEqual(len(thash), 64)
+        self.assertEqual(prefix, raw[:12])
+        self.assertEqual(pats._hash(raw), thash)
+
+    def test_create_requires_name(self):
+        with self.assertRaises(ValueError):
+            pats.create(str(uuid4()), "  ")
+
+    def test_create_inserts_row(self):
+        uid = str(uuid4())
+        conn, cur = _conn(fetchone={"n": 0})
+        cur.rowcount = 1
+        with patch.object(db, "connect_admin", return_value=conn):
+            raw = pats.create(uid, "cli", expires_days=7)
+        self.assertTrue(raw.startswith("pat_"))
+        joined = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
+        self.assertIn("INSERT INTO private.personal_access_tokens", joined)
+
+    def test_resolve_success(self):
+        uid = str(uuid4())
+        tid = uuid4()
+        conn, cur = _conn(fetchone={"id": tid, "user_id": uid})
+        cur.rowcount = 1
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertEqual(pats.resolve("pat_" + "x" * 40), uid)
+        # last_used update issued
+        joined = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
+        self.assertIn("last_used_at", joined)
+
+    def test_resolve_rejects_garbage(self):
+        self.assertIsNone(pats.resolve(""))
+        self.assertIsNone(pats.resolve("ss_notapat"))
+        self.assertIsNone(pats.resolve("pat_short"))
+
+    def test_resolve_unknown_hash(self):
+        conn, cur = _conn(fetchone=None)
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertIsNone(pats.resolve("pat_" + "x" * 40))
+
+    def test_revoke(self):
+        uid = str(uuid4())
+        conn, cur = _conn()
+        cur.rowcount = 1
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertTrue(pats.revoke(uid, str(uuid4())))
+        cur.rowcount = 0
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertFalse(pats.revoke(uid, str(uuid4())))
+
+    def test_create_rejects_bad_expiry(self):
+        with patch.object(pats, "count_for_user", return_value=0):
+            with self.assertRaises(ValueError):
+                pats.create(str(uuid4()), "x", expires_days=0)
+            with self.assertRaises(ValueError):
+                pats.create(str(uuid4()), "x", expires_days=99999)
+
+
+class TestPersonalTokenRoutes(unittest.TestCase):
+    def setUp(self):
+        store.app.config["TESTING"] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "u@ex.com"
+
+    def test_create_pat(self):
+        with patch.object(pats, "create", return_value="pat_secretvalue") as create:
+            r = self.client.post(
+                "/profile/tokens",
+                data={"name": "laptop", "expires_days": "30"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=security", r.location)
+        create.assert_called_once()
+        self.assertEqual(create.call_args[0][0], self.uid)
+        self.assertEqual(create.call_args[0][1], "laptop")
+        self.assertEqual(create.call_args[1].get("expires_days"), 30)
+        with self.client.session_transaction() as s:
+            self.assertEqual(s.get("new_pat"), "pat_secretvalue")
+
+    def test_create_pat_value_error(self):
+        with patch.object(pats, "create", side_effect=ValueError("Name is required")):
+            r = self.client.post(
+                "/profile/tokens",
+                data={"name": ""},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            self.assertNotIn("new_pat", s)
+            flashes = s.get("_flashes") or []
+        self.assertTrue(any("Name is required" in msg for _c, msg in flashes))
+
+    def test_delete_pat(self):
+        tid = uuid4()
+        with patch.object(pats, "revoke", return_value=True) as rev:
+            r = self.client.post(
+                f"/profile/tokens/{tid}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        rev.assert_called_once_with(self.uid, str(tid))
+
+    def test_delete_pat_missing(self):
+        with patch.object(pats, "revoke", return_value=False):
+            r = self.client.post(
+                f"/profile/tokens/{uuid4()}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(any("not found" in msg.lower() for _c, msg in flashes))
 
 
 # ── LDAP helpers ───────────────────────────────────────────────────
@@ -860,19 +985,25 @@ class TestAuth(unittest.TestCase):
         # Default tab is Account
         self.assertIn(b"Ada Lovelace", r.data)
         self.assertIn(b"a@b.c", r.data)
-        self.assertIn(b"Local password", r.data)
+        self.assertIn(b"Local", r.data)
+        self.assertIn(b"Database", r.data)
         self.assertIn(b"At a glance", r.data)
         self.assertNotIn(b"Change password", r.data)
         self.assertNotIn(b"Active sessions", r.data)
 
         with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
             db, "as_user", return_value=user_conn
-        ), patch("user_sessions.list_sessions", return_value=[]):
+        ), patch("user_sessions.list_sessions", return_value=[]), patch(
+            "pats.list_for_user", return_value=[]
+        ):
             r_sec = self.client.get("/profile?tab=security")
         self.assertEqual(r_sec.status_code, 200)
         self.assertIn(b"Change password", r_sec.data)
         self.assertIn(b"Active sessions", r_sec.data)
         self.assertIn(b"Two-factor authentication", r_sec.data)
+        self.assertIn(b"Personal access tokens", r_sec.data)
+        self.assertIn(b"API access", r_sec.data)
+        self.assertIn(b"show-session-jwt", r_sec.data)
 
         with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
             db, "as_user", return_value=user_conn
@@ -907,11 +1038,14 @@ class TestAuth(unittest.TestCase):
         user_conn, _ = _conn(fetchone={"n": 0}, fetchall=[])
         with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
             db, "as_user", return_value=user_conn
-        ), patch("user_sessions.list_sessions", return_value=[]):
+        ), patch("user_sessions.list_sessions", return_value=[]), patch(
+            "pats.list_for_user", return_value=[]
+        ):
             r = self.client.get("/profile?tab=account")
             r_sec = self.client.get("/profile?tab=security")
         self.assertEqual(r.status_code, 200)
-        self.assertIn(b"LDAP directory", r.data)
+        self.assertIn(b"LDAP", r.data)
+        self.assertIn(b"Directory", r.data)
         self.assertIn(b"Global admin", r.data)
         self.assertEqual(r_sec.status_code, 200)
         self.assertIn(b"LDAP", r_sec.data)
@@ -1807,6 +1941,21 @@ class TestTokens(unittest.TestCase):
         self.assertIn("token_prefix text NOT NULL UNIQUE", init)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("machine_tokens_token_prefix_key", src)
+        self.assertIn("personal_access_tokens", src)
+
+    def test_init_sql_allows_oidc_auth_source(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("'local', 'ldap', 'oidc'", init)
+        self.assertIn("upsert_oidc_user", init)
+        self.assertIn("team_oidc_maps", init)
+        self.assertIn("oidc_role_maps", init)
+        self.assertIn("source IN ('manual', 'ldap', 'oidc')", init)
+        # Migrations re-bind CHECKs (not only ADD COLUMN IF NOT EXISTS)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("users_auth_source_check", src)
+        self.assertIn("team_members_source_check", src)
 
 
 class TestOrgAccess(unittest.TestCase):
@@ -2049,6 +2198,38 @@ class TestApiToken(unittest.TestCase):
         self.assertEqual(data["token_type"], "bearer")
         claims = pyjwt.decode(data["access_token"], config.JWT_SECRET, algorithms=["HS256"])
         self.assertEqual(claims["sub"], uid)
+        self.assertIn("expires_in", data)
+
+    def test_unauthenticated_json_401(self):
+        r = store.app.test_client().get(
+            "/api/token",
+            headers={"Accept": "application/json"},
+        )
+        self.assertEqual(r.status_code, 401)
+
+    def test_pat_bearer_returns_jwt(self):
+        uid = str(uuid4())
+        with patch.object(pats, "resolve", return_value=uid):
+            r = store.app.test_client().get(
+                "/api/token",
+                headers={
+                    "Authorization": "Bearer pat_testdummytokenvaluehere",
+                    "Accept": "application/json",
+                },
+            )
+        self.assertEqual(r.status_code, 200)
+        claims = pyjwt.decode(
+            r.get_json()["access_token"], config.JWT_SECRET, algorithms=["HS256"]
+        )
+        self.assertEqual(claims["sub"], uid)
+
+    def test_bad_pat_401(self):
+        with patch.object(pats, "resolve", return_value=None):
+            r = store.app.test_client().get(
+                "/api/token",
+                headers={"Authorization": "Bearer pat_invalid"},
+            )
+        self.assertEqual(r.status_code, 401)
 
 
 # ── ESO webhook ────────────────────────────────────────────────────
@@ -2948,9 +3129,14 @@ class TestTotp(unittest.TestCase):
 
         codes = totp_svc.generate_recovery_codes(3)
         self.assertEqual(len(codes), 3)
-        self.assertRegex(codes[0], r"^[a-f0-9]{4}-[a-f0-9]{4}$")
+        # 16 bytes → 32 hex chars in 8 groups of 4
+        self.assertRegex(codes[0], r"^([a-f0-9]{4}-){7}[a-f0-9]{4}$")
         h = totp_svc.hash_recovery_code(codes[0])
         self.assertEqual(h, totp_svc.hash_recovery_code(codes[0].upper().replace("-", "")))
+        self.assertTrue(totp_svc.recovery_hash_matches(codes[0], h))
+        # Legacy unsalted hash still accepted
+        legacy = totp_svc._legacy_hash_recovery_code(codes[0])
+        self.assertTrue(totp_svc.recovery_hash_matches(codes[0], legacy))
 
     def test_needs_challenge(self):
         import totp_svc
@@ -2967,6 +3153,13 @@ class TestTotp(unittest.TestCase):
             totp_svc, "enforce_global_admins", return_value=False
         ):
             self.assertIsNone(totp_svc.needs_challenge(uid, True))
+
+    def test_user_totp_row_fails_closed(self):
+        import totp_svc
+
+        with patch.object(db, "connect_admin", side_effect=RuntimeError("db down")):
+            with self.assertRaises(totp_svc.TotpStoreError):
+                totp_svc.user_totp_row(str(uuid4()))
 
     def test_login_redirects_to_2fa(self):
         store.app.config["TESTING"] = True
