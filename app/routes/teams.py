@@ -576,8 +576,11 @@ def register(app):
                 except ValueError:
                     flash("Default token days must be a positive integer", "error")
                     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
-                if default_token_days < 1 or default_token_days > 3650:
-                    flash("Default token days must be between 1 and 3650", "error")
+                if default_token_days < 1 or default_token_days > config.MAX_EXPIRY_DAYS:
+                    flash(
+                        f"Default token days must be between 1 and {config.MAX_EXPIRY_DAYS}",
+                        "error",
+                    )
                     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             # Same fields as server settings; optional override flag
             class_text = (request.form.get("classification_text") or "").strip()[:120]

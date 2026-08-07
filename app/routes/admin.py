@@ -6,6 +6,7 @@ import authz
 import config
 import crypto
 import db
+import ldap_auth
 import mailer
 import settings_svc
 
@@ -55,42 +56,62 @@ def register(app):
                 )
             elif action == "ldap":
                 enabled = "true" if request.form.get("ldap_enabled") else "false"
-                settings_svc.set_setting("ldap_enabled", enabled)
-                settings_svc.set_setting("ldap_url", (request.form.get("ldap_url") or "").strip())
-                settings_svc.set_setting(
-                    "ldap_start_tls",
-                    "true" if request.form.get("ldap_start_tls") else "false",
-                )
-                settings_svc.set_setting("ldap_bind_dn", (request.form.get("ldap_bind_dn") or "").strip())
-                new_pw = request.form.get("ldap_bind_password") or ""
-                if new_pw.strip():
-                    settings_svc.set_setting("ldap_bind_password", crypto.encrypt(new_pw.strip()))
-                settings_svc.set_setting("ldap_user_base", (request.form.get("ldap_user_base") or "").strip())
-                filt = (request.form.get("ldap_user_filter") or "").strip()
-                settings_svc.set_setting(
-                    "ldap_user_filter",
-                    filt or config.DEFAULT_SETTINGS["ldap_user_filter"],
-                )
-                settings_svc.set_setting(
-                    "ldap_email_attr",
-                    (request.form.get("ldap_email_attr") or "mail").strip() or "mail",
-                )
-                settings_svc.set_setting(
-                    "ldap_name_attr",
-                    (request.form.get("ldap_name_attr") or "displayName").strip()
-                    or "displayName",
-                )
-                settings_svc.set_setting("ldap_group_base", (request.form.get("ldap_group_base") or "").strip())
-                gfilt = (request.form.get("ldap_group_filter") or "").strip()
-                settings_svc.set_setting(
-                    "ldap_group_filter",
-                    gfilt or config.DEFAULT_SETTINGS["ldap_group_filter"],
-                )
-                settings_svc.set_setting(
-                    "ldap_use_memberof",
-                    "true" if request.form.get("ldap_use_memberof") else "false",
-                )
-                flash("LDAP settings saved", "ok")
+                ldap_url = (request.form.get("ldap_url") or "").strip()
+                start_tls = bool(request.form.get("ldap_start_tls"))
+                if enabled == "true" and ldap_url and not ldap_auth.ldap_tls_required_ok(
+                    ldap_url, start_tls
+                ):
+                    flash(
+                        "LDAP over cleartext is not allowed. Use ldaps:// or enable StartTLS.",
+                        "error",
+                    )
+                else:
+                    settings_svc.set_setting("ldap_enabled", enabled)
+                    settings_svc.set_setting("ldap_url", ldap_url)
+                    settings_svc.set_setting(
+                        "ldap_start_tls",
+                        "true" if start_tls else "false",
+                    )
+                    settings_svc.set_setting(
+                        "ldap_bind_dn", (request.form.get("ldap_bind_dn") or "").strip()
+                    )
+                    new_pw = request.form.get("ldap_bind_password") or ""
+                    if new_pw.strip():
+                        settings_svc.set_setting(
+                            "ldap_bind_password", crypto.encrypt(new_pw.strip())
+                        )
+                    settings_svc.set_setting(
+                        "ldap_user_base",
+                        (request.form.get("ldap_user_base") or "").strip(),
+                    )
+                    filt = (request.form.get("ldap_user_filter") or "").strip()
+                    settings_svc.set_setting(
+                        "ldap_user_filter",
+                        filt or config.DEFAULT_SETTINGS["ldap_user_filter"],
+                    )
+                    settings_svc.set_setting(
+                        "ldap_email_attr",
+                        (request.form.get("ldap_email_attr") or "mail").strip() or "mail",
+                    )
+                    settings_svc.set_setting(
+                        "ldap_name_attr",
+                        (request.form.get("ldap_name_attr") or "displayName").strip()
+                        or "displayName",
+                    )
+                    settings_svc.set_setting(
+                        "ldap_group_base",
+                        (request.form.get("ldap_group_base") or "").strip(),
+                    )
+                    gfilt = (request.form.get("ldap_group_filter") or "").strip()
+                    settings_svc.set_setting(
+                        "ldap_group_filter",
+                        gfilt or config.DEFAULT_SETTINGS["ldap_group_filter"],
+                    )
+                    settings_svc.set_setting(
+                        "ldap_use_memberof",
+                        "true" if request.form.get("ldap_use_memberof") else "false",
+                    )
+                    flash("LDAP settings saved", "ok")
             elif action == "smtp":
                 enabled = "true" if request.form.get("smtp_enabled") else "false"
                 host = (request.form.get("smtp_host") or "").strip()

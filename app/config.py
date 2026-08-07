@@ -86,6 +86,14 @@ MACHINE_TOKEN_ROLES = ("read-only", "write")
 CLIPBOARD_CLEAR_SECONDS = max(
     0, int(os.environ.get("CLIPBOARD_CLEAR_SECONDS", "30") or "30")
 )
+# Upper bounds for optional expiry (secrets, machine tokens, team defaults)
+MAX_EXPIRY_DAYS = 3650  # ~10 years
+# Request body / secret import file cap (bytes) — memory DoS guard
+MAX_CONTENT_LENGTH = max(
+    64 * 1024,
+    int(os.environ.get("MAX_CONTENT_LENGTH", str(1 * 1024 * 1024)) or str(1 * 1024 * 1024)),
+)
+MAX_IMPORT_BYTES = MAX_CONTENT_LENGTH
 # Sidebar lists
 SIDEBAR_PINS_LIMIT = 8
 SIDEBAR_RECENT_LIMIT = 8

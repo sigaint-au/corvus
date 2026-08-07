@@ -691,6 +691,21 @@ def ensure_schema():
         ALTER TABLE api.teams
           ADD COLUMN IF NOT EXISTS default_token_days int
         """,
+        # Cap default_token_days (drop legacy check if present, then re-add bounded)
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.teams DROP CONSTRAINT IF EXISTS teams_default_token_days_check;
+        EXCEPTION WHEN undefined_object THEN NULL;
+        END $$
+        """,
+        """
+        ALTER TABLE api.teams
+          ADD CONSTRAINT teams_default_token_days_check
+          CHECK (
+            default_token_days IS NULL
+            OR (default_token_days > 0 AND default_token_days <= 3650)
+          )
+        """,
         """
         ALTER TABLE api.teams
           ADD COLUMN IF NOT EXISTS classification_enabled boolean

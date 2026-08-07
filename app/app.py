@@ -20,6 +20,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
+    MAX_CONTENT_LENGTH=config.MAX_CONTENT_LENGTH,
 )
 
 app.context_processor(inject_nav)

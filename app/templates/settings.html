@@ -203,6 +203,8 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <p class="muted">
     When enabled, users can sign in with directory credentials. Local accounts still work.
     Group membership is read on each login and applied to role / team maps.
+    Cleartext <code>ldap://</code> without StartTLS is refused — use <code>ldaps://</code>
+    or enable StartTLS.
   </p>
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">

@@ -232,7 +232,7 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div class="row">
       <label>Default machine-token expiry (days)
-        <input type="number" name="default_token_days" min="1" max="3650"
+        <input type="number" name="default_token_days" min="1" max="{{ max_expiry_days|default(3650) }}"
                value="{{ team.default_token_days or '' }}" placeholder="server default">
       </label>
     </div>

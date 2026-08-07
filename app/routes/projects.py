@@ -174,7 +174,7 @@ def _load_secrets_page(cur, project_id, page, q):
 
 
 def _parse_expires_at(form):
-    """Return expires_at datetime or None from form (max 10 years ahead)."""
+    """Return expires_at datetime or None from form (capped at MAX_EXPIRY_DAYS)."""
     raw = (form.get("expires_at") or "").strip()
     if not raw:
         return None
@@ -184,9 +184,9 @@ def _parse_expires_at(form):
         raise ValueError("expires_at must be YYYY-MM-DD or ISO datetime")
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
-    cap = datetime.now(timezone.utc) + timedelta(days=3650)
+    cap = datetime.now(timezone.utc) + timedelta(days=config.MAX_EXPIRY_DAYS)
     if expires_at > cap:
-        raise ValueError("expires_at must be within 10 years")
+        raise ValueError(f"expires_at must be within {config.MAX_EXPIRY_DAYS} days")
     return expires_at
 
 
@@ -1072,9 +1072,23 @@ def register(app):
     def import_secrets(project_id):
         raw = request.form.get("payload") or ""
         f = request.files.get("file")
-        if f and f.filename:
-            raw = f.read().decode("utf-8", errors="replace")
         back = url_for("project_detail", project_id=project_id, tab="import")
+        if f and f.filename:
+            # Cap read even if MAX_CONTENT_LENGTH is raised elsewhere
+            blob = f.read(config.MAX_IMPORT_BYTES + 1)
+            if len(blob) > config.MAX_IMPORT_BYTES:
+                flash(
+                    f"Import file too large (max {config.MAX_IMPORT_BYTES // 1024} KiB)",
+                    "error",
+                )
+                return redirect(back)
+            raw = blob.decode("utf-8", errors="replace")
+        if len(raw.encode("utf-8")) > config.MAX_IMPORT_BYTES:
+            flash(
+                f"Import payload too large (max {config.MAX_IMPORT_BYTES // 1024} KiB)",
+                "error",
+            )
+            return redirect(back)
         if not raw.strip():
             flash("Paste secrets or choose a file", "error")
             return redirect(back)
@@ -1160,13 +1174,20 @@ def register(app):
             if days_raw:
                 try:
                     days = int(days_raw)
-                    if days > 0:
-                        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
                 except ValueError:
                     flash("Expires days must be a positive integer", "error")
                     return redirect(
                         url_for("project_detail", project_id=project_id, tab="tokens")
                     )
+                if days < 1 or days > config.MAX_EXPIRY_DAYS:
+                    flash(
+                        f"Expires days must be between 1 and {config.MAX_EXPIRY_DAYS}",
+                        "error",
+                    )
+                    return redirect(
+                        url_for("project_detail", project_id=project_id, tab="tokens")
+                    )
+                expires_at = datetime.now(timezone.utc) + timedelta(days=days)
             raw = "ss_" + secrets.token_urlsafe(32)
             thash = hashlib.sha256(raw.encode()).hexdigest()
             prefix = raw[:11]

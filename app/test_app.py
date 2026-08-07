@@ -122,6 +122,31 @@ class TestLdapPassword(unittest.TestCase):
         )
 
 
+class TestLdapTlsPolicy(unittest.TestCase):
+    def test_ldaps_ok_without_starttls(self):
+        self.assertTrue(ldap_auth.ldap_tls_required_ok("ldaps://ipa.example.com", False))
+
+    def test_ldap_requires_starttls(self):
+        self.assertFalse(ldap_auth.ldap_tls_required_ok("ldap://ipa.example.com", False))
+        self.assertTrue(ldap_auth.ldap_tls_required_ok("ldap://ipa.example.com", True))
+
+    def test_empty_url_rejected(self):
+        self.assertFalse(ldap_auth.ldap_tls_required_ok("", True))
+
+    def test_authenticate_refuses_cleartext(self):
+        with patch.object(
+            ldap_auth,
+            "ldap_cfg",
+            return_value={
+                "ldap_enabled": "true",
+                "ldap_url": "ldap://ipa.example.com",
+                "ldap_start_tls": "false",
+                "ldap_user_base": "cn=users",
+            },
+        ):
+            self.assertIsNone(ldap_auth.ldap_authenticate("user", "pass"))
+
+
 class TestLdapStartTLS(unittest.TestCase):
     def test_open_start_tls_before_bind(self):
         order = []
@@ -2081,9 +2106,71 @@ class TestESO(unittest.TestCase):
         ][0]
         self.assertIsNotNone(insert.args[1][5])  # expires_at set
 
+    def test_create_token_rejects_huge_expiry(self):
+        c = store.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+            s["email"] = "u@ex.com"
+        conn, cur = _conn(fetchone={"w": True})
+        with patch.object(db, "as_user", return_value=conn):
+            r = c.post(
+                f"/projects/{self.pid}/tokens",
+                data={
+                    "name": "eso",
+                    "role": "read-only",
+                    "expires_days": str(config.MAX_EXPIRY_DAYS + 1),
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        inserts = [
+            c
+            for c in cur.execute.call_args_list
+            if c.args and "INSERT INTO api.machine_tokens" in str(c.args[0])
+        ]
+        self.assertEqual(inserts, [])
+
     def test_machine_token_roles_config(self):
         self.assertIn("read-only", config.MACHINE_TOKEN_ROLES)
         self.assertIn("write", config.MACHINE_TOKEN_ROLES)
+        self.assertEqual(config.MAX_EXPIRY_DAYS, 3650)
+        self.assertGreaterEqual(config.MAX_CONTENT_LENGTH, 64 * 1024)
+        self.assertEqual(store.app.config.get("MAX_CONTENT_LENGTH"), config.MAX_CONTENT_LENGTH)
+
+    def test_parse_expires_at_capped(self):
+        from routes.projects import _parse_expires_at
+        from datetime import datetime, timezone, timedelta
+        from werkzeug.datastructures import MultiDict
+
+        far = (datetime.now(timezone.utc) + timedelta(days=config.MAX_EXPIRY_DAYS + 30)).date().isoformat()
+        with self.assertRaises(ValueError):
+            _parse_expires_at(MultiDict({"expires_at": far}))
+
+    def test_import_file_size_cap(self):
+        from io import BytesIO
+
+        c = store.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+            s["email"] = "u@ex.com"
+        # Slightly over import cap; Flask may 413 if over MAX_CONTENT_LENGTH
+        big = b"K=" + (b"x" * (config.MAX_IMPORT_BYTES + 10))
+        conn, _ = _conn(fetchone={"w": True})
+        with patch.object(db, "as_user", return_value=conn):
+            r = c.post(
+                f"/projects/{self.pid}/import",
+                data={"file": (BytesIO(big), "big.env")},
+                content_type="multipart/form-data",
+                follow_redirects=False,
+            )
+        self.assertIn(r.status_code, (302, 413))
+        if r.status_code == 302:
+            with c.session_transaction() as s:
+                flashes = s.get("_flashes") or []
+            self.assertTrue(
+                any("large" in msg.lower() for _c, msg in flashes),
+                flashes,
+            )
 
 
 # ── Health ─────────────────────────────────────────────────────────

@@ -87,7 +87,9 @@ CREATE TABLE api.teams (
   created_by uuid REFERENCES private.users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   -- Team-level defaults / overrides (null = use server default)
-  default_token_days int CHECK (default_token_days IS NULL OR default_token_days > 0),
+  default_token_days int CHECK (
+    default_token_days IS NULL OR (default_token_days > 0 AND default_token_days <= 3650)
+  ),
   classification_enabled boolean,
   classification_text text NOT NULL DEFAULT '',
   classification_color text NOT NULL DEFAULT '',
