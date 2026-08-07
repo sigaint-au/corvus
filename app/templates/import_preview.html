@@ -9,48 +9,70 @@
 <h1>Import preview</h1>
 <p class="page-desc muted">
   Project <strong>{{ project.name }}</strong>:
-  <strong>{{ creates|length }}</strong> create(s),
-  <strong>{{ updates|length }}</strong> update(s).
-  Nothing has been written yet.
+  <strong>{{ n_creates }}</strong> create(s),
+  <strong>{{ n_updates }}</strong> update(s).
+  Review values and types, then commit. Nothing has been written yet.
 </p>
 
-{% if creates %}
-<section>
-  <h2>Will create</h2>
-  <table>
-    <thead><tr><th>Key</th><th>Note</th></tr></thead>
-    <tbody>
-    {% for row in creates %}
-      <tr>
-        <td><code class="k">{{ row.key }}</code></td>
-        <td class="muted">{{ row.note or '—' }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-
-{% if updates %}
-<section>
-  <h2>Will update (existing keys)</h2>
-  <table>
-    <thead><tr><th>Key</th><th>Note</th></tr></thead>
-    <tbody>
-    {% for row in updates %}
-      <tr>
-        <td><code class="k">{{ row.key }}</code></td>
-        <td class="muted">{{ row.note or '—' }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-
-<form method="post" action="{{ url_for('import_commit', project_id=project.id) }}" class="form-actions">
+<form method="post" action="{{ url_for('import_commit', project_id=project.id) }}" class="import-preview-form">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-  <button type="submit">Commit import</button>
-  <a class="btn-secondary" href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">Cancel</a>
+
+  <table class="import-preview-table">
+    <thead>
+      <tr>
+        <th>Key</th>
+        <th>Action</th>
+        <th>Type</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for item in items %}
+      <tr class="import-row">
+        <td class="import-key">
+          <code class="k">{{ item.key }}</code>
+          <input type="hidden" name="key" value="{{ item.key }}">
+          <input type="hidden" name="note" value="{{ item.note or '' }}">
+          <input type="hidden" name="enc" value="{{ '1' if item.enc else '0' }}">
+          {% if item.enc %}
+          <input type="hidden" name="value_enc" value="{{ item.value_enc }}">
+          <input type="hidden" name="value" value="">
+          {% else %}
+          <input type="hidden" name="value_enc" value="">
+          {% endif %}
+        </td>
+        <td>
+          {% if item.action == 'update' %}
+          <span class="kind-badge">update</span>
+          {% else %}
+          <span class="kind-badge kind-kv">create</span>
+          {% endif %}
+        </td>
+        <td>
+          <label class="visually-hidden" for="import-kind-{{ loop.index0 }}">Type for {{ item.key }}</label>
+          <select name="kind" id="import-kind-{{ loop.index0 }}" aria-label="Type for {{ item.key }}">
+            {% for kid, label in kind_options %}
+            <option value="{{ kid }}" {% if item.kind == kid %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td class="import-value">
+          {% if item.enc %}
+          <p class="muted">Encrypted ciphertext (from backup) — type still applies on import.</p>
+          {% else %}
+          <label class="visually-hidden" for="import-val-{{ loop.index0 }}">Value for {{ item.key }}</label>
+          <textarea name="value" id="import-val-{{ loop.index0 }}" rows="4"
+                    aria-label="Value for {{ item.key }}">{{ item.value }}</textarea>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="form-actions">
+    <button type="submit">Commit import</button>
+    <a class="btn-secondary" href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">Cancel</a>
+  </p>
 </form>
 {% endblock %}

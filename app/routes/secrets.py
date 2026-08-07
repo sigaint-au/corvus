@@ -609,7 +609,22 @@ def register(app):
     def hide_secret(project_id, secret_id):
         """Mask a revealed secret (client re-mask; no audit)."""
         cell = (request.args.get("cell") or "").strip() or None
-        body = render_template("partials/secret_masked.html")
+        cell_id, _toggle_id = _reveal_cell_ids(secret_id, cell)
+        reveal_url = url_for(
+            "reveal_secret", project_id=project_id, secret_id=secret_id
+        )
+        if cell:
+            reveal_url = url_for(
+                "reveal_secret",
+                project_id=project_id,
+                secret_id=secret_id,
+                cell=cell,
+            )
+        body = render_template(
+            "partials/secret_masked.html",
+            reveal_url=reveal_url,
+            cell_id=cell_id,
+        )
         if authz.htmx():
             body += _reveal_toggle_html(
                 project_id, secret_id, revealed=False, cell=cell
@@ -725,7 +740,15 @@ def register(app):
             conn.commit()
         if authz.htmx():
             # Hide value again; show brief confirmation and restore Reveal control
-            body = render_template("partials/reveal_saved.html")
+            cell_id = f"reveal-{secret_id}"
+            reveal_url = url_for(
+                "reveal_secret", project_id=project_id, secret_id=secret_id
+            )
+            body = render_template(
+                "partials/reveal_saved.html",
+                reveal_url=reveal_url,
+                cell_id=cell_id,
+            )
             body += _reveal_toggle_html(
                 project_id, secret_id, revealed=False, cell=None
             )
@@ -864,7 +887,18 @@ def register(app):
     )
     @authz.login_required
     def hide_secret_version(project_id, secret_id, version_id):
-        body = render_template("partials/secret_masked.html")
+        cell_id = f"reveal-v-{version_id}"
+        reveal_url = url_for(
+            "reveal_secret_version",
+            project_id=project_id,
+            secret_id=secret_id,
+            version_id=version_id,
+        )
+        body = render_template(
+            "partials/secret_masked.html",
+            reveal_url=reveal_url,
+            cell_id=cell_id,
+        )
         if authz.htmx():
             body += _reveal_toggle_html(
                 project_id,

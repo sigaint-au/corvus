@@ -12,10 +12,64 @@ import authz
 import config
 import crypto
 import db
-from secret_kinds import detect_secret_kind, parse_secret_pairs
+from secret_kinds import detect_secret_kind, normalize_kind, parse_secret_pairs
 from secret_ops import _upsert_secret
 
 log = logging.getLogger(__name__)
+
+_KIND_OPTIONS = (
+    ("plain", "Plain text / password"),
+    ("database", "Database URL"),
+    ("certificate", "Certificate (PEM)"),
+    ("ssh", "SSH private key"),
+    ("kv", "Key / value pairs"),
+)
+
+
+def _items_from_import_form():
+    """Read import rows from commit form (values live in POST body, not session)."""
+    keys = request.form.getlist("key")
+    values = request.form.getlist("value")
+    value_encs = request.form.getlist("value_enc")
+    notes = request.form.getlist("note")
+    kinds = request.form.getlist("kind")
+    encs = request.form.getlist("enc")
+    n = len(keys)
+    if not n:
+        return []
+    # Pad shorter lists so zip doesn't silently drop rows
+    def pad(lst):
+        return list(lst) + [""] * (n - len(lst))
+
+    items = []
+    for key, val, venc, note, kind, enc in zip(
+        keys, pad(values), pad(value_encs), pad(notes), pad(kinds), pad(encs)
+    ):
+        key = (key or "").strip()
+        if not key:
+            continue
+        is_enc = (enc or "").strip() in ("1", "true", "yes")
+        if is_enc:
+            items.append(
+                {
+                    "key": key,
+                    "enc": True,
+                    "value_enc": venc or "",
+                    "note": note or "",
+                    "kind": normalize_kind(kind),
+                }
+            )
+        else:
+            items.append(
+                {
+                    "key": key,
+                    "enc": False,
+                    "value": val if val is not None else "",
+                    "note": note or "",
+                    "kind": normalize_kind(kind),
+                }
+            )
+    return items
 
 
 def register(app):
@@ -120,23 +174,34 @@ def register(app):
         if not pairs:
             flash("No key/value pairs found", "error")
             return redirect(back)
-        # Normalize for session: store serializable list
+        # Build preview rows in the response form (not the session cookie —
+        # large JSON values blow past cookie size and caused "preview expired").
         pending = []
         for key, val in pairs:
             if isinstance(val, dict) and "_enc" in val:
+                note = val.get("note") or ""
                 pending.append(
                     {
                         "key": key,
                         "enc": True,
                         "value_enc": val["_enc"],
-                        "note": val.get("note") or "",
+                        "value": "",
+                        "note": note,
+                        "kind": "plain",
                     }
                 )
             else:
+                text = "" if val is None else str(val)
                 pending.append(
-                    {"key": key, "enc": False, "value": str(val), "note": ""}
+                    {
+                        "key": key,
+                        "enc": False,
+                        "value": text,
+                        "value_enc": "",
+                        "note": "",
+                        "kind": detect_secret_kind(text),
+                    }
                 )
-        creates, updates = [], []
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             if not cur.fetchone()["w"]:
@@ -161,18 +226,21 @@ def register(app):
             project = cur.fetchone()
         if not project:
             return "Not found", 404
+        creates = updates = 0
         for item in pending:
-            row = {"key": item["key"], "note": item.get("note") or ""}
             if item["key"] in existing:
-                updates.append(row)
+                item["action"] = "update"
+                updates += 1
             else:
-                creates.append(row)
-        session["import_pending"] = {"project_id": str(project_id), "items": pending}
+                item["action"] = "create"
+                creates += 1
         return render_template(
             "import_preview.html",
             project=project,
-            creates=creates,
-            updates=updates,
+            items=pending,
+            n_creates=creates,
+            n_updates=updates,
+            kind_options=_KIND_OPTIONS,
         )
 
     @app.post("/projects/<uuid:project_id>/import")
@@ -185,11 +253,10 @@ def register(app):
     @authz.login_required
     def import_commit(project_id):
         back = url_for("project_detail", project_id=project_id, tab="import")
-        pending = session.pop("import_pending", None)
-        if not pending or pending.get("project_id") != str(project_id):
-            flash("Import preview expired — upload again", "error")
+        items = _items_from_import_form()
+        if not items:
+            flash("Nothing to import — upload again", "error")
             return redirect(back)
-        items = pending.get("items") or []
         n_ok = 0
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
