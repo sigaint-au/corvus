@@ -9,6 +9,10 @@
      class="tab {% if active_tab == 'general' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'general' else 'false' }}">General</a>
+  <a href="{{ url_for('server_settings', tab='branding') }}"
+     class="tab {% if active_tab == 'branding' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'branding' else 'false' }}">Branding</a>
   <a href="{{ url_for('server_settings', tab='banner') }}"
      class="tab {% if active_tab == 'banner' %}active{% endif %}"
      role="tab"
@@ -25,6 +29,10 @@
      class="tab {% if active_tab == 'ldap' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'ldap' else 'false' }}">LDAP</a>
+  <a href="{{ url_for('server_settings', tab='oidc') }}"
+     class="tab {% if active_tab == 'oidc' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'oidc' else 'false' }}">OIDC / SSO</a>
   <a href="{{ url_for('server_settings', tab='email') }}"
      class="tab {% if active_tab == 'email' %}active{% endif %}"
      role="tab"
@@ -32,6 +40,23 @@
 </nav>
 
 {% if active_tab == 'general' %}
+<section>
+  <h2>Server URL</h2>
+  <p class="muted">
+    Public base URL of this application (no trailing slash). Used for OIDC redirect URIs
+    and ESO / External Secrets Operator YAML defaults.
+  </p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="server_url">
+    <label>Server URL
+      <input type="url" name="server_url" value="{{ settings.server_url or '' }}"
+             placeholder="https://secrets.example.com" autocomplete="off">
+    </label>
+    <p style="margin-top:1rem;"><button type="submit">Save server URL</button></p>
+  </form>
+</section>
+
 <section>
   <h2>Account registration</h2>
   <p class="muted">
@@ -82,6 +107,39 @@
       Require two-factor authentication for global admins
     </label>
     <p style="margin-top:1rem;"><button type="submit">Save 2FA policy</button></p>
+  </form>
+</section>
+
+{% elif active_tab == 'branding' %}
+<section>
+  <h2>Branding</h2>
+  <p class="muted">
+    Product name shown in the sidebar, login screen, and page titles.
+    Classification banner colours are under the Classification tab.
+  </p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="branding">
+    <label>Brand name
+      <input type="text" name="brand_name" required maxlength="80"
+             value="{{ settings.brand_name or 'Sigaint' }}"
+             placeholder="Sigaint">
+    </label>
+    <label>Tagline
+      <input type="text" name="brand_tagline" maxlength="120"
+             value="{{ settings.brand_tagline if settings.brand_tagline is not none else 'Secret Server' }}"
+             placeholder="Secret Server">
+    </label>
+    <p class="muted" style="margin-top:.5rem;">
+      Preview:
+      <strong>{{ settings.brand_name or 'Sigaint' }}</strong>
+      {% if settings.brand_tagline %}
+      <span class="muted">{{ settings.brand_tagline }}</span>
+      {% endif %}
+      · page titles:
+      <code class="k">{{ settings.brand_name or 'Sigaint' }}{% if settings.brand_tagline %} {{ settings.brand_tagline }}{% endif %}</code>
+    </p>
+    <p style="margin-top:1rem;"><button type="submit">Save branding</button></p>
   </form>
 </section>
 
@@ -433,6 +491,132 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     </label>
     <button type="submit">Add map</button>
   </form>
+</section>
+
+{% elif active_tab == 'oidc' %}
+<section>
+  <h2>OIDC / SSO</h2>
+  <p class="muted">
+    Authorization-code login for Keycloak and other OpenID Connect providers.
+    Users are created or linked by <strong>email</strong> on first SSO sign-in.
+    Local password login remains available for break-glass accounts.
+  </p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="oidc">
+    <label>
+      <input type="checkbox" name="oidc_enabled" value="1"
+             {% if settings.oidc_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Enable OIDC login
+    </label>
+    <label>Issuer URL
+      <input type="url" name="oidc_issuer" value="{{ settings.oidc_issuer }}"
+             placeholder="https://keycloak.example.com/realms/myrealm">
+    </label>
+    <p class="muted" style="margin-top:0;">
+      Discovery: <code class="k">{issuer}/.well-known/openid-configuration</code>
+    </p>
+    <label>Client ID
+      <input type="text" name="oidc_client_id" value="{{ settings.oidc_client_id }}"
+             placeholder="secretstore" autocomplete="off">
+    </label>
+    <label>Client secret
+      <input type="password" name="oidc_client_secret" value="" autocomplete="new-password"
+             placeholder="{% if settings.oidc_client_secret_set %}•••••••• (leave blank to keep){% else %}confidential client secret{% endif %}">
+    </label>
+    <label>Scopes
+      <input type="text" name="oidc_scopes" value="{{ settings.oidc_scopes or 'openid email profile' }}">
+    </label>
+    <label>Login button label
+      <input type="text" name="oidc_button_label" value="{{ settings.oidc_button_label or 'Sign in with SSO' }}">
+    </label>
+    <label>Username claim
+      <input type="text" name="oidc_username_claim"
+             value="{{ settings.oidc_username_claim or 'preferred_username' }}"
+             placeholder="preferred_username">
+    </label>
+    <p class="muted" style="margin-top:0;">
+      Claim used as the account display name on SSO onboarding (default
+      <code class="k">preferred_username</code>). Falls back to <code class="k">name</code>,
+      then given/family name, then the email local-part. Account identity remains <strong>email</strong>.
+    </p>
+    <label>Groups claim
+      <input type="text" name="oidc_groups_claim" value="{{ settings.oidc_groups_claim or 'groups' }}"
+             placeholder="groups">
+    </label>
+    <p class="muted" style="margin-top:0;">
+      Claim path for group names (Keycloak: add a “Group Membership” mapper named
+      <code class="k">groups</code>). Also reads <code class="k">realm_access.roles</code> when present.
+    </p>
+    <p style="margin-top:1rem;"><button type="submit">Save OIDC settings</button></p>
+  </form>
+</section>
+<section>
+  <h2>OIDC group → roles</h2>
+  <p class="muted">
+    Map IdP groups (or realm roles) to server roles. Matched on each SSO login
+    (exact name, case-insensitive token match like LDAP). When any maps exist,
+    global admin is synced from them for OIDC users.
+  </p>
+  {% if oidc_role_maps %}
+  <table>
+    <thead><tr><th>OIDC group</th><th>Role</th><th></th></tr></thead>
+    <tbody>
+    {% for m in oidc_role_maps %}
+      <tr>
+        <td><code class="k">{{ m.oidc_group }}</code></td>
+        <td>{{ m.role }}</td>
+        <td class="acts">
+          <form method="post" class="inline"
+                onsubmit="return confirm('Remove this mapping?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="oidc_role_map_delete">
+            <input type="hidden" name="map_id" value="{{ m.id }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No role maps yet.</p>
+  {% endif %}
+  <form method="post" class="row" style="margin-top:1rem;">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="oidc_role_map_add">
+    <label style="flex:2;">OIDC group / role name
+      <input type="text" name="oidc_group" required
+             placeholder="secretstore-admins">
+    </label>
+    <label>Role
+      <select name="role">
+        <option value="global_admin">global_admin</option>
+      </select>
+    </label>
+    <button type="submit">Add map</button>
+  </form>
+</section>
+<section>
+  <h2>OIDC client checklist</h2>
+  <p class="muted">
+    Works with any OpenID Connect provider (Keycloak, Authentik, Okta, Azure AD, etc.).
+  </p>
+  <ul class="muted" style="padding-left:1.2rem;">
+    <li>Client type: <strong>confidential</strong> (client secret), authorization code flow enabled</li>
+    <li>Redirect / callback URI:
+      {% if oidc_redirect_uri %}
+      <code class="k">{{ oidc_redirect_uri }}</code>
+      {% else %}
+      <code class="k">https://&lt;server-url&gt;/login/oidc/callback</code>
+      — set <strong>Server URL</strong> under General to fill this in
+      {% endif %}
+    </li>
+    <li>Allowed web / CORS origin: the same host as the server URL (or your IdP’s equivalent of “+” / allow all for that origin)</li>
+    <li>Scopes: at least <code class="k">openid</code> and <code class="k">email</code> (required for account identity)</li>
+    <li>ID token (or userinfo) should include the configured <strong>username</strong> and <strong>groups</strong> claims</li>
+    <li>Optional: map IdP groups into a list claim named as in “Groups claim” (default <code class="k">groups</code>)</li>
+  </ul>
 </section>
 
 {% elif active_tab == 'email' %}

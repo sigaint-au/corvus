@@ -43,9 +43,13 @@
       <dt>Sign-in</dt>
       <dd>
         {% if user.auth_source == 'ldap' %}
-        LDAP directory
+        <span class="role-badge">LDAP</span> Directory
+        {% elif user.auth_source == 'oidc' %}
+        <span class="role-badge">OIDC</span> Single sign-on
+        {% elif user.auth_source == 'local' or not user.auth_source %}
+        <span class="role-badge">Local</span> Database (password)
         {% else %}
-        Local password
+        <span class="role-badge">{{ user.auth_source }}</span>
         {% endif %}
       </dd>
     </div>

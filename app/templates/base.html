@@ -1370,8 +1370,8 @@
   <div class="shell">
   <aside class="sidebar">
     <a class="brand" href="{{ url_for('projects_list') }}">
-      Sigaint
-      <span class="brand-sub">Secret Server</span>
+      {{ brand_name or 'Sigaint' }}
+      {% if brand_tagline %}<span class="brand-sub">{{ brand_tagline }}</span>{% endif %}
     </a>
     <form class="side-search" method="get" action="{{ url_for('global_search') }}" role="search">
       <label for="side-search-q" class="visually-hidden">Search</label>
@@ -1523,8 +1523,8 @@
   <div class="auth-wrap">
   <div class="auth-card">
     <a class="auth-brand" href="{{ url_for('login') }}">
-      Sigaint
-      <span class="brand-sub">Secret Server</span>
+      {{ brand_name or 'Sigaint' }}
+      {% if brand_tagline %}<span class="brand-sub">{{ brand_tagline }}</span>{% endif %}
     </a>
   {% endif %}
 

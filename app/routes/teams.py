@@ -90,7 +90,7 @@ def register(app):
         if tab not in ("projects", "members", "activity", "settings"):
             tab = "projects"
         q = (request.args.get("q") or "").strip()
-        members, projects, ldap_maps = [], [], []
+        members, projects, ldap_maps, oidc_maps = [], [], [], []
         invites, join_requests, org_events = [], [], []
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
@@ -169,6 +169,16 @@ def register(app):
                     (str(team_id),),
                 )
                 ldap_maps = cur.fetchall()
+                cur.execute(
+                    """
+                    SELECT id, oidc_group, role, created_at
+                    FROM api.team_oidc_maps
+                    WHERE team_id = %s
+                    ORDER BY oidc_group
+                    """,
+                    (str(team_id),),
+                )
+                oidc_maps = cur.fetchall() or []
         if join_requests:
             try:
                 with db.connect_admin() as aconn, aconn.cursor() as acur:
@@ -192,12 +202,16 @@ def register(app):
             projects=projects,
             my_role=my_role,
             ldap_maps=ldap_maps,
+            oidc_maps=oidc_maps,
             invites=invites,
             join_requests=join_requests,
             org_events=org_events,
             invite_roles=config.INVITE_ROLES,
             new_invite_url=session.pop("new_invite_url", None),
             ldap_enabled=settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled")),
+            oidc_enabled=settings_svc.truthy(
+                settings_svc.get_settings().get("oidc_enabled")
+            ),
             active_tab=tab,
             is_admin=is_admin,
         )
@@ -695,6 +709,56 @@ def register(app):
                     cur,
                     team_id=team_id,
                     action=audit.ORG_LDAP_MAP_DELETE,
+                    detail=str(map_id),
+                )
+            conn.commit()
+        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+
+    @app.post("/teams/<uuid:team_id>/oidc-maps")
+    @authz.login_required
+    def add_team_oidc_map(team_id):
+        oidc_group = (request.form.get("oidc_group") or "").strip()
+        role = request.form.get("role", "member")
+        if role not in config.TEAM_ROLES:
+            role = "member"
+        if not oidc_group:
+            flash("OIDC group required", "error")
+            return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO api.team_oidc_maps (team_id, oidc_group, role)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (team_id, oidc_group) DO UPDATE SET role = EXCLUDED.role
+                    """,
+                    (str(team_id), oidc_group, role),
+                )
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_OIDC_MAP_ADD,
+                    detail=f"{oidc_group} → {role}",
+                )
+                conn.commit()
+                flash("OIDC group mapping saved — applies on next SSO login", "ok")
+            except Exception as e:
+                flash(str(e), "error")
+        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+
+    @app.post("/teams/<uuid:team_id>/oidc-maps/<uuid:map_id>/delete")
+    @authz.login_required
+    def delete_team_oidc_map(team_id, map_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM api.team_oidc_maps WHERE id = %s AND team_id = %s",
+                (str(map_id), str(team_id)),
+            )
+            if cur.rowcount:
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_OIDC_MAP_DELETE,
                     detail=str(map_id),
                 )
             conn.commit()

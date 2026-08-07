@@ -15,6 +15,7 @@ import qrcode
 import qrcode.image.svg
 
 from config import APP_NAME
+from settings_svc import branding
 from crypto import decrypt, encrypt
 import db
 from settings_svc import get_settings, truthy
@@ -72,7 +73,8 @@ def new_secret() -> str:
 
 def provisioning_uri(secret: str, email: str) -> str:
     totp = pyotp.TOTP(secret)
-    return totp.provisioning_uri(name=email or "user", issuer_name=APP_NAME)
+    issuer = branding().get("app_name") or APP_NAME
+    return totp.provisioning_uri(name=email or "user", issuer_name=issuer)
 
 
 def qr_data_uri(uri: str) -> str:

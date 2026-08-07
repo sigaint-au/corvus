@@ -758,7 +758,9 @@ def register(app):
                 )
                 project_members = cur.fetchall()
             # import: no extra queries
-        public_base = (request.url_root or "").rstrip("/")
+        import settings_svc
+
+        public_base = settings_svc.public_base_url(request.url_root or "")
         return render_template(
             "project.html",
             project=project,

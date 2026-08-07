@@ -346,7 +346,30 @@ def register(app):
     def server_settings():
         if request.method == "POST":
             action = request.form.get("action") or "classification"
-            if action == "classification":
+            if action == "server_url":
+                raw = (request.form.get("server_url") or "").strip().rstrip("/")
+                if raw and not (
+                    raw.startswith("https://")
+                    or raw.startswith("http://localhost")
+                    or raw.startswith("http://127.0.0.1")
+                ):
+                    flash(
+                        "Server URL must be https:// (or http://localhost for development)",
+                        "error",
+                    )
+                else:
+                    settings_svc.set_setting("server_url", raw)
+                    flash("Server URL saved", "ok")
+            elif action == "branding":
+                brand_name = (request.form.get("brand_name") or "").strip()[:80]
+                brand_tagline = (request.form.get("brand_tagline") or "").strip()[:120]
+                if not brand_name:
+                    flash("Brand name is required", "error")
+                else:
+                    settings_svc.set_setting("brand_name", brand_name)
+                    settings_svc.set_setting("brand_tagline", brand_tagline)
+                    flash("Branding saved", "ok")
+            elif action == "classification":
                 text = (request.form.get("classification_text") or "").strip()[:120]
                 color = (request.form.get("classification_color") or "").strip()
                 fg = (request.form.get("classification_fg") or "").strip()
@@ -388,6 +411,78 @@ def register(app):
                     else "2FA is optional for global admins (users may still enable it)",
                     "ok",
                 )
+            elif action == "oidc":
+                import oidc_auth
+
+                enabled = "true" if request.form.get("oidc_enabled") else "false"
+                issuer = (request.form.get("oidc_issuer") or "").strip().rstrip("/")
+                client_id = (request.form.get("oidc_client_id") or "").strip()
+                scopes = (request.form.get("oidc_scopes") or "openid email profile").strip()
+                label = (request.form.get("oidc_button_label") or "Sign in with SSO").strip()
+                if enabled == "true" and (not issuer or not client_id):
+                    flash("OIDC issuer and client ID are required when SSO is enabled", "error")
+                elif enabled == "true" and not (
+                    issuer.startswith("https://")
+                    or issuer.startswith("http://localhost")
+                    or issuer.startswith("http://127.0.0.1")
+                ):
+                    flash("OIDC issuer must be https:// (or http://localhost for dev)", "error")
+                else:
+                    settings_svc.set_setting("oidc_enabled", enabled)
+                    settings_svc.set_setting("oidc_issuer", issuer)
+                    settings_svc.set_setting("oidc_client_id", client_id)
+                    settings_svc.set_setting(
+                        "oidc_scopes", scopes or "openid email profile"
+                    )
+                    settings_svc.set_setting(
+                        "oidc_button_label", label or "Sign in with SSO"
+                    )
+                    uclaim = (
+                        request.form.get("oidc_username_claim") or "preferred_username"
+                    ).strip()
+                    settings_svc.set_setting(
+                        "oidc_username_claim", uclaim or "preferred_username"
+                    )
+                    gclaim = (request.form.get("oidc_groups_claim") or "groups").strip()
+                    settings_svc.set_setting(
+                        "oidc_groups_claim", gclaim or "groups"
+                    )
+                    new_secret = request.form.get("oidc_client_secret") or ""
+                    if new_secret.strip():
+                        settings_svc.set_setting(
+                            "oidc_client_secret", crypto.encrypt(new_secret.strip())
+                        )
+                    oidc_auth.clear_discovery_cache()
+                    flash("OIDC / SSO settings saved", "ok")
+            elif action == "oidc_role_map_add":
+                oidc_group = (request.form.get("oidc_group") or "").strip()
+                role = (request.form.get("role") or "global_admin").strip()
+                if role != "global_admin":
+                    flash("Unsupported role for OIDC map", "error")
+                elif not oidc_group:
+                    flash("OIDC group required", "error")
+                else:
+                    with db.connect_admin() as conn, conn.cursor() as cur:
+                        try:
+                            cur.execute(
+                                """
+                                INSERT INTO private.oidc_role_maps (oidc_group, role)
+                                VALUES (%s, %s)
+                                ON CONFLICT (oidc_group) DO UPDATE SET role = EXCLUDED.role
+                                """,
+                                (oidc_group, role),
+                            )
+                            flash("OIDC role mapping saved", "ok")
+                        except Exception as e:
+                            flash(str(e), "error")
+            elif action == "oidc_role_map_delete":
+                mid = (request.form.get("map_id") or "").strip()
+                with db.connect_admin() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM private.oidc_role_maps WHERE id = %s::uuid",
+                        (mid,),
+                    )
+                flash("OIDC role mapping removed", "ok")
             elif action == "ldap":
                 enabled = "true" if request.form.get("ldap_enabled") else "false"
                 ldap_url = (request.form.get("ldap_url") or "").strip()
@@ -644,9 +739,11 @@ def register(app):
                     )
             # Stay on the relevant tab after save
             tab_for = {
+                "server_url": "general",
                 "registration": "general",
                 "team_creation": "general",
                 "totp_enforce": "general",
+                "branding": "branding",
                 "classification": "banner",
                 "promote": "admins",
                 "demote": "admins",
@@ -655,6 +752,9 @@ def register(app):
                 "ldap_role_map_delete": "ldap",
                 "smtp": "email",
                 "smtp_test": "email",
+                "oidc": "oidc",
+                "oidc_role_map_add": "oidc",
+                "oidc_role_map_delete": "oidc",
                 "user_disable": "users",
                 "user_enable": "users",
                 "user_reset_password": "users",
@@ -664,7 +764,16 @@ def register(app):
             return redirect(url_for("server_settings", tab=tab))
 
         tab = (request.args.get("tab") or "general").strip().lower()
-        if tab not in ("general", "banner", "admins", "users", "ldap", "email"):
+        if tab not in (
+            "general",
+            "branding",
+            "banner",
+            "admins",
+            "users",
+            "ldap",
+            "oidc",
+            "email",
+        ):
             tab = "general"
         settings = settings_svc.get_settings()
         # never show raw passwords in the form
@@ -673,7 +782,11 @@ def register(app):
         settings["ldap_bind_password"] = ""
         settings["smtp_password_set"] = bool((settings.get("smtp_password") or "").strip())
         settings["smtp_password"] = ""
-        users, all_users, ldap_role_maps = [], [], []
+        settings["oidc_client_secret_set"] = bool(
+            (settings.get("oidc_client_secret") or "").strip()
+        )
+        settings["oidc_client_secret"] = ""
+        users, all_users, ldap_role_maps, oidc_role_maps = [], [], [], []
         with db.connect_admin() as conn, conn.cursor() as cur:
             if tab == "admins":
                 cur.execute(
@@ -702,14 +815,26 @@ def register(app):
                     "SELECT id, ldap_group, role, created_at FROM private.ldap_role_maps ORDER BY ldap_group"
                 )
                 ldap_role_maps = cur.fetchall()
+            if tab == "oidc":
+                cur.execute(
+                    "SELECT id, oidc_group, role, created_at FROM private.oidc_role_maps ORDER BY oidc_group"
+                )
+                oidc_role_maps = cur.fetchall() or []
+        server_url = settings_svc.public_base_url()
+        oidc_redirect_uri = (
+            (server_url + "/login/oidc/callback") if server_url else ""
+        )
         return render_template(
             "settings.html",
             settings=settings,
             users=users,
             all_users=all_users,
             ldap_role_maps=ldap_role_maps,
+            oidc_role_maps=oidc_role_maps,
             classification=settings_svc.classification(),
             active_tab=tab,
             smtp_encryption_modes=config.SMTP_ENCRYPTION_MODES,
+            server_url=server_url,
+            oidc_redirect_uri=oidc_redirect_uri,
         )
 

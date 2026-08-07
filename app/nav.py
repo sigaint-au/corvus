@@ -3,14 +3,13 @@ from flask import session
 
 import authz
 from config import (
-    APP_NAME,
     CLIPBOARD_CLEAR_SECONDS,
     MAX_EXPIRY_DAYS,
     REVEAL_AUTO_HIDE_SECONDS,
 )
 import db
 import pins
-from settings_svc import classification
+from settings_svc import branding, classification
 
 
 def nav_teams(user_id: str):
@@ -56,8 +55,11 @@ def active_team_id(teams):
 
 def inject_nav():
     banner = classification()
+    brand = branding()
     base = {
-        "app_name": APP_NAME,
+        "app_name": brand["app_name"],
+        "brand_name": brand["brand_name"],
+        "brand_tagline": brand["brand_tagline"],
         "classification": banner,
         "is_global_admin": bool(session.get("is_global_admin")),
         "nav_teams": [],

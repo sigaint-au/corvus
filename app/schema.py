@@ -300,6 +300,30 @@ def ensure_schema():
         """,
         "GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator",
         """
+        CREATE OR REPLACE FUNCTION private.upsert_oidc_user(p_email text, p_name text)
+        RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
+        DECLARE uid uuid;
+        BEGIN
+          SELECT id INTO uid FROM private.users WHERE email = lower(p_email);
+          IF uid IS NULL THEN
+            INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
+            VALUES (lower(p_email), NULL, COALESCE(p_name, ''), false, 'oidc')
+            RETURNING id INTO uid;
+          ELSE
+            UPDATE private.users
+            SET name = CASE WHEN COALESCE(p_name, '') <> '' THEN p_name ELSE name END,
+                auth_source = CASE
+                  WHEN auth_source = 'local' AND password_hash IS NOT NULL THEN auth_source
+                  ELSE 'oidc'
+                END
+            WHERE id = uid;
+          END IF;
+          RETURN uid;
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.upsert_oidc_user TO authenticator",
+        """
         CREATE TABLE IF NOT EXISTS private.ldap_role_maps (
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           ldap_group text NOT NULL,
@@ -345,6 +369,48 @@ def ensure_schema():
         """,
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_ldap_maps TO authenticated",
         "GRANT ALL ON api.team_ldap_maps TO authenticator",
+        """
+        CREATE TABLE IF NOT EXISTS private.oidc_role_maps (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          oidc_group text NOT NULL,
+          role text NOT NULL CHECK (role IN ('global_admin')),
+          created_at timestamptz NOT NULL DEFAULT now(),
+          UNIQUE (oidc_group)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS api.team_oidc_maps (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
+          oidc_group text NOT NULL,
+          role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+          created_at timestamptz NOT NULL DEFAULT now(),
+          UNIQUE (team_id, oidc_group)
+        )
+        """,
+        "ALTER TABLE api.team_oidc_maps ENABLE ROW LEVEL SECURITY",
+        "DROP POLICY IF EXISTS tom_select ON api.team_oidc_maps",
+        """
+        CREATE POLICY tom_select ON api.team_oidc_maps FOR SELECT TO authenticated
+          USING (api.is_team_member(team_id))
+        """,
+        "DROP POLICY IF EXISTS tom_insert ON api.team_oidc_maps",
+        """
+        CREATE POLICY tom_insert ON api.team_oidc_maps FOR INSERT TO authenticated
+          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        "DROP POLICY IF EXISTS tom_update ON api.team_oidc_maps",
+        """
+        CREATE POLICY tom_update ON api.team_oidc_maps FOR UPDATE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        "DROP POLICY IF EXISTS tom_delete ON api.team_oidc_maps",
+        """
+        CREATE POLICY tom_delete ON api.team_oidc_maps FOR DELETE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin'))
+        """,
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_oidc_maps TO authenticated",
+        "GRANT ALL ON api.team_oidc_maps TO authenticator",
         "DROP FUNCTION IF EXISTS private.get_setting(text)",
         "DROP FUNCTION IF EXISTS private.set_setting(text, text)",
         "DROP FUNCTION IF EXISTS private.all_settings()",

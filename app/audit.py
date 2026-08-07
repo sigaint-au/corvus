@@ -28,6 +28,8 @@ ORG_JOIN_APPROVE = "join_approve"
 ORG_JOIN_REJECT = "join_reject"
 ORG_LDAP_MAP_ADD = "ldap_map_add"
 ORG_LDAP_MAP_DELETE = "ldap_map_delete"
+ORG_OIDC_MAP_ADD = "oidc_map_add"
+ORG_OIDC_MAP_DELETE = "oidc_map_delete"
 ORG_TEAM_SETTINGS = "team_settings"
 ORG_PROJECT_MEMBER_ADD = "project_member_add"
 ORG_PROJECT_MEMBER_REMOVE = "project_member_remove"
@@ -134,6 +136,8 @@ ROLE_CHANGE_ACTIONS = (
     ORG_JOIN_REJECT,
     ORG_LDAP_MAP_ADD,
     ORG_LDAP_MAP_DELETE,
+    ORG_OIDC_MAP_ADD,
+    ORG_OIDC_MAP_DELETE,
     ORG_PROJECT_MEMBER_ADD,
     ORG_PROJECT_MEMBER_REMOVE,
     ORG_PROJECT_MEMBER_ROLE,

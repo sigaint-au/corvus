@@ -69,6 +69,32 @@ def can_create_team(is_global_admin: bool = False) -> bool:
     )
 
 
+def public_base_url(fallback: str = "") -> str:
+    """Configured server URL, or fallback (e.g. request.url_root). No trailing slash."""
+    configured = (get_settings().get("server_url") or "").strip().rstrip("/")
+    if configured:
+        return configured
+    return (fallback or "").strip().rstrip("/")
+
+
+def branding() -> dict:
+    """Brand name / tagline and full app_name for titles and mail."""
+    from config import APP_NAME, DEFAULT_SETTINGS
+
+    s = get_settings()
+    name = (s.get("brand_name") or DEFAULT_SETTINGS.get("brand_name") or "Sigaint").strip()
+    name = name or "Sigaint"
+    tagline = (s.get("brand_tagline") or DEFAULT_SETTINGS.get("brand_tagline") or "").strip()
+    full = f"{name} {tagline}".strip() if tagline else name
+    if not full:
+        full = APP_NAME
+    return {
+        "brand_name": name,
+        "brand_tagline": tagline,
+        "app_name": full,
+    }
+
+
 def classification():
     s = get_settings()
     enabled = truthy(s.get("classification_enabled"))

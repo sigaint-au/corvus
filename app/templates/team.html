@@ -401,6 +401,55 @@
   </form>
 </section>
 
+<section>
+  <h2>OIDC group membership</h2>
+  <p class="muted">
+    Automatically add users to this team when they sign in via OIDC/SSO and the token includes the mapped group.
+    Highest matching role wins. Manual members are never removed by OIDC sync.
+    {% if not oidc_enabled %}<strong>OIDC is currently disabled</strong> in server settings.{% endif %}
+  </p>
+  {% if oidc_maps %}
+  <table>
+    <thead><tr><th>OIDC group</th><th>Team role</th><th></th></tr></thead>
+    <tbody>
+    {% for m in oidc_maps %}
+      <tr>
+        <td><code class="k">{{ m.oidc_group }}</code></td>
+        <td>{{ m.role }}</td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('delete_team_oidc_map', team_id=team.id, map_id=m.id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove this OIDC mapping?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No OIDC group maps for this team.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('add_team_oidc_map', team_id=team.id) }}" class="row" style="margin-top:1rem;">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label style="flex:2;">OIDC group / role name
+      <input type="text" name="oidc_group" required
+             placeholder="eng-secrets">
+    </label>
+    <label>Role
+      <select name="role">
+        <option value="member">member</option>
+        <option value="viewer">viewer</option>
+        <option value="admin">admin</option>
+        <option value="owner">owner</option>
+      </select>
+    </label>
+    <button type="submit">Add map</button>
+  </form>
+</section>
+
 {% if my_role == 'owner' %}
 <section>
   <h2>Transfer ownership</h2>

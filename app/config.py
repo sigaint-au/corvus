@@ -45,6 +45,12 @@ APP_NAME = "Sigaint Secret Server"
 
 HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 DEFAULT_SETTINGS = {
+    # Public base URL of this app (no trailing slash), e.g. https://secrets.example.com
+    # Used for OIDC redirect URI display and ESO webhook YAML defaults.
+    "server_url": "",
+    # Product branding (sidebar, page titles, mail/TOTP issuer fallbacks)
+    "brand_name": "Sigaint",
+    "brand_tagline": "Secret Server",
     "classification_enabled": "false",
     "classification_text": "OFFICIAL",
     "classification_color": "#677381",
@@ -76,6 +82,17 @@ DEFAULT_SETTINGS = {
     "totp_enforce_global_admins": "false",
     # Audit log retention (days). 0 = keep forever. Applied by global-admin purge.
     "audit_retention_days": "365",
+    # OIDC SSO (Keycloak, etc.) — authorization code + ID token
+    "oidc_enabled": "false",
+    "oidc_issuer": "",  # e.g. https://keycloak.example/realms/myrealm
+    "oidc_client_id": "",
+    "oidc_client_secret": "",  # encrypted at rest when saved via settings UI
+    "oidc_scopes": "openid email profile",
+    "oidc_button_label": "Sign in with SSO",
+    # Claim used as display username on first SSO upsert (Keycloak: preferred_username)
+    "oidc_username_claim": "preferred_username",
+    # Claim name for group list (Keycloak: "groups" with Group Membership mapper)
+    "oidc_groups_claim": "groups",
 }
 TEAM_ROLES = ("owner", "admin", "member", "viewer")
 ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}

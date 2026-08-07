@@ -5,8 +5,19 @@
 {% if setup_notice %}
 <p class="flash error">{{ setup_notice }}</p>
 {% endif %}
-{% if ldap_enabled %}
-<p class="muted">Local accounts and LDAP directory logins are accepted.</p>
+{% if ldap_enabled or oidc_enabled %}
+<p class="muted">
+  {% if oidc_enabled and ldap_enabled %}Local, LDAP, and SSO logins are accepted.
+  {% elif oidc_enabled %}Local and SSO logins are accepted.
+  {% else %}Local accounts and LDAP directory logins are accepted.{% endif %}
+</p>
+{% endif %}
+{% if oidc_enabled %}
+<p>
+  <a class="btn-secondary" style="display:inline-block;width:100%;text-align:center;box-sizing:border-box;"
+     href="{{ url_for('login_oidc') }}">{{ oidc_button_label or 'Sign in with SSO' }}</a>
+</p>
+<p class="muted" style="text-align:center;margin:.75rem 0;">or</p>
 {% endif %}
 <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -22,7 +33,7 @@
 </p>
 {% if registration_enabled %}
 <p class="muted">No account? <a href="{{ url_for('register') }}">Register</a>
-  {% if ldap_enabled %} <span>(local account)</span>{% endif %}
+  {% if ldap_enabled or oidc_enabled %} <span>(local account)</span>{% endif %}
 </p>
 {% endif %}
 {% endblock %}

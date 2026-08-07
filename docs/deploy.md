@@ -75,6 +75,42 @@ RLS enforces team/project membership.
 
 5 failed attempts → locked for 5 minutes (`private.login_failures`, shared across workers).
 
+## Server URL
+
+**Administration → Server settings → General → Server URL** — public base URL of this app
+(e.g. `https://secrets.example.com`, no trailing slash). Used for:
+
+- OIDC redirect URI in the SSO checklist and login callback preference
+- Default app base URL in project **Integrations** ESO YAML
+
+If unset, the app falls back to the request host for those features.
+
+## OIDC / SSO
+
+Authorization-code login for any OpenID Connect IdP. Configure under
+**Administration → Server settings → OIDC / SSO**.
+
+| Setting | Example |
+|---------|---------|
+| Server URL (General) | `https://secrets.example.com` |
+| Issuer | `https://idp.example.com/realms/myrealm` |
+| Client ID | `secretstore` |
+| Client secret | confidential client secret |
+| Scopes | `openid email profile` (email required) |
+| Username claim | `preferred_username` (display name on onboarding) |
+| Redirect URI | `{server_url}/login/oidc/callback` |
+
+Create a confidential OIDC client with the authorization code flow and the redirect URI
+above. Users are upserted by email (`auth_source=oidc`). Local password login still works.
+
+**Group → role maps** (same idea as LDAP):
+
+- **Server settings → OIDC / SSO → OIDC group → roles** — map a group name to `global_admin`
+- **Team → Settings → OIDC group membership** — map a group to a team role
+
+Groups are read from the ID token claim `oidc_groups_claim` (default `groups`) plus
+`realm_access.roles` when present. Maps apply on each SSO login; manual team memberships are not removed.
+
 ## Audit retention purge (daily cron)
 
 Retention is configured in the UI (**Administration → Auditing → Export & retention**,

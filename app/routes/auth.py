@@ -12,6 +12,7 @@ import db
 import ldap_auth
 import lockout
 import mailer
+import oidc_auth
 import passwords
 import pins
 import settings_svc
@@ -147,21 +148,29 @@ def register(app):
         return redirect(url_for("login"))
 
 
+    def _login_page(**extra):
+        ldap_on = settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled"))
+        oidc_on = oidc_auth.oidc_enabled()
+        cfg = oidc_auth.oidc_cfg()
+        return render_template(
+            "login.html",
+            ldap_enabled=ldap_on,
+            oidc_enabled=oidc_on,
+            oidc_button_label=cfg.get("oidc_button_label") or "Sign in with SSO",
+            registration_enabled=settings_svc.registration_enabled(),
+            setup_notice=settings_svc.setup_notice(),
+            **extra,
+        )
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
-        ldap_on = settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled"))
-        notice = settings_svc.setup_notice()
         if request.method == "POST":
             email = request.form["email"].strip()
             password = request.form["password"]
+            ldap_on = settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled"))
             if lockout.is_locked(email):
                 flash("Too many failed attempts. Try again in a few minutes.", "error")
-                return render_template(
-                    "login.html",
-                    ldap_enabled=ldap_on,
-                    registration_enabled=settings_svc.registration_enabled(),
-                    setup_notice=notice,
-                ), 429
+                return _login_page(), 429
             user = None
             # 1) Local password accounts (break-glass / non-LDAP users)
             with db.connect() as conn, conn.cursor() as cur:
@@ -180,37 +189,76 @@ def register(app):
                     except Exception as e:
                         log.exception("LDAP user sync failed")
                         flash(f"LDAP login succeeded but account sync failed: {e}", "error")
-                        return render_template(
-                            "login.html",
-                            ldap_enabled=ldap_on,
-                            registration_enabled=settings_svc.registration_enabled(),
-                            setup_notice=notice,
-                        ), 500
+                        return _login_page(), 500
             if not user:
                 lockout.record_failure(email)
                 flash("Invalid email or password", "error")
-                return render_template(
-                    "login.html",
-                    ldap_enabled=ldap_on,
-                    registration_enabled=settings_svc.registration_enabled(),
-                    setup_notice=notice,
-                ), 401
+                return _login_page(), 401
             if authz.is_account_disabled(str(user["id"])):
                 flash("This account has been disabled. Contact an administrator.", "error")
-                return render_template(
-                    "login.html",
-                    ldap_enabled=ldap_on,
-                    registration_enabled=settings_svc.registration_enabled(),
-                    setup_notice=notice,
-                ), 403
+                return _login_page(), 403
             lockout.clear_failures(email)
             return _post_password_login(user)
-        return render_template(
-            "login.html",
-            ldap_enabled=ldap_on,
-            registration_enabled=settings_svc.registration_enabled(),
-            setup_notice=notice,
+        return _login_page()
+
+    @app.get("/login/oidc")
+    def login_oidc():
+        if not oidc_auth.oidc_enabled():
+            flash("SSO is not enabled", "error")
+            return redirect(url_for("login"))
+        try:
+            state, nonce = oidc_auth.new_state_nonce()
+            session["oidc_state"] = state
+            session["oidc_nonce"] = nonce
+            redirect_uri = oidc_auth.redirect_uri_for_request(request.url_root)
+            session["oidc_redirect_uri"] = redirect_uri
+            url = oidc_auth.build_authorize_url(
+                redirect_uri=redirect_uri, state=state, nonce=nonce
+            )
+            return redirect(url)
+        except Exception as e:
+            log.exception("OIDC start failed")
+            flash(f"SSO start failed: {e}", "error")
+            return redirect(url_for("login"))
+
+    @app.get("/login/oidc/callback")
+    def login_oidc_callback():
+        if not oidc_auth.oidc_enabled():
+            flash("SSO is not enabled", "error")
+            return redirect(url_for("login"))
+        err = request.args.get("error")
+        if err:
+            desc = request.args.get("error_description") or err
+            flash(f"SSO login denied: {desc}", "error")
+            return redirect(url_for("login"))
+        code = request.args.get("code") or ""
+        state = request.args.get("state") or ""
+        want_state = session.pop("oidc_state", None)
+        nonce = session.pop("oidc_nonce", None)
+        redirect_uri = session.pop("oidc_redirect_uri", None) or oidc_auth.redirect_uri_for_request(
+            request.url_root
         )
+        if not code or not want_state or state != want_state or not nonce:
+            flash("SSO login failed (invalid state). Try again.", "error")
+            return redirect(url_for("login"))
+        try:
+            tokens = oidc_auth.exchange_code(code=code, redirect_uri=redirect_uri)
+            id_token = tokens.get("id_token")
+            if not id_token:
+                raise RuntimeError("token response missing id_token")
+            claims = oidc_auth.verify_id_token(id_token, nonce=nonce)
+            ident = oidc_auth.claims_to_identity(claims)
+            user = oidc_auth.sync_oidc_user(
+                ident["email"], ident["name"], ident.get("groups") or []
+            )
+        except Exception as e:
+            log.exception("OIDC callback failed")
+            flash(f"SSO login failed: {e}", "error")
+            return redirect(url_for("login"))
+        if authz.is_account_disabled(str(user["id"])):
+            flash("This account has been disabled. Contact an administrator.", "error")
+            return redirect(url_for("login"))
+        return _post_password_login(user)
 
 
     @app.route("/login/2fa", methods=["GET", "POST"])
