@@ -316,6 +316,19 @@ class TestAudit(unittest.TestCase):
         self.assertIn("revealed", s)
         self.assertIn("API_KEY", s)
 
+    def test_format_time_ago(self):
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        self.assertEqual(audit.format_time_ago(None), "—")
+        self.assertEqual(audit.format_time_ago(now - timedelta(seconds=10)), "just now")
+        self.assertEqual(audit.format_time_ago(now - timedelta(minutes=5)), "5 minutes ago")
+        self.assertEqual(audit.format_time_ago(now - timedelta(hours=3)), "3 hours ago")
+        self.assertEqual(audit.format_time_ago(now - timedelta(days=4)), "4 days ago")
+        # Absolute remains available for tooltips
+        abs_s = audit.format_when(now - timedelta(hours=1))
+        self.assertIn("UTC", abs_s)
+
     def test_global_search_requires_login(self):
         r = store.app.test_client().get("/search?q=x")
         self.assertEqual(r.status_code, 302)

@@ -194,13 +194,69 @@ def describe_event(row) -> str:
     return f"{who} {verb} a secret"
 
 
+def _as_utc_dt(dt):
+    """Coerce datetime/ISO string to timezone-aware UTC, or None."""
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        s = dt.strip()
+        if not s:
+            return None
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if not isinstance(dt, datetime):
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def format_when(dt) -> str:
     """Compact absolute timestamp for display."""
-    if dt is None:
-        return "—"
-    if getattr(dt, "tzinfo", None) is None:
-        return str(dt)
-    return dt.strftime("%Y-%m-%d %H:%M UTC")
+    d = _as_utc_dt(dt)
+    if d is None:
+        return "—" if dt is None else str(dt)
+    return d.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def format_time_ago(dt) -> str:
+    """Relative time for Updated columns, e.g. '3 hours ago'."""
+    d = _as_utc_dt(dt)
+    if d is None:
+        return "—" if dt is None else str(dt)
+    now = datetime.now(timezone.utc)
+    sec = int((now - d).total_seconds())
+    if sec < 0:
+        # Clock skew / future stamp — fall back to absolute
+        return format_when(d)
+    if sec < 45:
+        return "just now"
+    if sec < 90:
+        return "1 minute ago"
+    if sec < 3600:
+        n = sec // 60
+        return f"{n} minutes ago"
+    if sec < 5400:
+        return "1 hour ago"
+    if sec < 86400:
+        n = sec // 3600
+        return f"{n} hours ago"
+    if sec < 86400 * 2:
+        return "1 day ago"
+    if sec < 86400 * 30:
+        n = sec // 86400
+        return f"{n} days ago"
+    if sec < 86400 * 45:
+        return "1 month ago"
+    if sec < 86400 * 365:
+        n = sec // (86400 * 30)
+        return f"{n} months ago"
+    if sec < 86400 * 365 * 2:
+        return "1 year ago"
+    n = sec // (86400 * 365)
+    return f"{n} years ago"
 
 
 def count_for_project(
