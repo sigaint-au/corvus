@@ -1453,7 +1453,12 @@ class TestSecrets(unittest.TestCase):
         enc = crypto.encrypt("super-secret")
         conn, cur = _conn()
         cur.fetchone.side_effect = [
-            {"id": sid, "key": "API_KEY", "value_enc": enc},
+            {
+                "id": sid,
+                "key": "API_KEY",
+                "value_enc": enc,
+                "expires_at": None,
+            },
             {"w": True},
         ]
         with patch.object(db, "as_user", return_value=conn):
@@ -1462,6 +1467,8 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(b"super-secret", r.data)
         self.assertIn(b"Save", r.data)
         self.assertIn(b"/value", r.data)
+        self.assertIn(b"expires_at", r.data)
+        self.assertIn(b"90d", r.data)
 
     def test_update_secret_value(self):
         sid = uuid4()
@@ -1474,7 +1481,7 @@ class TestSecrets(unittest.TestCase):
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/secrets/{sid}/value",
-                data={"value": "new-secret"},
+                data={"value": "new-secret", "expires_at": "2030-01-15"},
                 headers={"HX-Request": "true"},
             )
         self.assertEqual(r.status_code, 200)
@@ -1482,12 +1489,34 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(b"*******", r.data)
         self.assertIn(b"Updated", r.data)
         conn.commit.assert_called()
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("expires_at", sql)
 
     def test_reveal_missing(self):
         conn, _ = _conn(fetchone=None)
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{self.pid}/secrets/{uuid4()}/reveal")
         self.assertEqual(r.status_code, 404)
+
+    def test_users_suggest_requires_login(self):
+        c = store.app.test_client()
+        r = c.get("/api/users/suggest?q=ab")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_users_suggest_ok(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+        conn, _ = _conn(
+            fetchall=[{"email": "alice@ex.com", "name": "Alice"}]
+        )
+        with patch.object(db, "connect_admin", return_value=conn), patch.object(
+            authz, "is_global_admin", return_value=True
+        ):
+            r = self.client.get("/api/users/suggest?q=ali")
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertEqual(data[0]["email"], "alice@ex.com")
 
 
 # ── Machine tokens ─────────────────────────────────────────────────
@@ -1623,25 +1652,21 @@ class TestTokens(unittest.TestCase):
         self.assertIn("pm_insert ON api.project_members", schema_src)
         self.assertIn("pm_delete ON api.project_members", schema_src)
 
-    def test_can_write_project_most_specific_wins(self):
-        """Project role overrides team default when a project_members row exists."""
+    def test_can_write_project_team_admin_floor(self):
+        """Team owner/admin keep write; project role elevates members; cannot demote admins."""
         from pathlib import Path
 
         init_sql = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
         start = init_sql.index("CREATE OR REPLACE FUNCTION api.can_write_project")
         end = init_sql.index("$$;", start) + 3
         body = init_sql[start:end]
+        # Team owner/admin always write
+        self.assertIn("tm.role IN ('owner', 'admin')", body)
         # Project write/admin grants write
         self.assertIn("role IN ('admin', 'write')", body)
-        # Team default only when NOT a project member
+        # Team members only when not restricted by project_members
         self.assertIn("NOT EXISTS", body)
-        self.assertIn("tm.role IN ('owner', 'admin', 'member')", body)
-        # Old OR-both-paths pattern is gone (no bare team join without NOT EXISTS guard)
-        # Presence of project_members check before team fallback is the authority rule.
-        self.assertLess(
-            body.index("FROM api.project_members"),
-            body.index("FROM api.projects p"),
-        )
+        self.assertIn("tm.role = 'member'", body)
 
     def test_can_read_project_most_specific_wins(self):
         from pathlib import Path
@@ -1663,7 +1688,7 @@ class TestTokens(unittest.TestCase):
         body = init_sql[start:end]
         self.assertIn("role = 'admin'", body)
         self.assertIn("tm.role IN ('owner', 'admin')", body)
-        self.assertIn("NOT EXISTS", body)
+        self.assertIn("FROM api.projects p", body)
 
     def test_add_project_member_requires_admin(self):
         """Project write members cannot add project members."""

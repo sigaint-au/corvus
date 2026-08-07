@@ -86,14 +86,27 @@
     <label>Note
       <input type="text" name="note" placeholder="optional label">
     </label>
-    <label>Expires <input type="date" name="expires_at"></label>
+    <label>Expires
+      <input type="date" name="expires_at" id="secret-expires">
+    </label>
+    <span class="exp-presets" data-target="secret-expires" style="align-self:flex-end;padding-bottom:.35rem;">
+      <button type="button" class="link exp-preset" data-days="30">30d</button>
+      <button type="button" class="link exp-preset" data-days="90">90d</button>
+      <button type="button" class="link exp-preset" data-days="180">180d</button>
+      <button type="button" class="link exp-preset" data-days="365">1y</button>
+      <button type="button" class="link exp-preset" data-days="0">Never</button>
+    </span>
     <button type="submit">Save</button>
   </form>
   <script>
   (function () {
+    var form = document.getElementById('secret-form');
     var btn = document.getElementById('gen-btn');
     var inp = document.getElementById('secret-value');
     if (!btn || !inp) return;
+    function maskValue() {
+      inp.type = 'password';
+    }
     btn.addEventListener('click', function () {
       var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*_-+=';
       var len = 32;
@@ -104,7 +117,22 @@
       inp.type = 'text';
       inp.value = out;
       inp.focus();
+      inp.select();
     });
+    // Re-mask if user edits after generate
+    inp.addEventListener('input', function () {
+      if (inp.type === 'text' && document.activeElement === inp) {
+        /* keep visible while typing over generated value */
+      }
+    });
+    if (form) {
+      form.addEventListener('htmx:afterRequest', function (e) {
+        if (e.detail && e.detail.successful) {
+          form.reset();
+          maskValue();
+        }
+      });
+    }
   })();
   </script>
   {% endif %}
@@ -291,14 +319,18 @@
 <section>
   <h2>Members</h2>
   <p class="muted">
-    Optional project-level roles. When present for a user, the project role
-    <strong>overrides</strong> their team default on this project only.
+    Optional project-level roles for this project only.
     Roles: <strong>read</strong> (view), <strong>write</strong> (edit secrets),
     <strong>admin</strong> (write + manage members).
+    Project roles can <strong>elevate</strong> team members/viewers; they
+    <strong>cannot demote</strong> team owners or team admins.
   </p>
   <form method="post" action="{{ url_for('add_project_member', project_id=project.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Email <input type="email" name="email" required placeholder="user@example.com"></label>
+    <label>Email
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+    </label>
     <label>Role
       <select name="role">
         {% for r in project_roles %}

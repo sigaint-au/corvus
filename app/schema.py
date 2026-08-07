@@ -131,6 +131,12 @@ def ensure_schema():
         SET row_security = off AS $$
           SELECT api.is_global_admin()
             OR EXISTS (
+              SELECT 1 FROM api.projects p
+              JOIN api.team_members tm ON tm.team_id = p.team_id
+              WHERE p.id = pid AND tm.user_id = api.current_user_id()
+                AND tm.role IN ('owner', 'admin')
+            )
+            OR EXISTS (
               SELECT 1 FROM api.project_members
               WHERE project_id = pid AND user_id = api.current_user_id()
                 AND role IN ('admin', 'write')
@@ -144,7 +150,7 @@ def ensure_schema():
                 SELECT 1 FROM api.projects p
                 JOIN api.team_members tm ON tm.team_id = p.team_id
                 WHERE p.id = pid AND tm.user_id = api.current_user_id()
-                  AND tm.role IN ('owner', 'admin', 'member')
+                  AND tm.role = 'member'
               )
             );
         $$
@@ -156,21 +162,15 @@ def ensure_schema():
         SET row_security = off AS $$
           SELECT api.is_global_admin()
             OR EXISTS (
+              SELECT 1 FROM api.projects p
+              JOIN api.team_members tm ON tm.team_id = p.team_id
+              WHERE p.id = pid AND tm.user_id = api.current_user_id()
+                AND tm.role IN ('owner', 'admin')
+            )
+            OR EXISTS (
               SELECT 1 FROM api.project_members
               WHERE project_id = pid AND user_id = api.current_user_id()
                 AND role = 'admin'
-            )
-            OR (
-              NOT EXISTS (
-                SELECT 1 FROM api.project_members
-                WHERE project_id = pid AND user_id = api.current_user_id()
-              )
-              AND EXISTS (
-                SELECT 1 FROM api.projects p
-                JOIN api.team_members tm ON tm.team_id = p.team_id
-                WHERE p.id = pid AND tm.user_id = api.current_user_id()
-                  AND tm.role IN ('owner', 'admin')
-              )
             );
         $$
         """,

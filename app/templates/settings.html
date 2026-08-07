@@ -315,7 +315,8 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="promote">
     <label style="flex:2;">Promote user by email
-      <input type="email" name="email" required placeholder="user@example.com">
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
     </label>
     <button type="submit">Make global admin</button>
   </form>

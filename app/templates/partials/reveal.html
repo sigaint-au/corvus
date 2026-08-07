@@ -11,8 +11,21 @@
       <button type="button" class="icon-btn copy-btn" title="Copy"
               data-copy-target="secret-val-{{ secret_id }}"
               data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
-      <button type="submit" class="icon-btn save-btn" title="Save value">Save</button>
     </span>
+    <div class="reveal-meta row" style="margin-top:.5rem;align-items:flex-end;">
+      <label style="flex:1;margin:0;">Expires
+        <input type="date" name="expires_at" id="exp-{{ secret_id }}"
+               value="{{ expires_at or '' }}">
+      </label>
+      <span class="exp-presets" data-target="exp-{{ secret_id }}">
+        <button type="button" class="link exp-preset" data-days="30">30d</button>
+        <button type="button" class="link exp-preset" data-days="90">90d</button>
+        <button type="button" class="link exp-preset" data-days="180">180d</button>
+        <button type="button" class="link exp-preset" data-days="365">1y</button>
+        <button type="button" class="link exp-preset" data-days="0">Never</button>
+      </span>
+      <button type="submit" class="icon-btn save-btn" title="Save value and expiry">Save</button>
+    </div>
   </form>
   {% else %}
   <span class="input-with-btn">
@@ -22,5 +35,8 @@
             data-copy-target="secret-val-{{ secret_id }}"
             data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
   </span>
+  {% if expires_at %}
+  <p class="muted" style="margin:.35rem 0 0;font-size:.85rem;">Expires {{ expires_at }}</p>
+  {% endif %}
   {% endif %}
 </div>

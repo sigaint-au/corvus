@@ -371,7 +371,15 @@ CREATE OR REPLACE FUNCTION api.can_write_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
+  -- Team owner/admin always keep write (project_members cannot demote them).
+  -- Otherwise project role overrides team when present; else team member writes.
   SELECT api.is_global_admin()
+    OR EXISTS (
+      SELECT 1 FROM api.projects p
+      JOIN api.team_members tm ON tm.team_id = p.team_id
+      WHERE p.id = pid AND tm.user_id = api.current_user_id()
+        AND tm.role IN ('owner', 'admin')
+    )
     OR EXISTS (
       SELECT 1 FROM api.project_members
       WHERE project_id = pid AND user_id = api.current_user_id()
@@ -386,7 +394,7 @@ SET row_security = off AS $$
         SELECT 1 FROM api.projects p
         JOIN api.team_members tm ON tm.team_id = p.team_id
         WHERE p.id = pid AND tm.user_id = api.current_user_id()
-          AND tm.role IN ('owner', 'admin', 'member')
+          AND tm.role = 'member'
       )
     );
 $$;
@@ -395,23 +403,18 @@ CREATE OR REPLACE FUNCTION api.can_admin_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
+  -- Team owner/admin always keep project admin (cannot demote via project_members).
   SELECT api.is_global_admin()
+    OR EXISTS (
+      SELECT 1 FROM api.projects p
+      JOIN api.team_members tm ON tm.team_id = p.team_id
+      WHERE p.id = pid AND tm.user_id = api.current_user_id()
+        AND tm.role IN ('owner', 'admin')
+    )
     OR EXISTS (
       SELECT 1 FROM api.project_members
       WHERE project_id = pid AND user_id = api.current_user_id()
         AND role = 'admin'
-    )
-    OR (
-      NOT EXISTS (
-        SELECT 1 FROM api.project_members
-        WHERE project_id = pid AND user_id = api.current_user_id()
-      )
-      AND EXISTS (
-        SELECT 1 FROM api.projects p
-        JOIN api.team_members tm ON tm.team_id = p.team_id
-        WHERE p.id = pid AND tm.user_id = api.current_user_id()
-          AND tm.role IN ('owner', 'admin')
-      )
     );
 $$;
 

@@ -173,8 +173,13 @@ def _load_secrets_page(cur, project_id, page, q):
     return rows, pager
 
 
-def _parse_expires_at(form):
-    """Return expires_at datetime or None from form (capped at MAX_EXPIRY_DAYS)."""
+def _parse_expires_at(form, *, allow_clear: bool = True):
+    """
+    Return expires_at datetime or None from form (capped at MAX_EXPIRY_DAYS).
+    Empty / clear_expires → None (no expiry).
+    """
+    if allow_clear and form.get("clear_expires") in ("1", "true", "on", "yes"):
+        return None
     raw = (form.get("expires_at") or "").strip()
     if not raw:
         return None
@@ -734,7 +739,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, key, value_enc FROM api.secrets
+                SELECT id, key, value_enc, expires_at FROM api.secrets
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
                 (str(secret_id), str(project_id)),
@@ -761,6 +766,13 @@ def register(app):
                 action="revealed",
             )
             conn.commit()
+        exp = row.get("expires_at")
+        exp_date = ""
+        if exp is not None:
+            try:
+                exp_date = _as_utc(exp).date().isoformat()
+            except Exception:
+                exp_date = str(exp)[:10]
         return render_template(
             "partials/reveal.html",
             value=crypto.decrypt(row["value_enc"]),
@@ -769,6 +781,7 @@ def register(app):
             editable=True,
             can_write=can_write,
             is_pinned=is_fav,
+            expires_at=exp_date,
             clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
         )
 
@@ -818,6 +831,21 @@ def register(app):
         value = request.form.get("value")
         if value is None:
             return "Value required", 400
+        try:
+            # Always accept expires fields from edit form
+            if request.form.get("clear_expires") or "expires_at" in request.form:
+                expires_at = _parse_expires_at(request.form, allow_clear=True)
+                set_expires = True
+            else:
+                expires_at = None
+                set_expires = False
+        except (ValueError, TypeError) as e:
+            if authz.htmx():
+                return str(e), 400
+            flash(str(e), "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="secrets")
+            )
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             if not cur.fetchone()["w"]:
@@ -832,13 +860,27 @@ def register(app):
             row = cur.fetchone()
             if not row:
                 return "Not found", 404
-            cur.execute(
-                """
-                UPDATE api.secrets SET value_enc = %s
-                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
-                """,
-                (crypto.encrypt(value), str(secret_id), str(project_id)),
-            )
+            if set_expires:
+                cur.execute(
+                    """
+                    UPDATE api.secrets SET value_enc = %s, expires_at = %s
+                    WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                    """,
+                    (
+                        crypto.encrypt(value),
+                        expires_at,
+                        str(secret_id),
+                        str(project_id),
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE api.secrets SET value_enc = %s
+                    WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                    """,
+                    (crypto.encrypt(value), str(secret_id), str(project_id)),
+                )
             if cur.rowcount == 0:
                 conn.rollback()
                 return "Forbidden", 403
