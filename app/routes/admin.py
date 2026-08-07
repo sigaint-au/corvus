@@ -6,6 +6,7 @@ import authz
 import config
 import crypto
 import db
+import mailer
 import settings_svc
 
 
@@ -90,6 +91,50 @@ def register(app):
                     "true" if request.form.get("ldap_use_memberof") else "false",
                 )
                 flash("LDAP settings saved", "ok")
+            elif action == "smtp":
+                enabled = "true" if request.form.get("smtp_enabled") else "false"
+                host = (request.form.get("smtp_host") or "").strip()
+                port_raw = (request.form.get("smtp_port") or "587").strip() or "587"
+                encryption = (request.form.get("smtp_encryption") or "starttls").strip().lower()
+                if encryption not in config.SMTP_ENCRYPTION_MODES:
+                    encryption = "starttls"
+                username = (request.form.get("smtp_username") or "").strip()
+                from_email = (request.form.get("smtp_from_email") or "").strip()
+                from_name = (request.form.get("smtp_from_name") or "").strip() or config.APP_NAME
+                login_alerts = "true" if request.form.get("smtp_login_alerts") else "false"
+                try:
+                    port = int(port_raw)
+                    if not (1 <= port <= 65535):
+                        raise ValueError("port out of range")
+                except ValueError:
+                    flash("SMTP port must be a number between 1 and 65535", "error")
+                else:
+                    settings_svc.set_setting("smtp_enabled", enabled)
+                    settings_svc.set_setting("smtp_host", host)
+                    settings_svc.set_setting("smtp_port", str(port))
+                    settings_svc.set_setting("smtp_encryption", encryption)
+                    settings_svc.set_setting("smtp_username", username)
+                    new_pw = request.form.get("smtp_password") or ""
+                    if new_pw.strip():
+                        settings_svc.set_setting(
+                            "smtp_password", crypto.encrypt(new_pw.strip())
+                        )
+                    settings_svc.set_setting("smtp_from_email", from_email)
+                    settings_svc.set_setting("smtp_from_name", from_name)
+                    settings_svc.set_setting("smtp_login_alerts", login_alerts)
+                    flash("Email (SMTP) settings saved", "ok")
+            elif action == "smtp_test":
+                to_email = (request.form.get("test_email") or "").strip() or (
+                    session.get("email") or ""
+                )
+                if not to_email:
+                    flash("Enter a recipient email for the test message", "error")
+                else:
+                    ok, err = mailer.send_test_email(to_email)
+                    if ok:
+                        flash(f"Test email sent to {to_email}", "ok")
+                    else:
+                        flash(f"Test email failed: {err}", "error")
             elif action == "ldap_role_map_add":
                 ldap_group = (request.form.get("ldap_group") or "").strip()
                 role = (request.form.get("role") or "global_admin").strip()
@@ -152,18 +197,22 @@ def register(app):
                 "ldap": "ldap",
                 "ldap_role_map_add": "ldap",
                 "ldap_role_map_delete": "ldap",
+                "smtp": "email",
+                "smtp_test": "email",
             }
             tab = tab_for.get(action, "general")
             return redirect(url_for("server_settings", tab=tab))
 
         tab = (request.args.get("tab") or "general").strip().lower()
-        if tab not in ("general", "banner", "admins", "ldap"):
+        if tab not in ("general", "banner", "admins", "ldap", "email"):
             tab = "general"
         settings = settings_svc.get_settings()
-        # never show raw bind password in the form
+        # never show raw passwords in the form
         settings = dict(settings)
         settings["ldap_bind_password_set"] = bool((settings.get("ldap_bind_password") or "").strip())
         settings["ldap_bind_password"] = ""
+        settings["smtp_password_set"] = bool((settings.get("smtp_password") or "").strip())
+        settings["smtp_password"] = ""
         users, ldap_role_maps = [], []
         with db.connect_admin() as conn, conn.cursor() as cur:
             if tab == "admins":
@@ -187,5 +236,6 @@ def register(app):
             ldap_role_maps=ldap_role_maps,
             classification=settings_svc.classification(),
             active_tab=tab,
+            smtp_encryption_modes=config.SMTP_ENCRYPTION_MODES,
         )
 

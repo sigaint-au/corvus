@@ -1,4 +1,7 @@
-"""Login, register, logout, index."""
+"""Login, register, logout, index, password, sessions."""
+
+import os
+from datetime import datetime, timezone
 
 from flask import flash, redirect, render_template, request, session, url_for
 import psycopg
@@ -8,8 +11,11 @@ from config import bootstrap_admin_email
 import db
 import ldap_auth
 import lockout
+import mailer
+import passwords
 import pins
 import settings_svc
+import user_sessions
 
 
 log = __import__("logging").getLogger(__name__)
@@ -40,6 +46,9 @@ def _establish_session(user_id, email, name, is_global_admin: bool):
     session["name"] = name or ""
     session["is_global_admin"] = bool(is_global_admin)
     session["jwt"] = db.make_jwt(user_id)
+    sid = user_sessions.create_session(user_id)
+    if sid:
+        session["sid"] = sid
 
 
 def register(app):
@@ -116,6 +125,17 @@ def register(app):
             is_admin = authz.is_global_admin(str(user["id"]))
             pending_invite = session.get("invite_token")
             _establish_session(user["id"], user["email"], user["name"], is_admin)
+            if mailer.login_alerts_enabled():
+                try:
+                    ua, ip = user_sessions.client_meta()
+                    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                    ok, err = mailer.send_login_alert(
+                        user["email"], ip=ip, user_agent=ua, when=when
+                    )
+                    if not ok:
+                        log.warning("login alert email failed for %s: %s", user["email"], err)
+                except Exception:
+                    log.exception("login alert email failed")
             if pending_invite:
                 return redirect(url_for("redeem_invite", token=pending_invite))
             return redirect(url_for("teams"))
@@ -165,8 +185,135 @@ def register(app):
 
     @app.post("/logout")
     def logout():
+        uid = session.get("user_id")
+        sid = session.get("sid")
+        if uid and sid:
+            user_sessions.revoke_session(sid, uid)
         session.clear()
         return redirect(url_for("login"))
+
+
+    @app.route("/forgot-password", methods=["GET", "POST"])
+    def forgot_password():
+        """Request a password reset link (local accounts only)."""
+        if session.get("user_id"):
+            return redirect(url_for("profile"))
+        if request.method == "POST":
+            email = (request.form.get("email") or "").strip()
+            token = passwords.create_reset_token(email)
+            # Always same response (no account enumeration)
+            msg = (
+                "If a local account exists for that email, a password reset link "
+                "has been prepared. Check with your administrator if you do not "
+                "receive one."
+            )
+            if token:
+                link = url_for("reset_password", token=token, _external=True)
+                mailed = False
+                if mailer.smtp_configured():
+                    ok, err = mailer.send_password_reset(email.strip().lower(), link)
+                    if ok:
+                        mailed = True
+                        log.info("password reset email sent for %s", email.lower())
+                    else:
+                        log.warning(
+                            "password reset email failed for %s: %s", email.lower(), err
+                        )
+                else:
+                    log.info(
+                        "password reset token created for local user %s (SMTP not configured)",
+                        email.lower(),
+                    )
+                # Dev mode: surface the link when mail was not sent
+                if not mailed and os.environ.get("ALLOW_INSECURE_DEFAULTS", "").lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                ):
+                    flash(f"Dev reset link (ALLOW_INSECURE_DEFAULTS): {link}", "ok")
+                    log.warning("password reset token issued for %s (dev mode)", email)
+                else:
+                    flash(msg, "ok")
+            else:
+                flash(msg, "ok")
+            return redirect(url_for("login"))
+        return render_template("forgot_password.html")
+
+
+    @app.route("/reset-password/<token>", methods=["GET", "POST"])
+    def reset_password(token):
+        if session.get("user_id"):
+            return redirect(url_for("profile"))
+        if request.method == "POST":
+            pw = request.form.get("password") or ""
+            pw2 = request.form.get("password_confirm") or ""
+            if pw != pw2:
+                flash("Passwords do not match", "error")
+                return render_template("reset_password.html", token=token), 400
+            ok, err = passwords.consume_reset_token(token, pw)
+            if not ok:
+                flash(err or "Reset failed", "error")
+                return render_template("reset_password.html", token=token), 400
+            flash("Password updated. Sign in with your new password.", "ok")
+            return redirect(url_for("login"))
+        return render_template("reset_password.html", token=token)
+
+
+    @app.post("/profile/password")
+    @authz.login_required
+    def change_password():
+        uid = session["user_id"]
+        old = request.form.get("current_password") or ""
+        new = request.form.get("new_password") or ""
+        conf = request.form.get("new_password_confirm") or ""
+        if new != conf:
+            flash("New passwords do not match", "error")
+            return redirect(url_for("profile"))
+        ok, err = passwords.change_password(uid, old, new)
+        if not ok:
+            flash(err or "Could not change password", "error")
+            return redirect(url_for("profile"))
+        # Keep current session; sign out other devices after password change
+        sid = session.get("sid")
+        if sid:
+            n = user_sessions.revoke_other_sessions(uid, sid)
+            if n:
+                flash(f"Password updated. Signed out {n} other session(s).", "ok")
+            else:
+                flash("Password updated.", "ok")
+        else:
+            flash("Password updated.", "ok")
+        return redirect(url_for("profile"))
+
+
+    @app.post("/profile/sessions/revoke-others")
+    @authz.login_required
+    def revoke_other_sessions():
+        uid = session["user_id"]
+        sid = session.get("sid")
+        if not sid:
+            flash("No active session registry entry for this browser", "error")
+            return redirect(url_for("profile"))
+        n = user_sessions.revoke_other_sessions(uid, sid)
+        flash(f"Signed out {n} other session(s).", "ok")
+        return redirect(url_for("profile"))
+
+
+    @app.post("/profile/sessions/<uuid:session_id>/revoke")
+    @authz.login_required
+    def revoke_session(session_id):
+        uid = session["user_id"]
+        sid = str(session_id)
+        if sid == session.get("sid"):
+            user_sessions.revoke_session(sid, uid)
+            session.clear()
+            flash("Signed out this session.", "ok")
+            return redirect(url_for("login"))
+        if user_sessions.revoke_session(sid, uid):
+            flash("Session signed out.", "ok")
+        else:
+            flash("Session not found or already signed out.", "error")
+        return redirect(url_for("profile"))
 
 
     @app.get("/profile")
@@ -192,6 +339,8 @@ def register(app):
             flash("Could not load your profile", "error")
             return redirect(url_for("projects_list"))
 
+        active_sessions = user_sessions.list_sessions(uid)
+        current_sid = session.get("sid")
         teams, projects, pending, pins_list, recent = [], [], [], [], []
         secret_count = pin_count = 0
         try:
@@ -281,6 +430,8 @@ def register(app):
             pending_joins=pending,
             pins=pins_list,
             recent=recent,
+            active_sessions=active_sessions,
+            current_sid=current_sid,
             stats={
                 "teams": len(teams),
                 "projects": len(projects),

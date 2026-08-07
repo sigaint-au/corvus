@@ -24,6 +24,7 @@ import lockout  # noqa: E402
 import paging  # noqa: E402
 import schema as schema_mod  # noqa: E402
 import settings_svc  # noqa: E402
+import user_sessions  # noqa: E402
 from routes import eso as eso_routes  # noqa: E402
 
 # Skip real schema bootstrap (no Postgres in unit tests).
@@ -644,6 +645,110 @@ class TestAuth(unittest.TestCase):
         self.assertEqual(r.status_code, 302)
         self.assertIn("/login", r.location)
 
+    def test_forgot_password_get(self):
+        r = self.client.get("/forgot-password")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Forgot password", r.data)
+
+    def test_forgot_password_post_no_enumeration(self):
+        with patch("passwords.create_reset_token", return_value=None):
+            r = self.client.post(
+                "/forgot-password",
+                data={"email": "nobody@ex.com"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_change_password_requires_login(self):
+        r = self.client.post(
+            "/profile/password",
+            data={
+                "current_password": "old",
+                "new_password": "newpass12",
+                "new_password_confirm": "newpass12",
+            },
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_change_password_ok(self):
+        uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = uid
+            s["sid"] = str(uuid4())
+        with patch("passwords.change_password", return_value=(True, "")), patch(
+            "user_sessions.revoke_other_sessions", return_value=2
+        ):
+            r = self.client.post(
+                "/profile/password",
+                data={
+                    "current_password": "oldpass12",
+                    "new_password": "newpass12",
+                    "new_password_confirm": "newpass12",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/profile", r.location)
+
+    def test_change_password_mismatch(self):
+        uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = uid
+        r = self.client.post(
+            "/profile/password",
+            data={
+                "current_password": "oldpass12",
+                "new_password": "newpass12",
+                "new_password_confirm": "other",
+            },
+            follow_redirects=False,
+        )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(any("match" in msg.lower() for _c, msg in flashes))
+
+    def test_revoke_other_sessions(self):
+        uid = str(uuid4())
+        sid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = uid
+            s["sid"] = sid
+        with patch("user_sessions.revoke_other_sessions", return_value=3) as rev:
+            r = self.client.post(
+                "/profile/sessions/revoke-others", follow_redirects=False
+            )
+        self.assertEqual(r.status_code, 302)
+        rev.assert_called_once_with(uid, sid)
+
+    def test_reset_password_mismatch(self):
+        r = self.client.post(
+            "/reset-password/tok",
+            data={"password": "newpass12", "password_confirm": "nope"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_reset_password_ok(self):
+        with patch("passwords.consume_reset_token", return_value=(True, "")):
+            r = self.client.post(
+                "/reset-password/goodtoken",
+                data={"password": "newpass12", "password_confirm": "newpass12"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_password_schema_helpers(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("private.change_password", init)
+        self.assertIn("private.set_local_password", init)
+        self.assertIn("private.user_sessions", init)
+        self.assertIn("private.password_reset_tokens", init)
+
     def test_profile_ok(self):
         uid = uuid4()
         tid = uuid4()
@@ -716,13 +821,15 @@ class TestAuth(unittest.TestCase):
         cur.fetchall.side_effect = fetchall
         with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
             db, "as_user", return_value=user_conn
-        ):
+        ), patch("user_sessions.list_sessions", return_value=[]):
             r = self.client.get("/profile")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"My profile", r.data)
         self.assertIn(b"Ada Lovelace", r.data)
         self.assertIn(b"a@b.c", r.data)
         self.assertIn(b"Local password", r.data)
+        self.assertIn(b"Change password", r.data)
+        self.assertIn(b"Active sessions", r.data)
         self.assertIn(b"Platform", r.data)
         self.assertIn(b"API", r.data)
         self.assertIn(b"At a glance", r.data)
@@ -746,11 +853,13 @@ class TestAuth(unittest.TestCase):
         user_conn, _ = _conn(fetchone={"n": 0}, fetchall=[])
         with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
             db, "as_user", return_value=user_conn
-        ):
+        ), patch("user_sessions.list_sessions", return_value=[]):
             r = self.client.get("/profile")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"LDAP directory", r.data)
         self.assertIn(b"Global admin", r.data)
+        self.assertIn(b"LDAP", r.data)
+        self.assertNotIn(b"name=\"current_password\"", r.data)
 
 
 # ── Teams ──────────────────────────────────────────────────────────
@@ -2293,6 +2402,7 @@ class TestSettings(unittest.TestCase):
         self.assertIn(b"?tab=banner", r.data)
         self.assertIn(b"?tab=admins", r.data)
         self.assertIn(b"?tab=ldap", r.data)
+        self.assertIn(b"?tab=email", r.data)
         # Default tab is general
         self.assertIn(b"Account registration", r.data)
         self.assertIn(b"Team creation", r.data)
@@ -2394,6 +2504,230 @@ class TestSettings(unittest.TestCase):
                 "classification_fg": "#ffffff",
             },
         )
+
+    def test_settings_email_tab(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        settings = {
+            "smtp_enabled": "true",
+            "smtp_host": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_encryption": "starttls",
+            "smtp_username": "mailer",
+            "smtp_password": "enc",
+            "smtp_from_email": "noreply@example.com",
+            "smtp_from_name": "Secret Store",
+            "smtp_login_alerts": "true",
+        }
+        with patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]), patch.object(
+            db, "connect_admin", return_value=_conn(fetchall=[])[0]
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "get_settings", return_value=settings
+        ), patch.object(
+            settings_svc,
+            "classification",
+            return_value={"enabled": False, "text": "", "color": "#000", "fg": "#fff"},
+        ):
+            r = self.client.get("/settings?tab=email")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Email (SMTP)", r.data)
+        self.assertIn(b"smtp.example.com", r.data)
+        self.assertIn(b"login alert", r.data.lower())
+        self.assertIn(b"Send test", r.data)
+
+    def test_save_smtp(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        sets = []
+
+        def set_setting(k, v):
+            sets.append((k, v))
+
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "set_setting", side_effect=set_setting
+        ), patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]), patch.object(
+            crypto, "encrypt", return_value="encrypted-pw"
+        ):
+            r = self.client.post(
+                "/settings",
+                data={
+                    "action": "smtp",
+                    "smtp_enabled": "1",
+                    "smtp_host": "smtp.example.com",
+                    "smtp_port": "465",
+                    "smtp_encryption": "ssl",
+                    "smtp_username": "user",
+                    "smtp_password": "secret",
+                    "smtp_from_email": "noreply@example.com",
+                    "smtp_from_name": "SS",
+                    "smtp_login_alerts": "1",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=email", r.location)
+        d = dict(sets)
+        self.assertEqual(d["smtp_enabled"], "true")
+        self.assertEqual(d["smtp_host"], "smtp.example.com")
+        self.assertEqual(d["smtp_port"], "465")
+        self.assertEqual(d["smtp_encryption"], "ssl")
+        self.assertEqual(d["smtp_password"], "encrypted-pw")
+        self.assertEqual(d["smtp_login_alerts"], "true")
+
+    def test_smtp_test_action(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=_conn(fetchall=[])[0]
+        ), patch("mailer.send_test_email", return_value=(True, "")) as send:
+            r = self.client.post(
+                "/settings",
+                data={"action": "smtp_test", "test_email": "admin@ex.com"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=email", r.location)
+        send.assert_called_once_with("admin@ex.com")
+
+
+class TestMailer(unittest.TestCase):
+    def test_smtp_configured_requires_host_and_from(self):
+        import mailer
+
+        self.assertFalse(
+            mailer.smtp_configured(
+                {
+                    "smtp_enabled": "true",
+                    "smtp_host": "",
+                    "smtp_from_email": "a@b.c",
+                }
+            )
+        )
+        self.assertFalse(
+            mailer.smtp_configured(
+                {
+                    "smtp_enabled": "false",
+                    "smtp_host": "h",
+                    "smtp_from_email": "a@b.c",
+                }
+            )
+        )
+        self.assertTrue(
+            mailer.smtp_configured(
+                {
+                    "smtp_enabled": "true",
+                    "smtp_host": "smtp.example.com",
+                    "smtp_from_email": "a@b.c",
+                }
+            )
+        )
+
+    def test_login_alerts_need_smtp(self):
+        import mailer
+
+        self.assertFalse(
+            mailer.login_alerts_enabled(
+                {
+                    "smtp_enabled": "true",
+                    "smtp_host": "h",
+                    "smtp_from_email": "a@b.c",
+                    "smtp_login_alerts": "false",
+                }
+            )
+        )
+        self.assertTrue(
+            mailer.login_alerts_enabled(
+                {
+                    "smtp_enabled": "true",
+                    "smtp_host": "h",
+                    "smtp_from_email": "a@b.c",
+                    "smtp_login_alerts": "true",
+                }
+            )
+        )
+
+    def test_send_email_not_configured(self):
+        import mailer
+
+        ok, err = mailer.send_email(
+            "a@b.c",
+            "subj",
+            "body",
+            cfg={"smtp_enabled": "false", "smtp_host": "", "smtp_from_email": ""},
+        )
+        self.assertFalse(ok)
+        self.assertIn("SMTP", err)
+
+    def test_send_email_starttls(self):
+        import mailer
+
+        cfg = {
+            "smtp_enabled": "true",
+            "smtp_host": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_encryption": "starttls",
+            "smtp_username": "u",
+            "smtp_password": "",
+            "smtp_from_email": "from@ex.com",
+            "smtp_from_name": "App",
+        }
+        mock_smtp = MagicMock()
+        mock_smtp.__enter__ = MagicMock(return_value=mock_smtp)
+        mock_smtp.__exit__ = MagicMock(return_value=False)
+        with patch("mailer.smtplib.SMTP", return_value=mock_smtp) as SMTP:
+            ok, err = mailer.send_email("to@ex.com", "Hello", "Body text", cfg=cfg)
+        self.assertTrue(ok, err)
+        self.assertEqual(err, "")
+        SMTP.assert_called_once()
+        mock_smtp.starttls.assert_called_once()
+        mock_smtp.login.assert_called_once_with("u", "")
+        mock_smtp.send_message.assert_called_once()
+
+    def test_forgot_password_sends_email(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        with patch("passwords.create_reset_token", return_value="tok123"), patch(
+            "mailer.smtp_configured", return_value=True
+        ), patch("mailer.send_password_reset", return_value=(True, "")) as send:
+            r = client.post(
+                "/forgot-password",
+                data={"email": "user@ex.com"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        send.assert_called_once()
+        args = send.call_args[0]
+        self.assertEqual(args[0], "user@ex.com")
+        self.assertIn("/reset-password/tok123", args[1])
+
+    def test_login_sends_alert_when_enabled(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = uuid4()
+        conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ), patch.object(settings_svc, "setup_notice", return_value=None), patch.object(
+            lockout, "is_locked", return_value=False
+        ), patch.object(lockout, "clear_failures"), patch.object(
+            authz, "is_global_admin", return_value=False
+        ), patch("mailer.login_alerts_enabled", return_value=True), patch(
+            "mailer.send_login_alert", return_value=(True, "")
+        ) as alert, patch.object(user_sessions, "create_session", return_value=None):
+            r = client.post(
+                "/login",
+                data={"email": "a@b.c", "password": "secret12"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        alert.assert_called_once()
+        self.assertEqual(alert.call_args[0][0], "a@b.c")
 
 
 if __name__ == "__main__":

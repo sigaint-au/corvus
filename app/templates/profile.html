@@ -42,6 +42,86 @@
   </dl>
 </section>
 
+{% if user.auth_source == 'local' %}
+<section>
+  <h2>Change password</h2>
+  <p class="muted">Updates your local password. Other signed-in devices are signed out.</p>
+  <form method="post" action="{{ url_for('change_password') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Current password
+      <input type="password" name="current_password" required autocomplete="current-password">
+    </label>
+    <label>New password
+      <input type="password" name="new_password" required minlength="8" autocomplete="new-password">
+    </label>
+    <label>Confirm new password
+      <input type="password" name="new_password_confirm" required minlength="8" autocomplete="new-password">
+    </label>
+    <p style="margin-top:1rem;"><button type="submit">Update password</button></p>
+  </form>
+</section>
+{% else %}
+<section>
+  <h2>Password</h2>
+  <p class="muted">This account uses LDAP. Change your password in the directory, not here.</p>
+</section>
+{% endif %}
+
+<section>
+  <div class="section-head">
+    <h2>Active sessions</h2>
+    {% if active_sessions and active_sessions|length > 1 %}
+    <form method="post" action="{{ url_for('revoke_other_sessions') }}" class="inline"
+          onsubmit="return confirm('Sign out all other devices?')">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button type="submit" class="link">Sign out other sessions</button>
+    </form>
+    {% endif %}
+  </div>
+  <p class="muted">Devices currently signed in to your account.</p>
+  {% if active_sessions %}
+  <table>
+    <thead>
+      <tr>
+        <th>Device / browser</th>
+        <th>IP</th>
+        <th>Last active</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in active_sessions %}
+      <tr>
+        <td>
+          <span title="{{ s.user_agent }}">
+            {{ (s.user_agent or 'Unknown client')[:72] }}{% if s.user_agent and s.user_agent|length > 72 %}…{% endif %}
+          </span>
+          {% if current_sid and s.id|string == current_sid|string %}
+          <span class="role-badge">This device</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ s.ip or '—' }}</td>
+        <td class="muted" title="{{ s.last_seen_at|time_when }}">{{ s.last_seen_at|time_ago }}</td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('revoke_session', session_id=s.id) }}"
+                class="inline"
+                onsubmit="return confirm('{% if current_sid and s.id|string == current_sid|string %}Sign out this device?{% else %}Sign out this session?{% endif %}')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">
+              {% if current_sid and s.id|string == current_sid|string %}Sign out{% else %}Revoke{% endif %}
+            </button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No active sessions recorded for this account.</p>
+  {% endif %}
+</section>
+
 <section>
   <h2>At a glance</h2>
   <div class="profile-stats">

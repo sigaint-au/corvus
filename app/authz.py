@@ -18,6 +18,43 @@ def login_required(f):
     return wrapped
 
 
+def validate_registered_session():
+    """
+    Ensure the browser session is still registered server-side (not revoked).
+    Skipped in unit tests (no sid / no DB session rows).
+    """
+    from flask import current_app
+
+    if current_app.config.get("TESTING"):
+        return None
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    # Exempt static-ish auth endpoints that clear session themselves
+    if request.endpoint in (
+        "login",
+        "logout",
+        "register",
+        "forgot_password",
+        "reset_password",
+    ):
+        return None
+    sid = session.get("sid")
+    if not sid:
+        # Legacy cookie without server-side session — force re-login
+        session.clear()
+        flash("Please sign in again.", "error")
+        return redirect(url_for("login"))
+    import user_sessions
+
+    if not user_sessions.touch_session(sid, uid):
+        session.clear()
+        flash("Your session was signed out or expired. Please sign in again.", "error")
+        return redirect(url_for("login"))
+    return None
+
+
+
 def global_admin_required(f):
     @wraps(f)
     def wrapped(*a, **kw):

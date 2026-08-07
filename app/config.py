@@ -63,6 +63,16 @@ DEFAULT_SETTINGS = {
     "ldap_group_base": "",
     "ldap_group_filter": "(member={dn})",
     "ldap_use_memberof": "true",
+    # Outbound email (password resets, login alerts)
+    "smtp_enabled": "false",
+    "smtp_host": "",
+    "smtp_port": "587",
+    "smtp_encryption": "starttls",  # none | starttls | ssl
+    "smtp_username": "",
+    "smtp_password": "",
+    "smtp_from_email": "",
+    "smtp_from_name": APP_NAME,
+    "smtp_login_alerts": "false",
 }
 TEAM_ROLES = ("owner", "admin", "member", "viewer")
 ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}
@@ -93,3 +103,15 @@ LDAP_SETTING_KEYS = (
     "ldap_group_filter",
     "ldap_use_memberof",
 )
+SMTP_SETTING_KEYS = (
+    "smtp_enabled",
+    "smtp_host",
+    "smtp_port",
+    "smtp_encryption",
+    "smtp_username",
+    "smtp_password",
+    "smtp_from_email",
+    "smtp_from_name",
+    "smtp_login_alerts",
+)
+SMTP_ENCRYPTION_MODES = ("none", "starttls", "ssl")

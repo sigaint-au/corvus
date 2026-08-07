@@ -21,6 +21,10 @@
      class="tab {% if active_tab == 'ldap' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'ldap' else 'false' }}">LDAP</a>
+  <a href="{{ url_for('server_settings', tab='email') }}"
+     class="tab {% if active_tab == 'email' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'email' else 'false' }}">Email</a>
 </nav>
 
 {% if active_tab == 'general' %}
@@ -301,6 +305,87 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       </select>
     </label>
     <button type="submit">Add map</button>
+  </form>
+</section>
+
+{% elif active_tab == 'email' %}
+<section>
+  <h2>Email (SMTP)</h2>
+  <p class="muted">
+    Outbound mail for password reset links and optional login alerts.
+    When SMTP is disabled or incomplete, password resets still create a token
+    (logged server-side); login alerts are skipped.
+  </p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="smtp">
+    <label>
+      <input type="checkbox" name="smtp_enabled" value="1"
+             {% if settings.smtp_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Enable outbound email
+    </label>
+    <label>SMTP host
+      <input type="text" name="smtp_host" value="{{ settings.smtp_host }}"
+             placeholder="smtp.example.com" autocomplete="off">
+    </label>
+    <div class="row">
+      <label>Port
+        <input type="number" name="smtp_port" min="1" max="65535"
+               value="{{ settings.smtp_port or '587' }}" required>
+      </label>
+      <label>Encryption
+        <select name="smtp_encryption">
+          {% set enc = (settings.smtp_encryption or 'starttls')|lower %}
+          <option value="starttls" {% if enc == 'starttls' %}selected{% endif %}>STARTTLS (typical 587)</option>
+          <option value="ssl" {% if enc == 'ssl' %}selected{% endif %}>SSL/TLS (typical 465)</option>
+          <option value="none" {% if enc == 'none' %}selected{% endif %}>None</option>
+        </select>
+      </label>
+    </div>
+    <label>Username <span class="muted">(optional if server allows relay)</span>
+      <input type="text" name="smtp_username" value="{{ settings.smtp_username }}"
+             autocomplete="off">
+    </label>
+    <label>Password
+      <input type="password" name="smtp_password" value="" autocomplete="new-password"
+             placeholder="{% if settings.smtp_password_set %}•••••••• (leave blank to keep){% else %}optional{% endif %}">
+    </label>
+    <div class="row">
+      <label>From address
+        <input type="email" name="smtp_from_email" value="{{ settings.smtp_from_email }}"
+               placeholder="noreply@example.com">
+      </label>
+      <label>From name
+        <input type="text" name="smtp_from_name"
+               value="{{ settings.smtp_from_name or app_name }}"
+               placeholder="{{ app_name }}">
+      </label>
+    </div>
+    <label>
+      <input type="checkbox" name="smtp_login_alerts" value="1"
+             {% if settings.smtp_login_alerts in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Send login alert emails on successful sign-in
+    </label>
+    <p class="muted" style="margin-top:.5rem;">
+      Password reset emails are sent whenever SMTP is enabled and a local user
+      requests a reset. Login alerts require the checkbox above.
+    </p>
+    <p style="margin-top:1rem;"><button type="submit">Save email settings</button></p>
+  </form>
+</section>
+
+<section>
+  <h2>Send test email</h2>
+  <p class="muted">Uses the saved SMTP settings. Save first if you just changed them.</p>
+  <form method="post" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="smtp_test">
+    <label style="flex:2;">Recipient
+      <input type="email" name="test_email"
+             value="{{ session.email or '' }}"
+             placeholder="you@example.com" required>
+    </label>
+    <button type="submit">Send test</button>
   </form>
 </section>
 {% endif %}

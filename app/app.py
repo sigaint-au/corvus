@@ -48,6 +48,7 @@ def _bootstrap_schema():
 
 
 app.before_request(authz.csrf_protect)
+app.before_request(authz.validate_registered_session)
 
 
 @app.after_request

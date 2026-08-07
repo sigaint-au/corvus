@@ -59,7 +59,16 @@ INSERT INTO private.server_settings (key, value) VALUES
   ('ldap_name_attr', 'displayName'),
   ('ldap_group_base', ''),
   ('ldap_group_filter', '(member={dn})'),
-  ('ldap_use_memberof', 'true')
+  ('ldap_use_memberof', 'true'),
+  ('smtp_enabled', 'false'),
+  ('smtp_host', ''),
+  ('smtp_port', '587'),
+  ('smtp_encryption', 'starttls'),
+  ('smtp_username', ''),
+  ('smtp_password', ''),
+  ('smtp_from_email', ''),
+  ('smtp_from_name', 'Sigaint Secret Server'),
+  ('smtp_login_alerts', 'false')
 ON CONFLICT (key) DO NOTHING;
 
 -- LDAP group → server role (global admin only for now)
@@ -629,6 +638,70 @@ BEGIN
 END;
 $$;
 
+-- Change password (local accounts only; requires current password)
+CREATE OR REPLACE FUNCTION private.change_password(
+  p_user uuid, p_old text, p_new text
+) RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
+BEGIN
+  IF p_new IS NULL OR length(p_new) < 8 THEN
+    RAISE EXCEPTION 'password must be at least 8 characters';
+  END IF;
+  UPDATE private.users
+  SET password_hash = crypt(p_new, gen_salt('bf'))
+  WHERE id = p_user
+    AND auth_source = 'local'
+    AND password_hash IS NOT NULL
+    AND password_hash = crypt(p_old, password_hash);
+  RETURN FOUND;
+END;
+$$;
+
+-- Set password after verified reset (local accounts only)
+CREATE OR REPLACE FUNCTION private.set_local_password(p_user uuid, p_new text)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
+BEGIN
+  IF p_new IS NULL OR length(p_new) < 8 THEN
+    RAISE EXCEPTION 'password must be at least 8 characters';
+  END IF;
+  UPDATE private.users
+  SET password_hash = crypt(p_new, gen_salt('bf'))
+  WHERE id = p_user
+    AND auth_source = 'local'
+    AND password_hash IS NOT NULL;
+  RETURN FOUND;
+END;
+$$;
+
+-- Server-side browser sessions (for multi-device sign-out)
+CREATE TABLE private.user_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  revoked_at timestamptz,
+  user_agent text NOT NULL DEFAULT '',
+  ip text NOT NULL DEFAULT ''
+);
+CREATE INDEX user_sessions_user_active_idx
+  ON private.user_sessions (user_id, last_seen_at DESC)
+  WHERE revoked_at IS NULL;
+
+-- One-time password reset tokens (store only hash)
+CREATE TABLE private.password_reset_tokens (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  token_hash text NOT NULL UNIQUE,
+  expires_at timestamptz NOT NULL,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX password_reset_tokens_user_idx
+  ON private.password_reset_tokens (user_id)
+  WHERE used_at IS NULL;
+
 -- Provision / refresh LDAP user (no password stored; never auto-promote admin)
 CREATE OR REPLACE FUNCTION private.upsert_ldap_user(p_email text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
@@ -856,6 +929,8 @@ $$;
 GRANT USAGE ON SCHEMA private TO authenticator;
 GRANT EXECUTE ON FUNCTION private.register_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator;
+GRANT EXECUTE ON FUNCTION private.change_password TO authenticator;
+GRANT EXECUTE ON FUNCTION private.set_local_password TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
 GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated;
