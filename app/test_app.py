@@ -1604,9 +1604,12 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(b"super-secret", r.data)
         self.assertIn(b"Save", r.data)
         self.assertIn(b"/value", r.data)
-        self.assertIn(b"expires_at", r.data)
+        self.assertIn(b"Copy", r.data)
+        self.assertIn(b"Open full view", r.data)
         self.assertIn(b">Hide</a>", r.data)
         self.assertIn(b"/hide", r.data)
+        # Expiry is edited on the full view, not the compact inline panel
+        self.assertNotIn(b'name="expires_at"', r.data)
 
     def test_hide_secret(self):
         sid = uuid4()
@@ -2068,6 +2071,19 @@ class TestSecretLifecycle(unittest.TestCase):
         self.assertEqual(expires_status(now + timedelta(days=2)), "soon")
         self.assertIsNone(expires_status(None))
 
+    def test_secret_kind_helpers(self):
+        import secret_kinds as sk
+
+        # Value-based detect only (note type: tags are not used for inference)
+        self.assertEqual(sk.detect_secret_kind("secret", "type:ssh"), "plain")
+        self.assertEqual(
+            sk.detect_secret_kind("postgresql://u:p@h/db"), "database"
+        )
+        self.assertEqual(sk.kind_from_legacy_note("prod (type:ssh)"), "ssh")
+        self.assertEqual(sk.strip_legacy_type_tags("prod (type:ssh)"), "prod")
+        self.assertEqual(sk.normalize_kind("KV"), "kv")
+        self.assertEqual(sk.normalize_kind("nope"), "plain")
+
     def test_history_requires_login(self):
         r = store.app.test_client().get(
             f"/projects/{uuid4()}/secrets/{uuid4()}/history"
@@ -2105,28 +2121,33 @@ class TestSecretLifecycle(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Import preview", r.data)
-        self.assertIn(b"Will create", r.data)
         self.assertIn(b"NEW_KEY", r.data)
-        self.assertIn(b"Will update", r.data)
         self.assertIn(b"EXISTING", r.data)
+        self.assertIn(b"hello", r.data)
+        self.assertIn(b"updated", r.data)
+        self.assertIn(b'name="kind"', r.data)
+        self.assertIn(b'name="value"', r.data)
+        # Large payloads must not rely on the session cookie
         with self.client.session_transaction() as s:
-            pending = s.get("import_pending")
-        self.assertIsNotNone(pending)
-        self.assertEqual(len(pending["items"]), 2)
+            self.assertIsNone(s.get("import_pending"))
 
     def test_import_commit(self):
         sid = uuid4()
         with self.client.session_transaction() as s:
             s["user_id"] = str(uuid4())
-            s["import_pending"] = {
-                "project_id": str(self.pid),
-                "items": [{"key": "NEW_KEY", "enc": False, "value": "hello", "note": ""}],
-            }
         conn, cur = _conn()
         cur.fetchone.side_effect = [{"w": True}, None, {"id": sid}]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/import/commit",
+                data={
+                    "key": "NEW_KEY",
+                    "value": "hello",
+                    "value_enc": "",
+                    "note": "",
+                    "kind": "plain",
+                    "enc": "0",
+                },
                 follow_redirects=False,
             )
         self.assertEqual(r.status_code, 302)

@@ -723,8 +723,8 @@ def ensure_schema():
           IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
             RETURN NULL;
           END IF;
-          INSERT INTO api.secrets (project_id, key, value_enc, note)
-          VALUES (p_project, p_key, p_value_enc, COALESCE(p_note, ''))
+          INSERT INTO api.secrets (project_id, key, value_enc, note, kind)
+          VALUES (p_project, p_key, p_value_enc, COALESCE(p_note, ''), 'plain')
           ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
             SET value_enc = EXCLUDED.value_enc,
                 note = EXCLUDED.note
@@ -765,6 +765,20 @@ def ensure_schema():
         CREATE TRIGGER secrets_touch_updated_at
           BEFORE UPDATE ON api.secrets
           FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at()
+        """,
+        # Secret kind (explicit; not inferred from note tags)
+        """
+        ALTER TABLE api.secrets
+          ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'plain'
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.secrets DROP CONSTRAINT IF EXISTS secrets_kind_check;
+          ALTER TABLE api.secrets
+            ADD CONSTRAINT secrets_kind_check
+            CHECK (kind IN ('plain', 'database', 'certificate', 'ssh', 'kv'));
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
         """,
         # Secret versioning + expiry / rotation hints
         """
@@ -1335,6 +1349,7 @@ def ensure_schema():
                         "UPDATE private.users SET is_global_admin = true WHERE email = %s",
                         (boot,),
                     )
+                _backfill_secret_kinds(cur)
             finally:
                 cur.execute(
                     "SELECT pg_advisory_unlock(%s, %s)",
@@ -1344,4 +1359,61 @@ def ensure_schema():
     except Exception:
         log.exception("ensure_schema failed")
         raise
+
+
+def _backfill_secret_kinds(cur) -> None:
+    """
+    One-shot: set kind from legacy note type: tags / value heuristics, then strip tags.
+    Safe to re-run — only rows with type: in note are rewritten after first pass.
+    """
+    from secret_kinds import (
+        detect_secret_kind,
+        kind_from_legacy_note,
+        normalize_kind,
+        strip_legacy_type_tags,
+    )
+    import crypto
+
+    try:
+        cur.execute(
+            """
+            SELECT id, note, value_enc, kind
+            FROM api.secrets
+            WHERE note ~* 'type:'
+               OR kind IS NULL
+               OR kind = ''
+            """
+        )
+    except Exception:
+        # Column missing mid-migration (shouldn't happen after ADD COLUMN)
+        return
+    rows = cur.fetchall() or []
+    if not rows:
+        return
+    updated = 0
+    for row in rows:
+        note = row.get("note") or ""
+        kind = normalize_kind(row.get("kind") or "plain")
+        legacy = kind_from_legacy_note(note)
+        if legacy:
+            kind = legacy
+        elif kind == "plain":
+            try:
+                plain = crypto.decrypt(row["value_enc"])
+            except Exception:
+                plain = ""
+            kind = detect_secret_kind(plain)
+        clean = strip_legacy_type_tags(note)
+        if kind != (row.get("kind") or "plain") or clean != note:
+            cur.execute(
+                """
+                UPDATE api.secrets
+                SET kind = %s, note = %s
+                WHERE id = %s
+                """,
+                (kind, clean, str(row["id"])),
+            )
+            updated += 1
+    if updated:
+        log.info("backfilled kind/note for %s secret row(s)", updated)
 

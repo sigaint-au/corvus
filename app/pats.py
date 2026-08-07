@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
 import db
+from crypto import sha256_hex
 
 PREFIX = "pat_"
 MAX_NAME_LEN = 80
@@ -14,7 +14,7 @@ MAX_TOKENS_PER_USER = 50
 
 
 def _hash(raw: str) -> str:
-    return hashlib.sha256(raw.encode()).hexdigest()
+    return sha256_hex(raw)
 
 
 def mint_raw() -> tuple[str, str, str]:

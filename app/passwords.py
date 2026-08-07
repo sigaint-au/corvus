@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
 import db
+from crypto import sha256_hex
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ RESET_TOKEN_HOURS = 1
 
 
 def hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return sha256_hex(token)
 
 
 def change_password(user_id: str, old_password: str, new_password: str) -> tuple[bool, str]:

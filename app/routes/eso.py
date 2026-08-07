@@ -1,12 +1,12 @@
 """OpenShift External Secrets Operator webhook + health + machine write API."""
 
-import hashlib
 import logging
 
 from flask import jsonify, request
 
 import crypto
 import db
+from crypto import sha256_hex
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ def bearer_hash():
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return None
-    return hashlib.sha256(auth[7:].strip().encode()).hexdigest()
+    return sha256_hex(auth[7:].strip())
 
 
 def register(app):

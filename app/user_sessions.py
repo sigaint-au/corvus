@@ -157,7 +157,3 @@ def list_sessions(user_id: str) -> list:
     except Exception:
         log.exception("list_sessions failed")
         return []
-
-
-def current_session_id() -> str | None:
-    return session.get("sid")

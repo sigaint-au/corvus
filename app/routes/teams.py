@@ -1,6 +1,6 @@
 """Teams, members, invites, LDAP maps, project creation."""
 
-import hashlib
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -12,9 +12,9 @@ import config
 import db
 import ldap_auth
 import settings_svc
+from crypto import sha256_hex
 
-
-log = __import__("logging").getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 def register(app):
@@ -366,7 +366,7 @@ def register(app):
         except ValueError:
             days = 7
         raw = secrets.token_urlsafe(24)
-        thash = hashlib.sha256(raw.encode()).hexdigest()
+        thash = sha256_hex(raw)
         expires = datetime.now(timezone.utc) + timedelta(days=days)
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
@@ -437,7 +437,7 @@ def register(app):
             session["invite_token"] = token
             flash("Sign in to accept this team invite", "ok")
             return redirect(url_for("login"))
-        thash = hashlib.sha256(token.encode()).hexdigest()
+        thash = sha256_hex(token)
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM private.lookup_invite(%s)", (thash,))
             inv = cur.fetchone()
@@ -837,5 +837,3 @@ def register(app):
                 conn.commit()
                 flash("Project deleted", "ok")
         return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
-
-

@@ -72,7 +72,9 @@
       <tr>
         <td><code class="k">{{ s.key }}</code> <span class="due-badge due-overdue">overdue</span></td>
         <td class="muted">Past expiry</td>
-        <td class="muted">{{ s.expires_at }}</td>
+        <td class="muted"{% if s.expires_at %} title="{{ s.expires_at|time_when }}"{% endif %}>
+          {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}—{% endif %}
+        </td>
         <td class="acts">
           <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
         </td>
@@ -82,7 +84,9 @@
       <tr>
         <td><code class="k">{{ s.key }}</code> <span class="due-badge due-soon">soon</span></td>
         <td class="muted">Within {{ soon_days|default(14) }} days</td>
-        <td class="muted">{{ s.expires_at }}</td>
+        <td class="muted"{% if s.expires_at %} title="{{ s.expires_at|time_when }}"{% endif %}>
+          {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}—{% endif %}
+        </td>
         <td class="acts">
           <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
         </td>
@@ -147,6 +151,15 @@
     <input type="hidden" name="page" value="{{ secrets_pager.page if secrets_pager else 1 }}">
     <input type="hidden" name="q" value="{{ search_q or '' }}">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
+    <label>Type
+      <select name="kind" id="secret-kind" aria-label="Secret type">
+        <option value="plain" selected>Plain</option>
+        <option value="database">Database</option>
+        <option value="certificate">Certificate</option>
+        <option value="ssh">SSH</option>
+        <option value="kv">Key / value</option>
+      </select>
+    </label>
     <label class="value-label">Value
       <span class="input-with-btn">
         <input type="password" name="value" id="secret-value" required placeholder="••••••••" autocomplete="off">
@@ -174,6 +187,33 @@
     var form = document.getElementById('secret-form');
     var btn = document.getElementById('gen-btn');
     var inp = document.getElementById('secret-value');
+    var kindSel = document.getElementById('secret-kind');
+    var kindTouched = false;
+    if (kindSel) {
+      kindSel.addEventListener('change', function () { kindTouched = true; });
+    }
+    function suggestKind(value) {
+      var v = value || '';
+      if (/BEGIN CERTIFICATE/.test(v)) return 'certificate';
+      if (/BEGIN (?:OPENSSH |RSA |EC |DSA |ED25519 )?PRIVATE KEY/.test(v)) return 'ssh';
+      if (/^(postgresql|postgres|mysql|mongodb|redis|amqp|https?):\/\//i.test(v.trim()) && v.indexOf('\n') < 0) {
+        return 'database';
+      }
+      var lines = v.split(/\n/).map(function (l) { return l.trim(); }).filter(function (l) {
+        return l && l.charAt(0) !== '#';
+      });
+      var kv = 0;
+      for (var i = 0; i < lines.length; i++) {
+        if (/^[A-Za-z_][A-Za-z0-9_.-]*=/.test(lines[i])) kv++;
+      }
+      if (lines.length >= 2 && kv >= 2) return 'kv';
+      return 'plain';
+    }
+    function maybeSuggest() {
+      if (!kindSel || kindTouched || !inp) return;
+      var s = suggestKind(inp.value);
+      if (s) kindSel.value = s;
+    }
     if (!btn || !inp) return;
     function maskValue() {
       inp.type = 'password';
@@ -190,17 +230,19 @@
       inp.focus();
       inp.select();
     });
-    // Re-mask if user edits after generate
     inp.addEventListener('input', function () {
-      if (inp.type === 'text' && document.activeElement === inp) {
-        /* keep visible while typing over generated value */
-      }
+      maybeSuggest();
+    });
+    inp.addEventListener('paste', function () {
+      setTimeout(maybeSuggest, 0);
     });
     if (form) {
       form.addEventListener('htmx:afterRequest', function (e) {
         if (e.detail && e.detail.successful) {
           form.reset();
           maskValue();
+          kindTouched = false;
+          if (kindSel) kindSel.value = 'plain';
         }
       });
     }
@@ -217,19 +259,39 @@
 
   <h3>Export</h3>
   <p class="muted">Download all live secrets in this project. Prefer encrypted JSON for backups; plaintext formats need a confirm.</p>
-  <div class="export-actions">
-    <a class="btn-secondary"
-       href="{{ url_for('export_secrets', project_id=project.id, format='env', mode='plain') }}"
-       onclick="return confirm('Download PLAINTEXT secrets for this project?')">.env (plaintext)</a>
-    <a class="btn-secondary"
-       href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='plain') }}"
-       onclick="return confirm('Download PLAINTEXT secrets for this project?')">JSON (plaintext)</a>
-    <a class="btn-secondary"
-       href="{{ url_for('export_secrets', project_id=project.id, format='csv', mode='plain') }}"
-       onclick="return confirm('Download PLAINTEXT secrets for this project?')">CSV (plaintext)</a>
-    <a class="btn-secondary"
-       href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='enc') }}">Encrypted JSON</a>
-  </div>
+  <form class="export-form row" id="export-form" action="#" method="get">
+    <label class="export-format">Format
+      <select id="export-format" name="format" aria-label="Export format">
+        <option value="{{ url_for('export_secrets', project_id=project.id, format='json', mode='enc') }}"
+                data-plain="0" selected>Encrypted JSON</option>
+        <option value="{{ url_for('export_secrets', project_id=project.id, format='env', mode='plain') }}"
+                data-plain="1">.env (plaintext)</option>
+        <option value="{{ url_for('export_secrets', project_id=project.id, format='json', mode='plain') }}"
+                data-plain="1">JSON (plaintext)</option>
+        <option value="{{ url_for('export_secrets', project_id=project.id, format='csv', mode='plain') }}"
+                data-plain="1">CSV (plaintext)</option>
+      </select>
+    </label>
+    <p class="form-actions export-go">
+      <button type="submit">Download</button>
+    </p>
+  </form>
+  <script>
+  (function () {
+    var form = document.getElementById('export-form');
+    var sel = document.getElementById('export-format');
+    if (!form || !sel) return;
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var opt = sel.options[sel.selectedIndex];
+      if (!opt || !opt.value) return;
+      if (opt.getAttribute('data-plain') === '1') {
+        if (!confirm('Download PLAINTEXT secrets for this project?')) return;
+      }
+      window.location.href = opt.value;
+    });
+  })();
+  </script>
 
   <h3>Import</h3>
   {% if can_write %}

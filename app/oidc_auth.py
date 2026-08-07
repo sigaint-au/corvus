@@ -20,7 +20,6 @@ from jwt import PyJWKClient
 import crypto
 import db
 import settings_svc
-from config import ROLE_RANK
 from ldap_auth import group_matches
 
 log = logging.getLogger(__name__)
@@ -305,85 +304,22 @@ def groups_from_claims(claims: dict, claim_name: str | None = None) -> list[str]
 
 def sync_oidc_user(email: str, name: str, groups: list | None = None) -> dict:
     """Upsert OIDC user; apply global + team group maps. Returns user row."""
+    from dir_sync import apply_global_admin_maps, apply_team_membership_maps, fetch_user_row
+
     groups = list(groups or [])
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute("SELECT private.upsert_oidc_user(%s, %s) AS id", (email, name or ""))
         uid = cur.fetchone()["id"]
-
         cur.execute("SELECT oidc_group, role FROM private.oidc_role_maps")
-        role_maps = cur.fetchall() or []
-        if role_maps:
-            is_admin = any(
-                m["role"] == "global_admin" and group_matches(m["oidc_group"], groups)
-                for m in role_maps
-            )
-            cur.execute(
-                "UPDATE private.users SET is_global_admin = %s WHERE id = %s",
-                (is_admin, str(uid)),
-            )
-
-        cur.execute(
-            "SELECT id, email, name, is_global_admin FROM private.users WHERE id = %s",
-            (str(uid),),
+        apply_global_admin_maps(cur, uid, groups, cur.fetchall() or [], "oidc_group")
+        cur.execute("SELECT id, team_id, oidc_group, role FROM api.team_oidc_maps")
+        apply_team_membership_maps(
+            cur, uid, groups, cur.fetchall() or [], group_key="oidc_group", source="oidc"
         )
-        user = cur.fetchone()
+        user = fetch_user_row(cur, uid)
         if not user:
             raise RuntimeError("OIDC user upsert failed")
-
-        cur.execute("SELECT id, team_id, oidc_group, role FROM api.team_oidc_maps")
-        tmaps = cur.fetchall() or []
-        desired: dict[str, str] = {}
-        for m in tmaps:
-            if not group_matches(m["oidc_group"], groups):
-                continue
-            tid = str(m["team_id"])
-            role = m["role"]
-            if tid not in desired or ROLE_RANK.get(role, 0) > ROLE_RANK.get(
-                desired[tid], 0
-            ):
-                desired[tid] = role
-
-        cur.execute(
-            """
-            DELETE FROM api.team_members
-            WHERE user_id = %s AND source = 'oidc'
-              AND NOT (team_id = ANY(%s::uuid[]))
-            """,
-            (str(uid), list(desired.keys()) or []),
-        )
-        for tid, role in desired.items():
-            cur.execute(
-                """
-                SELECT role, source FROM api.team_members
-                WHERE team_id = %s AND user_id = %s
-                """,
-                (tid, str(uid)),
-            )
-            existing = cur.fetchone()
-            if existing and existing.get("source") == "manual":
-                continue
-            if existing:
-                cur.execute(
-                    """
-                    UPDATE api.team_members SET role = %s, source = 'oidc'
-                    WHERE team_id = %s AND user_id = %s
-                    """,
-                    (role, tid, str(uid)),
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s, %s, %s, 'oidc')
-                    """,
-                    (tid, str(uid), role),
-                )
-        # re-read is_global_admin after map apply
-        cur.execute(
-            "SELECT id, email, name, is_global_admin FROM private.users WHERE id = %s",
-            (str(uid),),
-        )
-        return cur.fetchone()
+        return user
 
 
 def new_state_nonce() -> tuple[str, str]:

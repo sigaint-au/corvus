@@ -218,6 +218,8 @@ CREATE TABLE api.secrets (
   key text NOT NULL,
   value_enc text NOT NULL,
   note text NOT NULL DEFAULT '',  -- non-sensitive; not encrypted
+  kind text NOT NULL DEFAULT 'plain'
+    CHECK (kind IN ('plain', 'database', 'certificate', 'ssh', 'kv')),
   expires_at timestamptz,        -- hard expiry (optional)
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -1009,8 +1011,8 @@ BEGIN
   IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
     RETURN NULL;
   END IF;
-  INSERT INTO api.secrets (project_id, key, value_enc, note)
-  VALUES (p_project, p_key, p_value_enc, COALESCE(p_note, ''))
+  INSERT INTO api.secrets (project_id, key, value_enc, note, kind)
+  VALUES (p_project, p_key, p_value_enc, COALESCE(p_note, ''), 'plain')
   ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
     SET value_enc = EXCLUDED.value_enc,
         note = EXCLUDED.note

@@ -370,9 +370,146 @@
       transition: opacity .15s ease, transform .15s ease;
     }
     .toast.show { opacity: 1; transform: translateY(0); }
-    .reveal-wrap { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+    .reveal-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: .65rem;
+      min-width: 0;
+      width: min(36rem, 72vw);
+      max-width: 100%;
+      padding: .55rem .65rem .65rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+      box-sizing: border-box;
+    }
     .reveal-wrap .input-with-btn { flex: 1; min-width: 0; }
-    .reveal-actions { flex: 0 0 auto; }
+    .reveal-actions {
+      flex: 0 0 auto;
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: .35rem .9rem;
+      align-items: center;
+      font-size: .875rem;
+    }
+    .reveal-actions a.link,
+    .reveal-actions a.copy-btn,
+    .reveal-actions button.link,
+    .reveal-actions .save-link {
+      color: var(--muted-foreground);
+      text-decoration: none;
+      background: none;
+      border: none;
+      padding: .15rem 0;
+      margin: 0;
+      font: inherit;
+      font-size: .875rem;
+      font-weight: 550;
+      cursor: pointer;
+      line-height: 1.3;
+    }
+    .reveal-actions a.link:hover,
+    .reveal-actions a.copy-btn:hover,
+    .reveal-actions button.link:hover,
+    .reveal-actions .save-link:hover {
+      color: var(--foreground);
+      text-decoration: underline;
+    }
+    .reveal-wrap.reveal-single,
+    .reveal-wrap.reveal-multiline,
+    .reveal-wrap.reveal-structured {
+      flex-direction: column;
+      align-items: stretch;
+      width: min(36rem, 72vw);
+      max-width: 100%;
+    }
+    .reveal-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: .5rem 1rem;
+      width: 100%;
+      min-height: 1.5rem;
+    }
+    .reveal-head .kind-badge {
+      font-size: .72rem;
+      padding: .22rem .5rem;
+    }
+    .reveal-body .input-with-btn {
+      max-width: none;
+      width: 100%;
+    }
+    /* Single-line field fills the reveal body like multi-line / structured pre */
+    .reveal-body input.secret-value-full,
+    .reveal-wrap .reveal-body input.secret-value.secret-value-full {
+      display: block;
+      width: 100%;
+      max-width: none;
+      box-sizing: border-box;
+      white-space: nowrap;
+      overflow-x: auto;
+      text-overflow: clip;
+    }
+    form.reveal-edit .reveal-body input.secret-value-full,
+    .reveal-body input.secret-value-full {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--background);
+      padding: .55rem .7rem;
+      font-size: .875rem;
+      min-height: 2.4rem;
+    }
+    .reveal-body {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+      min-width: 0;
+    }
+    .reveal-field { display: block; margin: 0; min-width: 0; }
+    .reveal-pre,
+    textarea.secret-value-area {
+      display: block;
+      width: 100%;
+      max-width: none;
+      box-sizing: border-box;
+      margin: 0;
+      padding: .6rem .75rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .85rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      overflow-x: auto;
+      max-height: 16rem;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--background);
+      color: var(--foreground);
+      resize: vertical;
+    }
+    .reveal-pre:focus,
+    textarea.secret-value-area:focus {
+      outline: 2px solid var(--ring);
+      outline-offset: 1px;
+    }
+    form.reveal-edit {
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+      width: 100%;
+      min-width: 0;
+    }
+    a.secret-key-link {
+      color: inherit;
+      text-decoration: none;
+    }
+    a.secret-key-link:hover code {
+      text-decoration: underline;
+    }
     th.pin-col,
     td.pin-col {
       width: 2rem;
@@ -425,14 +562,132 @@
       color: var(--muted-foreground);
       margin-top: .15rem;
     }
+    /* Settings identity forms: grouped grids so LDAP/OIDC are less a tall stack */
+    .settings-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+    }
+    .settings-form > .check-row:first-child {
+      margin-top: 0;
+    }
+    .field-group {
+      margin: 0;
+      padding: .85rem 1rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: transparent;
+    }
+    .field-group > legend {
+      padding: 0 .35rem;
+      margin: 0 0 .15rem;
+      font-size: .72rem;
+      font-weight: 650;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+    }
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .65rem .85rem;
+      /* Start so labels/inputs line up; hints under one field must not pull the other down */
+      align-items: start;
+    }
+    .field-grid > label {
+      margin: 0;
+      min-width: 0;
+    }
+    .field-grid > .span-2 {
+      grid-column: 1 / -1;
+    }
+    .field-grid > .field-hint {
+      margin: -.15rem 0 0;
+    }
+    .field-grid .field-hint,
+    .field-group > .field-hint {
+      margin-top: .2rem;
+    }
+    .field-grid label .field-hint {
+      margin-top: .2rem;
+    }
+    .field-group .check-row {
+      margin: .35rem 0 0;
+    }
+    .field-group .check-row:first-of-type {
+      margin-top: .15rem;
+    }
+    @media (max-width: 720px) {
+      .field-grid { grid-template-columns: 1fr; }
+      .field-grid > .span-2 { grid-column: auto; }
+    }
+
     .check-row {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: .5rem;
       margin: .75rem 0;
       font-size: .925rem;
+      font-weight: 500;
+      cursor: pointer;
+      line-height: 1.35;
     }
-    .check-row input { width: auto; }
+    /* Oat uses appearance:none + fixed 1rem; never set width:auto on checkboxes
+       (collapses them into a thin line). */
+    .check-row input[type="checkbox"],
+    .check-row input[type="radio"],
+    input[type="checkbox"].bulk-secret-cb,
+    .bulk-select input[type="checkbox"],
+    .pin-col input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      box-sizing: border-box;
+      width: 1rem;
+      height: 1rem;
+      min-width: 1rem;
+      min-height: 1rem;
+      max-width: 1rem;
+      margin: .15rem 0 0;
+      flex: 0 0 1rem;
+      padding: 0;
+      position: relative;
+      vertical-align: middle;
+      background: var(--background);
+      border: 1px solid var(--input);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .check-row input[type="checkbox"]:checked,
+    .check-row input[type="radio"]:checked,
+    input[type="checkbox"].bulk-secret-cb:checked,
+    .bulk-select input[type="checkbox"]:checked,
+    .pin-col input[type="checkbox"]:checked {
+      background-color: var(--primary);
+      border-color: var(--primary);
+    }
+    .check-row input[type="checkbox"]:checked::after,
+    input[type="checkbox"].bulk-secret-cb:checked::after,
+    .bulk-select input[type="checkbox"]:checked::after,
+    .pin-col input[type="checkbox"]:checked::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-color: var(--primary-foreground);
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='4'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+      mask-position: center;
+      mask-repeat: no-repeat;
+      mask-size: 100%;
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='4'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+      -webkit-mask-position: center;
+      -webkit-mask-repeat: no-repeat;
+      -webkit-mask-size: 100%;
+    }
+    .check-row input[type="checkbox"]:focus-visible,
+    .bulk-select input[type="checkbox"]:focus-visible,
+    .pin-col input[type="checkbox"]:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: 2px;
+    }
     .nav-sep {
       height: 1px;
       background: var(--side-border);
@@ -903,28 +1158,77 @@
     }
     .import-box { margin: 0 0 1rem; }
     .import-box textarea { width: 100%; font-family: ui-monospace, monospace; font-size: .85rem; }
-    .export-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: .5rem;
-      margin: 0 0 1.5rem;
+    .import-preview-table { width: 100%; margin: 0 0 1rem; }
+    .import-preview-table th:nth-child(1) { width: 12rem; }
+    .import-preview-table th:nth-child(2) { width: 5.5rem; }
+    .import-preview-table th:nth-child(3) { width: 11rem; }
+    .import-preview-table td { vertical-align: top; }
+    .import-preview-table .import-key { white-space: nowrap; }
+    .import-preview-table .import-value textarea {
+      width: 100%;
+      min-width: 12rem;
+      font-family: ui-monospace, monospace;
+      font-size: .85rem;
+      resize: vertical;
     }
+    .import-preview-table select { max-width: 11rem; }
+    .export-form {
+      align-items: end;
+      margin: 0 0 1.5rem;
+      max-width: 28rem;
+    }
+    .export-form .export-format {
+      flex: 1 1 14rem;
+      min-width: 12rem;
+      margin: 0;
+    }
+    .export-form .export-go {
+      flex: 0 0 auto;
+      margin: 0;
+      padding-bottom: .05rem;
+    }
+    /* Shared control size so primary / secondary / danger match in form-actions */
+    a.btn-primary,
+    button.btn-primary,
     a.btn-secondary,
     button.btn-secondary {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: .45rem .75rem;
-      border: 1px solid var(--border);
+      box-sizing: border-box;
+      min-height: 2.35rem;
+      padding: .5rem .9rem;
       border-radius: 6px;
-      background: var(--background);
-      color: var(--foreground);
       font-size: .875rem;
-      font-weight: 500;
+      font-weight: 600;
       font-family: inherit;
+      line-height: 1.25;
       text-decoration: none;
       cursor: pointer;
-      line-height: 1.2;
+      border: 1px solid transparent;
+    }
+    a.btn-primary,
+    button.btn-primary {
+      background: var(--primary);
+      color: var(--primary-foreground);
+      border-color: var(--primary);
+    }
+    a.btn-primary:hover,
+    button.btn-primary:hover {
+      filter: brightness(1.08);
+      text-decoration: none;
+    }
+    a.btn-primary:focus-visible,
+    button.btn-primary:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: 1px;
+    }
+    a.btn-secondary,
+    button.btn-secondary {
+      background: var(--background);
+      color: var(--foreground);
+      border-color: var(--border);
+      font-weight: 500;
     }
     a.btn-secondary:hover,
     button.btn-secondary:hover {
@@ -935,6 +1239,15 @@
     button.btn-secondary:focus-visible {
       outline: 2px solid var(--ring);
       outline-offset: 1px;
+    }
+    .form-actions > button:not(.link):not(.btn-toolbar),
+    .form-actions > a.btn-secondary,
+    .form-actions > a.btn-primary {
+      min-height: 2.35rem;
+      padding: .5rem .9rem;
+      font-size: .875rem;
+      line-height: 1.25;
+      box-sizing: border-box;
     }
     button.danger,
     button.btn-danger {
@@ -1023,6 +1336,26 @@
       outline: 2px solid var(--ring);
       outline-offset: 1px;
     }
+    a.btn-toolbar-danger,
+    button.btn-toolbar-danger {
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+    }
+    a.btn-toolbar-danger:hover,
+    button.btn-toolbar-danger:hover {
+      background: color-mix(in srgb, var(--danger) 12%, var(--background));
+      color: var(--danger);
+      text-decoration: none;
+    }
+    a.btn-toolbar-danger:focus-visible,
+    button.btn-toolbar-danger:focus-visible {
+      outline: 2px solid var(--danger);
+      outline-offset: 1px;
+    }
+    .section-tools form.inline {
+      display: inline;
+      margin: 0;
+    }
     .kind-fields { margin-top: .75rem; }
     .kind-fields[hidden] { display: none !important; }
     .mono-area {
@@ -1038,7 +1371,7 @@
     .kv-row {
       display: flex;
       flex-wrap: wrap;
-      align-items: flex-end;
+      align-items: flex-start;
       gap: .5rem .65rem;
       padding: .35rem 0;
       border: none;
@@ -1051,15 +1384,23 @@
     }
     .kv-row .kv-key { flex: 0 1 12rem; }
     .kv-row .kv-val { flex: 1 1 14rem; }
-    .kv-row .kv-remove {
+    .kv-row .kv-remove,
+    .section-head-actions .kv-remove {
       flex: 0 0 auto;
-      margin-bottom: .35rem;
       background: none;
       border: none;
       font: inherit;
-      font-size: .8rem;
+      font-size: .875rem;
+      font-weight: 550;
       cursor: pointer;
       padding: 0;
+      margin: 0;
+      color: var(--danger, #b42318);
+      text-decoration: none;
+    }
+    .kv-row .kv-remove:hover,
+    .section-head-actions .kv-remove:hover {
+      text-decoration: underline;
     }
     .kind-badge {
       display: inline-block;
@@ -1079,7 +1420,92 @@
     .secret-view .kv-view-table td { vertical-align: middle; }
     .secret-view .input-with-btn { max-width: 100%; }
     .secret-view .secret-value { max-width: none; width: 100%; }
-    .pem-card { margin: 0 0 1rem; }
+    .pem-card,
+    .pem-field,
+    .value-field { margin: 0 0 1rem; }
+    .value-field .section-head label,
+    .value-field .section-head .field-label,
+    .value-field .section-head h2,
+    .value-field .section-head h3,
+    .value-field .section-head dt,
+    .pem-field .section-head label {
+      margin: 0;
+      font-weight: 600;
+      font-size: .875rem;
+      color: var(--muted-foreground);
+    }
+    .value-field .section-head h2 {
+      font-size: 1rem;
+      color: var(--foreground);
+    }
+    .value-field .section-head .copy-btn,
+    .pem-field .section-head .copy-btn,
+    .pem-card .section-head .copy-btn,
+    .secret-view .section-head .copy-btn,
+    .secret-view-form .section-head .copy-btn,
+    .secret-view-form .form-actions .copy-btn {
+      color: var(--muted-foreground);
+      text-decoration: none;
+      font-size: .875rem;
+      font-weight: 550;
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    .value-field .section-head .copy-btn:hover,
+    .pem-field .section-head .copy-btn:hover,
+    .pem-card .section-head .copy-btn:hover,
+    .secret-view .section-head .copy-btn:hover,
+    .secret-view-form .section-head .copy-btn:hover,
+    .secret-view-form .form-actions .copy-btn:hover {
+      color: var(--foreground);
+      text-decoration: underline;
+    }
+    .value-field > input,
+    .value-field > textarea,
+    .value-field > .secret-value,
+    .pem-field textarea.mono-area {
+      display: block;
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      box-sizing: border-box;
+    }
+    /* Plain / full-width value fields on secret page: full width, no muted fill */
+    .secret-view-form .value-field > input.secret-value,
+    .secret-view .value-field > input.secret-value {
+      width: 100%;
+      max-width: none;
+      background: var(--background);
+      overflow: visible;
+      text-overflow: clip;
+    }
+    .value-field.db-pass-field {
+      flex: 1 1 12rem;
+      min-width: 10rem;
+    }
+    .kv-row .kv-val.value-field {
+      flex: 1 1 14rem;
+      min-width: 12rem;
+      margin: 0;
+    }
+    .kv-val.value-field .section-head-actions {
+      gap: .65rem;
+    }
+    .kv-view-table .value-field {
+      margin: 0;
+    }
+    .kv-view-table .value-field .section-head {
+      margin-bottom: .25rem;
+      justify-content: flex-end;
+    }
+    .db-pass-block { display: block; }
+    .db-pass-block dd { margin: 0; }
+    .section-head-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem .75rem;
+      margin-left: auto;
+    }
     .pem-block {
       margin: 0;
       padding: .75rem .85rem;
@@ -1097,6 +1523,7 @@
     .db-view-dl { margin-bottom: 1rem; }
     .secret-view-form .kv-val .input-with-btn { width: 100%; }
     .secret-view-form textarea.mono-area { margin-top: .25rem; }
+    .secret-view-form .pem-field textarea.mono-area { margin-top: 0; }
     .secret-view-form .secret-meta-section,
     .secret-view-form .secret-value-section {
       margin: 1rem 0 0;
@@ -1159,9 +1586,12 @@
       cursor: pointer;
       user-select: none;
     }
-    .bulk-toolbar .bulk-select input {
-      width: auto;
+    .bulk-toolbar .bulk-select input[type="checkbox"] {
+      width: 1rem;
+      height: 1rem;
+      min-width: 1rem;
       margin: 0;
+      flex: 0 0 1rem;
       cursor: pointer;
     }
     .bulk-toolbar .bulk-count {
@@ -1194,54 +1624,137 @@
     }
     .menu {
       position: relative;
+      display: inline-flex;
+      vertical-align: middle;
     }
-    .menu > summary {
-      list-style: none;
+    .menu-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       cursor: pointer;
       user-select: none;
-      font-size: .875rem;
-      font-weight: 500;
+      font: inherit;
       padding: .4rem .7rem;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: var(--background);
       color: var(--foreground);
     }
-    .menu > summary::-webkit-details-marker { display: none; }
-    .menu > summary::after {
-      content: " ▾";
-      font-size: .75em;
-      opacity: .7;
+    .menu-kebab .menu-toggle {
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--muted-foreground);
+      border-radius: 6px;
+      transition: background .12s ease, color .12s ease;
     }
-    .menu[open] > summary {
-      border-color: var(--ring);
+    .menu-toggle-icon {
+      display: block;
+      opacity: .85;
+    }
+    .menu-kebab .menu-toggle:hover,
+    .menu-kebab .menu-toggle:focus-visible {
+      background: var(--muted);
+      color: var(--foreground);
+      outline: none;
+    }
+    .menu-kebab.is-open .menu-toggle {
+      background: var(--muted);
+      color: var(--foreground);
     }
     .menu-panel {
+      display: none;
       position: absolute;
       right: 0;
-      top: calc(100% + .25rem);
-      z-index: 20;
-      min-width: 12rem;
-      padding: .3rem;
+      top: calc(100% + .3rem);
+      z-index: 50;
+      min-width: 11.5rem;
+      padding: .55rem;
       background: var(--card);
+      color: var(--card-foreground);
       border: 1px solid var(--border);
       border-radius: 8px;
-      box-shadow: 0 8px 24px color-mix(in srgb, #000 12%, transparent);
-      display: flex;
+      box-shadow:
+        0 1px 2px color-mix(in srgb, #000 6%, transparent),
+        0 8px 24px color-mix(in srgb, #000 12%, transparent);
       flex-direction: column;
-      gap: .1rem;
+      gap: .2rem;
     }
-    .menu-panel a {
-      display: block;
-      padding: .45rem .65rem;
-      border-radius: 5px;
+    .menu.is-open > .menu-panel {
+      display: flex;
+    }
+    .menu-panel a,
+    .menu-panel button.link {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .7rem .9rem;
+      border-radius: 6px;
       color: var(--foreground);
       text-decoration: none;
       font-size: .875rem;
+      font-weight: 500;
+      line-height: 1.35;
       white-space: nowrap;
+      background: transparent;
+      border: none;
+      text-align: left;
+      width: 100%;
+      box-sizing: border-box;
+      font-family: inherit;
+      cursor: pointer;
+      margin: 0;
     }
-    .menu-panel a:hover {
+    .menu-panel a:hover,
+    .menu-panel a:focus-visible,
+    .menu-panel button.link:hover,
+    .menu-panel button.link:focus-visible {
       background: var(--muted);
+      text-decoration: none;
+      outline: none;
+    }
+    .menu-panel a.danger {
+      color: var(--danger);
+    }
+    .menu-panel a.danger:hover,
+    .menu-panel a.danger:focus-visible {
+      background: color-mix(in srgb, var(--danger) 10%, var(--background));
+    }
+    .menu-sep {
+      height: 1px;
+      margin: .4rem .55rem;
+      background: var(--border);
+      border: none;
+      flex: 0 0 auto;
+    }
+    td.acts-menu {
+      width: 2.75rem;
+      text-align: right;
+      vertical-align: middle;
+      overflow: visible;
+      padding-left: .25rem;
+      padding-right: .5rem;
+    }
+    table { overflow: visible; }
+    .list-panel { overflow: visible; }
+    a.secret-masked {
+      display: inline-block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .9em;
+      color: var(--muted-foreground);
+      text-decoration: none;
+      letter-spacing: .08em;
+      cursor: pointer;
+      border-radius: 6px;
+      padding: .3rem .45rem;
+      border: 1px dashed transparent;
+    }
+    a.secret-masked:hover {
+      color: var(--foreground);
+      background: var(--muted);
+      border-color: var(--border);
       text-decoration: none;
     }
     .secret-create { margin-bottom: 1rem; }
@@ -1420,13 +1933,27 @@
       overflow: hidden;
       vertical-align: middle;
     }
+    /* Expanded reveal needs room (multi-line + structured preview) */
+    td.secret-cell:has(.reveal-wrap) {
+      max-width: min(36rem, 72vw);
+      width: auto;
+      min-width: 14rem;
+      overflow: visible;
+      padding-top: .55rem;
+      padding-bottom: .55rem;
+    }
     /* Keep whole row aligned when reveal/edit control is taller than plain text */
     tr:has(td.secret-cell .reveal-edit) > td,
     tr:has(td.secret-cell input.secret-value) > td,
+    tr:has(td.secret-cell textarea.secret-value) > td,
+    tr:has(td.secret-cell .reveal-pre) > td,
     tr:has(td.secret-cell .secret-saved) > td {
+      vertical-align: top;
+    }
+    tr:has(td.secret-cell .reveal-wrap) > td.pin-col {
       vertical-align: middle;
     }
-    input.secret-value {
+    input.secret-value:not(.secret-value-area) {
       display: block;
       width: 100%;
       max-width: 16rem;
@@ -1442,26 +1969,24 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    input.secret-value:focus {
+    input.secret-value:not(.secret-value-area):focus {
       outline: 2px solid var(--ring);
       outline-offset: 1px;
     }
-    form.reveal-edit { margin: 0; }
     form.reveal-edit .input-with-btn {
       max-width: 16rem;
       width: 100%;
+    }
+    form.reveal-edit.reveal-multiline .input-with-btn,
+    .reveal-wrap.reveal-multiline form.reveal-edit .input-with-btn {
+      max-width: none;
     }
     form.reveal-edit .input-with-btn input.secret-value {
       max-width: none;
       border: none;
       background: transparent;
     }
-    form.reveal-edit .save-btn {
-      width: auto;
-      padding: 0 .55rem;
-      font-size: .75rem;
-      font-weight: 600;
-    }
+
     .secret-saved {
       display: inline-block;
       margin-left: .4rem;
@@ -1821,20 +2346,45 @@
       }, 2200);
     }
     window.ssToast = toast;
+    function readCopyText(el, attrText) {
+      if (attrText) return attrText;
+      if (!el) return '';
+      // Prefer form value for inputs/textareas; PRE/DIV use text content.
+      var tag = (el.tagName || '').toUpperCase();
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        return el.value || '';
+      }
+      return (el.innerText != null ? el.innerText : el.textContent) || '';
+    }
+    function fallbackCopy(text, el) {
+      // Input/textarea can select in place; PRE/structured views need a temp field.
+      if (el && typeof el.select === 'function' && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+        try {
+          el.focus();
+          el.select();
+          if (el.setSelectionRange) el.setSelectionRange(0, (el.value || '').length);
+          if (document.execCommand('copy')) return true;
+        } catch (err) { /* fall through */ }
+      }
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
     document.addEventListener('click', function (e) {
       var btn = e.target.closest('.copy-btn');
       if (!btn) return;
       e.preventDefault();
       var id = btn.getAttribute('data-copy-target');
       var el = id ? document.getElementById(id) : null;
-      var text = btn.getAttribute('data-copy-text') || '';
-      if (!text && el) {
-        if ('value' in el && el.tagName !== 'PRE' && el.tagName !== 'DIV') {
-          text = el.value;
-        } else {
-          text = el.textContent || '';
-        }
-      }
+      var text = readCopyText(el, btn.getAttribute('data-copy-text') || '');
       if (!text) return;
       var secs = parseInt(btn.getAttribute('data-clear-seconds') || '30', 10);
       function done() {
@@ -1852,13 +2402,13 @@
           }, secs * 1000);
         }
       }
+      // Clipboard API often unavailable on HTTP / non-secure contexts; always
+      // fall back so certificate/ssh PRE blocks still copy.
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done).catch(function () {
-          if (el && el.select) { el.select(); document.execCommand('copy'); done(); }
+          if (fallbackCopy(text, el)) done();
         });
-      } else if (el && el.select) {
-        el.select();
-        document.execCommand('copy');
+      } else if (fallbackCopy(text, el)) {
         done();
       }
     });
@@ -1908,6 +2458,44 @@
         var w = root.querySelector('.reveal-wrap[data-auto-hide]');
         if (w) scheduleAutoHide(w);
       }
+    });
+    /* Kebab / dropdown menus (button + panel; reliable inside tables/forms) */
+    function closeAllMenus(except) {
+      document.querySelectorAll('[data-menu].is-open').forEach(function (m) {
+        if (except && m === except) return;
+        m.classList.remove('is-open');
+        var t = m.querySelector('.menu-toggle');
+        if (t) t.setAttribute('aria-expanded', 'false');
+      });
+    }
+    document.addEventListener('click', function (e) {
+      var toggle = e.target.closest && e.target.closest('.menu-toggle');
+      if (toggle) {
+        e.preventDefault();
+        e.stopPropagation();
+        var menu = toggle.closest('[data-menu]');
+        if (!menu) return;
+        var willOpen = !menu.classList.contains('is-open');
+        closeAllMenus(willOpen ? menu : null);
+        menu.classList.toggle('is-open', willOpen);
+        toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        return;
+      }
+      /* Choosing an item closes the menu (Reveal/Hide/History/Delete) */
+      var item = e.target.closest && e.target.closest('[data-menu] .menu-panel a, [data-menu] .menu-panel button');
+      if (item) {
+        var parent = item.closest('[data-menu]');
+        if (parent) {
+          /* allow htmx to run; close after click */
+          setTimeout(function () { closeAllMenus(); }, 0);
+        }
+        return;
+      }
+      if (e.target.closest && e.target.closest('[data-menu]')) return;
+      closeAllMenus();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeAllMenus();
     });
     /* Bulk multi-select toolbar (secrets list) */
     (function () {

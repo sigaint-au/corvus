@@ -1,37 +1,70 @@
-<div class="reveal-wrap"
+{# Unified reveal panel: actions on top (Copy / Save / Open), value below.
+   Single-line plain matches multi-line and structured layout.
+#}
+{% set kind = kind|default('plain') %}
+{% set structured = kind in ('kv', 'certificate', 'ssh', 'database') %}
+{% set multiline = (not structured) and value is string and ('\n' in value) %}
+{% set val_id = 'secret-val-' ~ secret_id ~ (('-v-' ~ version_id) if version_id is defined and version_id else '') %}
+{% set can_edit = editable and can_write and not structured %}
+<div class="reveal-wrap {% if structured %}reveal-structured{% endif %} {% if multiline %}reveal-multiline{% else %}reveal-single{% endif %}"
      data-auto-hide="{{ reveal_auto_hide_seconds|default(30) }}"
      data-secret-id="{{ secret_id }}">
-  {% if editable and can_write %}
+
+  {% if can_edit %}
   <form class="reveal-edit"
         hx-post="{{ url_for('update_secret_value', project_id=project_id, secret_id=secret_id) }}"
         hx-target="closest .secret-cell"
         hx-swap="innerHTML">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <span class="input-with-btn">
-      <input type="text" name="value" id="secret-val-{{ secret_id }}" class="secret-value"
-             value="{{ value }}" autocomplete="off" required>
-      <button type="button" class="icon-btn copy-btn" title="Copy to clipboard"
-              data-copy-target="secret-val-{{ secret_id }}"
-              data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
-    </span>
-    <div class="reveal-meta row">
-      <label>Expires
-        <input type="date" name="expires_at" id="exp-{{ secret_id }}"
-               value="{{ expires_at or '' }}">
+    <div class="reveal-head">
+      <span class="kind-badge kind-{{ kind }}">{{ kind }}</span>
+      <span class="reveal-actions">
+        <a href="#" class="link copy-btn" role="button"
+           data-copy-target="{{ val_id }}"
+           data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</a>
+        <button type="submit" class="link save-link">Save</button>
+        {% if view_url %}
+        <a class="link" href="{{ view_url }}">Open full view</a>
+        {% endif %}
+      </span>
+    </div>
+    <div class="reveal-body">
+      {% if multiline %}
+      <label class="reveal-field">
+        <span class="visually-hidden">Secret value</span>
+        <textarea name="value" id="{{ val_id }}" class="secret-value secret-value-area"
+                  rows="{{ [value.splitlines()|length, 3]|max if value else 3 }}"
+                  spellcheck="false" autocomplete="off" required>{{ value }}</textarea>
       </label>
-      <button type="submit" class="icon-btn save-btn" title="Save value and expiry">Save</button>
+      {% else %}
+      <input type="text" name="value" id="{{ val_id }}" class="secret-value secret-value-full"
+             value="{{ value }}" autocomplete="off" required>
+      {% endif %}
     </div>
   </form>
+
   {% else %}
-  <span class="input-with-btn">
-    <input type="text" id="secret-val-{{ secret_id }}" class="secret-value"
+  <div class="reveal-head">
+    <span class="kind-badge kind-{{ kind }}">{{ kind }}</span>
+    <span class="reveal-actions">
+      <a href="#" class="link copy-btn" role="button"
+         data-copy-target="{{ val_id }}"
+         data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</a>
+      {% if view_url %}
+      <a class="link" href="{{ view_url }}">Open full view</a>
+      {% endif %}
+    </span>
+  </div>
+  <div class="reveal-body">
+    {% if structured or multiline %}
+    <pre class="reveal-pre secret-value" id="{{ val_id }}" tabindex="0">{{ value }}</pre>
+    {% else %}
+    <input type="text" id="{{ val_id }}" class="secret-value secret-value-full"
            value="{{ value }}" readonly onclick="this.select()" title="Click to select">
-    <button type="button" class="icon-btn copy-btn" title="Copy to clipboard"
-            data-copy-target="secret-val-{{ secret_id }}"
-            data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
-  </span>
-  {% if expires_at %}
-  <p class="muted reveal-expiry">Expires {{ expires_at }}</p>
+    {% endif %}
+  </div>
+  {% if structured and expires_display %}
+  <p class="muted reveal-expiry" {% if expires_at %}title="{{ expires_at }}"{% endif %}>{{ expires_display }}</p>
   {% endif %}
   {% endif %}
 </div>

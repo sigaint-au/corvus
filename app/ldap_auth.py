@@ -1,7 +1,7 @@
 """LDAP authentication and group membership sync."""
 import logging
 
-from config import DEFAULT_SETTINGS, LDAP_SETTING_KEYS, ROLE_RANK
+from config import DEFAULT_SETTINGS, LDAP_SETTING_KEYS
 from crypto import decrypt
 import db
 from settings_svc import get_settings, truthy
@@ -217,71 +217,16 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
 
 def sync_ldap_user(email: str, name: str, groups: list) -> dict:
     """Upsert LDAP user, apply global role maps + team membership maps. Returns user row."""
+    from dir_sync import apply_global_admin_maps, apply_team_membership_maps, fetch_user_row
+
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute("SELECT private.upsert_ldap_user(%s, %s) AS id", (email, name or ""))
         uid = cur.fetchone()["id"]
-
         cur.execute("SELECT ldap_group, role FROM private.ldap_role_maps")
-        role_maps = cur.fetchall() or []
-        if role_maps:
-            is_admin = any(
-                m["role"] == "global_admin" and group_matches(m["ldap_group"], groups)
-                for m in role_maps
-            )
-            cur.execute(
-                "UPDATE private.users SET is_global_admin = %s WHERE id = %s",
-                (is_admin, str(uid)),
-            )
-        cur.execute(
-            "SELECT id, email, name, is_global_admin FROM private.users WHERE id = %s",
-            (str(uid)),
-        )
-        user = cur.fetchone()
-
+        apply_global_admin_maps(cur, uid, groups, cur.fetchall() or [], "ldap_group")
         cur.execute("SELECT id, team_id, ldap_group, role FROM api.team_ldap_maps")
-        tmaps = cur.fetchall() or []
-        desired = {}
-        for m in tmaps:
-            if not group_matches(m["ldap_group"], groups):
-                continue
-            tid = str(m["team_id"])
-            role = m["role"]
-            if tid not in desired or ROLE_RANK.get(role, 0) > ROLE_RANK.get(desired[tid], 0):
-                desired[tid] = role
-
-        cur.execute(
-            """
-            DELETE FROM api.team_members
-            WHERE user_id = %s AND source = 'ldap'
-              AND NOT (team_id = ANY(%s::uuid[]))
-            """,
-            (str(uid), list(desired.keys()) or []),
+        apply_team_membership_maps(
+            cur, uid, groups, cur.fetchall() or [], group_key="ldap_group", source="ldap"
         )
-        for tid, role in desired.items():
-            cur.execute(
-                """
-                SELECT role, source FROM api.team_members
-                WHERE team_id = %s AND user_id = %s
-                """,
-                (tid, str(uid)),
-            )
-            existing = cur.fetchone()
-            if existing and existing.get("source") == "manual":
-                continue
-            if existing:
-                cur.execute(
-                    """
-                    UPDATE api.team_members SET role = %s, source = 'ldap'
-                    WHERE team_id = %s AND user_id = %s
-                    """,
-                    (role, tid, str(uid)),
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s, %s, %s, 'ldap')
-                    """,
-                    (tid, str(uid), role),
-                )
-        return user
+        return fetch_user_row(cur, uid)
+

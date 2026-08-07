@@ -2,7 +2,9 @@
 <a id="{{ toggle_id }}"
    href="#"
    class="reveal-toggle"
+   role="menuitem"
    hx-get="{% if revealed %}{{ hide_url }}{% else %}{{ reveal_url }}{% endif %}"
    hx-target="#{{ cell_id }}"
    hx-swap="innerHTML"{% if oob %}
-   hx-swap-oob="true"{% endif %}>{% if revealed %}Hide{% else %}Reveal{% endif %}</a>
+   hx-swap-oob="true"{% endif %}
+   {% if not revealed %}data-close-menu="1"{% endif %}>{% if revealed %}Hide{% else %}Reveal{% endif %}</a>
