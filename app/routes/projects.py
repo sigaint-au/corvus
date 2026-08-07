@@ -733,9 +733,59 @@ def register(app):
         )
 
 
+    def _reveal_cell_ids(secret_id, cell: str | None = None, version_id=None):
+        """Return (cell_id, toggle_id) for HTMX reveal/hide targets."""
+        if version_id is not None:
+            return f"reveal-v-{version_id}", f"reveal-toggle-v-{version_id}"
+        if (cell or "").strip().lower() == "current":
+            return (
+                f"reveal-current-{secret_id}",
+                f"reveal-toggle-current-{secret_id}",
+            )
+        return f"reveal-{secret_id}", f"reveal-toggle-{secret_id}"
+
+    def _reveal_toggle_html(
+        project_id,
+        secret_id,
+        *,
+        revealed: bool,
+        cell: str | None = None,
+        version_id=None,
+    ):
+        cell_id, toggle_id = _reveal_cell_ids(secret_id, cell, version_id)
+        if version_id is not None:
+            reveal_url = url_for(
+                "reveal_secret_version",
+                project_id=project_id,
+                secret_id=secret_id,
+                version_id=version_id,
+            )
+            hide_url = url_for(
+                "hide_secret_version",
+                project_id=project_id,
+                secret_id=secret_id,
+                version_id=version_id,
+            )
+        else:
+            kwargs = {"project_id": project_id, "secret_id": secret_id}
+            if cell:
+                kwargs["cell"] = cell
+            reveal_url = url_for("reveal_secret", **kwargs)
+            hide_url = url_for("hide_secret", **kwargs)
+        return render_template(
+            "partials/reveal_toggle.html",
+            toggle_id=toggle_id,
+            cell_id=cell_id,
+            reveal_url=reveal_url,
+            hide_url=hide_url,
+            revealed=revealed,
+            oob=True,
+        )
+
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/reveal")
     @authz.login_required
     def reveal_secret(project_id, secret_id):
+        cell = (request.args.get("cell") or "").strip() or None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -773,7 +823,7 @@ def register(app):
                 exp_date = _as_utc(exp).date().isoformat()
             except Exception:
                 exp_date = str(exp)[:10]
-        return render_template(
+        body = render_template(
             "partials/reveal.html",
             value=crypto.decrypt(row["value_enc"]),
             secret_id=secret_id,
@@ -784,6 +834,23 @@ def register(app):
             expires_at=exp_date,
             clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
         )
+        if authz.htmx():
+            body += _reveal_toggle_html(
+                project_id, secret_id, revealed=True, cell=cell
+            )
+        return body
+
+    @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/hide")
+    @authz.login_required
+    def hide_secret(project_id, secret_id):
+        """Mask a revealed secret (client re-mask; no audit)."""
+        cell = (request.args.get("cell") or "").strip() or None
+        body = render_template("partials/secret_masked.html")
+        if authz.htmx():
+            body += _reveal_toggle_html(
+                project_id, secret_id, revealed=False, cell=cell
+            )
+        return body
 
 
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/pin")
@@ -893,8 +960,12 @@ def register(app):
             )
             conn.commit()
         if authz.htmx():
-            # Hide value again; show brief confirmation in the cell
-            return render_template("partials/reveal_saved.html")
+            # Hide value again; show brief confirmation and restore Reveal control
+            body = render_template("partials/reveal_saved.html")
+            body += _reveal_toggle_html(
+                project_id, secret_id, revealed=False, cell=None
+            )
+            return body
         flash("Secret updated", "ok")
         return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
 
@@ -990,7 +1061,7 @@ def register(app):
                 action="revealed",
             )
             conn.commit()
-        return render_template(
+        body = render_template(
             "partials/reveal.html",
             value=crypto.decrypt(row["value_enc"]),
             secret_id=secret_id,
@@ -1000,6 +1071,29 @@ def register(app):
             is_pinned=False,
             clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
         )
+        if authz.htmx():
+            body += _reveal_toggle_html(
+                project_id,
+                secret_id,
+                revealed=True,
+                version_id=version_id,
+            )
+        return body
+
+    @app.get(
+        "/projects/<uuid:project_id>/secrets/<uuid:secret_id>/versions/<uuid:version_id>/hide"
+    )
+    @authz.login_required
+    def hide_secret_version(project_id, secret_id, version_id):
+        body = render_template("partials/secret_masked.html")
+        if authz.htmx():
+            body += _reveal_toggle_html(
+                project_id,
+                secret_id,
+                revealed=False,
+                version_id=version_id,
+            )
+        return body
 
 
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/rollback/<uuid:version_id>")

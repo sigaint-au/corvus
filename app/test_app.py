@@ -1462,12 +1462,30 @@ class TestSecrets(unittest.TestCase):
             {"w": True},
         ]
         with patch.object(db, "as_user", return_value=conn):
-            r = self.client.get(f"/projects/{self.pid}/secrets/{sid}/reveal")
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/reveal",
+                headers={"HX-Request": "true"},
+            )
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"super-secret", r.data)
         self.assertIn(b"Save", r.data)
         self.assertIn(b"/value", r.data)
         self.assertIn(b"expires_at", r.data)
+        self.assertIn(b">Hide</a>", r.data)
+        self.assertIn(b"/hide", r.data)
+
+    def test_hide_secret(self):
+        sid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+        r = self.client.get(
+            f"/projects/{self.pid}/secrets/{sid}/hide",
+            headers={"HX-Request": "true"},
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"*******", r.data)
+        self.assertIn(b">Reveal</a>", r.data)
+        self.assertIn(b"/reveal", r.data)
 
     def test_update_secret_value(self):
         sid = uuid4()
@@ -1487,6 +1505,7 @@ class TestSecrets(unittest.TestCase):
         self.assertNotIn(b"new-secret", r.data)
         self.assertIn(b"*******", r.data)
         self.assertIn(b"Updated", r.data)
+        self.assertIn(b">Reveal</a>", r.data)
         conn.commit.assert_called()
         sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
         self.assertIn("expires_at", sql)
