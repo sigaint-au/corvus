@@ -601,6 +601,45 @@ def format_when(dt) -> str:
     return d.strftime("%Y-%m-%d %H:%M UTC")
 
 
+def format_expires(dt, *, prefix: bool = True) -> str:
+    """Human-friendly expiry, e.g. 'expires in 3 days (10 Aug 2026)'."""
+    d = _as_utc_dt(dt)
+    if d is None:
+        return ""
+    now = datetime.now(timezone.utc)
+    sec = int((d - now).total_seconds())
+    abs_when = d.strftime("%d %b %Y")
+    if sec < 0:
+        past = -sec
+        if past < 3600:
+            rel = "under an hour ago"
+        elif past < 86400:
+            n = max(1, past // 3600)
+            rel = f"{n} hour{'s' if n != 1 else ''} ago"
+        elif past < 86400 * 30:
+            n = max(1, past // 86400)
+            rel = f"{n} day{'s' if n != 1 else ''} ago"
+        else:
+            return f"expired {abs_when}" if prefix else abs_when
+        body = f"{rel} ({abs_when})"
+        return f"expired {body}" if prefix else f"expired {body}"
+    if sec < 3600:
+        rel = "in under an hour"
+    elif sec < 86400:
+        n = max(1, sec // 3600)
+        rel = f"in {n} hour{'s' if n != 1 else ''}"
+    elif sec < 86400 * 30:
+        n = max(1, sec // 86400)
+        rel = f"in {n} day{'s' if n != 1 else ''}"
+    elif sec < 86400 * 365:
+        n = max(1, sec // (86400 * 30))
+        rel = f"in {n} month{'s' if n != 1 else ''}"
+    else:
+        return f"expires {abs_when}" if prefix else abs_when
+    body = f"{rel} ({abs_when})"
+    return f"expires {body}" if prefix else body
+
+
 def format_time_ago(dt) -> str:
     """Relative time for Updated columns, e.g. '3 hours ago'."""
     d = _as_utc_dt(dt)

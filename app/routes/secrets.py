@@ -363,19 +363,6 @@ def register(app):
                 pass
             plaintext = crypto.decrypt(row["value_enc"])
             kind = normalize_kind(row.get("kind"))
-            if kind in STRUCTURED_VIEW_KINDS and not force_inline:
-                # Audit on the view page; navigate in the current window.
-                conn.commit()
-                view_url = url_for(
-                    "secret_view",
-                    project_id=project_id,
-                    secret_id=secret_id,
-                )
-                if authz.htmx():
-                    resp = make_response("", 204)
-                    resp.headers["HX-Redirect"] = view_url
-                    return resp
-                return redirect(view_url)
             audit.log_secret(
                 cur,
                 project_id=project_id,
@@ -386,20 +373,33 @@ def register(app):
             conn.commit()
         exp = row.get("expires_at")
         exp_date = ""
+        exp_display = ""
         if exp is not None:
             try:
                 exp_date = as_utc(exp).date().isoformat()
             except Exception:
                 exp_date = str(exp)[:10]
+            exp_display = audit.format_expires(exp)
+        # Always expand inline for a consistent list UX. Structured kinds get a
+        # preview + "Open full view"; plain single/multi-line stay in the cell.
+        structured = kind in STRUCTURED_VIEW_KINDS
+        view_url = url_for(
+            "secret_view", project_id=project_id, secret_id=secret_id
+        )
+        # force_inline kept for callers; no longer gates redirect.
+        del force_inline
         body = render_template(
             "partials/reveal.html",
             value=plaintext,
             secret_id=secret_id,
             project_id=project_id,
-            editable=True,
-            can_write=can_write,
+            kind=kind,
+            view_url=view_url if structured else None,
+            editable=not structured,
+            can_write=can_write and not structured,
             is_pinned=is_fav,
             expires_at=exp_date,
+            expires_display=exp_display,
             clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
         )
         if authz.htmx():
@@ -828,23 +828,23 @@ def register(app):
             conn.commit()
         plaintext = crypto.decrypt(row["value_enc"])
         kind = normalize_kind(row.get("kind"))
-        if kind in STRUCTURED_VIEW_KINDS and not force_inline:
-            view_url = url_for(
-                "secret_view",
-                project_id=project_id,
-                secret_id=secret_id,
-                version_id=version_id,
-            )
-            if authz.htmx():
-                resp = make_response("", 204)
-                resp.headers["HX-Redirect"] = view_url
-                return resp
-            return redirect(view_url)
+        structured = kind in STRUCTURED_VIEW_KINDS
+        del force_inline
         body = render_template(
             "partials/reveal.html",
             value=plaintext,
             secret_id=secret_id,
             project_id=project_id,
+            version_id=version_id,
+            kind=kind,
+            view_url=url_for(
+                "secret_view",
+                project_id=project_id,
+                secret_id=secret_id,
+                version_id=version_id,
+            )
+            if structured
+            else None,
             editable=False,
             can_write=False,
             is_pinned=False,

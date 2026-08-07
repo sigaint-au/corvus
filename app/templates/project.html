@@ -72,7 +72,9 @@
       <tr>
         <td><code class="k">{{ s.key }}</code> <span class="due-badge due-overdue">overdue</span></td>
         <td class="muted">Past expiry</td>
-        <td class="muted">{{ s.expires_at }}</td>
+        <td class="muted"{% if s.expires_at %} title="{{ s.expires_at|time_when }}"{% endif %}>
+          {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}—{% endif %}
+        </td>
         <td class="acts">
           <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
         </td>
@@ -82,7 +84,9 @@
       <tr>
         <td><code class="k">{{ s.key }}</code> <span class="due-badge due-soon">soon</span></td>
         <td class="muted">Within {{ soon_days|default(14) }} days</td>
-        <td class="muted">{{ s.expires_at }}</td>
+        <td class="muted"{% if s.expires_at %} title="{{ s.expires_at|time_when }}"{% endif %}>
+          {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}—{% endif %}
+        </td>
         <td class="acts">
           <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
         </td>

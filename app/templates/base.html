@@ -370,9 +370,119 @@
       transition: opacity .15s ease, transform .15s ease;
     }
     .toast.show { opacity: 1; transform: translateY(0); }
-    .reveal-wrap { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+    .reveal-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .35rem .5rem;
+      min-width: 0;
+      max-width: min(36rem, 70vw);
+    }
     .reveal-wrap .input-with-btn { flex: 1; min-width: 0; }
-    .reveal-actions { flex: 0 0 auto; }
+    .reveal-actions {
+      flex: 0 0 auto;
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: .15rem .75rem;
+      align-items: center;
+      font-size: .875rem;
+    }
+    .reveal-actions a.link,
+    .reveal-actions a.copy-btn {
+      color: inherit;
+      text-decoration: none;
+      background: none;
+      border: none;
+      padding: 0;
+      font: inherit;
+      font-size: .875rem;
+      cursor: pointer;
+    }
+    .reveal-actions a.link:hover,
+    .reveal-actions a.copy-btn:hover {
+      text-decoration: underline;
+    }
+    /* Single- and multi-line share the same body + actions stack */
+    .reveal-body .input-with-btn {
+      max-width: 16rem;
+      width: 100%;
+    }
+    .reveal-wrap.reveal-multiline .reveal-body .input-with-btn,
+    .reveal-wrap.reveal-structured .reveal-body .input-with-btn {
+      max-width: none;
+    }
+    .reveal-body .reveal-actions {
+      margin-top: .05rem;
+    }
+    .reveal-meta .field-hint {
+      display: block;
+      margin-top: .2rem;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+    .reveal-wrap.reveal-multiline,
+    .reveal-wrap.reveal-structured {
+      flex-direction: column;
+      align-items: stretch;
+      width: min(36rem, 70vw);
+      max-width: 100%;
+    }
+    .reveal-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: .35rem .65rem;
+    }
+    .reveal-body {
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+      min-width: 0;
+    }
+    .reveal-field { display: block; margin: 0; min-width: 0; }
+    .reveal-pre,
+    textarea.secret-value-area {
+      display: block;
+      width: 100%;
+      max-width: none;
+      box-sizing: border-box;
+      margin: 0;
+      padding: .45rem .55rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .8rem;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      overflow-x: auto;
+      max-height: 14rem;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--muted);
+      color: var(--foreground);
+      resize: vertical;
+    }
+    .reveal-pre:focus,
+    textarea.secret-value-area:focus {
+      outline: 2px solid var(--ring);
+      outline-offset: 1px;
+    }
+    form.reveal-edit {
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+      width: 100%;
+      min-width: 0;
+    }
+    a.secret-key-link {
+      color: inherit;
+      text-decoration: none;
+    }
+    a.secret-key-link:hover code {
+      text-decoration: underline;
+    }
     th.pin-col,
     td.pin-col {
       width: 2rem;
@@ -425,14 +535,132 @@
       color: var(--muted-foreground);
       margin-top: .15rem;
     }
+    /* Settings identity forms: grouped grids so LDAP/OIDC are less a tall stack */
+    .settings-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+    }
+    .settings-form > .check-row:first-child {
+      margin-top: 0;
+    }
+    .field-group {
+      margin: 0;
+      padding: .85rem 1rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: transparent;
+    }
+    .field-group > legend {
+      padding: 0 .35rem;
+      margin: 0 0 .15rem;
+      font-size: .72rem;
+      font-weight: 650;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+    }
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .65rem .85rem;
+      /* Start so labels/inputs line up; hints under one field must not pull the other down */
+      align-items: start;
+    }
+    .field-grid > label {
+      margin: 0;
+      min-width: 0;
+    }
+    .field-grid > .span-2 {
+      grid-column: 1 / -1;
+    }
+    .field-grid > .field-hint {
+      margin: -.15rem 0 0;
+    }
+    .field-grid .field-hint,
+    .field-group > .field-hint {
+      margin-top: .2rem;
+    }
+    .field-grid label .field-hint {
+      margin-top: .2rem;
+    }
+    .field-group .check-row {
+      margin: .35rem 0 0;
+    }
+    .field-group .check-row:first-of-type {
+      margin-top: .15rem;
+    }
+    @media (max-width: 720px) {
+      .field-grid { grid-template-columns: 1fr; }
+      .field-grid > .span-2 { grid-column: auto; }
+    }
+
     .check-row {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: .5rem;
       margin: .75rem 0;
       font-size: .925rem;
+      font-weight: 500;
+      cursor: pointer;
+      line-height: 1.35;
     }
-    .check-row input { width: auto; }
+    /* Oat uses appearance:none + fixed 1rem; never set width:auto on checkboxes
+       (collapses them into a thin line). */
+    .check-row input[type="checkbox"],
+    .check-row input[type="radio"],
+    input[type="checkbox"].bulk-secret-cb,
+    .bulk-select input[type="checkbox"],
+    .pin-col input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      box-sizing: border-box;
+      width: 1rem;
+      height: 1rem;
+      min-width: 1rem;
+      min-height: 1rem;
+      max-width: 1rem;
+      margin: .15rem 0 0;
+      flex: 0 0 1rem;
+      padding: 0;
+      position: relative;
+      vertical-align: middle;
+      background: var(--background);
+      border: 1px solid var(--input);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .check-row input[type="checkbox"]:checked,
+    .check-row input[type="radio"]:checked,
+    input[type="checkbox"].bulk-secret-cb:checked,
+    .bulk-select input[type="checkbox"]:checked,
+    .pin-col input[type="checkbox"]:checked {
+      background-color: var(--primary);
+      border-color: var(--primary);
+    }
+    .check-row input[type="checkbox"]:checked::after,
+    input[type="checkbox"].bulk-secret-cb:checked::after,
+    .bulk-select input[type="checkbox"]:checked::after,
+    .pin-col input[type="checkbox"]:checked::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-color: var(--primary-foreground);
+      mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='4'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+      mask-position: center;
+      mask-repeat: no-repeat;
+      mask-size: 100%;
+      -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='4'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+      -webkit-mask-position: center;
+      -webkit-mask-repeat: no-repeat;
+      -webkit-mask-size: 100%;
+    }
+    .check-row input[type="checkbox"]:focus-visible,
+    .bulk-select input[type="checkbox"]:focus-visible,
+    .pin-col input[type="checkbox"]:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: 2px;
+    }
     .nav-sep {
       height: 1px;
       background: var(--side-border);
@@ -1159,9 +1387,12 @@
       cursor: pointer;
       user-select: none;
     }
-    .bulk-toolbar .bulk-select input {
-      width: auto;
+    .bulk-toolbar .bulk-select input[type="checkbox"] {
+      width: 1rem;
+      height: 1rem;
+      min-width: 1rem;
       margin: 0;
+      flex: 0 0 1rem;
       cursor: pointer;
     }
     .bulk-toolbar .bulk-count {
@@ -1420,13 +1651,25 @@
       overflow: hidden;
       vertical-align: middle;
     }
+    /* Expanded reveal needs room (multi-line + structured preview) */
+    td.secret-cell:has(.reveal-wrap) {
+      max-width: min(36rem, 70vw);
+      width: auto;
+      min-width: 14rem;
+      overflow: visible;
+    }
     /* Keep whole row aligned when reveal/edit control is taller than plain text */
     tr:has(td.secret-cell .reveal-edit) > td,
     tr:has(td.secret-cell input.secret-value) > td,
+    tr:has(td.secret-cell textarea.secret-value) > td,
+    tr:has(td.secret-cell .reveal-pre) > td,
     tr:has(td.secret-cell .secret-saved) > td {
+      vertical-align: top;
+    }
+    tr:has(td.secret-cell .reveal-wrap) > td.pin-col {
       vertical-align: middle;
     }
-    input.secret-value {
+    input.secret-value:not(.secret-value-area) {
       display: block;
       width: 100%;
       max-width: 16rem;
@@ -1442,14 +1685,17 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    input.secret-value:focus {
+    input.secret-value:not(.secret-value-area):focus {
       outline: 2px solid var(--ring);
       outline-offset: 1px;
     }
-    form.reveal-edit { margin: 0; }
     form.reveal-edit .input-with-btn {
       max-width: 16rem;
       width: 100%;
+    }
+    form.reveal-edit.reveal-multiline .input-with-btn,
+    .reveal-wrap.reveal-multiline form.reveal-edit .input-with-btn {
+      max-width: none;
     }
     form.reveal-edit .input-with-btn input.secret-value {
       max-width: none;

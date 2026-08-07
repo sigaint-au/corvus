@@ -383,66 +383,91 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 {% elif active_tab == 'ldap' %}
 <section>
   <h2>LDAP authentication</h2>
-  <p class="muted">
-    When enabled, users can sign in with directory credentials. Local accounts still work.
-    Group membership is read on each login and applied to role / team maps.
-    Cleartext <code>ldap://</code> without StartTLS is refused — use <code>ldaps://</code>
-    or enable StartTLS.
+  <p class="muted page-desc">
+    Directory login alongside local accounts. Groups are read on each sign-in.
+    Use <code class="k">ldaps://</code> or StartTLS — plain <code class="k">ldap://</code> without TLS is refused.
   </p>
-  <form method="post">
+  <form method="post" class="settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="ldap">
+
     <label class="check-row">
       <input type="checkbox" name="ldap_enabled" value="1"
              {% if settings.ldap_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Enable LDAP login
     </label>
-    <label>Server URL
-      <input type="text" name="ldap_url" value="{{ settings.ldap_url }}"
-             placeholder="ldap://ipa.example.com:389 or ldaps://ipa.example.com">
-    </label>
-    <label class="check-row">
-      <input type="checkbox" name="ldap_start_tls" value="1"
-             {% if settings.ldap_start_tls in ('true', '1', 'yes', 'on') %}checked{% endif %}>
-      StartTLS after connect
-    </label>
-    <label>Service bind DN
-      <input type="text" name="ldap_bind_dn" value="{{ settings.ldap_bind_dn }}"
-             placeholder="uid=svc-secretstore,cn=users,cn=accounts,dc=example,dc=com">
-    </label>
-    <label>Service bind password
-      <input type="password" name="ldap_bind_password" value="" autocomplete="new-password"
-             placeholder="{% if settings.ldap_bind_password_set %}•••••••• (leave blank to keep){% else %}optional for anonymous bind{% endif %}">
-    </label>
-    <label>User search base
-      <input type="text" name="ldap_user_base" value="{{ settings.ldap_user_base }}"
-             placeholder="cn=users,cn=accounts,dc=example,dc=com">
-    </label>
-    <label>User filter <span class="muted">({login} is replaced)</span>
-      <input type="text" name="ldap_user_filter" value="{{ settings.ldap_user_filter }}"
-             placeholder="(|(mail={login})(uid={login}))">
-    </label>
-    <div class="row">
-      <label>Email attribute
-        <input type="text" name="ldap_email_attr" value="{{ settings.ldap_email_attr or 'mail' }}">
-      </label>
-      <label>Display name attribute
-        <input type="text" name="ldap_name_attr" value="{{ settings.ldap_name_attr or 'displayName' }}">
-      </label>
-    </div>
-    <label class="check-row">
-      <input type="checkbox" name="ldap_use_memberof" value="1"
-             {% if settings.ldap_use_memberof in ('true', '1', 'yes', 'on') %}checked{% endif %}>
-      Use <code>memberOf</code> for groups
-    </label>
-    <label>Group search base <span class="muted">(if not using memberOf)</span>
-      <input type="text" name="ldap_group_base" value="{{ settings.ldap_group_base }}"
-             placeholder="cn=groups,cn=accounts,dc=example,dc=com">
-    </label>
-    <label>Group filter <span class="muted">({dn} = user DN)</span>
-      <input type="text" name="ldap_group_filter" value="{{ settings.ldap_group_filter }}"
-             placeholder="(member={dn})">
-    </label>
+
+    <fieldset class="field-group">
+      <legend>Connection</legend>
+      <div class="field-grid">
+        <label class="span-2">Server URL
+          <input type="text" name="ldap_url" value="{{ settings.ldap_url }}"
+                 placeholder="ldaps://ipa.example.com or ldap://ipa.example.com:389">
+        </label>
+        <label class="check-row span-2">
+          <input type="checkbox" name="ldap_start_tls" value="1"
+                 {% if settings.ldap_start_tls in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+          StartTLS after connect
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>Service bind</legend>
+      <div class="field-grid">
+        <label class="span-2">Bind DN
+          <input type="text" name="ldap_bind_dn" value="{{ settings.ldap_bind_dn }}"
+                 placeholder="uid=svc-secretstore,cn=users,cn=accounts,dc=example,dc=com">
+        </label>
+        <label class="span-2">Bind password
+          <input type="password" name="ldap_bind_password" value="" autocomplete="new-password"
+                 placeholder="{% if settings.ldap_bind_password_set %}•••••••• (leave blank to keep){% else %}optional for anonymous bind{% endif %}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>User lookup</legend>
+      <div class="field-grid">
+        <label class="span-2">Search base
+          <input type="text" name="ldap_user_base" value="{{ settings.ldap_user_base }}"
+                 placeholder="cn=users,cn=accounts,dc=example,dc=com">
+        </label>
+        <label class="span-2">User filter
+          <input type="text" name="ldap_user_filter" value="{{ settings.ldap_user_filter }}"
+                 placeholder="(|(mail={login})(uid={login}))">
+          <span class="field-hint"><code class="k">{login}</code> is replaced with the signed-in identifier</span>
+        </label>
+        <label>Email attribute
+          <input type="text" name="ldap_email_attr" value="{{ settings.ldap_email_attr or 'mail' }}">
+        </label>
+        <label>Display name attribute
+          <input type="text" name="ldap_name_attr" value="{{ settings.ldap_name_attr or 'displayName' }}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>Groups</legend>
+      <div class="field-grid">
+        <label class="check-row span-2">
+          <input type="checkbox" name="ldap_use_memberof" value="1"
+                 {% if settings.ldap_use_memberof in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+          Use <code class="k">memberOf</code> for groups
+        </label>
+        <label class="span-2">Group search base
+          <input type="text" name="ldap_group_base" value="{{ settings.ldap_group_base }}"
+                 placeholder="cn=groups,cn=accounts,dc=example,dc=com">
+          <span class="field-hint">Only needed when not using memberOf</span>
+        </label>
+        <label class="span-2">Group filter
+          <input type="text" name="ldap_group_filter" value="{{ settings.ldap_group_filter }}"
+                 placeholder="(member={dn})">
+          <span class="field-hint"><code class="k">{dn}</code> is the user’s DN</span>
+        </label>
+      </div>
+    </fieldset>
+
     <p class="form-actions"><button type="submit">Save LDAP settings</button></p>
   </form>
 </section>
@@ -496,68 +521,78 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 {% elif active_tab == 'oidc' %}
 <section>
   <h2>OIDC / SSO</h2>
-  <p class="muted">
-    Authorization-code login for Keycloak and other OpenID Connect providers.
-    Users are created or linked by <strong>email</strong> on first SSO sign-in.
-    Local password login remains available for break-glass accounts.
+  <p class="muted page-desc">
+    Authorization-code login (Keycloak and other OIDC providers). Accounts are linked by
+    <strong>email</strong> on first SSO sign-in; local password login stays available for break-glass.
   </p>
-  <form method="post">
+  <form method="post" class="settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="oidc">
+
     <label class="check-row">
       <input type="checkbox" name="oidc_enabled" value="1"
              {% if settings.oidc_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Enable OIDC login
     </label>
-    <label>Issuer URL
-      <input type="url" name="oidc_issuer" value="{{ settings.oidc_issuer }}"
-             placeholder="https://keycloak.example.com/realms/myrealm">
-    </label>
-    <p class="muted mt-0">
-      Discovery: <code class="k">{issuer}/.well-known/openid-configuration</code>
-    </p>
-    <label>Client ID
-      <input type="text" name="oidc_client_id" value="{{ settings.oidc_client_id }}"
-             placeholder="secretstore" autocomplete="off">
-    </label>
-    <label>Client secret
-      <input type="password" name="oidc_client_secret" value="" autocomplete="new-password"
-             placeholder="{% if settings.oidc_client_secret_set %}•••••••• (leave blank to keep){% else %}confidential client secret{% endif %}">
-    </label>
-    <label>Scopes
-      <input type="text" name="oidc_scopes" value="{{ settings.oidc_scopes or 'openid email profile' }}">
-    </label>
-    <label>Login button label
-      <input type="text" name="oidc_button_label" value="{{ settings.oidc_button_label or 'Sign in with SSO' }}">
-    </label>
-    <label>Username claim
-      <input type="text" name="oidc_username_claim"
-             value="{{ settings.oidc_username_claim or 'preferred_username' }}"
-             placeholder="preferred_username">
-    </label>
-    <p class="muted mt-0">
-      Claim used as the account display name on SSO onboarding (default
-      <code class="k">preferred_username</code>). Falls back to <code class="k">name</code>,
-      then given/family name, then the email local-part. Account identity remains <strong>email</strong>.
-    </p>
-    <label>Groups claim
-      <input type="text" name="oidc_groups_claim" value="{{ settings.oidc_groups_claim or 'groups' }}"
-             placeholder="groups">
-    </label>
-    <p class="muted mt-0">
-      Claim path for group names (Keycloak: add a “Group Membership” mapper named
-      <code class="k">groups</code>). Also reads <code class="k">realm_access.roles</code> when present.
-    </p>
-    <label class="check-row">
-      <input type="checkbox" name="oidc_require_email_verified" value="1"
-             {% if settings.oidc_require_email_verified not in ('false', '0', 'no', 'off') %}checked{% endif %}>
-      Require verified email (<code class="k">email_verified</code> claim)
-    </label>
-    <p class="muted mt-0">
-      When enabled (recommended), SSO is rejected if the IdP does not assert a verified email.
-      Turn off only if your provider never sends <code class="k">email_verified</code>
-      and you trust its email claim (account linking is by email).
-    </p>
+
+    <fieldset class="field-group">
+      <legend>Provider</legend>
+      <div class="field-grid">
+        <label class="span-2">Issuer URL
+          <input type="url" name="oidc_issuer" value="{{ settings.oidc_issuer }}"
+                 placeholder="https://keycloak.example.com/realms/myrealm">
+          <span class="field-hint">Discovery: <code class="k">{issuer}/.well-known/openid-configuration</code></span>
+        </label>
+        <label>Client ID
+          <input type="text" name="oidc_client_id" value="{{ settings.oidc_client_id }}"
+                 placeholder="secretstore" autocomplete="off">
+        </label>
+        <label>Client secret
+          <input type="password" name="oidc_client_secret" value="" autocomplete="new-password"
+                 placeholder="{% if settings.oidc_client_secret_set %}•••••••• (leave blank to keep){% else %}confidential client secret{% endif %}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>Sign-in UI</legend>
+      <div class="field-grid">
+        <label>Login button label
+          <input type="text" name="oidc_button_label" value="{{ settings.oidc_button_label or 'Sign in with SSO' }}">
+        </label>
+        <label>Scopes
+          <input type="text" name="oidc_scopes" value="{{ settings.oidc_scopes or 'openid email profile' }}">
+          <span class="field-hint">At least <code class="k">openid</code> and <code class="k">email</code></span>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>Claims</legend>
+      <div class="field-grid">
+        <label>Username claim
+          <input type="text" name="oidc_username_claim"
+                 value="{{ settings.oidc_username_claim or 'preferred_username' }}"
+                 placeholder="preferred_username">
+          <span class="field-hint">Display name on first SSO (identity is still email)</span>
+        </label>
+        <label>Groups claim
+          <input type="text" name="oidc_groups_claim" value="{{ settings.oidc_groups_claim or 'groups' }}"
+                 placeholder="groups">
+          <span class="field-hint">Also reads <code class="k">realm_access.roles</code> when present</span>
+        </label>
+        <label class="check-row span-2">
+          <input type="checkbox" name="oidc_require_email_verified" value="1"
+                 {% if settings.oidc_require_email_verified not in ('false', '0', 'no', 'off') %}checked{% endif %}>
+          Require verified email (<code class="k">email_verified</code>)
+        </label>
+        <p class="field-hint span-2">
+          Recommended. Turn off only if your IdP never sends <code class="k">email_verified</code>
+          and you trust its email claim.
+        </p>
+      </div>
+    </fieldset>
+
     <p class="form-actions"><button type="submit">Save OIDC settings</button></p>
   </form>
 </section>
