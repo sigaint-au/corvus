@@ -87,6 +87,12 @@ MACHINE_TOKEN_ROLES = ("read-only", "write")
 CLIPBOARD_CLEAR_SECONDS = max(
     0, int(os.environ.get("CLIPBOARD_CLEAR_SECONDS", "30") or "30")
 )
+# Auto-hide revealed secret values (seconds); 0 disables
+REVEAL_AUTO_HIDE_SECONDS = max(
+    0, int(os.environ.get("REVEAL_AUTO_HIDE_SECONDS", "30") or "30")
+)
+# Structured secret kinds for advanced create form
+SECRET_KINDS = ("plain", "database", "certificate", "ssh", "kv")
 # Upper bounds for optional expiry (secrets, machine tokens, team defaults)
 MAX_EXPIRY_DAYS = 3650  # ~10 years
 # Request body / secret import file cap (bytes) — memory DoS guard

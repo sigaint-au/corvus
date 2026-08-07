@@ -1,4 +1,6 @@
-<div class="reveal-wrap">
+<div class="reveal-wrap"
+     data-auto-hide="{{ reveal_auto_hide_seconds|default(30) }}"
+     data-secret-id="{{ secret_id }}">
   {% if editable and can_write %}
   <form class="reveal-edit"
         hx-post="{{ url_for('update_secret_value', project_id=project_id, secret_id=secret_id) }}"
@@ -8,7 +10,7 @@
     <span class="input-with-btn">
       <input type="text" name="value" id="secret-val-{{ secret_id }}" class="secret-value"
              value="{{ value }}" autocomplete="off" required>
-      <button type="button" class="icon-btn copy-btn" title="Copy"
+      <button type="button" class="icon-btn copy-btn" title="Copy to clipboard"
               data-copy-target="secret-val-{{ secret_id }}"
               data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
     </span>
@@ -24,7 +26,7 @@
   <span class="input-with-btn">
     <input type="text" id="secret-val-{{ secret_id }}" class="secret-value"
            value="{{ value }}" readonly onclick="this.select()" title="Click to select">
-    <button type="button" class="icon-btn copy-btn" title="Copy"
+    <button type="button" class="icon-btn copy-btn" title="Copy to clipboard"
             data-copy-target="secret-val-{{ secret_id }}"
             data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
   </span>

@@ -1939,14 +1939,45 @@ class TestSecretLifecycle(unittest.TestCase):
         self.assertIn("audit_secret", sql)
         self.assertIn("exported", str(cur.execute.call_args_list))
 
-    def test_import_env(self):
+    def test_import_preview(self):
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"w": True},
+            {"name": "prod", "id": self.pid, "team_name": "T"},
+        ]
+        cur.fetchall.return_value = [{"key": "EXISTING"}]
+        with patch.object(db, "as_user", return_value=conn), patch(
+            "nav.nav_teams", return_value=[]
+        ):
+            r = self.client.post(
+                f"/projects/{self.pid}/import/preview",
+                data={"payload": "NEW_KEY=hello\nEXISTING=updated"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Import preview", r.data)
+        self.assertIn(b"Will create", r.data)
+        self.assertIn(b"NEW_KEY", r.data)
+        self.assertIn(b"Will update", r.data)
+        self.assertIn(b"EXISTING", r.data)
+        with self.client.session_transaction() as s:
+            pending = s.get("import_pending")
+        self.assertIsNotNone(pending)
+        self.assertEqual(len(pending["items"]), 2)
+
+    def test_import_commit(self):
         sid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+            s["import_pending"] = {
+                "project_id": str(self.pid),
+                "items": [{"key": "NEW_KEY", "enc": False, "value": "hello", "note": ""}],
+            }
         conn, cur = _conn()
         cur.fetchone.side_effect = [{"w": True}, None, {"id": sid}]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
-                f"/projects/{self.pid}/import",
-                data={"payload": "NEW_KEY=hello"},
+                f"/projects/{self.pid}/import/commit",
                 follow_redirects=False,
             )
         self.assertEqual(r.status_code, 302)

@@ -1379,19 +1379,20 @@
       setTimeout(function () {
         el.classList.remove('show');
         setTimeout(function () { el.remove(); }, 200);
-      }, 1800);
+      }, 2200);
     }
+    window.ssToast = toast;
     document.addEventListener('click', function (e) {
       var btn = e.target.closest('.copy-btn');
       if (!btn) return;
       e.preventDefault();
       var id = btn.getAttribute('data-copy-target');
       var inp = id ? document.getElementById(id) : null;
-      var text = inp ? inp.value : '';
+      var text = btn.getAttribute('data-copy-text') || (inp ? inp.value : '');
       if (!text) return;
       var secs = parseInt(btn.getAttribute('data-clear-seconds') || '30', 10);
       function done() {
-        toast('Copied');
+        toast('Copied to clipboard');
         lastCopied = text;
         if (clearTimer) clearTimeout(clearTimer);
         if (secs > 0 && navigator.clipboard && navigator.clipboard.writeText) {
@@ -1413,6 +1414,62 @@
         inp.select();
         document.execCommand('copy');
         done();
+      }
+    });
+    /* Auto-hide revealed secrets after N seconds */
+    var hideTimers = {};
+    function scheduleAutoHide(wrap) {
+      if (!wrap || !wrap.getAttribute) return;
+      var secs = parseInt(wrap.getAttribute('data-auto-hide') || '0', 10);
+      if (!(secs > 0)) return;
+      var sid = wrap.getAttribute('data-secret-id') || '';
+      var key = sid || String(Math.random());
+      if (hideTimers[key]) clearTimeout(hideTimers[key]);
+      hideTimers[key] = setTimeout(function () {
+        hideTimers[key] = null;
+        var cell = wrap.closest('.secret-cell');
+        if (!cell) return;
+        var toggle = document.querySelector(
+          '.reveal-toggle[hx-target="#' + cell.id + '"]'
+        );
+        if (!toggle) {
+          /* OOB id pattern */
+          var cid = cell.id || '';
+          var tid = cid.replace(/^reveal-/, 'reveal-toggle-');
+          toggle = document.getElementById(tid);
+        }
+        if (toggle && toggle.getAttribute('hx-get') && toggle.textContent.trim() === 'Hide') {
+          if (window.htmx) {
+            htmx.ajax('GET', toggle.getAttribute('hx-get'), {
+              target: '#' + cell.id,
+              swap: 'innerHTML'
+            });
+          } else {
+            toggle.click();
+          }
+          if (window.ssToast) window.ssToast('Secret auto-hidden');
+        }
+      }, secs * 1000);
+    }
+    document.addEventListener('htmx:afterSwap', function (e) {
+      var root = (e && e.detail && e.detail.target) ? e.detail.target : document;
+      root.querySelectorAll && root.querySelectorAll('.reveal-wrap[data-auto-hide]').forEach(scheduleAutoHide);
+      if (root.classList && root.classList.contains('reveal-wrap')) {
+        scheduleAutoHide(root);
+      }
+      /* Also scan for wraps just inserted */
+      if (root.querySelector) {
+        var w = root.querySelector('.reveal-wrap[data-auto-hide]');
+        if (w) scheduleAutoHide(w);
+      }
+    });
+    /* Bulk select helpers */
+    document.addEventListener('change', function (e) {
+      if (e.target && e.target.id === 'bulk-select-all') {
+        var on = e.target.checked;
+        document.querySelectorAll('input.bulk-secret-cb').forEach(function (cb) {
+          cb.checked = on;
+        });
       }
     });
   })();

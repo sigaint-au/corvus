@@ -41,6 +41,50 @@
 </nav>
 
 {% if active_tab == 'secrets' %}
+{% if due_overdue or due_soon %}
+<section class="due-dashboard">
+  <h2>Expiry reminders</h2>
+  <div class="profile-stats" style="margin-bottom:1rem;">
+    {% if due_overdue %}
+    <div class="profile-stat">
+      <span class="profile-stat-n" style="color:var(--danger);">{{ due_overdue|length }}</span>
+      <span class="profile-stat-l">Overdue</span>
+    </div>
+    {% endif %}
+    {% if due_soon %}
+    <div class="profile-stat">
+      <span class="profile-stat-n" style="color:var(--warning);">{{ due_soon|length }}</span>
+      <span class="profile-stat-l">Expiring soon</span>
+    </div>
+    {% endif %}
+  </div>
+  <table>
+    <thead><tr><th>Key</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+    <tbody>
+    {% for s in due_overdue %}
+      <tr>
+        <td><code class="k">{{ s.key }}</code> <span class="due-badge due-overdue">overdue</span></td>
+        <td class="muted">Past expiry</td>
+        <td class="muted">{{ s.expires_at }}</td>
+        <td class="acts">
+          <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
+        </td>
+      </tr>
+    {% endfor %}
+    {% for s in due_soon %}
+      <tr>
+        <td><code class="k">{{ s.key }}</code> <span class="due-badge due-soon">soon</span></td>
+        <td class="muted">Within {{ soon_days|default(14) }} days</td>
+        <td class="muted">{{ s.expires_at }}</td>
+        <td class="acts">
+          <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 <section>
   <div class="section-head">
     <h2>Secrets</h2>
@@ -58,6 +102,10 @@
     </form>
   </div>
   {% if can_write %}
+  <p class="muted" style="margin-bottom:.5rem;">
+    <a href="{{ url_for('secret_new', project_id=project.id) }}">Advanced secret…</a>
+    — database URL, certificate, SSH key, or multi key/value templates.
+  </p>
   <form method="post"
         action="{{ url_for('create_secret', project_id=project.id, page=secrets_pager.page if secrets_pager else 1, q=search_q or none) }}"
         hx-post="{{ url_for('create_secret', project_id=project.id) }}"
@@ -156,15 +204,15 @@
   <h3>Import</h3>
   {% if can_write %}
   <p class="muted">Import from a <code>.env</code>, CSV (<code>key,value</code>), or JSON file/paste.
-    Existing keys are updated. Encrypted JSON exports from this app can be re-imported as ciphertext.</p>
-  <form method="post" action="{{ url_for('import_secrets', project_id=project.id) }}"
+    You will preview creates vs updates before anything is written.</p>
+  <form method="post" action="{{ url_for('import_preview', project_id=project.id) }}"
         enctype="multipart/form-data" class="import-box">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>File <input type="file" name="file" accept=".env,.txt,.csv,.json,text/*"></label>
     <label>Or paste
       <textarea name="payload" rows="12" placeholder="KEY=value&#10;OTHER=secret"></textarea>
     </label>
-    <button type="submit">Import</button>
+    <button type="submit">Preview import</button>
   </form>
   {% else %}
   <p class="muted">You need write access to import secrets.</p>

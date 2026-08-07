@@ -527,8 +527,26 @@ def register(app):
 
             if tab == "settings" and not can_settings:
                 tab = "secrets"
+            due_overdue, due_soon = [], []
             if tab == "secrets":
                 secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
+                # Expiry dashboard: scan live secrets for this project (capped)
+                cur.execute(
+                    """
+                    SELECT id, key, expires_at FROM api.secrets
+                    WHERE project_id = %s AND deleted_at IS NULL
+                      AND expires_at IS NOT NULL
+                    ORDER BY expires_at
+                    LIMIT 200
+                    """,
+                    (str(project_id),),
+                )
+                for r in cur.fetchall() or []:
+                    st = secret_due_status(r)
+                    if st == "overdue":
+                        due_overdue.append(r)
+                    elif st == "soon":
+                        due_soon.append(r)
             elif tab == "audit":
                 total = audit.count_for_project(
                     cur,
@@ -601,6 +619,9 @@ def register(app):
             audit_until=audit_until,
             audit_actions=audit.ACTIONS,
             new_token=session.pop("new_token", None),
+            due_overdue=due_overdue if tab == "secrets" else [],
+            due_soon=due_soon if tab == "secrets" else [],
+            soon_days=_SOON_DAYS,
         )
 
 
@@ -1203,30 +1224,34 @@ def register(app):
         )
 
 
-    @app.post("/projects/<uuid:project_id>/import")
-    @authz.login_required
-    def import_secrets(project_id):
+    def _read_import_payload():
+        """Return (raw_text, error_message)."""
         raw = request.form.get("payload") or ""
         f = request.files.get("file")
-        back = url_for("project_detail", project_id=project_id, tab="import")
         if f and f.filename:
-            # Cap read even if MAX_CONTENT_LENGTH is raised elsewhere
             blob = f.read(config.MAX_IMPORT_BYTES + 1)
             if len(blob) > config.MAX_IMPORT_BYTES:
-                flash(
+                return (
+                    None,
                     f"Import file too large (max {config.MAX_IMPORT_BYTES // 1024} KiB)",
-                    "error",
                 )
-                return redirect(back)
             raw = blob.decode("utf-8", errors="replace")
         if len(raw.encode("utf-8")) > config.MAX_IMPORT_BYTES:
-            flash(
+            return (
+                None,
                 f"Import payload too large (max {config.MAX_IMPORT_BYTES // 1024} KiB)",
-                "error",
             )
-            return redirect(back)
         if not raw.strip():
-            flash("Paste secrets or choose a file", "error")
+            return None, "Paste secrets or choose a file"
+        return raw, None
+
+    @app.post("/projects/<uuid:project_id>/import/preview")
+    @authz.login_required
+    def import_preview(project_id):
+        back = url_for("project_detail", project_id=project_id, tab="import")
+        raw, err = _read_import_payload()
+        if err:
+            flash(err, "error")
             return redirect(back)
         try:
             pairs = parse_secret_pairs(raw)
@@ -1236,6 +1261,76 @@ def register(app):
         if not pairs:
             flash("No key/value pairs found", "error")
             return redirect(back)
+        # Normalize for session: store serializable list
+        pending = []
+        for key, val in pairs:
+            if isinstance(val, dict) and "_enc" in val:
+                pending.append(
+                    {
+                        "key": key,
+                        "enc": True,
+                        "value_enc": val["_enc"],
+                        "note": val.get("note") or "",
+                    }
+                )
+            else:
+                pending.append(
+                    {"key": key, "enc": False, "value": str(val), "note": ""}
+                )
+        creates, updates = [], []
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            if not cur.fetchone()["w"]:
+                flash("You don't have permission to do that", "error")
+                return redirect(back)
+            cur.execute(
+                """
+                SELECT key FROM api.secrets
+                WHERE project_id = %s AND deleted_at IS NULL
+                """,
+                (str(project_id),),
+            )
+            existing = {r["key"] for r in (cur.fetchall() or [])}
+            cur.execute(
+                """
+                SELECT p.name, p.id, t.name AS team_name
+                FROM api.projects p JOIN api.teams t ON t.id = p.team_id
+                WHERE p.id = %s
+                """,
+                (str(project_id),),
+            )
+            project = cur.fetchone()
+        if not project:
+            return "Not found", 404
+        for item in pending:
+            row = {"key": item["key"], "note": item.get("note") or ""}
+            if item["key"] in existing:
+                updates.append(row)
+            else:
+                creates.append(row)
+        session["import_pending"] = {"project_id": str(project_id), "items": pending}
+        return render_template(
+            "import_preview.html",
+            project=project,
+            creates=creates,
+            updates=updates,
+        )
+
+    @app.post("/projects/<uuid:project_id>/import")
+    @authz.login_required
+    def import_secrets(project_id):
+        """Legacy direct import — prefer preview + commit."""
+        return import_preview(project_id)
+
+    @app.post("/projects/<uuid:project_id>/import/commit")
+    @authz.login_required
+    def import_commit(project_id):
+        back = url_for("project_detail", project_id=project_id, tab="import")
+        pending = session.pop("import_pending", None)
+        if not pending or pending.get("project_id") != str(project_id):
+            flash("Import preview expired — upload again", "error")
+            return redirect(back)
+        items = pending.get("items") or []
         n_ok = 0
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
@@ -1243,14 +1338,15 @@ def register(app):
                 flash("You don't have permission to do that", "error")
                 return redirect(back)
             try:
-                for key, val in pairs:
-                    if isinstance(val, dict) and "_enc" in val:
+                for item in items:
+                    key = item["key"]
+                    if item.get("enc"):
                         sid, was_new = _upsert_secret(
                             cur,
                             project_id,
                             key,
-                            val["_enc"],
-                            note=val.get("note") or "",
+                            item["value_enc"],
+                            note=item.get("note") or "",
                             already_enc=True,
                             touch_meta=False,
                         )
@@ -1259,7 +1355,8 @@ def register(app):
                             cur,
                             project_id,
                             key,
-                            val,
+                            item.get("value") or "",
+                            note=item.get("note") or "",
                             touch_meta=False,
                         )
                     if sid:
@@ -1278,6 +1375,301 @@ def register(app):
                 return redirect(back)
         flash(f"Imported {n_ok} secret(s)", "ok")
         return redirect(back)
+
+    @app.post("/projects/<uuid:project_id>/secrets/bulk")
+    @authz.login_required
+    def bulk_secrets(project_id):
+        action = (request.form.get("bulk_action") or "").strip()
+        ids = request.form.getlist("secret_ids")
+        back = url_for("project_detail", project_id=project_id, tab="secrets")
+        if not ids:
+            flash("Select at least one secret", "error")
+            return redirect(back)
+        if action != "delete":
+            flash("Unknown bulk action", "error")
+            return redirect(back)
+        n = 0
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            if not cur.fetchone()["w"]:
+                flash("You don't have permission to do that", "error")
+                return redirect(back)
+            for sid in ids:
+                cur.execute(
+                    """
+                    SELECT id, key FROM api.secrets
+                    WHERE id = %s::uuid AND project_id = %s AND deleted_at IS NULL
+                    """,
+                    (sid, str(project_id)),
+                )
+                row = cur.fetchone()
+                if not row:
+                    continue
+                cur.execute(
+                    """
+                    UPDATE api.secrets SET deleted_at = now()
+                    WHERE id = %s::uuid AND project_id = %s AND deleted_at IS NULL
+                    """,
+                    (sid, str(project_id)),
+                )
+                if cur.rowcount:
+                    audit.log_secret(
+                        cur,
+                        project_id=project_id,
+                        secret_id=row["id"],
+                        secret_key=row["key"],
+                        action="deleted",
+                    )
+                    n += 1
+            conn.commit()
+        flash(f"Moved {n} secret(s) to trash", "ok")
+        return redirect(back)
+
+    @app.post("/projects/<uuid:project_id>/export/bulk")
+    @authz.login_required
+    def bulk_export(project_id):
+        fmt = (request.args.get("format") or request.form.get("format") or "env").strip().lower()
+        if fmt not in ("env", "json", "csv"):
+            fmt = "env"
+        ids = request.form.getlist("secret_ids")
+        if not ids:
+            flash("Select at least one secret", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="secrets")
+            )
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_read_project(%s) AS r", (str(project_id),))
+            if not (cur.fetchone() or {}).get("r"):
+                return "Not found", 404
+            cur.execute(
+                """
+                SELECT key, value_enc FROM api.secrets
+                WHERE project_id = %s AND deleted_at IS NULL
+                  AND id = ANY(%s::uuid[])
+                ORDER BY key
+                """,
+                (str(project_id), ids),
+            )
+            rows = cur.fetchall() or []
+            audit.log_secret(
+                cur,
+                project_id=project_id,
+                action="exported",
+                secret_key=f"bulk/{fmt} n={len(rows)}",
+            )
+            conn.commit()
+        pairs = [(r["key"], crypto.decrypt(r["value_enc"])) for r in rows]
+        if fmt == "json":
+            body = json.dumps({k: v for k, v in pairs}, indent=2)
+            mime, name = "application/json", f"secrets-selected.json"
+        elif fmt == "csv":
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(["key", "value"])
+            w.writerows(pairs)
+            body = buf.getvalue()
+            mime, name = "text/csv", "secrets-selected.csv"
+        else:
+            body = "\n".join(f"{k}={v}" for k, v in pairs) + ("\n" if pairs else "")
+            mime, name = "text/plain", "secrets-selected.env"
+        return Response(
+            body,
+            mimetype=mime,
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
+
+    @app.post("/trash/bulk")
+    @authz.login_required
+    def bulk_trash():
+        action = (request.form.get("bulk_action") or "").strip()
+        ids = request.form.getlist("secret_ids")
+        if not ids:
+            flash("Select at least one secret", "error")
+            return redirect(url_for("trash"))
+        n = 0
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            for sid in ids:
+                cur.execute(
+                    """
+                    SELECT id, key, project_id FROM api.secrets
+                    WHERE id = %s::uuid AND deleted_at IS NOT NULL
+                    """,
+                    (sid,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    continue
+                cur.execute(
+                    "SELECT api.can_write_project(%s) AS w", (str(row["project_id"]),)
+                )
+                if not (cur.fetchone() or {}).get("w"):
+                    continue
+                if action == "restore":
+                    cur.execute(
+                        """
+                        UPDATE api.secrets SET deleted_at = NULL
+                        WHERE id = %s::uuid AND deleted_at IS NOT NULL
+                        """,
+                        (sid,),
+                    )
+                    if cur.rowcount:
+                        audit.log_secret(
+                            cur,
+                            project_id=row["project_id"],
+                            secret_id=row["id"],
+                            secret_key=row["key"],
+                            action="restored",
+                        )
+                        n += 1
+                elif action == "purge":
+                    cur.execute(
+                        "DELETE FROM api.secrets WHERE id = %s::uuid AND deleted_at IS NOT NULL",
+                        (sid,),
+                    )
+                    if cur.rowcount:
+                        audit.log_secret(
+                            cur,
+                            project_id=row["project_id"],
+                            secret_id=row["id"],
+                            secret_key=row["key"],
+                            action="purged",
+                        )
+                        n += 1
+            conn.commit()
+        if action == "restore":
+            flash(f"Restored {n} secret(s)", "ok")
+        else:
+            flash(f"Permanently deleted {n} secret(s)", "ok")
+        return redirect(url_for("trash"))
+
+    def _compose_secret_value(kind: str, form) -> tuple[str, str]:
+        """Build (value, note_suffix) from advanced form fields."""
+        kind = (kind or "plain").strip().lower()
+        if kind == "database":
+            scheme = (form.get("db_scheme") or "postgresql").strip()
+            host = (form.get("db_host") or "").strip()
+            port = (form.get("db_port") or "").strip()
+            user = (form.get("db_user") or "").strip()
+            password = form.get("db_password") or ""
+            dbname = (form.get("db_name") or "").strip()
+            auth = ""
+            if user:
+                from urllib.parse import quote
+
+                auth = quote(user, safe="")
+                if password:
+                    auth += ":" + quote(password, safe="")
+                auth += "@"
+            hostpart = host or "localhost"
+            if port:
+                hostpart += f":{port}"
+            path = f"/{dbname}" if dbname else ""
+            return f"{scheme}://{auth}{hostpart}{path}", "database"
+        if kind == "certificate":
+            cert = (form.get("cert_pem") or "").strip()
+            key = (form.get("cert_key") or "").strip()
+            parts = [p for p in (cert, key) if p]
+            return "\n\n".join(parts), "certificate"
+        if kind == "ssh":
+            return (form.get("ssh_key") or "").strip(), "ssh"
+        if kind == "kv":
+            return (form.get("kv_block") or "").strip(), "kv"
+        return form.get("plain_value") or "", "plain"
+
+    @app.route("/projects/<uuid:project_id>/secrets/new", methods=["GET", "POST"])
+    @authz.login_required
+    def secret_new(project_id):
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.*, t.name AS team_name
+                FROM api.projects p JOIN api.teams t ON t.id = p.team_id
+                WHERE p.id = %s
+                """,
+                (str(project_id),),
+            )
+            project = cur.fetchone()
+            if not project:
+                return "Not found", 404
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            if not cur.fetchone()["w"]:
+                flash("You don't have permission to do that", "error")
+                return redirect(
+                    url_for("project_detail", project_id=project_id, tab="secrets")
+                )
+        if request.method == "GET":
+            return render_template(
+                "secret_new.html",
+                project=project,
+                kind="plain",
+                key="",
+                note="",
+                expires_at="",
+            )
+        kind = (request.form.get("kind") or "plain").strip().lower()
+        if kind not in config.SECRET_KINDS:
+            kind = "plain"
+        key = (request.form.get("key") or "").strip()
+        note = (request.form.get("note") or "").strip()
+        value, kind_label = _compose_secret_value(kind, request.form)
+        if not key or not value:
+            flash("Key and value are required", "error")
+            return render_template(
+                "secret_new.html",
+                project=project,
+                kind=kind,
+                key=key,
+                note=note,
+                expires_at=request.form.get("expires_at") or "",
+            ), 400
+        if kind_label != "plain" and not note:
+            note = f"type:{kind_label}"
+        try:
+            expires_at = _parse_expires_at(request.form)
+        except (ValueError, TypeError) as e:
+            flash(str(e), "error")
+            return render_template(
+                "secret_new.html",
+                project=project,
+                kind=kind,
+                key=key,
+                note=note,
+                expires_at=request.form.get("expires_at") or "",
+            ), 400
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            try:
+                sid, was_new = _upsert_secret(
+                    cur, project_id, key, value, note=note, expires_at=expires_at
+                )
+                if not sid:
+                    flash("You don't have permission to do that", "error")
+                    conn.rollback()
+                else:
+                    audit.log_secret(
+                        cur,
+                        project_id=project_id,
+                        secret_id=sid,
+                        secret_key=key,
+                        action="created" if was_new else "updated",
+                    )
+                    conn.commit()
+                    flash(
+                        "Secret created" if was_new else "Secret updated",
+                        "ok",
+                    )
+            except Exception as e:
+                flash(str(e), "error")
+                return render_template(
+                    "secret_new.html",
+                    project=project,
+                    kind=kind,
+                    key=key,
+                    note=note,
+                    expires_at=request.form.get("expires_at") or "",
+                ), 400
+        return redirect(
+            url_for("project_detail", project_id=project_id, tab="secrets")
+        )
 
 
     @app.post("/projects/<uuid:project_id>/tokens")

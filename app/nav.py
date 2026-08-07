@@ -2,7 +2,12 @@
 from flask import session
 
 import authz
-from config import APP_NAME, CLIPBOARD_CLEAR_SECONDS, MAX_EXPIRY_DAYS
+from config import (
+    APP_NAME,
+    CLIPBOARD_CLEAR_SECONDS,
+    MAX_EXPIRY_DAYS,
+    REVEAL_AUTO_HIDE_SECONDS,
+)
 import db
 import pins
 from settings_svc import classification
@@ -61,6 +66,7 @@ def inject_nav():
         "nav_pins": [],
         "nav_recent": [],
         "clipboard_clear_seconds": CLIPBOARD_CLEAR_SECONDS,
+        "reveal_auto_hide_seconds": REVEAL_AUTO_HIDE_SECONDS,
         "max_expiry_days": MAX_EXPIRY_DAYS,
         "csrf_token": authz.csrf_token(),
     }

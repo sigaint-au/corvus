@@ -6,9 +6,22 @@
 <p class="muted">Select a team to view deleted secrets.</p>
 {% elif items %}
 <p class="muted">Deleted secrets for <strong>{{ team.name }}</strong>. Restore to put them back in the project, or permanently delete.</p>
+<form id="bulk-trash" method="post" action="{{ url_for('bulk_trash') }}">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <div class="bulk-bar row" style="margin-bottom:.75rem;gap:.75rem;align-items:center;">
+    <label class="inline" style="margin:0;">
+      <input type="checkbox" id="bulk-select-all" title="Select all"> Select
+    </label>
+    <button type="submit" name="bulk_action" value="restore" class="link"
+            onclick="return confirm('Restore selected secrets?')">Restore selected</button>
+    <button type="submit" name="bulk_action" value="purge" class="link danger"
+            onclick="return confirm('Permanently delete selected? This cannot be undone.') && confirm('Delete forever?')">Delete forever</button>
+  </div>
+</form>
 <table>
   <thead>
     <tr>
+      <th></th>
       <th>Key</th>
       <th>Project</th>
       <th>Note</th>
@@ -19,6 +32,12 @@
   <tbody>
   {% for item in items %}
     <tr>
+      <td>
+        {% if item.can_write %}
+        <input form="bulk-trash" type="checkbox" class="bulk-secret-cb" name="secret_ids"
+               value="{{ item.id }}" aria-label="Select {{ item.key }}">
+        {% endif %}
+      </td>
       <td><code class="k">{{ item.key }}</code></td>
       <td><a href="{{ url_for('project_detail', project_id=item.project_id) }}">{{ item.project_name }}</a></td>
       <td class="muted">{{ item.note }}</td>
