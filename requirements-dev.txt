@@ -1,0 +1,4 @@
+# Dev / CI tooling (not needed at runtime)
+-r app/requirements.txt
+pylint==3.3.6
+tox==4.25.0

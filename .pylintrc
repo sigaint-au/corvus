@@ -1,0 +1,49 @@
+[MAIN]
+jobs = 0
+py-version = 3.12
+ignore = test_app.py
+ignore-paths = app/test_app.py
+
+[MESSAGES CONTROL]
+# Pragmatic for a small Flask app: silence noise, keep real bugs.
+disable =
+    C0114,  # missing-module-docstring
+    C0115,  # missing-class-docstring
+    C0116,  # missing-function-docstring
+    C0103,  # invalid-name (cur, uid, bp, etc.)
+    R0903,  # too-few-public-methods
+    R0913,  # too-many-arguments
+    R0914,  # too-many-locals
+    R0915,  # too-many-statements
+    R0912,  # too-many-branches
+    R0911,  # too-many-return-statements
+    R1705,  # no-else-return
+    W0718,  # broad-exception-caught (route handlers flash errors)
+    W0719,  # broad-exception-raised
+    C0301,  # line-too-long (templates/SQL)
+    C0302,  # too-many-lines
+    R0801,  # duplicate-code (route modules share shape)
+    W0621,  # redefined-outer-name
+    C0415,  # import-outside-toplevel (lazy imports OK)
+    R0917,  # too-many-positional-arguments
+    R0401,  # cyclic-import (dir_sync lazy-loads ldap_auth)
+    C0411,  # wrong-import-order (stdlib/first-party mix is fine)
+    R1721,  # unnecessary-comprehension
+    W1309,  # f-string-without-interpolation
+    W1514,  # unspecified-encoding
+
+[FORMAT]
+max-line-length = 100
+
+[DESIGN]
+max-args = 12
+max-locals = 40
+max-branches = 30
+max-statements = 100
+
+[REPORTS]
+score = yes
+output-format = colorized
+
+[TYPECHECK]
+ignored-modules = ldap3, qrcode, pyotp

@@ -148,20 +148,12 @@ def generate_recovery_codes(n: int = RECOVERY_CODE_COUNT) -> list[str]:
     return codes
 
 
-def encrypt_secret(secret: str) -> str:
-    return encrypt(secret)
-
-
-def decrypt_secret(enc: str) -> str:
-    return decrypt(enc)
-
-
 def enable(user_id: str, secret: str) -> list[str]:
     """
     Enable TOTP for user; replace recovery codes.
     Returns plaintext recovery codes (show once).
     """
-    enc = encrypt_secret(secret)
+    enc = encrypt(secret)
     codes = generate_recovery_codes()
     hashes = [hash_recovery_code(c) for c in codes]
     with db.connect_admin() as conn, conn.cursor() as cur:
@@ -248,7 +240,7 @@ def verify_user_code(user_id: str, code: str) -> tuple[bool, str]:
     if not row or not row.get("totp_secret_enc") or not row.get("totp_enabled_at"):
         return False, ""
     try:
-        secret = decrypt_secret(row["totp_secret_enc"])
+        secret = decrypt(row["totp_secret_enc"])
     except Exception:
         log.exception("totp decrypt failed")
         return False, ""
