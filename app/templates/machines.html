@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Machine accounts — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>Machine accounts</h1>
+<div class="page-head">
+  <h1>Machine accounts</h1>
+</div>
 {% if not team %}
-<p class="muted">Select a team in the sidebar.</p>
+<p class="empty">Select a team in the sidebar.</p>
 {% else %}
-<p class="muted">Team: <strong>{{ team.name }}</strong> — tokens for OpenShift ESO / CI.
-  Prefer <strong>read-only</strong> for ESO; use <strong>write</strong> only for automation that must push secrets.</p>
+<p class="page-desc muted">Team: <strong>{{ team.name }}</strong></p>
+<section class="list-panel">
 {% if tokens %}
 <table>
   <thead><tr><th>Name</th><th>Project</th><th>Prefix</th><th>Role</th><th>Created</th><th>Expires</th></tr></thead>
@@ -15,16 +17,21 @@
     <tr>
       <td>{{ t.name }}</td>
       <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
-      <td><code>{{ t.token_prefix }}…</code></td>
+      <td><code class="k">{{ t.token_prefix }}…</code></td>
       <td><span class="role-badge">{{ t.role or 'read-only' }}</span></td>
       <td class="muted">{{ t.created_at }}</td>
-      <td class="muted">{{ t.expires_at or 'never' }}</td>
+      <td class="muted">
+        {{ t.expires_at or 'never' }}
+        {% if t.due == 'overdue' %}<span class="due-badge due-overdue">expired</span>
+        {% elif t.due == 'soon' %}<span class="due-badge due-soon">expiring soon</span>{% endif %}
+      </td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p class="muted">No machine accounts. Create one on a project page.</p>
+<p class="empty">No machine accounts. Create one on a project page.</p>
 {% endif %}
+</section>
 {% endif %}
 {% endblock %}

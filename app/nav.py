@@ -2,19 +2,33 @@
 from flask import session
 
 import authz
-from config import APP_NAME
+from config import (
+    CLIPBOARD_CLEAR_SECONDS,
+    MAX_EXPIRY_DAYS,
+    REVEAL_AUTO_HIDE_SECONDS,
+)
 import db
-from settings_svc import classification
+import pins
+from settings_svc import branding, classification
 
 
 def nav_teams(user_id: str):
     with db.as_user(user_id) as conn, conn.cursor() as cur:
         if session.get("is_global_admin"):
-            cur.execute("SELECT t.id, t.name FROM api.teams t ORDER BY t.name")
+            cur.execute(
+                """
+                SELECT t.id, t.name,
+                       t.classification_enabled, t.classification_text,
+                       t.classification_color, t.classification_fg
+                FROM api.teams t ORDER BY t.name
+                """
+            )
         else:
             cur.execute(
                 """
-                SELECT t.id, t.name
+                SELECT t.id, t.name,
+                       t.classification_enabled, t.classification_text,
+                       t.classification_color, t.classification_fg
                 FROM api.teams t
                 JOIN api.team_members tm ON tm.team_id = t.id
                 WHERE tm.user_id = %s
@@ -41,12 +55,21 @@ def active_team_id(teams):
 
 def inject_nav():
     banner = classification()
+    brand = branding()
     base = {
-        "app_name": APP_NAME,
+        "app_name": brand["app_name"],
+        "brand_name": brand["brand_name"],
+        "brand_tagline": brand["brand_tagline"],
         "classification": banner,
         "is_global_admin": bool(session.get("is_global_admin")),
         "nav_teams": [],
         "nav_team_id": session.get("team_id"),
+        "nav_team_name": None,
+        "nav_pins": [],
+        "nav_recent": [],
+        "clipboard_clear_seconds": CLIPBOARD_CLEAR_SECONDS,
+        "reveal_auto_hide_seconds": REVEAL_AUTO_HIDE_SECONDS,
+        "max_expiry_days": MAX_EXPIRY_DAYS,
         "csrf_token": authz.csrf_token(),
     }
     if not session.get("user_id"):
@@ -63,5 +86,46 @@ def inject_nav():
     except Exception:
         teams = []
     base["nav_teams"] = teams
-    base["nav_team_id"] = active_team_id(teams)
+    tid = active_team_id(teams)
+    base["nav_team_id"] = tid
+    name = None
+    active = None
+    for t in teams:
+        try:
+            if str(t["id"]) == tid:
+                name = t.get("name") if hasattr(t, "get") else t["name"]
+                active = t
+                break
+        except (KeyError, TypeError):
+            continue
+    base["nav_team_name"] = name
+    # Team-level classification: NULL enabled = use server banner; True/False = override
+    if active is not None:
+        try:
+            en = active.get("classification_enabled")
+            if en is not None:
+                from config import HEX
+
+                text = (active.get("classification_text") or "").strip()
+                color = (active.get("classification_color") or "").strip() or "#677381"
+                fg = (active.get("classification_fg") or "").strip() or "#ffffff"
+                if not HEX.match(color):
+                    color = "#677381"
+                if not HEX.match(fg):
+                    fg = "#ffffff"
+                # en is True → show if text present; False → hide (even if server banner on)
+                base["classification"] = {
+                    "enabled": bool(en) and bool(text),
+                    "text": text if en else "",
+                    "color": color,
+                    "fg": fg,
+                }
+        except (KeyError, TypeError, AttributeError):
+            pass
+    try:
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            base["nav_pins"] = pins.list_pins(cur, session["user_id"])
+            base["nav_recent"] = pins.list_recent(cur, session["user_id"])
+    except Exception:
+        pass
     return base

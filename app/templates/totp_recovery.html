@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Recovery codes — {{ app_name }}{% endblock %}
+{% block body %}
+<h1>Recovery codes</h1>
+<p class="flash error">
+  Save these codes now. Each can be used once if you lose access to your authenticator.
+  They will not be shown again.
+</p>
+<ul class="recovery-codes">
+  {% for c in codes %}
+  <li><code>{{ c }}</code></li>
+  {% endfor %}
+</ul>
+<p class="muted">Store them offline (password manager, printed copy).</p>
+<p class="form-actions">
+  <a class="btn-secondary" href="{{ url_for('profile', tab='security') }}">Done — I saved them</a>
+</p>
+{% endblock %}

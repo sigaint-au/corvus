@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Set up 2FA — {{ app_name }}{% endblock %}
+{% block body %}
+<div class="page-head">
+  <h1>Set up two-factor authentication</h1>
+</div>
+{% if required %}
+<p class="flash error">Global admins must enable 2FA before using Secret Server.</p>
+{% endif %}
+<p class="page-desc muted">
+  Scan the QR code with an authenticator app (Google Authenticator, Authy, 1Password, etc.),
+  then enter a code to confirm.
+</p>
+
+<section>
+  {% if qr_data_uri %}
+  <p>
+    <img class="totp-qr" src="{{ qr_data_uri }}" alt="TOTP QR code" width="200" height="200">
+  </p>
+  {% endif %}
+  <p class="muted">Or enter this key manually:</p>
+  <p><code class="k totp-secret">{{ secret }}</code></p>
+</section>
+
+<section>
+  <form method="post" action="{{ url_for('totp_setup_confirm') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Code from authenticator
+      <input type="text" name="code" required autocomplete="one-time-code"
+             inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+             placeholder="123456" autofocus>
+    </label>
+    <p class="form-actions"><button type="submit">Enable 2FA</button></p>
+  </form>
+</section>
+
+{% if not required %}
+<p class="muted"><a href="{{ url_for('profile', tab='security') }}">Cancel</a></p>
+{% endif %}
+{% endblock %}

@@ -5,11 +5,22 @@
 {% if setup_notice %}
 <p class="flash error">{{ setup_notice }}</p>
 {% endif %}
-{% if ldap_enabled %}
-<p class="muted">Local accounts and LDAP directory logins are accepted.</p>
+{% if ldap_enabled or oidc_enabled %}
+<p class="muted">
+  {% if oidc_enabled and ldap_enabled %}Local, LDAP, and SSO logins are accepted.
+  {% elif oidc_enabled %}Local and SSO logins are accepted.
+  {% else %}Local accounts and LDAP directory logins are accepted.{% endif %}
+</p>
+{% endif %}
+{% if oidc_enabled %}
+<p>
+  <a class="btn-secondary auth-sso"
+     href="{{ url_for('login_oidc') }}">{{ oidc_button_label or 'Sign in with SSO' }}</a>
+</p>
+<p class="muted auth-divider">or</p>
 {% endif %}
 <form method="post">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <label>{% if ldap_enabled %}Email or username{% else %}Email{% endif %}
     <input type="{% if ldap_enabled %}text{% else %}email{% endif %}"
            name="email" required autocomplete="username">
@@ -17,9 +28,12 @@
   <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
   <button type="submit">Sign in</button>
 </form>
+<p class="muted"><a href="{{ url_for('forgot_password') }}">Forgot password?</a>
+  <span>(local accounts)</span>
+</p>
 {% if registration_enabled %}
 <p class="muted">No account? <a href="{{ url_for('register') }}">Register</a>
-  {% if ldap_enabled %} <span>(local account)</span>{% endif %}
+  {% if ldap_enabled or oidc_enabled %} <span>(local account)</span>{% endif %}
 </p>
 {% endif %}
 {% endblock %}

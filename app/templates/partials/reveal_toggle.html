@@ -1,0 +1,8 @@
+{# Reveal / Hide control. Set revealed=true for Hide state. oob=true for out-of-band swap. #}
+<a id="{{ toggle_id }}"
+   href="#"
+   class="reveal-toggle"
+   hx-get="{% if revealed %}{{ hide_url }}{% else %}{{ reveal_url }}{% endif %}"
+   hx-target="#{{ cell_id }}"
+   hx-swap="innerHTML"{% if oob %}
+   hx-swap-oob="true"{% endif %}>{% if revealed %}Hide{% else %}Reveal{% endif %}</a>

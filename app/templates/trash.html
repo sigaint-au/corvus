@@ -1,14 +1,58 @@
 {% extends "base.html" %}
 {% block title %}Trash — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>Trash</h1>
+<div class="page-head">
+  <h1>Trash</h1>
+  {% if team %}
+  <div class="section-tools">
+    {% if items %}
+    <div class="bulk-toolbar" id="bulk-toolbar">
+      <label class="bulk-select" title="Select all on this page">
+        <input type="checkbox" id="bulk-select-all" aria-label="Select all trash items">
+        <span id="bulk-count" class="bulk-count">0</span>
+      </label>
+      <label class="visually-hidden" for="bulk-action">Bulk action</label>
+      <select id="bulk-action" class="bulk-action" aria-label="Bulk action">
+        <option value="">Action…</option>
+        <option value="restore"
+                data-url="{{ url_for('bulk_trash') }}"
+                data-confirm="Restore selected secrets?">Restore</option>
+        <option value="purge"
+                data-url="{{ url_for('bulk_trash') }}"
+                data-confirm="Permanently delete selected? This cannot be undone.">Delete forever</option>
+      </select>
+      <button type="button" id="bulk-apply" class="bulk-apply" disabled>Apply</button>
+    </div>
+    {% endif %}
+    <form method="get" action="{{ url_for('trash') }}" class="toolbar" role="search">
+      <label class="search-field">
+        <span class="visually-hidden">Search trash</span>
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search…" autocomplete="off" aria-label="Search trash">
+      </label>
+      <button type="submit">Search</button>
+      {% if search_q %}
+      <a class="btn-clear" href="{{ url_for('trash') }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+  {% endif %}
+</div>
+
 {% if not team %}
-<p class="muted">Select a team to view deleted secrets.</p>
+<p class="empty">Select a team in the sidebar.</p>
 {% elif items %}
-<p class="muted">Deleted secrets for <strong>{{ team.name }}</strong>. Restore to put them back in the project, or permanently delete.</p>
+<p class="page-desc muted">Deleted secrets for <strong>{{ team.name }}</strong>. Restore to put them back in the project, or permanently delete.</p>
+<form id="bulk-trash" method="post" action="{{ url_for('bulk_trash') }}">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <input type="hidden" name="bulk_action" id="bulk-action-field" value="">
+  {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+</form>
+<section class="list-panel">
 <table>
   <thead>
     <tr>
+      <th class="pin-col" aria-label="Select"></th>
       <th>Key</th>
       <th>Project</th>
       <th>Note</th>
@@ -19,19 +63,26 @@
   <tbody>
   {% for item in items %}
     <tr>
-      <td><code class="k">{{ item.key }}</code></td>
+      <td class="pin-col">
+        {% if item.can_write %}
+        <input form="bulk-trash" type="checkbox" class="bulk-secret-cb" name="secret_ids"
+               value="{{ item.id }}" aria-label="Select {{ item.key }}">
+        {% endif %}
+      </td>
+      <td class="col-key"><code class="k">{{ item.key }}</code></td>
       <td><a href="{{ url_for('project_detail', project_id=item.project_id) }}">{{ item.project_name }}</a></td>
-      <td class="muted">{{ item.note }}</td>
+      <td class="col-note muted">{{ item.note }}</td>
       <td class="muted">{{ item.deleted_at }}</td>
       <td class="acts">
         {% if item.can_write %}
-        <form method="post" action="{{ url_for('restore_secret', secret_id=item.id) }}" class="inline">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <form method="post" action="{{ url_for('restore_secret', secret_id=item.id, q=search_q or none) }}" class="inline"
+              onsubmit="return confirm('Restore {{ item.key }} to the project?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="link">Restore</button>
         </form>
-        <form method="post" action="{{ url_for('purge_secret', secret_id=item.id) }}" class="inline"
-              onsubmit="return confirm('Permanently delete {{ item.key }}? This cannot be undone.')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <form method="post" action="{{ url_for('purge_secret', secret_id=item.id, q=search_q or none) }}" class="inline"
+              onsubmit="return confirm('Permanently delete {{ item.key }}?') && confirm('Delete forever — this cannot be undone. Continue?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="link danger">Delete forever</button>
         </form>
         {% else %}
@@ -42,7 +93,10 @@
   {% endfor %}
   </tbody>
 </table>
+</section>
 {% else %}
-<p class="muted">Nothing in trash.</p>
+<p class="empty">
+  {% if search_q %}No trash items match “{{ search_q }}”.{% else %}Nothing in trash.{% endif %}
+</p>
 {% endif %}
 {% endblock %}

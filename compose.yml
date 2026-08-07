@@ -48,6 +48,16 @@ services:
       ALLOW_INSECURE_DEFAULTS: ${ALLOW_INSECURE_DEFAULTS:-0}
     ports:
       - "8080:8080"
+    # Hardened runtime: non-root image USER + drop caps + read-only root FS
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+      - /home/appuser:size=16M,mode=1777
+
 
 volumes:
   pgdata:

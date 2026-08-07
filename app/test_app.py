@@ -22,8 +22,10 @@ import db  # noqa: E402
 import ldap_auth  # noqa: E402
 import lockout  # noqa: E402
 import paging  # noqa: E402
+import pats  # noqa: E402
 import schema as schema_mod  # noqa: E402
 import settings_svc  # noqa: E402
+import user_sessions  # noqa: E402
 from routes import eso as eso_routes  # noqa: E402
 
 # Skip real schema bootstrap (no Postgres in unit tests).
@@ -97,6 +99,130 @@ class TestJWT(unittest.TestCase):
         self.assertIn("exp", claims)
 
 
+# ── Personal access tokens ─────────────────────────────────────────
+
+
+class TestPatsUnit(unittest.TestCase):
+    def test_mint_raw_shape(self):
+        raw, thash, prefix = pats.mint_raw()
+        self.assertTrue(raw.startswith("pat_"))
+        self.assertEqual(len(thash), 64)
+        self.assertEqual(prefix, raw[:12])
+        self.assertEqual(pats._hash(raw), thash)
+
+    def test_create_requires_name(self):
+        with self.assertRaises(ValueError):
+            pats.create(str(uuid4()), "  ")
+
+    def test_create_inserts_row(self):
+        uid = str(uuid4())
+        conn, cur = _conn(fetchone={"n": 0})
+        cur.rowcount = 1
+        with patch.object(db, "connect_admin", return_value=conn):
+            raw = pats.create(uid, "cli", expires_days=7)
+        self.assertTrue(raw.startswith("pat_"))
+        joined = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
+        self.assertIn("INSERT INTO private.personal_access_tokens", joined)
+
+    def test_resolve_success(self):
+        uid = str(uuid4())
+        tid = uuid4()
+        conn, cur = _conn(fetchone={"id": tid, "user_id": uid})
+        cur.rowcount = 1
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertEqual(pats.resolve("pat_" + "x" * 40), uid)
+        # last_used update issued
+        joined = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
+        self.assertIn("last_used_at", joined)
+
+    def test_resolve_rejects_garbage(self):
+        self.assertIsNone(pats.resolve(""))
+        self.assertIsNone(pats.resolve("ss_notapat"))
+        self.assertIsNone(pats.resolve("pat_short"))
+
+    def test_resolve_unknown_hash(self):
+        conn, cur = _conn(fetchone=None)
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertIsNone(pats.resolve("pat_" + "x" * 40))
+
+    def test_revoke(self):
+        uid = str(uuid4())
+        conn, cur = _conn()
+        cur.rowcount = 1
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertTrue(pats.revoke(uid, str(uuid4())))
+        cur.rowcount = 0
+        with patch.object(db, "connect_admin", return_value=conn):
+            self.assertFalse(pats.revoke(uid, str(uuid4())))
+
+    def test_create_rejects_bad_expiry(self):
+        with patch.object(pats, "count_for_user", return_value=0):
+            with self.assertRaises(ValueError):
+                pats.create(str(uuid4()), "x", expires_days=0)
+            with self.assertRaises(ValueError):
+                pats.create(str(uuid4()), "x", expires_days=99999)
+
+
+class TestPersonalTokenRoutes(unittest.TestCase):
+    def setUp(self):
+        store.app.config["TESTING"] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "u@ex.com"
+
+    def test_create_pat(self):
+        with patch.object(pats, "create", return_value="pat_secretvalue") as create:
+            r = self.client.post(
+                "/profile/tokens",
+                data={"name": "laptop", "expires_days": "30"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=security", r.location)
+        create.assert_called_once()
+        self.assertEqual(create.call_args[0][0], self.uid)
+        self.assertEqual(create.call_args[0][1], "laptop")
+        self.assertEqual(create.call_args[1].get("expires_days"), 30)
+        with self.client.session_transaction() as s:
+            self.assertEqual(s.get("new_pat"), "pat_secretvalue")
+
+    def test_create_pat_value_error(self):
+        with patch.object(pats, "create", side_effect=ValueError("Name is required")):
+            r = self.client.post(
+                "/profile/tokens",
+                data={"name": ""},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            self.assertNotIn("new_pat", s)
+            flashes = s.get("_flashes") or []
+        self.assertTrue(any("Name is required" in msg for _c, msg in flashes))
+
+    def test_delete_pat(self):
+        tid = uuid4()
+        with patch.object(pats, "revoke", return_value=True) as rev:
+            r = self.client.post(
+                f"/profile/tokens/{tid}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        rev.assert_called_once_with(self.uid, str(tid))
+
+    def test_delete_pat_missing(self):
+        with patch.object(pats, "revoke", return_value=False):
+            r = self.client.post(
+                f"/profile/tokens/{uuid4()}/delete",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(any("not found" in msg.lower() for _c, msg in flashes))
+
+
 # ── LDAP helpers ───────────────────────────────────────────────────
 
 
@@ -119,6 +245,31 @@ class TestLdapPassword(unittest.TestCase):
             ldap_auth.ldap_password_plain({"ldap_bind_password": bad}),
             "",
         )
+
+
+class TestLdapTlsPolicy(unittest.TestCase):
+    def test_ldaps_ok_without_starttls(self):
+        self.assertTrue(ldap_auth.ldap_tls_required_ok("ldaps://ipa.example.com", False))
+
+    def test_ldap_requires_starttls(self):
+        self.assertFalse(ldap_auth.ldap_tls_required_ok("ldap://ipa.example.com", False))
+        self.assertTrue(ldap_auth.ldap_tls_required_ok("ldap://ipa.example.com", True))
+
+    def test_empty_url_rejected(self):
+        self.assertFalse(ldap_auth.ldap_tls_required_ok("", True))
+
+    def test_authenticate_refuses_cleartext(self):
+        with patch.object(
+            ldap_auth,
+            "ldap_cfg",
+            return_value={
+                "ldap_enabled": "true",
+                "ldap_url": "ldap://ipa.example.com",
+                "ldap_start_tls": "false",
+                "ldap_user_base": "cn=users",
+            },
+        ):
+            self.assertIsNone(ldap_auth.ldap_authenticate("user", "pass"))
 
 
 class TestLdapStartTLS(unittest.TestCase):
@@ -308,6 +459,41 @@ class TestRefuseInsecureDefaults(unittest.TestCase):
 
 
 class TestAudit(unittest.TestCase):
+    def test_describe_event_readable(self):
+        s = audit.describe_event(
+            {"actor_email": "a@b.c", "action": "revealed", "secret_key": "API_KEY"}
+        )
+        self.assertIn("a@b.c", s)
+        self.assertIn("revealed", s)
+        self.assertIn("API_KEY", s)
+
+    def test_format_time_ago(self):
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        self.assertEqual(audit.format_time_ago(None), "—")
+        self.assertEqual(audit.format_time_ago(now - timedelta(seconds=10)), "just now")
+        self.assertEqual(audit.format_time_ago(now - timedelta(minutes=5)), "5 minutes ago")
+        self.assertEqual(audit.format_time_ago(now - timedelta(hours=3)), "3 hours ago")
+        self.assertEqual(audit.format_time_ago(now - timedelta(days=4)), "4 days ago")
+        # Absolute remains available for tooltips
+        abs_s = audit.format_when(now - timedelta(hours=1))
+        self.assertIn("UTC", abs_s)
+
+    def test_global_search_requires_login(self):
+        r = store.app.test_client().get("/search?q=x")
+        self.assertEqual(r.status_code, 302)
+
+    def test_filter_clause_actor_action_dates(self):
+        sql, params = audit._filter_clause(
+            actor="bob", action="revealed", since="2026-01-01", until="2026-01-02"
+        )
+        self.assertIn("actor_email", sql)
+        self.assertIn("action", sql)
+        self.assertIn("created_at", sql)
+        self.assertEqual(params[0], "%bob%")
+        self.assertEqual(params[1], "revealed")
+
     def test_invalid_action_raises(self):
         cur = MagicMock()
         with store.app.test_request_context("/"):
@@ -604,6 +790,267 @@ class TestAuth(unittest.TestCase):
         with self.client.session_transaction() as s:
             self.assertNotIn("user_id", s)
 
+    def test_profile_requires_login(self):
+        r = self.client.get("/profile")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_forgot_password_get(self):
+        r = self.client.get("/forgot-password")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Forgot password", r.data)
+
+    def test_forgot_password_post_no_enumeration(self):
+        with patch("passwords.create_reset_token", return_value=None):
+            r = self.client.post(
+                "/forgot-password",
+                data={"email": "nobody@ex.com"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_change_password_requires_login(self):
+        r = self.client.post(
+            "/profile/password",
+            data={
+                "current_password": "old",
+                "new_password": "newpass12",
+                "new_password_confirm": "newpass12",
+            },
+        )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_change_password_ok(self):
+        uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = uid
+            s["sid"] = str(uuid4())
+        with patch("passwords.change_password", return_value=(True, "")), patch(
+            "user_sessions.revoke_other_sessions", return_value=2
+        ):
+            r = self.client.post(
+                "/profile/password",
+                data={
+                    "current_password": "oldpass12",
+                    "new_password": "newpass12",
+                    "new_password_confirm": "newpass12",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/profile", r.location)
+        self.assertIn("tab=security", r.location)
+
+    def test_change_password_mismatch(self):
+        uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = uid
+        r = self.client.post(
+            "/profile/password",
+            data={
+                "current_password": "oldpass12",
+                "new_password": "newpass12",
+                "new_password_confirm": "other",
+            },
+            follow_redirects=False,
+        )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(any("match" in msg.lower() for _c, msg in flashes))
+
+    def test_revoke_other_sessions(self):
+        uid = str(uuid4())
+        sid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = uid
+            s["sid"] = sid
+        with patch("user_sessions.revoke_other_sessions", return_value=3) as rev:
+            r = self.client.post(
+                "/profile/sessions/revoke-others", follow_redirects=False
+            )
+        self.assertEqual(r.status_code, 302)
+        rev.assert_called_once_with(uid, sid)
+
+    def test_reset_password_mismatch(self):
+        r = self.client.post(
+            "/reset-password/tok",
+            data={"password": "newpass12", "password_confirm": "nope"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_reset_password_ok(self):
+        with patch("passwords.consume_reset_token", return_value=(True, "")):
+            r = self.client.post(
+                "/reset-password/goodtoken",
+                data={"password": "newpass12", "password_confirm": "newpass12"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_password_schema_helpers(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("private.change_password", init)
+        self.assertIn("private.set_local_password", init)
+        self.assertIn("private.user_sessions", init)
+        self.assertIn("private.password_reset_tokens", init)
+
+    def test_profile_ok(self):
+        uid = uuid4()
+        tid = uuid4()
+        pid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uid)
+            s["email"] = "a@b.c"
+            s["name"] = "Ada"
+            s["is_global_admin"] = False
+
+        admin_conn, _ = _conn(
+            fetchone={
+                "id": uid,
+                "email": "a@b.c",
+                "name": "Ada Lovelace",
+                "is_global_admin": False,
+                "auth_source": "local",
+                "created_at": "2026-01-01",
+            }
+        )
+        last_sql = {"s": ""}
+
+        def execute(sql, params=None):
+            last_sql["s"] = " ".join(str(sql).lower().split())
+
+        def fetchone():
+            s = last_sql["s"]
+            if "from api.secrets" in s and "count" in s:
+                return {"n": 3}
+            if "from api.secret_pins" in s and "count" in s:
+                return {"n": 1}
+            return None
+
+        def fetchall():
+            s = last_sql["s"]
+            if "from api.teams t" in s and "team_members" in s:
+                return [
+                    {
+                        "id": tid,
+                        "name": "Platform",
+                        "role": "owner",
+                        "source": "manual",
+                        "created_at": "2026-01-02",
+                        "project_count": 1,
+                    }
+                ]
+            if "from api.projects p" in s:
+                return [
+                    {
+                        "id": pid,
+                        "name": "API",
+                        "created_at": "2026-01-03",
+                        "team_id": tid,
+                        "team_name": "Platform",
+                        "team_role": "owner",
+                        "project_role": None,
+                        "secret_count": 3,
+                    }
+                ]
+            if "team_join_requests" in s:
+                return []
+            if "secret_pins pin" in s or "from api.secret_pins pin" in s:
+                return []
+            if "secret_recent" in s:
+                return []
+            return []
+
+        user_conn, cur = _conn(fetchone=fetchone)
+        cur.execute.side_effect = execute
+        cur.fetchall.side_effect = fetchall
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ), patch("user_sessions.list_sessions", return_value=[]):
+            r = self.client.get("/profile")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"My profile", r.data)
+        # Tab nav
+        self.assertIn(b"?tab=account", r.data)
+        self.assertIn(b"?tab=security", r.data)
+        self.assertIn(b"?tab=teams", r.data)
+        self.assertIn(b"?tab=projects", r.data)
+        self.assertIn(b"?tab=activity", r.data)
+        # Default tab is Account
+        self.assertIn(b"Ada Lovelace", r.data)
+        self.assertIn(b"a@b.c", r.data)
+        self.assertIn(b"Local", r.data)
+        self.assertIn(b"Database", r.data)
+        self.assertIn(b"At a glance", r.data)
+        self.assertNotIn(b"Change password", r.data)
+        self.assertNotIn(b"Active sessions", r.data)
+
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ), patch("user_sessions.list_sessions", return_value=[]), patch(
+            "pats.list_for_user", return_value=[]
+        ):
+            r_sec = self.client.get("/profile?tab=security")
+        self.assertEqual(r_sec.status_code, 200)
+        self.assertIn(b"Change password", r_sec.data)
+        self.assertIn(b"Active sessions", r_sec.data)
+        self.assertIn(b"Two-factor authentication", r_sec.data)
+        self.assertIn(b"Personal access tokens", r_sec.data)
+        self.assertIn(b"API access", r_sec.data)
+        self.assertIn(b"show-session-jwt", r_sec.data)
+
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ):
+            r_teams = self.client.get("/profile?tab=teams")
+        self.assertEqual(r_teams.status_code, 200)
+        self.assertIn(b"Platform", r_teams.data)
+
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ):
+            r_proj = self.client.get("/profile?tab=projects")
+        self.assertEqual(r_proj.status_code, 200)
+        self.assertIn(b"API", r_proj.data)
+
+    def test_profile_shows_ldap_and_admin(self):
+        uid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uid)
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        admin_conn, _ = _conn(
+            fetchone={
+                "id": uid,
+                "email": "admin@ex.com",
+                "name": "Admin",
+                "is_global_admin": True,
+                "auth_source": "ldap",
+                "created_at": "2025-06-01",
+            }
+        )
+        user_conn, _ = _conn(fetchone={"n": 0}, fetchall=[])
+        with patch.object(db, "connect_admin", return_value=admin_conn), patch.object(
+            db, "as_user", return_value=user_conn
+        ), patch("user_sessions.list_sessions", return_value=[]), patch(
+            "pats.list_for_user", return_value=[]
+        ):
+            r = self.client.get("/profile?tab=account")
+            r_sec = self.client.get("/profile?tab=security")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"LDAP", r.data)
+        self.assertIn(b"Directory", r.data)
+        self.assertIn(b"Global admin", r.data)
+        self.assertEqual(r_sec.status_code, 200)
+        self.assertIn(b"LDAP", r_sec.data)
+        self.assertNotIn(b"name=\"current_password\"", r_sec.data)
+
 
 # ── Teams ──────────────────────────────────────────────────────────
 
@@ -694,6 +1141,37 @@ class TestTeams(unittest.TestCase):
             r = self.client.get(f"/teams/{tid}")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b">T<", r.data)
+        self.assertIn(b"?tab=projects", r.data)
+        self.assertIn(b"?tab=members", r.data)
+        self.assertIn(b"?tab=settings", r.data)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        # Default tab loads projects, not members
+        self.assertIn("from api.projects", sql)
+        self.assertNotIn("team_member_rows", sql)
+
+    def test_team_detail_members_tab(self):
+        tid = uuid4()
+        last_sql = {"s": ""}
+
+        def execute(sql, params=None):
+            last_sql["s"] = " ".join(str(sql).lower().split())
+
+        def fetchone():
+            s = last_sql["s"]
+            if "from api.teams" in s and "where id" in s:
+                return {"id": tid, "name": "T"}
+            if "select role from api.team_members" in s:
+                return {"role": "owner"}
+            return None
+
+        conn, cur = _conn(fetchone=fetchone, fetchall=[])
+        cur.execute.side_effect = execute
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ):
+            r = self.client.get(f"/teams/{tid}?tab=members")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Invites", r.data)
         sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
         self.assertIn("team_member_rows", sql)
 
@@ -785,22 +1263,22 @@ class TestTeams(unittest.TestCase):
         self.assertIn("api.team_role(team_id) IN ('owner', 'admin')", ensure_chunk)
         self.assertNotIn("user_id = api.current_user_id()", ensure_chunk)
 
-    def test_team_roles_include_read_only(self):
-        self.assertIn("read-only", config.TEAM_ROLES)
-        self.assertLess(config.ROLE_RANK["read-only"], config.ROLE_RANK["member"])
+    def test_team_roles_include_viewer(self):
+        self.assertIn("viewer", config.TEAM_ROLES)
+        self.assertLess(config.ROLE_RANK["viewer"], config.ROLE_RANK["member"])
 
-    def test_add_member_read_only_role(self):
+    def test_add_member_viewer_role(self):
         tid, uid = uuid4(), uuid4()
         conn, cur = _conn(fetchone={"id": uid})
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/teams/{tid}/members",
-                data={"email": "ro@ex.com", "role": "read-only"},
+                data={"email": "ro@ex.com", "role": "viewer"},
                 follow_redirects=False,
             )
         self.assertEqual(r.status_code, 302)
         sql = " ".join(str(c) for c in cur.execute.call_args_list)
-        self.assertIn("read-only", sql)
+        self.assertIn("viewer", sql)
 
     def test_create_project(self):
         tid, pid = uuid4(), uuid4()
@@ -831,7 +1309,7 @@ class TestTeams(unittest.TestCase):
 
     def test_delete_team_non_owner_denied(self):
         tid = uuid4()
-        for role in ("admin", "member", "read-only"):
+        for role in ("admin", "member", "viewer"):
             conn, cur = _conn(fetchone={"r": role})
             with patch.object(db, "as_user", return_value=conn):
                 r = self.client.post(f"/teams/{tid}/delete", follow_redirects=False)
@@ -890,6 +1368,7 @@ class TestSecrets(unittest.TestCase):
         self,
         tab="secrets",
         can_write=True,
+        can_admin=None,
         team_role="owner",
         secrets=None,
         tokens=None,
@@ -903,13 +1382,20 @@ class TestSecrets(unittest.TestCase):
             "team_name": "Ops",
             "team_id": uuid4(),
         }
+        if can_admin is None:
+            can_admin = team_role in ("owner", "admin")
         rows = secrets or [] if tab == "secrets" else (audit_log or [] if tab == "audit" else (tokens or []))
         if total is None:
             total = len(rows)
-        fo = [project, {"w": can_write}, {"r": team_role}]
+        fo = [project, {"w": can_write}, {"a": can_admin}, {"r": team_role}]
         if tab in ("secrets", "audit"):
             fo.append({"n": total})
-        fa = [rows] if tab in ("secrets", "audit", "tokens") else []
+        if tab == "settings":
+            fa = [[]]  # project_member_rows
+        elif tab == "secrets":
+            fa = [rows, []]  # secrets page + pin lookup
+        else:
+            fa = [rows] if tab in ("audit", "tokens") else []
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         cur.fetchall.side_effect = fa if fa else [[]]
@@ -966,9 +1452,9 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(str(tid), r.location)
         conn.commit.assert_called()
 
-    def test_delete_project_route_read_only_denied(self):
+    def test_delete_project_route_viewer_denied(self):
         tid = uuid4()
-        conn, _ = _conn(fetchone={"team_id": tid, "r": "read-only"})
+        conn, _ = _conn(fetchone={"team_id": tid, "r": "viewer"})
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/projects/{self.pid}/delete",
@@ -978,23 +1464,60 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(str(self.pid), r.location)
         conn.commit.assert_not_called()
 
-    def test_project_settings_tab_shows_delete_for_owner(self):
+    def test_project_settings_tab_shows_members_and_delete_for_owner(self):
         with patch.object(
             db, "as_user", return_value=self._project_conn(tab="settings", team_role="owner")
         ):
             r = self.client.get(f"/projects/{self.pid}?tab=settings")
         self.assertEqual(r.status_code, 200)
-        self.assertIn(b"Project settings", r.data)
+        self.assertIn(b"Members", r.data)
+        self.assertIn(b"Danger zone", r.data)
         self.assertIn(b"Delete project", r.data)
         self.assertIn(b"Settings", r.data)  # tab nav
+        self.assertNotIn(b"Project settings", r.data)
 
-    def test_project_settings_tab_hidden_for_member(self):
+    def test_project_settings_hidden_for_writer_without_admin(self):
+        """Project write without admin cannot manage members; Settings tab hidden."""
         with patch.object(
-            db, "as_user", return_value=self._project_conn(team_role="member", can_write=True)
+            db,
+            "as_user",
+            return_value=self._project_conn(
+                team_role="member", can_write=True, can_admin=False
+            ),
         ):
             r = self.client.get(f"/projects/{self.pid}")
         self.assertEqual(r.status_code, 200)
         self.assertNotIn(b"?tab=settings", r.data)
+        self.assertNotIn(b"Delete project", r.data)
+
+    def test_project_settings_tab_hidden_for_viewer(self):
+        with patch.object(
+            db,
+            "as_user",
+            return_value=self._project_conn(
+                team_role="viewer", can_write=False, can_admin=False
+            ),
+        ):
+            r = self.client.get(f"/projects/{self.pid}")
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b"?tab=settings", r.data)
+        self.assertNotIn(b"Delete project", r.data)
+
+    def test_project_admin_settings_members_without_delete(self):
+        """Project admin can manage members; team member cannot delete project."""
+        with patch.object(
+            db,
+            "as_user",
+            return_value=self._project_conn(
+                tab="settings",
+                team_role="member",
+                can_write=True,
+                can_admin=True,
+            ),
+        ):
+            r = self.client.get(f"/projects/{self.pid}?tab=settings")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Members", r.data)
         self.assertNotIn(b"Delete project", r.data)
 
     def test_project_secrets_tab_no_danger_zone(self):
@@ -1062,19 +1585,90 @@ class TestSecrets(unittest.TestCase):
     def test_reveal_secret(self):
         sid = uuid4()
         enc = crypto.encrypt("super-secret")
-        conn, _ = _conn(
-            fetchone={"id": sid, "key": "API_KEY", "value_enc": enc}
-        )
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {
+                "id": sid,
+                "key": "API_KEY",
+                "value_enc": enc,
+                "expires_at": None,
+            },
+            {"w": True},
+        ]
         with patch.object(db, "as_user", return_value=conn):
-            r = self.client.get(f"/projects/{self.pid}/secrets/{sid}/reveal")
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/reveal",
+                headers={"HX-Request": "true"},
+            )
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"super-secret", r.data)
+        self.assertIn(b"Save", r.data)
+        self.assertIn(b"/value", r.data)
+        self.assertIn(b"expires_at", r.data)
+        self.assertIn(b">Hide</a>", r.data)
+        self.assertIn(b"/hide", r.data)
+
+    def test_hide_secret(self):
+        sid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+        r = self.client.get(
+            f"/projects/{self.pid}/secrets/{sid}/hide",
+            headers={"HX-Request": "true"},
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"*******", r.data)
+        self.assertIn(b">Reveal</a>", r.data)
+        self.assertIn(b"/reveal", r.data)
+
+    def test_update_secret_value(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"w": True},
+            {"id": sid, "key": "API_KEY"},
+        ]
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/secrets/{sid}/value",
+                data={"value": "new-secret", "expires_at": "2030-01-15"},
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b"new-secret", r.data)
+        self.assertIn(b"*******", r.data)
+        self.assertIn(b"Updated", r.data)
+        self.assertIn(b">Reveal</a>", r.data)
+        conn.commit.assert_called()
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("expires_at", sql)
 
     def test_reveal_missing(self):
         conn, _ = _conn(fetchone=None)
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(f"/projects/{self.pid}/secrets/{uuid4()}/reveal")
         self.assertEqual(r.status_code, 404)
+
+    def test_users_suggest_requires_login(self):
+        c = store.app.test_client()
+        r = c.get("/api/users/suggest?q=ab")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location)
+
+    def test_users_suggest_ok(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+        conn, _ = _conn(
+            fetchall=[{"email": "alice@ex.com", "name": "Alice"}]
+        )
+        with patch.object(db, "connect_admin", return_value=conn), patch.object(
+            authz, "is_global_admin", return_value=True
+        ):
+            r = self.client.get("/api/users/suggest?q=ali")
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertEqual(data[0]["email"], "alice@ex.com")
 
 
 # ── Machine tokens ─────────────────────────────────────────────────
@@ -1193,6 +1787,127 @@ class TestTokens(unittest.TestCase):
         ins_end = init_sql.index(";", ins_start)
         self.assertIn("can_write_project", init_sql[ins_start:ins_end])
 
+    def test_pm_policies_use_can_admin_project(self):
+        """Member management requires project admin, not mere write."""
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        init_sql = (root / "db" / "init.sql").read_text()
+        schema_src = (root / "app" / "schema.py").read_text()
+        for name in ("pm_insert", "pm_update", "pm_delete"):
+            start = init_sql.index(f"CREATE POLICY {name} ON api.project_members")
+            end = init_sql.index(";", start)
+            chunk = init_sql[start:end]
+            self.assertIn("can_admin_project", chunk, msg=name)
+            self.assertNotIn("can_write_project", chunk, msg=name)
+        self.assertIn("can_admin_project", schema_src)
+        self.assertIn("pm_insert ON api.project_members", schema_src)
+        self.assertIn("pm_delete ON api.project_members", schema_src)
+
+    def test_can_write_project_team_admin_floor(self):
+        """Team owner/admin keep write; project role elevates members; cannot demote admins."""
+        from pathlib import Path
+
+        init_sql = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        start = init_sql.index("CREATE OR REPLACE FUNCTION api.can_write_project")
+        end = init_sql.index("$$;", start) + 3
+        body = init_sql[start:end]
+        # Team owner/admin always write
+        self.assertIn("tm.role IN ('owner', 'admin')", body)
+        # Project write/admin grants write
+        self.assertIn("role IN ('admin', 'write')", body)
+        # Team members only when not restricted by project_members
+        self.assertIn("NOT EXISTS", body)
+        self.assertIn("tm.role = 'member'", body)
+
+    def test_can_read_project_most_specific_wins(self):
+        from pathlib import Path
+
+        init_sql = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        start = init_sql.index("CREATE OR REPLACE FUNCTION api.can_read_project")
+        end = init_sql.index("$$;", start) + 3
+        body = init_sql[start:end]
+        self.assertIn("NOT EXISTS", body)
+        self.assertIn("FROM api.project_members", body)
+
+    def test_can_admin_project_defined(self):
+        from pathlib import Path
+
+        init_sql = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("CREATE OR REPLACE FUNCTION api.can_admin_project", init_sql)
+        start = init_sql.index("CREATE OR REPLACE FUNCTION api.can_admin_project")
+        end = init_sql.index("$$;", start) + 3
+        body = init_sql[start:end]
+        self.assertIn("role = 'admin'", body)
+        self.assertIn("tm.role IN ('owner', 'admin')", body)
+        self.assertIn("FROM api.projects p", body)
+
+    def test_add_project_member_requires_admin(self):
+        """Project write members cannot add project members."""
+        conn, cur = _conn(fetchone={"a": False})
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/members",
+                data={"email": "x@ex.com", "role": "read"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        self.assertIn("can_admin_project", sql)
+        self.assertNotIn("insert into api.project_members", sql)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(
+            any("permission" in msg.lower() for _c, msg in flashes),
+            f"expected permission flash, got {flashes!r}",
+        )
+
+    def test_add_project_member_ok_for_admin(self):
+        uid = uuid4()
+        tid = uuid4()
+        last = {"s": ""}
+
+        def execute(sql, params=None):
+            last["s"] = " ".join(str(sql).lower().split())
+
+        def fetchone():
+            s = last["s"]
+            if "can_admin_project" in s:
+                return {"a": True}
+            if "lookup_user" in s:
+                return {"id": uid}
+            if "from api.projects" in s and "team_id" in s:
+                return {"team_id": tid}
+            if "from api.project_members" in s and "select role" in s:
+                return None
+            return None
+
+        conn, cur = _conn(fetchone=fetchone)
+        cur.execute.side_effect = execute
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/members",
+                data={"email": "x@ex.com", "role": "write"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        self.assertIn("insert into api.project_members", sql)
+        self.assertIn("can_admin_project", sql)
+
+    def test_remove_project_member_requires_admin(self):
+        conn, cur = _conn(fetchone={"a": False})
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/members/{uuid4()}/remove",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        self.assertIn("can_admin_project", sql)
+        self.assertNotIn("delete from api.project_members", sql)
+
     def test_secrets_updated_at_trigger_defined(self):
         from pathlib import Path
 
@@ -1205,6 +1920,20 @@ class TestTokens(unittest.TestCase):
         self.assertNotIn("updated_at = now()", routes)
         self.assertNotIn("updated_at=now()", routes)
 
+    def test_secret_versions_schema(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        init = (root / "db" / "init.sql").read_text()
+        self.assertIn("CREATE TABLE api.secret_versions", init)
+        self.assertIn("archive_secret_version", init)
+        self.assertIn("expires_at", init)
+        self.assertNotIn("rotate_days", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("api.secret_versions", src)
+        self.assertIn("archive_secret_version", src)
+        self.assertNotIn("rotate_days", src)
+
     def test_token_prefix_unique_constraint(self):
         from pathlib import Path
 
@@ -1212,6 +1941,242 @@ class TestTokens(unittest.TestCase):
         self.assertIn("token_prefix text NOT NULL UNIQUE", init)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("machine_tokens_token_prefix_key", src)
+        self.assertIn("personal_access_tokens", src)
+
+    def test_init_sql_allows_oidc_auth_source(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("'local', 'ldap', 'oidc'", init)
+        self.assertIn("upsert_oidc_user", init)
+        self.assertIn("team_oidc_maps", init)
+        self.assertIn("oidc_role_maps", init)
+        self.assertIn("source IN ('manual', 'ldap', 'oidc')", init)
+        # Migrations re-bind CHECKs (not only ADD COLUMN IF NOT EXISTS)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("users_auth_source_check", src)
+        self.assertIn("team_members_source_check", src)
+
+
+class TestOrgAccess(unittest.TestCase):
+    """Project members, invites, org audit schema (no live DB)."""
+
+    def test_schema_has_invites_and_org_audit(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        init = (root / "db" / "init.sql").read_text()
+        self.assertIn("CREATE TABLE api.team_invites", init)
+        self.assertIn("CREATE TABLE api.team_join_requests", init)
+        self.assertIn("CREATE TABLE api.org_audit", init)
+        self.assertIn("guard_last_team_owner", init)
+        # Cascade team delete must not be blocked by last-owner guard
+        self.assertIn("NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id)", init)
+        self.assertIn(
+            "NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id)",
+            Path(schema_mod.__file__).read_text(),
+        )
+        self.assertIn("private.project_member_rows", init)
+        self.assertIn("private.audit_org", init)
+        self.assertIn("default_token_days", init)
+        self.assertIn("'exported'", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("api.team_invites", src)
+        self.assertIn("private.audit_org", src)
+        self.assertIn("exported", src)
+
+    def test_log_org_calls_fn(self):
+        cur = MagicMock()
+        with store.app.test_request_context("/"):
+            from flask import session
+
+            session["email"] = "a@b.c"
+            audit.log_org(cur, team_id=uuid4(), action=audit.ORG_MEMBER_ADD, detail="x")
+        sql = cur.execute.call_args.args[0]
+        self.assertIn("private.audit_org", sql)
+
+    def test_project_roles_config(self):
+        self.assertIn("write", config.PROJECT_ROLES)
+        self.assertIn("member", config.INVITE_ROLES)
+        self.assertNotIn("owner", config.INVITE_ROLES)
+
+    def test_members_tab_requires_login(self):
+        r = store.app.test_client().get(f"/projects/{uuid4()}?tab=settings")
+        self.assertEqual(r.status_code, 302)
+
+    def test_invite_redeem_requires_login(self):
+        c = store.app.test_client()
+        r = c.get("/invite/not-a-real-token")
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login", r.location or "")
+        with c.session_transaction() as s:
+            self.assertEqual(s.get("invite_token"), "not-a-real-token")
+
+
+class TestSecretLifecycle(unittest.TestCase):
+    """Versioning helpers, expiry status, import parse (no DB)."""
+
+    def setUp(self):
+        store.app.config["TESTING"] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        self.pid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "u@ex.com"
+
+    def test_parse_env(self):
+        from routes.projects import parse_secret_pairs
+
+        pairs = parse_secret_pairs("FOO=bar\n# c\nBAZ='qux'\nexport Q=1\n")
+        self.assertEqual(pairs, [("FOO", "bar"), ("BAZ", "qux"), ("Q", "1")])
+
+    def test_parse_json_object(self):
+        from routes.projects import parse_secret_pairs
+
+        pairs = parse_secret_pairs('{"A": "1", "B": {"value": "2"}}')
+        self.assertEqual(pairs, [("A", "1"), ("B", "2")])
+
+    def test_parse_json_enc(self):
+        from routes.projects import parse_secret_pairs
+
+        pairs = parse_secret_pairs('{"K": {"value_enc": "gAAAA", "note": "n"}}')
+        self.assertEqual(pairs[0][0], "K")
+        self.assertEqual(pairs[0][1]["_enc"], "gAAAA")
+
+    def test_parse_csv(self):
+        from routes.projects import parse_secret_pairs
+
+        pairs = parse_secret_pairs("key,value\nX,y\n")
+        self.assertEqual(pairs, [("X", "y")])
+
+    def test_due_status(self):
+        from datetime import datetime, timedelta, timezone
+
+        from routes.projects import expires_status, secret_due_status
+
+        now = datetime.now(timezone.utc)
+        self.assertEqual(
+            secret_due_status({"expires_at": now - timedelta(days=1)}), "overdue"
+        )
+        self.assertEqual(
+            secret_due_status({"expires_at": now + timedelta(days=3)}), "soon"
+        )
+        self.assertIsNone(secret_due_status({"expires_at": now + timedelta(days=60)}))
+        self.assertIsNone(secret_due_status({"updated_at": now - timedelta(days=10)}))
+        self.assertEqual(expires_status(now - timedelta(hours=1)), "overdue")
+        self.assertEqual(expires_status(now + timedelta(days=2)), "soon")
+        self.assertIsNone(expires_status(None))
+
+    def test_history_requires_login(self):
+        r = store.app.test_client().get(
+            f"/projects/{uuid4()}/secrets/{uuid4()}/history"
+        )
+        self.assertEqual(r.status_code, 302)
+
+    def test_export_plain_env(self):
+        enc = crypto.encrypt("secret-val")
+        conn, cur = _conn()
+        cur.fetchone.return_value = {"r": True}
+        cur.fetchall.return_value = [{"key": "K", "value_enc": enc, "note": ""}]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(f"/projects/{self.pid}/export?format=env&mode=plain")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"K=secret-val", r.data)
+        conn.commit.assert_called()
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("audit_secret", sql)
+        self.assertIn("exported", str(cur.execute.call_args_list))
+
+    def test_import_preview(self):
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"w": True},
+            {"name": "prod", "id": self.pid, "team_name": "T"},
+        ]
+        cur.fetchall.return_value = [{"key": "EXISTING"}]
+        with patch.object(db, "as_user", return_value=conn), patch(
+            "nav.nav_teams", return_value=[]
+        ):
+            r = self.client.post(
+                f"/projects/{self.pid}/import/preview",
+                data={"payload": "NEW_KEY=hello\nEXISTING=updated"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Import preview", r.data)
+        self.assertIn(b"Will create", r.data)
+        self.assertIn(b"NEW_KEY", r.data)
+        self.assertIn(b"Will update", r.data)
+        self.assertIn(b"EXISTING", r.data)
+        with self.client.session_transaction() as s:
+            pending = s.get("import_pending")
+        self.assertIsNotNone(pending)
+        self.assertEqual(len(pending["items"]), 2)
+
+    def test_import_commit(self):
+        sid = uuid4()
+        with self.client.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+            s["import_pending"] = {
+                "project_id": str(self.pid),
+                "items": [{"key": "NEW_KEY", "enc": False, "value": "hello", "note": ""}],
+            }
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{"w": True}, None, {"id": sid}]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/import/commit",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        conn.commit.assert_called()
+
+    def test_history_page(self):
+        sid, vid = uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {
+                "id": sid,
+                "key": "K",
+                "note": "current note",
+                "updated_at": "2026-01-02",
+                "expires_at": None,
+            },
+            {"w": True},
+            {
+                "name": "prod",
+                "id": self.pid,
+                "team_name": "Ops",
+                "team_id": uuid4(),
+            },
+        ]
+        cur.fetchall.return_value = [
+            {"id": vid, "note": "old note", "created_at": "2020-01-01"}
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(f"/projects/{self.pid}/secrets/{sid}/history")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Current", r.data)
+        self.assertIn(b"Prior versions", r.data)
+        self.assertIn(b"current note", r.data)
+        self.assertIn(b"old note", r.data)
+        self.assertIn(b"Reveal", r.data)
+        self.assertIn(b"Rollback", r.data)
+        self.assertIn(b"versions/", r.data)  # version reveal URL
+
+    def test_reveal_secret_version(self):
+        sid, vid = uuid4(), uuid4()
+        enc = crypto.encrypt("prior-secret")
+        conn, cur = _conn(
+            fetchone={"value_enc": enc, "key": "K", "secret_id": sid}
+        )
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/versions/{vid}/reveal"
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"prior-secret", r.data)
 
 
 # ── PostgREST token API ────────────────────────────────────────────
@@ -1233,6 +2198,38 @@ class TestApiToken(unittest.TestCase):
         self.assertEqual(data["token_type"], "bearer")
         claims = pyjwt.decode(data["access_token"], config.JWT_SECRET, algorithms=["HS256"])
         self.assertEqual(claims["sub"], uid)
+        self.assertIn("expires_in", data)
+
+    def test_unauthenticated_json_401(self):
+        r = store.app.test_client().get(
+            "/api/token",
+            headers={"Accept": "application/json"},
+        )
+        self.assertEqual(r.status_code, 401)
+
+    def test_pat_bearer_returns_jwt(self):
+        uid = str(uuid4())
+        with patch.object(pats, "resolve", return_value=uid):
+            r = store.app.test_client().get(
+                "/api/token",
+                headers={
+                    "Authorization": "Bearer pat_testdummytokenvaluehere",
+                    "Accept": "application/json",
+                },
+            )
+        self.assertEqual(r.status_code, 200)
+        claims = pyjwt.decode(
+            r.get_json()["access_token"], config.JWT_SECRET, algorithms=["HS256"]
+        )
+        self.assertEqual(claims["sub"], uid)
+
+    def test_bad_pat_401(self):
+        with patch.object(pats, "resolve", return_value=None):
+            r = store.app.test_client().get(
+                "/api/token",
+                headers={"Authorization": "Bearer pat_invalid"},
+            )
+        self.assertEqual(r.status_code, 401)
 
 
 # ── ESO webhook ────────────────────────────────────────────────────
@@ -1395,9 +2392,71 @@ class TestESO(unittest.TestCase):
         ][0]
         self.assertIsNotNone(insert.args[1][5])  # expires_at set
 
+    def test_create_token_rejects_huge_expiry(self):
+        c = store.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+            s["email"] = "u@ex.com"
+        conn, cur = _conn(fetchone={"w": True})
+        with patch.object(db, "as_user", return_value=conn):
+            r = c.post(
+                f"/projects/{self.pid}/tokens",
+                data={
+                    "name": "eso",
+                    "role": "read-only",
+                    "expires_days": str(config.MAX_EXPIRY_DAYS + 1),
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        inserts = [
+            c
+            for c in cur.execute.call_args_list
+            if c.args and "INSERT INTO api.machine_tokens" in str(c.args[0])
+        ]
+        self.assertEqual(inserts, [])
+
     def test_machine_token_roles_config(self):
         self.assertIn("read-only", config.MACHINE_TOKEN_ROLES)
         self.assertIn("write", config.MACHINE_TOKEN_ROLES)
+        self.assertEqual(config.MAX_EXPIRY_DAYS, 3650)
+        self.assertGreaterEqual(config.MAX_CONTENT_LENGTH, 64 * 1024)
+        self.assertEqual(store.app.config.get("MAX_CONTENT_LENGTH"), config.MAX_CONTENT_LENGTH)
+
+    def test_parse_expires_at_capped(self):
+        from routes.projects import _parse_expires_at
+        from datetime import datetime, timezone, timedelta
+        from werkzeug.datastructures import MultiDict
+
+        far = (datetime.now(timezone.utc) + timedelta(days=config.MAX_EXPIRY_DAYS + 30)).date().isoformat()
+        with self.assertRaises(ValueError):
+            _parse_expires_at(MultiDict({"expires_at": far}))
+
+    def test_import_file_size_cap(self):
+        from io import BytesIO
+
+        c = store.app.test_client()
+        with c.session_transaction() as s:
+            s["user_id"] = str(uuid4())
+            s["email"] = "u@ex.com"
+        # Slightly over import cap; Flask may 413 if over MAX_CONTENT_LENGTH
+        big = b"K=" + (b"x" * (config.MAX_IMPORT_BYTES + 10))
+        conn, _ = _conn(fetchone={"w": True})
+        with patch.object(db, "as_user", return_value=conn):
+            r = c.post(
+                f"/projects/{self.pid}/import",
+                data={"file": (BytesIO(big), "big.env")},
+                content_type="multipart/form-data",
+                follow_redirects=False,
+            )
+        self.assertIn(r.status_code, (302, 413))
+        if r.status_code == 302:
+            with c.session_transaction() as s:
+                flashes = s.get("_flashes") or []
+            self.assertTrue(
+                any("large" in msg.lower() for _c, msg in flashes),
+                flashes,
+            )
 
 
 # ── Health ─────────────────────────────────────────────────────────
@@ -1472,6 +2531,7 @@ class TestUIShell(unittest.TestCase):
         self.assertIn(b"Machine accounts", r.data)
         self.assertIn(b"Trash", r.data)
         self.assertIn(b"side-team-select", r.data)
+        self.assertNotIn(b"Active team", r.data)
         self.assertNotIn(b"Server settings", r.data)
 
     def test_global_admin_sees_settings_nav(self):
@@ -1608,6 +2668,9 @@ class TestNav(unittest.TestCase):
         self.assertIn(b"DB_URL", r.data)
         self.assertIn(b"Restore", r.data)
         self.assertIn(b"Delete forever", r.data)
+        # Two-step confirm for permanent purge
+        self.assertIn("Delete forever — this cannot be undone".encode(), r.data)
+        self.assertIn(b"&& confirm(", r.data)
 
     def test_restore_secret(self):
         conn, cur = _conn()
@@ -1689,25 +2752,16 @@ class TestSettings(unittest.TestCase):
             s["user_id"] = self.uid
             s["email"] = "admin@ex.com"
             s["is_global_admin"] = True
-        conn, _ = _conn(
-            fetchall=[
-                {
-                    "id": self.uid,
-                    "email": "admin@ex.com",
-                    "name": "Admin",
-                    "is_global_admin": True,
-                    "created_at": "now",
-                }
-            ]
-        )
         settings = {
+            "registration_enabled": "true",
+            "user_team_creation_enabled": "true",
             "classification_enabled": "true",
             "classification_text": "SECRET",
             "classification_color": "#c62828",
             "classification_fg": "#ffffff",
         }
-        with patch.object(db, "as_user", return_value=conn), patch.object(
-            db, "connect_admin", return_value=conn
+        with patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]), patch.object(
+            db, "connect_admin", return_value=_conn(fetchall=[])[0]
         ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
             settings_svc, "get_settings", return_value=settings
         ), patch.object(
@@ -1722,8 +2776,76 @@ class TestSettings(unittest.TestCase):
         ):
             r = self.client.get("/settings")
         self.assertEqual(r.status_code, 200)
+        # Tab navigation present
+        self.assertIn(b"?tab=general", r.data)
+        self.assertIn(b"?tab=banner", r.data)
+        self.assertIn(b"?tab=admins", r.data)
+        self.assertIn(b"?tab=users", r.data)
+        self.assertIn(b"?tab=ldap", r.data)
+        self.assertIn(b"?tab=email", r.data)
+        # Default tab is general
+        self.assertIn(b"Account registration", r.data)
+        self.assertIn(b"Team creation", r.data)
+        self.assertNotIn(b"Save banner", r.data)
+        self.assertNotIn(b"Make global admin", r.data)
+
+    def test_settings_banner_tab(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        settings = {
+            "classification_enabled": "true",
+            "classification_text": "SECRET",
+            "classification_color": "#c62828",
+            "classification_fg": "#ffffff",
+        }
+        with patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]), patch.object(
+            db, "connect_admin", return_value=_conn(fetchall=[])[0]
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "get_settings", return_value=settings
+        ), patch.object(
+            settings_svc,
+            "classification",
+            return_value={
+                "enabled": True,
+                "text": "SECRET",
+                "color": "#c62828",
+                "fg": "#ffffff",
+            },
+        ):
+            r = self.client.get("/settings?tab=banner")
+        self.assertEqual(r.status_code, 200)
         self.assertIn(b"Classification banner", r.data)
         self.assertIn(b"SECRET", r.data)
+
+    def test_settings_admins_tab(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, _ = _conn(
+            fetchall=[
+                {
+                    "id": self.uid,
+                    "email": "admin@ex.com",
+                    "name": "Admin",
+                    "is_global_admin": True,
+                    "created_at": "now",
+                }
+            ]
+        )
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            db, "connect_admin", return_value=conn
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "get_settings", return_value={}
+        ), patch.object(
+            settings_svc,
+            "classification",
+            return_value={"enabled": False, "text": "", "color": "#000", "fg": "#fff"},
+        ):
+            r = self.client.get("/settings?tab=admins")
+        self.assertEqual(r.status_code, 200)
         self.assertIn(b"Global admins", r.data)
 
     def test_save_classification(self):
@@ -1752,6 +2874,7 @@ class TestSettings(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 302)
         self.assertIn("/settings", r.location)
+        self.assertIn("tab=banner", r.location)
         self.assertEqual(
             dict(sets),
             {
@@ -1761,6 +2884,515 @@ class TestSettings(unittest.TestCase):
                 "classification_fg": "#ffffff",
             },
         )
+
+    def test_settings_email_tab(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        settings = {
+            "smtp_enabled": "true",
+            "smtp_host": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_encryption": "starttls",
+            "smtp_username": "mailer",
+            "smtp_password": "enc",
+            "smtp_from_email": "noreply@example.com",
+            "smtp_from_name": "Secret Store",
+            "smtp_login_alerts": "true",
+        }
+        with patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]), patch.object(
+            db, "connect_admin", return_value=_conn(fetchall=[])[0]
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "get_settings", return_value=settings
+        ), patch.object(
+            settings_svc,
+            "classification",
+            return_value={"enabled": False, "text": "", "color": "#000", "fg": "#fff"},
+        ):
+            r = self.client.get("/settings?tab=email")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Email (SMTP)", r.data)
+        self.assertIn(b"smtp.example.com", r.data)
+        self.assertIn(b"login alert", r.data.lower())
+        self.assertIn(b"Send test", r.data)
+
+    def test_save_smtp(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        sets = []
+
+        def set_setting(k, v):
+            sets.append((k, v))
+
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "set_setting", side_effect=set_setting
+        ), patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]), patch.object(
+            crypto, "encrypt", return_value="encrypted-pw"
+        ):
+            r = self.client.post(
+                "/settings",
+                data={
+                    "action": "smtp",
+                    "smtp_enabled": "1",
+                    "smtp_host": "smtp.example.com",
+                    "smtp_port": "465",
+                    "smtp_encryption": "ssl",
+                    "smtp_username": "user",
+                    "smtp_password": "secret",
+                    "smtp_from_email": "noreply@example.com",
+                    "smtp_from_name": "SS",
+                    "smtp_login_alerts": "1",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=email", r.location)
+        d = dict(sets)
+        self.assertEqual(d["smtp_enabled"], "true")
+        self.assertEqual(d["smtp_host"], "smtp.example.com")
+        self.assertEqual(d["smtp_port"], "465")
+        self.assertEqual(d["smtp_encryption"], "ssl")
+        self.assertEqual(d["smtp_password"], "encrypted-pw")
+        self.assertEqual(d["smtp_login_alerts"], "true")
+
+    def test_smtp_test_action(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=_conn(fetchall=[])[0]
+        ), patch("mailer.send_test_email", return_value=(True, "")) as send:
+            r = self.client.post(
+                "/settings",
+                data={"action": "smtp_test", "test_email": "admin@ex.com"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=email", r.location)
+        send.assert_called_once_with("admin@ex.com")
+
+    def test_users_tab_lists_accounts(self):
+        other = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        users = [
+            {
+                "id": self.uid,
+                "email": "admin@ex.com",
+                "name": "Admin",
+                "is_global_admin": True,
+                "auth_source": "local",
+                "totp_enabled_at": None,
+                "disabled_at": None,
+                "created_at": "now",
+            },
+            {
+                "id": other,
+                "email": "user@ex.com",
+                "name": "User",
+                "is_global_admin": False,
+                "auth_source": "local",
+                "totp_enabled_at": "2026-01-01",
+                "disabled_at": None,
+                "created_at": "now",
+            },
+        ]
+        conn, _ = _conn(fetchall=users)
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            db, "connect_admin", return_value=conn
+        ), patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "get_settings", return_value={}
+        ), patch.object(
+            settings_svc,
+            "classification",
+            return_value={"enabled": False, "text": "", "color": "#000", "fg": "#fff"},
+        ):
+            r = self.client.get("/settings?tab=users")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Platform users", r.data)
+        self.assertIn(b"user@ex.com", r.data)
+        self.assertIn(b"Disable", r.data)
+        self.assertIn(b"Reset password", r.data)
+        self.assertIn(b"Reset 2FA", r.data)
+
+    def test_user_disable_action(self):
+        other = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, cur = _conn(fetchone={"email": "user@ex.com"})
+        cur.rowcount = 1
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=conn
+        ), patch.object(db, "connect_admin", return_value=conn), patch(
+            "user_sessions.revoke_all_sessions", return_value=2
+        ) as rev:
+            r = self.client.post(
+                "/settings",
+                data={"action": "user_disable", "user_id": other},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=users", r.location)
+        rev.assert_called_once_with(other)
+
+    def test_user_cannot_disable_self(self):
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=_conn()[0]
+        ):
+            r = self.client.post(
+                "/settings",
+                data={"action": "user_disable", "user_id": self.uid},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(any("own" in msg.lower() for _c, msg in flashes))
+
+    def test_user_reset_password_action(self):
+        other = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, _ = _conn(fetchone={"email": "user@ex.com"})
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=conn
+        ), patch.object(db, "connect_admin", return_value=conn), patch(
+            "passwords.create_reset_token_for_user", return_value=("tok123", "")
+        ), patch("mailer.smtp_configured", return_value=False), patch(
+            "user_sessions.revoke_all_sessions", return_value=0
+        ):
+            r = self.client.post(
+                "/settings",
+                data={"action": "user_reset_password", "user_id": other},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=users", r.location)
+        with self.client.session_transaction() as s:
+            flashes = s.get("_flashes") or []
+        self.assertTrue(
+            any("reset" in msg.lower() and "tok123" in msg for _c, msg in flashes),
+            flashes,
+        )
+
+    def test_user_reset_2fa_action(self):
+        other = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        conn, _ = _conn(fetchone={"email": "user@ex.com"})
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            db, "as_user", return_value=conn
+        ), patch.object(db, "connect_admin", return_value=conn), patch(
+            "totp_svc.is_enabled", return_value=True
+        ), patch("totp_svc.disable") as dis, patch(
+            "user_sessions.revoke_all_sessions", return_value=1
+        ):
+            r = self.client.post(
+                "/settings",
+                data={"action": "user_reset_2fa", "user_id": other},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=users", r.location)
+        dis.assert_called_once_with(other)
+
+
+class TestTotp(unittest.TestCase):
+    def test_verify_code_window(self):
+        import totp_svc
+        import pyotp
+
+        secret = pyotp.random_base32()
+        code = pyotp.TOTP(secret).now()
+        self.assertTrue(totp_svc.verify_code(secret, code))
+        self.assertFalse(totp_svc.verify_code(secret, "000000"))
+        self.assertFalse(totp_svc.verify_code(secret, "abcdef"))
+
+    def test_recovery_code_hash_roundtrip(self):
+        import totp_svc
+
+        codes = totp_svc.generate_recovery_codes(3)
+        self.assertEqual(len(codes), 3)
+        # 16 bytes → 32 hex chars in 8 groups of 4
+        self.assertRegex(codes[0], r"^([a-f0-9]{4}-){7}[a-f0-9]{4}$")
+        h = totp_svc.hash_recovery_code(codes[0])
+        self.assertEqual(h, totp_svc.hash_recovery_code(codes[0].upper().replace("-", "")))
+        self.assertTrue(totp_svc.recovery_hash_matches(codes[0], h))
+        # Legacy unsalted hash still accepted
+        legacy = totp_svc._legacy_hash_recovery_code(codes[0])
+        self.assertTrue(totp_svc.recovery_hash_matches(codes[0], legacy))
+
+    def test_needs_challenge(self):
+        import totp_svc
+
+        uid = str(uuid4())
+        with patch.object(totp_svc, "is_enabled", return_value=True):
+            self.assertEqual(totp_svc.needs_challenge(uid, False), "verify")
+        with patch.object(totp_svc, "is_enabled", return_value=False), patch.object(
+            totp_svc, "enforce_global_admins", return_value=True
+        ):
+            self.assertEqual(totp_svc.needs_challenge(uid, True), "enroll")
+            self.assertIsNone(totp_svc.needs_challenge(uid, False))
+        with patch.object(totp_svc, "is_enabled", return_value=False), patch.object(
+            totp_svc, "enforce_global_admins", return_value=False
+        ):
+            self.assertIsNone(totp_svc.needs_challenge(uid, True))
+
+    def test_user_totp_row_fails_closed(self):
+        import totp_svc
+
+        with patch.object(db, "connect_admin", side_effect=RuntimeError("db down")):
+            with self.assertRaises(totp_svc.TotpStoreError):
+                totp_svc.user_totp_row(str(uuid4()))
+
+    def test_login_redirects_to_2fa(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = uuid4()
+        conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ), patch("lockout.is_locked", return_value=False), patch(
+            "lockout.clear_failures"
+        ), patch.object(authz, "is_global_admin", return_value=False), patch(
+            "totp_svc.needs_challenge", return_value="verify"
+        ):
+            r = client.post(
+                "/login",
+                data={"email": "a@b.c", "password": "secret12"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login/2fa", r.location)
+        with client.session_transaction() as s:
+            self.assertEqual(s.get("pending_2fa_uid"), str(uid))
+            self.assertNotIn("user_id", s)
+
+    def test_login_2fa_ok(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = str(uuid4())
+        with client.session_transaction() as s:
+            s["pending_2fa_uid"] = uid
+            s["pending_2fa_email"] = "a@b.c"
+            s["pending_2fa_name"] = "A"
+            s["pending_2fa_admin"] = False
+        with patch("totp_svc.verify_user_code", return_value=(True, "totp")), patch(
+            "lockout.is_locked", return_value=False
+        ), patch("lockout.clear_failures"), patch(
+            "user_sessions.create_session", return_value=None
+        ), patch("mailer.login_alerts_enabled", return_value=False):
+            r = client.post(
+                "/login/2fa",
+                data={"code": "123456"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/teams", r.location)
+        with client.session_transaction() as s:
+            self.assertEqual(s.get("user_id"), uid)
+            self.assertNotIn("pending_2fa_uid", s)
+
+    def test_login_enroll_admin(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = uuid4()
+        conn, _ = _conn(fetchone={"id": uid, "email": "admin@b.c", "name": "A"})
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ), patch("lockout.is_locked", return_value=False), patch(
+            "lockout.clear_failures"
+        ), patch.object(authz, "is_global_admin", return_value=True), patch(
+            "totp_svc.needs_challenge", return_value="enroll"
+        ), patch("user_sessions.create_session", return_value=None):
+            r = client.post(
+                "/login",
+                data={"email": "admin@b.c", "password": "secret12"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/profile/2fa", r.location)
+        with client.session_transaction() as s:
+            self.assertEqual(s.get("user_id"), str(uid))
+            self.assertTrue(s.get("totp_setup_required"))
+
+    def test_save_totp_enforce_setting(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = str(uuid4())
+        with client.session_transaction() as s:
+            s["user_id"] = uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        sets = []
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "set_setting", side_effect=lambda k, v: sets.append((k, v))
+        ), patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]):
+            r = client.post(
+                "/settings",
+                data={"action": "totp_enforce", "totp_enforce_global_admins": "1"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(dict(sets).get("totp_enforce_global_admins"), "true")
+
+    def test_schema_has_totp(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("totp_secret_enc", init)
+        self.assertIn("totp_recovery_codes", init)
+        self.assertIn("totp_enforce_global_admins", init)
+
+
+class TestMailer(unittest.TestCase):
+    def test_smtp_configured_requires_host_and_from(self):
+        import mailer
+
+        self.assertFalse(
+            mailer.smtp_configured(
+                {
+                    "smtp_enabled": "true",
+                    "smtp_host": "",
+                    "smtp_from_email": "a@b.c",
+                }
+            )
+        )
+        self.assertFalse(
+            mailer.smtp_configured(
+                {
+                    "smtp_enabled": "false",
+                    "smtp_host": "h",
+                    "smtp_from_email": "a@b.c",
+                }
+            )
+        )
+        self.assertTrue(
+            mailer.smtp_configured(
+                {
+                    "smtp_enabled": "true",
+                    "smtp_host": "smtp.example.com",
+                    "smtp_from_email": "a@b.c",
+                }
+            )
+        )
+
+    def test_login_alerts_need_smtp(self):
+        import mailer
+
+        self.assertFalse(
+            mailer.login_alerts_enabled(
+                {
+                    "smtp_enabled": "true",
+                    "smtp_host": "h",
+                    "smtp_from_email": "a@b.c",
+                    "smtp_login_alerts": "false",
+                }
+            )
+        )
+        self.assertTrue(
+            mailer.login_alerts_enabled(
+                {
+                    "smtp_enabled": "true",
+                    "smtp_host": "h",
+                    "smtp_from_email": "a@b.c",
+                    "smtp_login_alerts": "true",
+                }
+            )
+        )
+
+    def test_send_email_not_configured(self):
+        import mailer
+
+        ok, err = mailer.send_email(
+            "a@b.c",
+            "subj",
+            "body",
+            cfg={"smtp_enabled": "false", "smtp_host": "", "smtp_from_email": ""},
+        )
+        self.assertFalse(ok)
+        self.assertIn("SMTP", err)
+
+    def test_send_email_starttls(self):
+        import mailer
+
+        cfg = {
+            "smtp_enabled": "true",
+            "smtp_host": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_encryption": "starttls",
+            "smtp_username": "u",
+            "smtp_password": "",
+            "smtp_from_email": "from@ex.com",
+            "smtp_from_name": "App",
+        }
+        mock_smtp = MagicMock()
+        mock_smtp.__enter__ = MagicMock(return_value=mock_smtp)
+        mock_smtp.__exit__ = MagicMock(return_value=False)
+        with patch("mailer.smtplib.SMTP", return_value=mock_smtp) as SMTP:
+            ok, err = mailer.send_email("to@ex.com", "Hello", "Body text", cfg=cfg)
+        self.assertTrue(ok, err)
+        self.assertEqual(err, "")
+        SMTP.assert_called_once()
+        mock_smtp.starttls.assert_called_once()
+        mock_smtp.login.assert_called_once_with("u", "")
+        mock_smtp.send_message.assert_called_once()
+
+    def test_forgot_password_sends_email(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        with patch("passwords.create_reset_token", return_value="tok123"), patch(
+            "mailer.smtp_configured", return_value=True
+        ), patch("mailer.send_password_reset", return_value=(True, "")) as send:
+            r = client.post(
+                "/forgot-password",
+                data={"email": "user@ex.com"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        send.assert_called_once()
+        args = send.call_args[0]
+        self.assertEqual(args[0], "user@ex.com")
+        self.assertIn("/reset-password/tok123", args[1])
+
+    def test_login_sends_alert_when_enabled(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = uuid4()
+        conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ), patch.object(settings_svc, "setup_notice", return_value=None), patch.object(
+            lockout, "is_locked", return_value=False
+        ), patch.object(lockout, "clear_failures"), patch.object(
+            authz, "is_global_admin", return_value=False
+        ), patch("mailer.login_alerts_enabled", return_value=True), patch(
+            "mailer.send_login_alert", return_value=(True, "")
+        ) as alert, patch.object(user_sessions, "create_session", return_value=None):
+            r = client.post(
+                "/login",
+                data={"email": "a@b.c", "password": "secret12"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        alert.assert_called_once()
+        self.assertEqual(alert.call_args[0][0], "a@b.c")
 
 
 if __name__ == "__main__":

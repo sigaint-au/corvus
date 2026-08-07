@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Import preview — {{ project.name }} — {{ app_name }}{% endblock %}
+{% block body %}
+<p class="breadcrumb">
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">{{ project.name }}</a>
+  <span class="breadcrumb-sep">/</span>
+  Import preview
+</p>
+<h1>Import preview</h1>
+<p class="page-desc muted">
+  Project <strong>{{ project.name }}</strong>:
+  <strong>{{ creates|length }}</strong> create(s),
+  <strong>{{ updates|length }}</strong> update(s).
+  Nothing has been written yet.
+</p>
+
+{% if creates %}
+<section>
+  <h2>Will create</h2>
+  <table>
+    <thead><tr><th>Key</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for row in creates %}
+      <tr>
+        <td><code class="k">{{ row.key }}</code></td>
+        <td class="muted">{{ row.note or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if updates %}
+<section>
+  <h2>Will update (existing keys)</h2>
+  <table>
+    <thead><tr><th>Key</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for row in updates %}
+      <tr>
+        <td><code class="k">{{ row.key }}</code></td>
+        <td class="muted">{{ row.note or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<form method="post" action="{{ url_for('import_commit', project_id=project.id) }}" class="form-actions">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <button type="submit">Commit import</button>
+  <a class="btn-secondary" href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">Cancel</a>
+</form>
+{% endblock %}

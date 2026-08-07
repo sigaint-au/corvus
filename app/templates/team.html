@@ -1,22 +1,56 @@
 {% extends "base.html" %}
 {% block title %}{{ team.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<p class="muted"><a href="{{ url_for('teams') }}">← Teams</a></p>
+<p class="breadcrumb">
+  <a href="{{ url_for('teams') }}">Teams</a>
+  <span class="breadcrumb-sep">/</span>
+  {{ team.name }}
+</p>
 <h1>{{ team.name }}</h1>
-<p class="muted">Your role: <strong>{{ my_role }}</strong></p>
+<p class="page-desc muted">Your role: <span class="role-badge">{{ my_role }}</span></p>
 
+{% if new_invite_url %}
+<div class="token-once">
+  <strong>Invite link (copy now — shown once)</strong>
+  <pre>{{ new_invite_url }}</pre>
+</div>
+{% endif %}
+
+<nav class="tabs" role="tablist" aria-label="Team sections">
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}"
+     class="tab {% if active_tab == 'projects' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'projects' else 'false' }}">Projects</a>
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='members') }}"
+     class="tab {% if active_tab == 'members' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'members' else 'false' }}">Members</a>
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='activity') }}"
+     class="tab {% if active_tab == 'activity' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'activity' else 'false' }}">Activity</a>
+  {% if is_admin %}
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
+     class="tab {% if active_tab == 'settings' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'settings' else 'false' }}">Settings</a>
+  {% endif %}
+</nav>
+
+{% if active_tab == 'projects' %}
 <section>
   <div class="section-head">
     <h2>Projects</h2>
     <form method="get" action="{{ url_for('team_detail', team_id=team.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="projects">
       <label class="search-field">
         <span class="visually-hidden">Search projects</span>
         <input type="search" name="q" value="{{ search_q or '' }}"
                placeholder="Search…" autocomplete="off" aria-label="Search projects">
       </label>
-      <button type="submit">Go</button>
+      <button type="submit">Search</button>
       {% if search_q %}
-      <a class="btn-clear" href="{{ url_for('team_detail', team_id=team.id) }}">Clear</a>
+      <a class="btn-clear" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Clear</a>
       {% endif %}
     </form>
   </div>
@@ -51,20 +85,24 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">{% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}</p>
+  <p class="empty">{% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}</p>
   {% endif %}
 </section>
 
+{% elif active_tab == 'members' %}
 <section>
   <h2>Members</h2>
-  {% if my_role in ('owner', 'admin') %}
+  {% if is_admin %}
   <form method="post" action="{{ url_for('add_team_member', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Email <input type="email" name="email" required placeholder="user@example.com"></label>
+    <label>Email
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+    </label>
     <label>Role
       <select name="role">
         <option value="member">member</option>
-        <option value="read-only">read-only</option>
+        <option value="viewer">viewer</option>
         <option value="admin">admin</option>
         <option value="owner">owner</option>
       </select>
@@ -72,21 +110,252 @@
     <button type="submit">Add</button>
   </form>
   {% endif %}
+  {% if members %}
   <table>
-    <thead><tr><th>User</th><th>Role</th><th>Source</th></tr></thead>
+    <thead><tr><th>User</th><th>Role</th><th>Source</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for m in members %}
       <tr>
         <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
-        <td>{{ m.role }}</td>
+        <td><span class="role-badge">{{ m.role }}</span></td>
         <td class="muted">{{ m.source or 'manual' }}</td>
+        {% if is_admin %}
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('remove_team_member', team_id=team.id, user_id=m.user_id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove {{ m.email }} from this team?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
   </table>
+  {% else %}
+  <p class="empty">No members listed.</p>
+  {% endif %}
 </section>
 
-{% if my_role in ('owner', 'admin') %}
+{% if is_admin %}
+<section>
+  <h2>Invites &amp; join requests</h2>
+  <p class="muted">Share an invite link. Recipients must be signed in; they request to join and wait for approval.</p>
+  <form method="post" action="{{ url_for('create_team_invite', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Role
+      <select name="role">
+        {% for r in invite_roles %}
+        <option value="{{ r }}" {% if r == 'member' %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Expires (days) <input type="number" name="expires_days" min="1" max="90" value="7"></label>
+    <button type="submit">Create invite link</button>
+  </form>
+  {% if invites %}
+  <table>
+    <thead><tr><th>Role</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for i in invites %}
+      <tr>
+        <td><span class="role-badge">{{ i.role }}</span></td>
+        <td class="muted">{{ i.expires_at }}</td>
+        <td class="muted">{% if i.revoked_at %}revoked{% else %}active{% endif %}</td>
+        <td class="acts">
+          {% if not i.revoked_at %}
+          <form method="post" action="{{ url_for('revoke_team_invite', team_id=team.id, invite_id=i.id) }}"
+                class="inline" onsubmit="return confirm('Revoke this invite?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Revoke</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h3>Pending requests</h3>
+  {% if join_requests %}
+  <table>
+    <thead><tr><th>User</th><th>Role</th><th>Requested</th><th></th></tr></thead>
+    <tbody>
+    {% for r in join_requests %}
+      <tr>
+        <td>{{ r.name or r.email }} <span class="muted">{{ r.email }}</span></td>
+        <td><span class="role-badge">{{ r.role }}</span></td>
+        <td class="muted">{{ r.created_at }}</td>
+        <td class="acts">
+          <form method="post" action="{{ url_for('approve_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link">Approve</button>
+          </form>
+          <form method="post" action="{{ url_for('reject_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Reject</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No pending join requests.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% elif active_tab == 'activity' %}
+<section>
+  <h2>Access activity</h2>
+  <p class="muted">Membership, invites, LDAP maps, and team settings changes.</p>
+  {% if org_events %}
+  <table>
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for e in org_events %}
+      <tr>
+        <td class="muted">{{ e.created_at }}</td>
+        <td>{{ e.actor_email or 'unknown' }}</td>
+        <td><span class="audit-action">{{ e.action }}</span></td>
+        <td class="muted">{{ e.detail }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No activity yet.</p>
+  {% endif %}
+</section>
+
+{% elif active_tab == 'settings' and is_admin %}
+<section>
+  <h2>Team settings</h2>
+  <form method="post" action="{{ url_for('update_team_settings', team_id=team.id) }}" id="team-settings-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="row">
+      <label>Default machine-token expiry (days)
+        <input type="number" name="default_token_days" min="1" max="{{ max_expiry_days|default(3650) }}"
+               value="{{ team.default_token_days or '' }}" placeholder="server default">
+      </label>
+    </div>
+    <p class="muted">Leave blank to use no default (tokens never expire unless set per token).</p>
+
+    <h3>Classification banner</h3>
+    <p class="muted">Optional override of the server-wide banner while this team is selected in the sidebar.</p>
+    <label class="check-row">
+      <input type="checkbox" name="use_classification_override" id="class-override" value="1"
+             {% if team.classification_enabled is not none %}checked{% endif %}
+             onchange="syncTeamClassForm()">
+      Override server classification banner for this team
+    </label>
+    <div id="team-banner-fields">
+      <label class="check-row">
+        <input type="checkbox" name="classification_enabled" id="classification_enabled" value="1"
+               {% if team.classification_enabled %}checked{% endif %}
+               onchange="updateTeamBannerPreview()">
+        Show classification banner
+      </label>
+      <label>Banner text
+        <input type="text" name="classification_text" id="classification_text" maxlength="120"
+               value="{{ team.classification_text or classification.text or 'OFFICIAL' }}"
+               placeholder="OFFICIAL — SENSITIVE"
+               oninput="updateTeamBannerPreview()">
+      </label>
+      <div class="row">
+        <div>
+          <label>Background colour</label>
+          <div class="color-field">
+            <input type="color" id="classification_color_picker"
+                   value="{{ team.classification_color or classification.color or '#677381' }}"
+                   oninput="document.getElementById('classification_color').value=this.value; updateTeamBannerPreview();">
+            <input type="text" name="classification_color" id="classification_color"
+                   value="{{ team.classification_color or classification.color or '#677381' }}"
+                   pattern="#[0-9A-Fa-f]{6}"
+                   oninput="syncTeamColor('classification_color'); updateTeamBannerPreview();">
+          </div>
+        </div>
+        <div>
+          <label>Text colour</label>
+          <div class="color-field">
+            <input type="color" id="classification_fg_picker"
+                   value="{{ team.classification_fg or classification.fg or '#ffffff' }}"
+                   oninput="document.getElementById('classification_fg').value=this.value; updateTeamBannerPreview();">
+            <input type="text" name="classification_fg" id="classification_fg"
+                   value="{{ team.classification_fg or classification.fg or '#ffffff' }}"
+                   pattern="#[0-9A-Fa-f]{6}"
+                   oninput="syncTeamColor('classification_fg'); updateTeamBannerPreview();">
+          </div>
+        </div>
+      </div>
+      <p class="muted preset-label">Presets</p>
+      <div class="swatch-row">
+        <button type="button" class="swatch" data-bg="#000000" title="Black"
+                onclick="applyTeamPreset('#000000','#ffffff')"></button>
+        <button type="button" class="swatch" data-bg="#677381" title="Slate"
+                onclick="applyTeamPreset('#677381','#ffffff')"></button>
+        <button type="button" class="swatch" data-bg="#47817F" title="Teal-grey"
+                onclick="applyTeamPreset('#47817F','#ffffff')"></button>
+        <button type="button" class="swatch" data-bg="#c62828" title="Red"
+                onclick="applyTeamPreset('#c62828','#ffffff')"></button>
+        <button type="button" class="swatch" data-bg="#ef6c00" title="Orange"
+                onclick="applyTeamPreset('#ef6c00','#000000')"></button>
+        <button type="button" class="swatch" data-bg="#f9a825" title="Amber"
+                onclick="applyTeamPreset('#f9a825','#000000')"></button>
+        <button type="button" class="swatch" data-bg="#1565c0" title="Blue"
+                onclick="applyTeamPreset('#1565c0','#ffffff')"></button>
+        <button type="button" class="swatch swatch-light" data-bg="#ffffff" title="White"
+                onclick="applyTeamPreset('#ffffff','#000000')"></button>
+      </div>
+      <div class="banner-preview" id="team-banner-preview"
+           style="background: {{ team.classification_color or classification.color or '#677381' }}; color: {{ team.classification_fg or classification.fg or '#ffffff' }};">
+        {{ team.classification_text or classification.text or 'Preview' }}
+      </div>
+    </div>
+    <p class="form-actions"><button type="submit">Save team settings</button></p>
+  </form>
+  <script>
+  function applyTeamPreset(bg, fg) {
+    document.getElementById('classification_color').value = bg;
+    document.getElementById('classification_color_picker').value = bg;
+    document.getElementById('classification_fg').value = fg;
+    document.getElementById('classification_fg_picker').value = fg;
+    updateTeamBannerPreview();
+  }
+  function syncTeamColor(id) {
+    var v = document.getElementById(id).value;
+    if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+      document.getElementById(id + '_picker').value = v;
+    }
+  }
+  function updateTeamBannerPreview() {
+    var el = document.getElementById('team-banner-preview');
+    if (!el) return;
+    var text = document.getElementById('classification_text').value || 'Preview';
+    el.textContent = text;
+    el.style.background = document.getElementById('classification_color').value;
+    el.style.color = document.getElementById('classification_fg').value;
+    el.style.opacity = document.getElementById('classification_enabled').checked ? '1' : '0.45';
+  }
+  function syncTeamClassForm() {
+    var on = document.getElementById('class-override').checked;
+    var box = document.getElementById('team-banner-fields');
+    box.style.opacity = on ? '1' : '0.45';
+    box.querySelectorAll('input, button').forEach(function (el) {
+      if (el.type === 'hidden') return;
+      el.disabled = !on;
+    });
+    if (on) updateTeamBannerPreview();
+  }
+  syncTeamClassForm();
+  updateTeamBannerPreview();
+  </script>
+</section>
+
 <section>
   <h2>LDAP group membership</h2>
   <p class="muted">
@@ -101,13 +370,13 @@
     {% for m in ldap_maps %}
       <tr>
         <td><code class="k">{{ m.ldap_group }}</code></td>
-        <td>{{ m.role }}</td>
+        <td><span class="role-badge">{{ m.role }}</span></td>
         <td class="acts">
           <form method="post"
                 action="{{ url_for('delete_team_ldap_map', team_id=team.id, map_id=m.id) }}"
                 class="inline"
                 onsubmit="return confirm('Remove this LDAP mapping?')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Remove</button>
           </form>
         </td>
@@ -116,18 +385,18 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No LDAP group maps for this team.</p>
+  <p class="empty">No LDAP group maps for this team.</p>
   {% endif %}
-  <form method="post" action="{{ url_for('add_team_ldap_map', team_id=team.id) }}" class="row" style="margin-top:1rem;">
+  <form method="post" action="{{ url_for('add_team_ldap_map', team_id=team.id) }}" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label style="flex:2;">LDAP group (CN or DN)
+    <label class="flex-2">LDAP group (CN or DN)
       <input type="text" name="ldap_group" required
              placeholder="eng-secrets or cn=eng-secrets,cn=groups,cn=accounts,dc=example,dc=com">
     </label>
     <label>Role
       <select name="role">
         <option value="member">member</option>
-        <option value="read-only">read-only</option>
+        <option value="viewer">viewer</option>
         <option value="admin">admin</option>
         <option value="owner">owner</option>
       </select>
@@ -135,9 +404,71 @@
     <button type="submit">Add map</button>
   </form>
 </section>
-{% endif %}
+
+<section>
+  <h2>OIDC group membership</h2>
+  <p class="muted">
+    Automatically add users to this team when they sign in via OIDC/SSO and the token includes the mapped group.
+    Highest matching role wins. Manual members are never removed by OIDC sync.
+    {% if not oidc_enabled %}<strong>OIDC is currently disabled</strong> in server settings.{% endif %}
+  </p>
+  {% if oidc_maps %}
+  <table>
+    <thead><tr><th>OIDC group</th><th>Team role</th><th></th></tr></thead>
+    <tbody>
+    {% for m in oidc_maps %}
+      <tr>
+        <td><code class="k">{{ m.oidc_group }}</code></td>
+        <td><span class="role-badge">{{ m.role }}</span></td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('delete_team_oidc_map', team_id=team.id, map_id=m.id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove this OIDC mapping?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No OIDC group maps for this team.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('add_team_oidc_map', team_id=team.id) }}" class="row mt-1">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="flex-2">OIDC group / role name
+      <input type="text" name="oidc_group" required
+             placeholder="eng-secrets">
+    </label>
+    <label>Role
+      <select name="role">
+        <option value="member">member</option>
+        <option value="viewer">viewer</option>
+        <option value="admin">admin</option>
+        <option value="owner">owner</option>
+      </select>
+    </label>
+    <button type="submit">Add map</button>
+  </form>
+</section>
 
 {% if my_role == 'owner' %}
+<section>
+  <h2>Transfer ownership</h2>
+  <p class="muted">Promotes the user to owner and demotes you to admin. Prevents an ownerless team.</p>
+  <form method="post" action="{{ url_for('transfer_team_ownership', team_id=team.id) }}" class="row"
+        onsubmit="return confirm('Transfer ownership to this user?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>New owner email
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+    </label>
+    <button type="submit">Transfer</button>
+  </form>
+</section>
+
 <section>
   <h2>Danger zone</h2>
   <p class="muted">Delete this team and all projects, secrets, members, and machine tokens. Irreversible.</p>
@@ -147,5 +478,6 @@
     <button type="submit" class="danger">Delete team</button>
   </form>
 </section>
+{% endif %}
 {% endif %}
 {% endblock %}

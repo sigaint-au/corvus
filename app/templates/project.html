@@ -1,12 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<p class="muted">
-  <a href="{{ url_for('teams') }}">Teams</a> /
+<p class="breadcrumb">
+  <a href="{{ url_for('teams') }}">Teams</a>
+  <span class="breadcrumb-sep">/</span>
   <a href="{{ url_for('team_detail', team_id=project.team_id) }}">{{ project.team_name }}</a>
+  <span class="breadcrumb-sep">/</span>
+  {{ project.name }}
 </p>
 <h1>{{ project.name }}</h1>
-<p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
+<p class="page-desc muted">Project ID: <code class="k">{{ project.id }}</code></p>
 
 {% if new_token %}
 <div class="token-once">
@@ -28,7 +31,15 @@
      class="tab {% if active_tab == 'tokens' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine tokens</a>
-  {% if can_delete %}
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
+     class="tab {% if active_tab == 'import' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'import' else 'false' }}">Import / Export</a>
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='integrations') }}"
+     class="tab {% if active_tab == 'integrations' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'integrations' else 'false' }}">Integrations</a>
+  {% if can_settings %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
      role="tab"
@@ -37,78 +48,259 @@
 </nav>
 
 {% if active_tab == 'secrets' %}
+{% if due_overdue or due_soon %}
+<section class="due-dashboard">
+  <h2>Expiry reminders</h2>
+  <div class="profile-stats">
+    {% if due_overdue %}
+    <div class="profile-stat">
+      <span class="profile-stat-n is-danger">{{ due_overdue|length }}</span>
+      <span class="profile-stat-l">Overdue</span>
+    </div>
+    {% endif %}
+    {% if due_soon %}
+    <div class="profile-stat">
+      <span class="profile-stat-n is-warning">{{ due_soon|length }}</span>
+      <span class="profile-stat-l">Expiring soon</span>
+    </div>
+    {% endif %}
+  </div>
+  <table>
+    <thead><tr><th>Key</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+    <tbody>
+    {% for s in due_overdue %}
+      <tr>
+        <td><code class="k">{{ s.key }}</code> <span class="due-badge due-overdue">overdue</span></td>
+        <td class="muted">Past expiry</td>
+        <td class="muted">{{ s.expires_at }}</td>
+        <td class="acts">
+          <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
+        </td>
+      </tr>
+    {% endfor %}
+    {% for s in due_soon %}
+      <tr>
+        <td><code class="k">{{ s.key }}</code> <span class="due-badge due-soon">soon</span></td>
+        <td class="muted">Within {{ soon_days|default(14) }} days</td>
+        <td class="muted">{{ s.expires_at }}</td>
+        <td class="acts">
+          <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 <section>
   <div class="section-head">
-    <h2>Secrets</h2>
-    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
-      <input type="hidden" name="tab" value="secrets">
-      <label class="search-field">
-        <span class="visually-hidden">Search secrets</span>
-        <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search secrets">
-      </label>
-      <button type="submit">Go</button>
-      {% if search_q %}
-      <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+    <div class="section-head-main">
+      <h2>Secrets</h2>
+      {% if can_write %}
+      <a class="btn-toolbar" href="{{ url_for('secret_new', project_id=project.id) }}">Create secret</a>
       {% endif %}
-    </form>
+    </div>
+    <div class="section-tools">
+      <div class="bulk-toolbar" id="bulk-toolbar" hidden>
+        <label class="bulk-select" title="Select all on this page">
+          <input type="checkbox" id="bulk-select-all" aria-label="Select all secrets">
+          <span id="bulk-count" class="bulk-count">0</span>
+        </label>
+        <label class="visually-hidden" for="bulk-action">Bulk action</label>
+        <select id="bulk-action" class="bulk-action" aria-label="Bulk action">
+          <option value="">Action…</option>
+          <option value="export_env"
+                  data-url="{{ url_for('bulk_export', project_id=project.id, format='env') }}">Export .env</option>
+          <option value="export_json"
+                  data-url="{{ url_for('bulk_export', project_id=project.id, format='json') }}">Export JSON</option>
+          {% if can_write %}
+          <option value="delete"
+                  data-url="{{ url_for('bulk_secrets', project_id=project.id) }}"
+                  data-confirm="Move selected secrets to trash?">Delete</option>
+          {% endif %}
+        </select>
+        <button type="button" id="bulk-apply" class="bulk-apply" disabled>Apply</button>
+      </div>
+      <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+        <input type="hidden" name="tab" value="secrets">
+        <label class="search-field">
+          <span class="visually-hidden">Search secrets</span>
+          <input type="search" name="q" value="{{ search_q or '' }}"
+                 placeholder="Search…" autocomplete="off" aria-label="Search secrets">
+        </label>
+        <button type="submit">Search</button>
+        {% if search_q %}
+        <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+        {% endif %}
+      </form>
+    </div>
   </div>
   {% if can_write %}
   <form method="post"
-        action="{{ url_for('create_secret', project_id=project.id) }}"
+        action="{{ url_for('create_secret', project_id=project.id, page=secrets_pager.page if secrets_pager else 1, q=search_q or none) }}"
         hx-post="{{ url_for('create_secret', project_id=project.id) }}"
         hx-target="#secrets-list"
         hx-swap="innerHTML"
-        class="row">
+        class="row secret-create" id="secret-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    {# Preserve list filters across HTMX create round-trips #}
+    <input type="hidden" name="page" value="{{ secrets_pager.page if secrets_pager else 1 }}">
+    <input type="hidden" name="q" value="{{ search_q or '' }}">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
-    <label>Value <input type="password" name="value" required placeholder="••••••••"></label>
-    <label>Note <input type="text" name="note" placeholder="optional label (not encrypted)"></label>
+    <label class="value-label">Value
+      <span class="input-with-btn">
+        <input type="password" name="value" id="secret-value" required placeholder="••••••••" autocomplete="off">
+        <button type="button" class="icon-btn" id="gen-btn"
+                title="Generate random value" aria-label="Generate random value">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
+            <path d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </span>
+    </label>
+    <label>Note
+      <input type="text" name="note" placeholder="optional label">
+    </label>
+    <label>Expires
+      <input type="date" name="expires_at" id="secret-expires">
+    </label>
     <button type="submit">Save</button>
   </form>
+  <script>
+  (function () {
+    var form = document.getElementById('secret-form');
+    var btn = document.getElementById('gen-btn');
+    var inp = document.getElementById('secret-value');
+    if (!btn || !inp) return;
+    function maskValue() {
+      inp.type = 'password';
+    }
+    btn.addEventListener('click', function () {
+      var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*_-+=';
+      var len = 32;
+      var buf = new Uint8Array(len);
+      crypto.getRandomValues(buf);
+      var out = '';
+      for (var i = 0; i < len; i++) out += chars[buf[i] % chars.length];
+      inp.type = 'text';
+      inp.value = out;
+      inp.focus();
+      inp.select();
+    });
+    // Re-mask if user edits after generate
+    inp.addEventListener('input', function () {
+      if (inp.type === 'text' && document.activeElement === inp) {
+        /* keep visible while typing over generated value */
+      }
+    });
+    if (form) {
+      form.addEventListener('htmx:afterRequest', function (e) {
+        if (e.detail && e.detail.successful) {
+          form.reset();
+          maskValue();
+        }
+      });
+    }
+  })();
+  </script>
   {% endif %}
   <div id="secrets-list">
     {% include "partials/secrets.html" %}
   </div>
 </section>
+{% elif active_tab == 'import' %}
+<section>
+  <h2>Import / Export</h2>
+
+  <h3>Export</h3>
+  <p class="muted">Download all live secrets in this project. Prefer encrypted JSON for backups; plaintext formats need a confirm.</p>
+  <div class="export-actions">
+    <a class="btn-secondary"
+       href="{{ url_for('export_secrets', project_id=project.id, format='env', mode='plain') }}"
+       onclick="return confirm('Download PLAINTEXT secrets for this project?')">.env (plaintext)</a>
+    <a class="btn-secondary"
+       href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='plain') }}"
+       onclick="return confirm('Download PLAINTEXT secrets for this project?')">JSON (plaintext)</a>
+    <a class="btn-secondary"
+       href="{{ url_for('export_secrets', project_id=project.id, format='csv', mode='plain') }}"
+       onclick="return confirm('Download PLAINTEXT secrets for this project?')">CSV (plaintext)</a>
+    <a class="btn-secondary"
+       href="{{ url_for('export_secrets', project_id=project.id, format='json', mode='enc') }}">Encrypted JSON</a>
+  </div>
+
+  <h3>Import</h3>
+  {% if can_write %}
+  <p class="muted">Import from a <code>.env</code>, CSV (<code>key,value</code>), or JSON file/paste.
+    You will preview creates vs updates before anything is written.</p>
+  <form method="post" action="{{ url_for('import_preview', project_id=project.id) }}"
+        enctype="multipart/form-data" class="import-box">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>File <input type="file" name="file" accept=".env,.txt,.csv,.json,text/*"></label>
+    <label>Or paste
+      <textarea name="payload" rows="12" placeholder="KEY=value&#10;OTHER=secret"></textarea>
+    </label>
+    <button type="submit">Preview import</button>
+  </form>
+  {% else %}
+  <p class="muted">You need write access to import secrets.</p>
+  {% endif %}
+</section>
 {% elif active_tab == 'audit' %}
 <section>
   <div class="section-head">
     <h2>Audit log</h2>
-    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
-      <input type="hidden" name="tab" value="audit">
-      <label class="search-field">
-        <span class="visually-hidden">Search audit log</span>
-        <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search audit log">
-      </label>
-      <button type="submit">Go</button>
-      {% if search_q %}
+  </div>
+  <p class="muted">Who did what to secrets in this project, and when.</p>
+  <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="audit-filters">
+    <input type="hidden" name="tab" value="audit">
+    <label>Search
+      <input type="search" name="q" value="{{ search_q or '' }}"
+             placeholder="Key, action, email…" autocomplete="off">
+    </label>
+    <label>Actor
+      <input type="search" name="actor" value="{{ audit_actor or '' }}"
+             placeholder="email…" autocomplete="off">
+    </label>
+    <label>Action
+      <select name="action">
+        <option value="">All actions</option>
+        {% for a in audit_actions %}
+        <option value="{{ a }}" {% if audit_action == a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>From
+      <input type="date" name="since" value="{{ audit_since or '' }}">
+    </label>
+    <label>To
+      <input type="date" name="until" value="{{ audit_until or '' }}">
+    </label>
+    <div class="audit-filter-actions">
+      <button type="submit">Filter</button>
+      {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
       <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}">Clear</a>
       {% endif %}
-    </form>
-  </div>
-  <p class="muted">Who created, updated, revealed, or deleted secrets in this project.</p>
+    </div>
+  </form>
   {% if audit_log %}
-  <table>
+  <table class="audit-table">
     <thead>
       <tr>
+        <th>What happened</th>
         <th>When</th>
-        <th>Who</th>
-        <th>Action</th>
-        <th>Secret</th>
       </tr>
     </thead>
     <tbody>
     {% for e in audit_log %}
       <tr>
-        <td class="muted">{{ e.created_at }}</td>
         <td>
-          {% if e.actor_name %}{{ e.actor_name }} <span class="muted">{{ e.actor_email }}</span>
-          {% else %}{{ e.actor_email or 'unknown' }}{% endif %}
+          <span class="audit-summary">{{ e.summary }}</span>
+          <span class="audit-action audit-{{ e.action }}">{{ e.action }}</span>
         </td>
-        <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
-        <td class="col-key"><code class="k">{{ e.secret_key }}</code></td>
+        <td class="muted" title="{{ e.created_at }}">{{ e.when_display }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -117,9 +309,11 @@
     {% include "partials/pager.html" %}
   {% endwith %}
   {% else %}
-  <p class="muted">
-    {% if search_q %}No audit events match “{{ search_q }}”.
-    {% else %}No audit events yet. Activity appears here when secrets are saved, revealed, or deleted.
+  <p class="empty">
+    {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
+    No audit events match these filters.
+    {% else %}
+    No audit events yet. Activity appears here when secrets are saved, revealed, or deleted.
     {% endif %}
   </p>
   {% endif %}
@@ -128,20 +322,36 @@
 <section>
   <h2>Machine accounts</h2>
   <p class="muted">For OpenShift External Secrets Operator / CI. Scoped to this project.
-    <strong>read-only</strong> can fetch secrets; <strong>write</strong> can also upsert via the machine API.</p>
+    Default is <strong>read-only</strong> (fetch only). Choose <strong>write</strong> only if automation must create or update secrets.</p>
   {% if can_write %}
-  <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row">
+  <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row" id="token-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Name <input type="text" name="name" placeholder="openshift-prod" value="openshift"></label>
     <label>Role
-      <select name="role">
+      <select name="role" id="token-role">
         <option value="read-only" selected>read-only</option>
         <option value="write">write</option>
       </select>
     </label>
-    <label>Expires (days) <input type="number" name="expires_days" min="1" placeholder="never"></label>
+    <label>Expires (days)
+      <input type="number" name="expires_days" min="1" max="{{ max_expiry_days|default(3650) }}"
+             placeholder="{% if default_token_days %}{{ default_token_days }} (team default){% else %}never{% endif %}">
+    </label>
     <button type="submit">Create token</button>
   </form>
+  <p class="warn-inline" id="token-write-warn" hidden>
+    Warning: write tokens can create and update secrets via the machine API. Prefer read-only for ESO.
+  </p>
+  <script>
+  (function () {
+    var sel = document.getElementById('token-role');
+    var warn = document.getElementById('token-write-warn');
+    if (!sel || !warn) return;
+    function sync() { warn.hidden = sel.value !== 'write'; }
+    sel.addEventListener('change', sync);
+    sync();
+  })();
+  </script>
   {% endif %}
   {% if tokens %}
   <table>
@@ -153,11 +363,15 @@
         <td><code>{{ t.token_prefix }}…</code></td>
         <td><span class="role-badge">{{ t.role or 'read-only' }}</span></td>
         <td class="muted">{{ t.created_at }}</td>
-        <td class="muted">{{ t.expires_at or 'never' }}</td>
+        <td class="muted">
+          {{ t.expires_at or 'never' }}
+          {% if t.due == 'overdue' %}<span class="due-badge due-overdue">expired</span>
+          {% elif t.due == 'soon' %}<span class="due-badge due-soon">expiring soon</span>{% endif %}
+        </td>
         <td class="acts">
           {% if can_write %}
           <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
-                onsubmit="return confirm('Revoke token?')">
+                onsubmit="return confirm('Revoke token “{{ t.name }}”?')">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Revoke</button>
           </form>
@@ -168,15 +382,251 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No machine accounts.</p>
+  <p class="empty">No machine accounts.</p>
   {% endif %}
 </section>
-{% elif active_tab == 'settings' and can_delete %}
-<section>
-  <h2>Project settings</h2>
-  <p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
+{% elif active_tab == 'integrations' %}
+<div class="stack eso-integration" id="eso-integration"
+         data-project-id="{{ project.id }}"
+         data-project-name="{{ project.name }}"
+         data-base-url="{{ public_base_url or '' }}">
+  <div class="section-head">
+    <h2>External Secrets Operator</h2>
+  </div>
 
-  <h3>Danger zone</h3>
+  {% if can_write %}
+  <section class="eso-token-create">
+    <h3>Machine account for ESO</h3>
+    <p class="muted">Create a <strong>read-only</strong> token for the cluster to pull secrets.
+      Prefer read-only for ESO; use write only if automation must push secrets.</p>
+    <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row" id="eso-token-form">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="return_tab" value="integrations">
+      <label>Name
+        <input type="text" name="name" value="eso" placeholder="eso" required>
+      </label>
+      <label>Role
+        <select name="role" id="eso-token-role">
+          <option value="read-only" selected>read-only</option>
+          <option value="write">write</option>
+        </select>
+      </label>
+      <label>Expires (days)
+        <input type="number" name="expires_days" min="1" max="{{ max_expiry_days|default(3650) }}"
+               placeholder="{% if default_token_days %}{{ default_token_days }} (team default){% else %}never{% endif %}">
+      </label>
+      <button type="submit">Create machine account</button>
+    </form>
+    <p class="warn-inline" id="eso-token-write-warn" hidden>
+      Warning: write tokens can create and update secrets via the machine API. Prefer read-only for ESO.
+    </p>
+  </section>
+  {% else %}
+  <p class="muted">You need write access to create a machine account. Paste an existing token below to generate manifests.</p>
+  {% endif %}
+
+  <section class="eso-yaml-config">
+    <h3>Manifest options</h3>
+    <div class="row">
+      <label>App base URL
+        <input type="url" id="eso-base-url" value="{{ public_base_url or '' }}"
+               placeholder="https://secretstore.example.com" required>
+      </label>
+      <label>Kubernetes namespace
+        <input type="text" id="eso-namespace" value="default" placeholder="default"
+               pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?">
+      </label>
+      <label>Resource name prefix
+        <input type="text" id="eso-name-prefix" value="{{ project.name|lower|replace(' ', '-')|replace('_', '-') }}"
+               placeholder="my-app" pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?">
+      </label>
+    </div>
+    <div class="row">
+      <label>Machine token
+        <span class="input-with-btn">
+          <input type="password" id="eso-token" value="{{ new_token or '' }}"
+                 placeholder="ss_… paste or create above" autocomplete="off">
+          <button type="button" class="icon-btn text-btn" id="eso-token-toggle" title="Show/hide token"
+                  aria-label="Show or hide token">Show</button>
+        </span>
+      </label>
+      <label>Store kind
+        <select id="eso-store-kind">
+          <option value="SecretStore" selected>SecretStore (namespaced)</option>
+          <option value="ClusterSecretStore">ClusterSecretStore</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="eso-yaml-out" id="eso-yaml-panel" {% if not new_token %}hidden{% endif %}>
+    <div class="section-head">
+      <h3>Generated YAML</h3>
+      <button type="button" class="btn-toolbar copy-btn" id="eso-copy"
+              data-copy-target="eso-yaml"
+              data-clear-seconds="0">Copy YAML</button>
+    </div>
+    <textarea id="eso-yaml" class="mono-area eso-yaml" rows="18" readonly
+              spellcheck="false" aria-label="Generated ESO YAML"></textarea>
+  </section>
+  <p class="muted" id="eso-yaml-hint" {% if new_token %}hidden{% endif %}>
+    Create a machine account above (or paste a token) to generate the Secret and SecretStore YAML.
+  </p>
+</div>
+<script>
+(function () {
+  var root = document.getElementById('eso-integration');
+  if (!root) return;
+  var projectId = root.getAttribute('data-project-id') || '';
+  var yamlEl = document.getElementById('eso-yaml');
+  var panel = document.getElementById('eso-yaml-panel');
+  var hint = document.getElementById('eso-yaml-hint');
+  var baseEl = document.getElementById('eso-base-url');
+  var nsEl = document.getElementById('eso-namespace');
+  var prefixEl = document.getElementById('eso-name-prefix');
+  var tokenEl = document.getElementById('eso-token');
+  var kindEl = document.getElementById('eso-store-kind');
+  var tokenToggle = document.getElementById('eso-token-toggle');
+
+  function dnsName(s) {
+    s = (s || 'app').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!s) s = 'app';
+    if (!/^[a-z]/.test(s)) s = 'x-' + s;
+    return s.slice(0, 63).replace(/-+$/g, '') || 'app';
+  }
+  function yamlQuote(s) {
+    return String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+  function buildYaml() {
+    var token = (tokenEl && tokenEl.value || '').trim();
+    var hasToken = !!token;
+    if (panel) panel.hidden = !hasToken;
+    if (hint) hint.hidden = hasToken;
+    if (!hasToken) {
+      if (yamlEl) yamlEl.value = '';
+      return;
+    }
+    var base = (baseEl && baseEl.value || '').replace(/\/+$/, '');
+    var ns = (nsEl && nsEl.value || 'default').trim() || 'default';
+    var prefix = dnsName(prefixEl && prefixEl.value);
+    var storeKind = (kindEl && kindEl.value) || 'SecretStore';
+    var tokenSecret = prefix + '-machine-token';
+    var storeName = prefix + '-webhook';
+    var url = base + '/eso/v1/projects/' + projectId + '/secrets/{{ "{{ .remoteRef.key }}" }}';
+    var lines = [];
+    lines.push('# Generated for project ' + projectId);
+    lines.push('# External Secrets Operator — webhook provider (Secret + SecretStore only)');
+    lines.push('apiVersion: v1');
+    lines.push('kind: Secret');
+    lines.push('metadata:');
+    lines.push('  name: ' + tokenSecret);
+    lines.push('  namespace: ' + ns);
+    lines.push('  labels:');
+    lines.push('    external-secrets.io/type: webhook');
+    lines.push('stringData:');
+    lines.push('  token: "' + yamlQuote(token) + '"');
+    lines.push('---');
+    lines.push('apiVersion: external-secrets.io/v1');
+    lines.push('kind: ' + storeKind);
+    lines.push('metadata:');
+    lines.push('  name: ' + storeName);
+    if (storeKind === 'SecretStore') {
+      lines.push('  namespace: ' + ns);
+    }
+    lines.push('spec:');
+    lines.push('  provider:');
+    lines.push('    webhook:');
+    lines.push('      url: "' + yamlQuote(url) + '"');
+    lines.push('      result:');
+    lines.push('        jsonPath: "$.value"');
+    lines.push('      headers:');
+    lines.push('        Authorization: "Bearer {{ "{{ .auth.token }}" }}"');
+    lines.push('        Content-Type: application/json');
+    lines.push('      secrets:');
+    lines.push('        - name: auth');
+    lines.push('          secretRef:');
+    lines.push('            name: ' + tokenSecret);
+    if (storeKind === 'ClusterSecretStore') {
+      lines.push('            namespace: ' + ns);
+    }
+    if (yamlEl) yamlEl.value = lines.join('\n') + '\n';
+  }
+
+  ['input', 'change'].forEach(function (ev) {
+    root.addEventListener(ev, buildYaml);
+  });
+  if (tokenToggle && tokenEl) {
+    tokenToggle.addEventListener('click', function () {
+      var show = tokenEl.type === 'password';
+      tokenEl.type = show ? 'text' : 'password';
+      tokenToggle.textContent = show ? 'Hide' : 'Show';
+    });
+  }
+  var roleSel = document.getElementById('eso-token-role');
+  var roleWarn = document.getElementById('eso-token-write-warn');
+  if (roleSel && roleWarn) {
+    function syncRole() { roleWarn.hidden = roleSel.value !== 'write'; }
+    roleSel.addEventListener('change', syncRole);
+    syncRole();
+  }
+  buildYaml();
+})();
+</script>
+{% elif active_tab == 'settings' and can_settings %}
+{% if can_admin %}
+<section>
+  <h2>Members</h2>
+  <p class="muted">
+    Optional project-level roles for this project only.
+    Roles: <strong>read</strong> (view), <strong>write</strong> (edit secrets),
+    <strong>admin</strong> (write + manage members).
+    Project roles can <strong>elevate</strong> team members/viewers; they
+    <strong>cannot demote</strong> team owners or team admins.
+  </p>
+  <form method="post" action="{{ url_for('add_project_member', project_id=project.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Email
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+    </label>
+    <label>Role
+      <select name="role">
+        {% for r in project_roles %}
+        <option value="{{ r }}" {% if r == 'read' %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  {% if project_members %}
+  <table>
+    <thead><tr><th>User</th><th>Role</th><th></th></tr></thead>
+    <tbody>
+    {% for m in project_members %}
+      <tr>
+        <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
+        <td><span class="role-badge">{{ m.role }}</span></td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('remove_project_member', project_id=project.id, user_id=m.user_id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove {{ m.email }} from this project?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No project-level members. Team members still have access via their team role.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% if can_delete %}
+<section>
+  <h2>Danger zone</h2>
   <p class="muted">Delete this project and all secrets, audit history, and machine tokens. Irreversible.</p>
   <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
         onsubmit="return confirm('Delete project “{{ project.name }}” and all its data? This cannot be undone.')">
@@ -184,5 +634,6 @@
     <button type="submit" class="danger">Delete project</button>
   </form>
 </section>
+{% endif %}
 {% endif %}
 {% endblock %}

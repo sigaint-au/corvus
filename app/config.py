@@ -45,6 +45,12 @@ APP_NAME = "Sigaint Secret Server"
 
 HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 DEFAULT_SETTINGS = {
+    # Public base URL of this app (no trailing slash), e.g. https://secrets.example.com
+    # Used for OIDC redirect URI display and ESO webhook YAML defaults.
+    "server_url": "",
+    # Product branding (sidebar, page titles, mail/TOTP issuer fallbacks)
+    "brand_name": "Sigaint",
+    "brand_tagline": "Secret Server",
     "classification_enabled": "false",
     "classification_text": "OFFICIAL",
     "classification_color": "#677381",
@@ -63,11 +69,62 @@ DEFAULT_SETTINGS = {
     "ldap_group_base": "",
     "ldap_group_filter": "(member={dn})",
     "ldap_use_memberof": "true",
+    # Outbound email (password resets, login alerts)
+    "smtp_enabled": "false",
+    "smtp_host": "",
+    "smtp_port": "587",
+    "smtp_encryption": "starttls",  # none | starttls | ssl
+    "smtp_username": "",
+    "smtp_password": "",
+    "smtp_from_email": "",
+    "smtp_from_name": APP_NAME,
+    "smtp_login_alerts": "false",
+    "totp_enforce_global_admins": "false",
+    # Audit log retention (days). 0 = keep forever. Applied by global-admin purge.
+    "audit_retention_days": "365",
+    # OIDC SSO (Keycloak, etc.) — authorization code + ID token
+    "oidc_enabled": "false",
+    "oidc_issuer": "",  # e.g. https://keycloak.example/realms/myrealm
+    "oidc_client_id": "",
+    "oidc_client_secret": "",  # encrypted at rest when saved via settings UI
+    "oidc_scopes": "openid email profile",
+    "oidc_button_label": "Sign in with SSO",
+    # Claim used as display username on first SSO upsert (Keycloak: preferred_username)
+    "oidc_username_claim": "preferred_username",
+    # Claim name for group list (Keycloak: "groups" with Group Membership mapper)
+    "oidc_groups_claim": "groups",
+    # Require email_verified claim before linking/creating accounts (recommended)
+    "oidc_require_email_verified": "true",
 }
-TEAM_ROLES = ("owner", "admin", "member", "read-only")
-ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "read-only": 1}
+TEAM_ROLES = ("owner", "admin", "member", "viewer")
+ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}
+# Invite / join-request roles (cannot self-invite as owner)
+INVITE_ROLES = ("admin", "member", "viewer")
+# Project-scoped membership (in addition to team roles)
+PROJECT_ROLES = ("admin", "write", "read")
 # Machine accounts / ESO tokens: read-only (fetch) or write (fetch + upsert API)
 MACHINE_TOKEN_ROLES = ("read-only", "write")
+# Clipboard auto-clear after copy (seconds); 0 disables
+CLIPBOARD_CLEAR_SECONDS = max(
+    0, int(os.environ.get("CLIPBOARD_CLEAR_SECONDS", "30") or "30")
+)
+# Auto-hide revealed secret values (seconds); 0 disables
+REVEAL_AUTO_HIDE_SECONDS = max(
+    0, int(os.environ.get("REVEAL_AUTO_HIDE_SECONDS", "30") or "30")
+)
+# Structured secret kinds for advanced create form
+SECRET_KINDS = ("plain", "database", "certificate", "ssh", "kv")
+# Upper bounds for optional expiry (secrets, machine tokens, team defaults)
+MAX_EXPIRY_DAYS = 3650  # ~10 years
+# Request body / secret import file cap (bytes) — memory DoS guard
+MAX_CONTENT_LENGTH = max(
+    64 * 1024,
+    int(os.environ.get("MAX_CONTENT_LENGTH", str(1 * 1024 * 1024)) or str(1 * 1024 * 1024)),
+)
+MAX_IMPORT_BYTES = MAX_CONTENT_LENGTH
+# Sidebar lists
+SIDEBAR_PINS_LIMIT = 8
+SIDEBAR_RECENT_LIMIT = 8
 LDAP_SETTING_KEYS = (
     "ldap_enabled",
     "ldap_url",
@@ -82,3 +139,15 @@ LDAP_SETTING_KEYS = (
     "ldap_group_filter",
     "ldap_use_memberof",
 )
+SMTP_SETTING_KEYS = (
+    "smtp_enabled",
+    "smtp_host",
+    "smtp_port",
+    "smtp_encryption",
+    "smtp_username",
+    "smtp_password",
+    "smtp_from_email",
+    "smtp_from_name",
+    "smtp_login_alerts",
+)
+SMTP_ENCRYPTION_MODES = ("none", "starttls", "ssl")

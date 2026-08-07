@@ -6,11 +6,17 @@ DEFAULT_PAGE_SIZE = 25
 
 
 def page_arg(name: str = "page", default: int = 1) -> int:
+    """Read page from query string or form (HTMX POSTs carry state in form)."""
     try:
-        p = int(request.args.get(name) or default)
+        p = int(request.args.get(name) or request.form.get(name) or default)
     except (TypeError, ValueError):
         p = default
     return max(1, p)
+
+
+def list_state_q() -> str:
+    """Search/filter string from args or form."""
+    return (request.args.get("q") or request.form.get("q") or "").strip()
 
 
 def page_window(total: int, page: int, per_page: int = DEFAULT_PAGE_SIZE) -> dict:

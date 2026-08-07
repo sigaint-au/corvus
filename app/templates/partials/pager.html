@@ -1,3 +1,13 @@
+{# Extra filter kwargs (audit actor/action/dates) preserved across pages #}
+{% set _q = {
+  'project_id': pager.project_id if pager else none,
+  'tab': pager.tab if pager else none,
+  'q': pager.q if pager and pager.q else none,
+  'actor': pager.actor if pager and pager.actor else none,
+  'action': pager.action if pager and pager.action else none,
+  'since': pager.since if pager and pager.since else none,
+  'until': pager.until if pager and pager.until else none,
+} %}
 {% if pager and pager.total > pager.per_page %}
 <nav class="pager" aria-label="Pagination">
   <span class="pager-summary">
@@ -5,7 +15,7 @@
   </span>
   <div class="pager-links">
     {% if pager.has_prev %}
-    <a href="{{ url_for(pager.endpoint, project_id=pager.project_id, tab=pager.tab, page=pager.prev_page, q=pager.q or none) }}">Prev</a>
+    <a href="{{ url_for(pager.endpoint, page=pager.prev_page, **_q) }}">Prev</a>
     {% else %}
     <span class="disabled">Prev</span>
     {% endif %}
@@ -14,19 +24,19 @@
       {% if p == pager.page %}
       <span class="current" aria-current="page">{{ p }}</span>
       {% elif p == 1 or p == pager.pages or (p >= pager.page - 2 and p <= pager.page + 2) %}
-      <a href="{{ url_for(pager.endpoint, project_id=pager.project_id, tab=pager.tab, page=p, q=pager.q or none) }}">{{ p }}</a>
+      <a href="{{ url_for(pager.endpoint, page=p, **_q) }}">{{ p }}</a>
       {% elif p == pager.page - 3 or p == pager.page + 3 %}
       <span class="disabled">…</span>
       {% endif %}
     {% endfor %}
 
     {% if pager.has_next %}
-    <a href="{{ url_for(pager.endpoint, project_id=pager.project_id, tab=pager.tab, page=pager.next_page, q=pager.q or none) }}">Next</a>
+    <a href="{{ url_for(pager.endpoint, page=pager.next_page, **_q) }}">Next</a>
     {% else %}
     <span class="disabled">Next</span>
     {% endif %}
   </div>
 </nav>
 {% elif pager and pager.total > 0 %}
-<p class="muted" style="margin-top:1rem;">Showing {{ pager.total }} entr{{ 'y' if pager.total == 1 else 'ies' }}{% if pager.q %} matching “{{ pager.q }}”{% endif %}</p>
+<p class="muted pager-count">Showing {{ pager.total }} entr{{ 'y' if pager.total == 1 else 'ies' }}{% if pager.q or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>
 {% endif %}

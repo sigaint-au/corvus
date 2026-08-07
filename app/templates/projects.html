@@ -1,32 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Projects — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>Projects</h1>
+<div class="page-head">
+  <h1>Projects</h1>
+</div>
 {% if not team %}
-<p class="muted">Select a team in the sidebar.</p>
+<p class="empty">Select a team in the sidebar.</p>
 {% else %}
-<p class="muted">Team: <strong>{{ team.name }}</strong>
+<p class="page-desc muted">Team: <strong>{{ team.name }}</strong>
   · <a href="{{ url_for('team_detail', team_id=team.id) }}">Manage members</a>
 </p>
-<form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
+<section class="list-panel">
+  <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-  <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
-  <button type="submit">Create</button>
-</form>
-{% if projects %}
-<table>
-  <thead><tr><th>Name</th><th>ID</th></tr></thead>
-  <tbody>
-  {% for p in projects %}
-    <tr>
-      <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
-      <td class="muted"><code class="k">{{ p.id }}</code></td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="muted">No projects yet.</p>
-{% endif %}
+    <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
+    <button type="submit">Create</button>
+  </form>
+  {% if projects %}
+  <table class="table-spaced">
+    <thead><tr><th>Name</th><th>ID</th></tr></thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
+        <td class="muted"><code class="k">{{ p.id }}</code></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No projects yet.</p>
+  {% endif %}
+</section>
 {% endif %}
 {% endblock %}

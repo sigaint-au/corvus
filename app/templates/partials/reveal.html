@@ -1,1 +1,37 @@
-<input type="text" class="secret-value" value="{{ value }}" readonly onclick="this.select()" title="Click to select">
+<div class="reveal-wrap"
+     data-auto-hide="{{ reveal_auto_hide_seconds|default(30) }}"
+     data-secret-id="{{ secret_id }}">
+  {% if editable and can_write %}
+  <form class="reveal-edit"
+        hx-post="{{ url_for('update_secret_value', project_id=project_id, secret_id=secret_id) }}"
+        hx-target="closest .secret-cell"
+        hx-swap="innerHTML">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <span class="input-with-btn">
+      <input type="text" name="value" id="secret-val-{{ secret_id }}" class="secret-value"
+             value="{{ value }}" autocomplete="off" required>
+      <button type="button" class="icon-btn copy-btn" title="Copy to clipboard"
+              data-copy-target="secret-val-{{ secret_id }}"
+              data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
+    </span>
+    <div class="reveal-meta row">
+      <label>Expires
+        <input type="date" name="expires_at" id="exp-{{ secret_id }}"
+               value="{{ expires_at or '' }}">
+      </label>
+      <button type="submit" class="icon-btn save-btn" title="Save value and expiry">Save</button>
+    </div>
+  </form>
+  {% else %}
+  <span class="input-with-btn">
+    <input type="text" id="secret-val-{{ secret_id }}" class="secret-value"
+           value="{{ value }}" readonly onclick="this.select()" title="Click to select">
+    <button type="button" class="icon-btn copy-btn" title="Copy to clipboard"
+            data-copy-target="secret-val-{{ secret_id }}"
+            data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
+  </span>
+  {% if expires_at %}
+  <p class="muted reveal-expiry">Expires {{ expires_at }}</p>
+  {% endif %}
+  {% endif %}
+</div>

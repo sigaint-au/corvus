@@ -14,6 +14,22 @@ def ldap_cfg() -> dict:
     return {k: s.get(k, DEFAULT_SETTINGS.get(k, "")) for k in LDAP_SETTING_KEYS}
 
 
+def ldap_tls_required_ok(url: str, start_tls: bool) -> bool:
+    """
+    Credentials must not go over cleartext LDAP.
+    Accept ldaps:// always, or ldap:// only when StartTLS is enabled.
+    """
+    u = (url or "").strip().lower()
+    if not u:
+        return False
+    if u.startswith("ldaps://"):
+        return True
+    if u.startswith("ldap://"):
+        return bool(start_tls)
+    # Unknown scheme: require StartTLS rather than guess
+    return bool(start_tls)
+
+
 def ldap_password_plain(cfg: dict) -> str:
     enc = (cfg.get("ldap_bind_password") or "").strip()
     if not enc:
@@ -119,6 +135,16 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
     if not url or not user_base or not login or not password:
         return None
 
+    start_tls_cfg = truthy(cfg.get("ldap_start_tls"))
+    if not ldap_tls_required_ok(url, start_tls_cfg):
+        log.error(
+            "LDAP refused cleartext transport (use ldaps:// or enable StartTLS): %s",
+            url.split("?")[0][:80],
+        )
+        return None
+    # StartTLS only applies to plain ldap://; ldaps:// is already TLS
+    want_tls = start_tls_cfg and not url.lower().startswith("ldaps://")
+
     try:
         from ldap3 import ALL, SUBTREE, Server
     except ImportError:
@@ -133,7 +159,6 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
     use_memberof = truthy(cfg.get("ldap_use_memberof"))
     group_base = (cfg.get("ldap_group_base") or "").strip()
     group_filter_tmpl = (cfg.get("ldap_group_filter") or "(member={dn})").strip()
-    want_tls = truthy(cfg.get("ldap_start_tls"))
 
     try:
         server = Server(url, get_info=ALL, connect_timeout=8)

@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Auditing — {{ app_name }}{% endblock %}
+{% block body %}
+<div class="page-head"><h1>Auditing</h1></div>
+<p class="page-desc muted">Global admin only. Access reviews, role-change history, and audit export / retention.</p>
+
+<nav class="tabs" role="tablist" aria-label="Auditing sections">
+  <a href="{{ url_for('admin_audit', tab='access') }}"
+     class="tab {% if active_tab == 'access' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}">Access review</a>
+  <a href="{{ url_for('admin_audit', tab='roles') }}"
+     class="tab {% if active_tab == 'roles' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'roles' else 'false' }}">Role changes</a>
+  <a href="{{ url_for('admin_audit', tab='export') }}"
+     class="tab {% if active_tab == 'export' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'export' else 'false' }}">Export &amp; retention</a>
+</nav>
+
+{% if active_tab == 'access' %}
+<section>
+  <div class="section-head">
+    <h2>Access review</h2>
+    <div class="section-tools">
+      <a class="btn-toolbar" href="{{ url_for('admin_audit_access_export', format='csv') }}">Export CSV</a>
+      <a class="btn-toolbar" href="{{ url_for('admin_audit_access_export', format='json') }}">Export JSON</a>
+    </div>
+  </div>
+  <p class="muted">
+    Who has access to what: global admins, team memberships, and project-level roles.
+    Use for periodic reviews and SOC2 evidence.
+  </p>
+  {% if access_rows %}
+  <p class="muted">{{ access_rows|length }} grant row(s).</p>
+  <table>
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Scope</th>
+        <th>Team</th>
+        <th>Team role</th>
+        <th>Project</th>
+        <th>Project role</th>
+        <th>Via</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in access_rows %}
+      <tr>
+        <td>
+          {{ r.name or r.email }}
+          <span class="muted">{{ r.email }}</span>
+          {% if r.is_global_admin %}<span class="role-badge">global admin</span>{% endif %}
+          {% if r.disabled %}<span class="due-badge due-overdue">disabled</span>{% endif %}
+        </td>
+        <td><span class="role-badge">{{ r.scope }}</span></td>
+        <td>{{ r.team or '—' }}</td>
+        <td>{% if r.team_role %}<span class="role-badge">{{ r.team_role }}</span>{% else %}—{% endif %}</td>
+        <td>{{ r.project or '—' }}</td>
+        <td>{% if r.project_role %}<span class="role-badge">{{ r.project_role }}</span>{% else %}—{% endif %}</td>
+        <td class="muted"><code class="k">{{ r.access_via }}</code></td>
+        <td></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No membership grants found.</p>
+  {% endif %}
+</section>
+
+{% elif active_tab == 'roles' %}
+<section>
+  <div class="section-head">
+    <h2>Role-change audit</h2>
+  </div>
+  <p class="muted">
+    Membership and role changes from org audit (team roles, project roles, ownership, invites, LDAP maps).
+  </p>
+  <form method="get" action="{{ url_for('admin_audit') }}" class="audit-filters">
+    <input type="hidden" name="tab" value="roles">
+    <label>Search
+      <input type="search" name="q" value="{{ search_q or '' }}"
+             placeholder="Action, detail, team…" autocomplete="off">
+    </label>
+    <label>Actor
+      <input type="search" name="actor" value="{{ audit_actor or '' }}"
+             placeholder="email…" autocomplete="off">
+    </label>
+    <label>From
+      <input type="date" name="since" value="{{ audit_since or '' }}">
+    </label>
+    <label>To
+      <input type="date" name="until" value="{{ audit_until or '' }}">
+    </label>
+    <div class="audit-filter-actions">
+      <button type="submit">Filter</button>
+      {% if search_q or audit_actor or audit_since or audit_until %}
+      <a class="btn-clear" href="{{ url_for('admin_audit', tab='roles') }}">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+  {% if role_rows %}
+  <p class="muted">Showing {{ role_rows|length }} of {{ role_total }} event(s).</p>
+  <table class="audit-table">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Action</th>
+        <th>Detail</th>
+        <th>Actor</th>
+        <th>Team</th>
+        <th>Project</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for e in role_rows %}
+      <tr>
+        <td class="muted" title="{{ e.created_at }}">{{ e.when_display }}</td>
+        <td><span class="audit-action">{{ e.action }}</span></td>
+        <td>{{ e.detail or '—' }}</td>
+        <td class="muted">{{ e.actor_email or '—' }}</td>
+        <td>{{ e.team_name or '—' }}</td>
+        <td>{{ e.project_name or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">
+    {% if search_q or audit_actor or audit_since or audit_until %}
+    No role-change events match these filters.
+    {% else %}
+    No role-change events recorded yet.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
+
+{% elif active_tab == 'export' %}
+<section>
+  <div class="section-head">
+    <h2>Audit export</h2>
+  </div>
+  <p class="muted">
+    Export secret activity and org (membership) audit logs as CSV or JSON for evidence packs.
+  </p>
+  <div class="profile-stats">
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ counts.secret_audit }}</span>
+      <span class="profile-stat-l">Secret audit</span>
+    </div>
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ counts.org_audit }}</span>
+      <span class="profile-stat-l">Org audit</span>
+    </div>
+  </div>
+  {% if counts.oldest %}
+  <p class="muted">
+    Oldest event: {{ counts.oldest }} · Newest: {{ counts.newest }}
+  </p>
+  {% endif %}
+  <form method="get" action="{{ url_for('admin_audit_export') }}" class="row row-end">
+    <label>Source
+      <select name="source">
+        <option value="both">Secret + org</option>
+        <option value="secret">Secret audit only</option>
+        <option value="org">Org audit only</option>
+      </select>
+    </label>
+    <label>Format
+      <select name="format">
+        <option value="csv">CSV</option>
+        <option value="json">JSON</option>
+      </select>
+    </label>
+    <label>From
+      <input type="date" name="since">
+    </label>
+    <label>To
+      <input type="date" name="until">
+    </label>
+    <button type="submit">Download export</button>
+  </form>
+</section>
+
+<section>
+  <h2>Retention</h2>
+  <p class="muted">
+    Configure how long audit rows are kept. Set to <strong>0</strong> to keep forever.
+    Purge permanently deletes rows older than the retention window (cannot be undone).
+  </p>
+  <form method="post" class="row row-end">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="tab" value="export">
+    <input type="hidden" name="action" value="retention">
+    <label>Retention (days)
+      <input type="number" name="audit_retention_days" min="0" max="36500"
+             value="{{ retention_days }}" required>
+    </label>
+    <button type="submit">Save retention</button>
+  </form>
+  <form method="post" class="form-actions"
+        onsubmit="return confirm('Permanently delete audit rows older than the configured retention? This cannot be undone.')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="tab" value="export">
+    <input type="hidden" name="action" value="purge">
+    <button type="submit" class="danger">Purge old audit rows now</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
