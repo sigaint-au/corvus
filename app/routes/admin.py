@@ -54,6 +54,17 @@ def register(app):
                     else "Only global admins can create teams",
                     "ok",
                 )
+            elif action == "totp_enforce":
+                enabled = (
+                    "true" if request.form.get("totp_enforce_global_admins") else "false"
+                )
+                settings_svc.set_setting("totp_enforce_global_admins", enabled)
+                flash(
+                    "Global admins must use two-factor authentication"
+                    if enabled == "true"
+                    else "2FA is optional for global admins (users may still enable it)",
+                    "ok",
+                )
             elif action == "ldap":
                 enabled = "true" if request.form.get("ldap_enabled") else "false"
                 ldap_url = (request.form.get("ldap_url") or "").strip()
@@ -212,6 +223,7 @@ def register(app):
             tab_for = {
                 "registration": "general",
                 "team_creation": "general",
+                "totp_enforce": "general",
                 "classification": "banner",
                 "promote": "admins",
                 "demote": "admins",

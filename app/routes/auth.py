@@ -15,6 +15,7 @@ import mailer
 import passwords
 import pins
 import settings_svc
+import totp_svc
 import user_sessions
 
 
@@ -38,9 +39,26 @@ def _maybe_promote_bootstrap_admin(email: str, user_id) -> bool:
         return authz.is_global_admin(str(user_id))
 
 
+def _preserve_auth_extras():
+    """Keep invite + CSRF across session regeneration."""
+    return {
+        "invite_token": session.get("invite_token"),
+        "_csrf": session.get("_csrf"),
+    }
+
+
+def _restore_auth_extras(extras: dict):
+    if extras.get("invite_token"):
+        session["invite_token"] = extras["invite_token"]
+    if extras.get("_csrf"):
+        session["_csrf"] = extras["_csrf"]
+
+
 def _establish_session(user_id, email, name, is_global_admin: bool):
     """Clear session then set auth values (session regeneration)."""
+    extras = _preserve_auth_extras()
     session.clear()
+    _restore_auth_extras(extras)
     session["user_id"] = str(user_id)
     session["email"] = email
     session["name"] = name or ""
@@ -49,6 +67,54 @@ def _establish_session(user_id, email, name, is_global_admin: bool):
     sid = user_sessions.create_session(user_id)
     if sid:
         session["sid"] = sid
+
+
+def _begin_2fa_challenge(user_id, email, name, is_global_admin: bool):
+    extras = _preserve_auth_extras()
+    session.clear()
+    _restore_auth_extras(extras)
+    session["pending_2fa_uid"] = str(user_id)
+    session["pending_2fa_email"] = email
+    session["pending_2fa_name"] = name or ""
+    session["pending_2fa_admin"] = bool(is_global_admin)
+
+
+def _finish_login_redirect():
+    pending_invite = session.get("invite_token")
+    if pending_invite:
+        return redirect(url_for("redeem_invite", token=pending_invite))
+    return redirect(url_for("teams"))
+
+
+def _post_password_login(user):
+    """
+    After password/LDAP success: 2FA challenge, forced enroll, or full session.
+    Returns a Flask response.
+    """
+    _maybe_promote_bootstrap_admin(user["email"], user["id"])
+    is_admin = authz.is_global_admin(str(user["id"]))
+    step = totp_svc.needs_challenge(str(user["id"]), is_admin)
+    if step == "verify":
+        _begin_2fa_challenge(user["id"], user["email"], user.get("name") or "", is_admin)
+        return redirect(url_for("login_2fa"))
+    if step == "enroll":
+        _establish_session(user["id"], user["email"], user.get("name") or "", is_admin)
+        session["totp_setup_required"] = True
+        flash("Global admins must enable two-factor authentication.", "error")
+        return redirect(url_for("totp_setup"))
+    _establish_session(user["id"], user["email"], user.get("name") or "", is_admin)
+    if mailer.login_alerts_enabled():
+        try:
+            ua, ip = user_sessions.client_meta()
+            when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            ok, err = mailer.send_login_alert(
+                user["email"], ip=ip, user_agent=ua, when=when
+            )
+            if not ok:
+                log.warning("login alert email failed for %s: %s", user["email"], err)
+        except Exception:
+            log.exception("login alert email failed")
+    return _finish_login_redirect()
 
 
 def register(app):
@@ -121,30 +187,54 @@ def register(app):
                     setup_notice=notice,
                 ), 401
             lockout.clear_failures(email)
-            _maybe_promote_bootstrap_admin(user["email"], user["id"])
-            is_admin = authz.is_global_admin(str(user["id"]))
-            pending_invite = session.get("invite_token")
-            _establish_session(user["id"], user["email"], user["name"], is_admin)
-            if mailer.login_alerts_enabled():
-                try:
-                    ua, ip = user_sessions.client_meta()
-                    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                    ok, err = mailer.send_login_alert(
-                        user["email"], ip=ip, user_agent=ua, when=when
-                    )
-                    if not ok:
-                        log.warning("login alert email failed for %s: %s", user["email"], err)
-                except Exception:
-                    log.exception("login alert email failed")
-            if pending_invite:
-                return redirect(url_for("redeem_invite", token=pending_invite))
-            return redirect(url_for("teams"))
+            return _post_password_login(user)
         return render_template(
             "login.html",
             ldap_enabled=ldap_on,
             registration_enabled=settings_svc.registration_enabled(),
             setup_notice=notice,
         )
+
+
+    @app.route("/login/2fa", methods=["GET", "POST"])
+    def login_2fa():
+        uid = session.get("pending_2fa_uid")
+        if not uid:
+            return redirect(url_for("login"))
+        email = session.get("pending_2fa_email") or ""
+        if request.method == "POST":
+            if lockout.is_locked(email or uid):
+                flash("Too many failed attempts. Try again in a few minutes.", "error")
+                return render_template("login_2fa.html", email=email), 429
+            code = request.form.get("code") or ""
+            ok, method = totp_svc.verify_user_code(uid, code)
+            if not ok:
+                lockout.record_failure(email or uid)
+                flash("Invalid authentication code", "error")
+                return render_template("login_2fa.html", email=email), 401
+            lockout.clear_failures(email or uid)
+            name = session.get("pending_2fa_name") or ""
+            is_admin = bool(session.get("pending_2fa_admin"))
+            # Drop pending keys via full establish
+            _establish_session(uid, email, name, is_admin)
+            if method == "recovery":
+                left = totp_svc.recovery_codes_remaining(uid)
+                flash(
+                    f"Signed in with a recovery code. {left} recovery code(s) remaining. "
+                    "Consider regenerating codes on your profile.",
+                    "ok",
+                )
+            if mailer.login_alerts_enabled():
+                try:
+                    ua, ip = user_sessions.client_meta()
+                    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                    mailer.send_login_alert(
+                        email, ip=ip, user_agent=ua, when=when
+                    )
+                except Exception:
+                    log.exception("login alert email failed")
+            return _finish_login_redirect()
+        return render_template("login_2fa.html", email=email)
 
 
     @app.route("/register", methods=["GET", "POST"])
@@ -175,11 +265,14 @@ def register(app):
                 return render_template("register.html", setup_notice=notice), 400
             _maybe_promote_bootstrap_admin(email.lower(), uid)
             is_admin = authz.is_global_admin(str(uid))
-            pending_invite = session.get("invite_token")
+            # New accounts: only force enroll if bootstrap made them global admin
+            if is_admin and totp_svc.enforce_global_admins():
+                _establish_session(uid, email.lower(), name, is_admin)
+                session["totp_setup_required"] = True
+                flash("Global admins must enable two-factor authentication.", "error")
+                return redirect(url_for("totp_setup"))
             _establish_session(uid, email.lower(), name, is_admin)
-            if pending_invite:
-                return redirect(url_for("redeem_invite", token=pending_invite))
-            return redirect(url_for("teams"))
+            return _finish_login_redirect()
         return render_template("register.html", setup_notice=notice)
 
 
@@ -190,6 +283,17 @@ def register(app):
         if uid and sid:
             user_sessions.revoke_session(sid, uid)
         session.clear()
+        return redirect(url_for("login"))
+
+    # Allow GET cancel from 2FA page without CSRF form complexity when needed
+    @app.get("/logout")
+    def logout_get():
+        if session.get("pending_2fa_uid") or session.get("user_id"):
+            uid = session.get("user_id")
+            sid = session.get("sid")
+            if uid and sid:
+                user_sessions.revoke_session(sid, uid)
+            session.clear()
         return redirect(url_for("login"))
 
 
@@ -316,6 +420,114 @@ def register(app):
         return redirect(url_for("profile"))
 
 
+    @app.get("/profile/2fa")
+    @authz.login_required
+    def totp_setup():
+        """Start or continue TOTP enrollment."""
+        uid = session["user_id"]
+        if totp_svc.is_enabled(uid) and not session.get("totp_setup_required"):
+            flash("Two-factor authentication is already enabled", "ok")
+            return redirect(url_for("profile"))
+        secret = session.get("pending_totp_secret")
+        if not secret:
+            secret = totp_svc.new_secret()
+            session["pending_totp_secret"] = secret
+        email = session.get("email") or ""
+        uri = totp_svc.provisioning_uri(secret, email)
+        try:
+            qr = totp_svc.qr_data_uri(uri)
+        except Exception:
+            log.exception("QR generation failed")
+            qr = None
+        return render_template(
+            "totp_setup.html",
+            secret=secret,
+            qr_data_uri=qr,
+            provisioning_uri=uri,
+            required=bool(session.get("totp_setup_required")),
+        )
+
+
+    @app.post("/profile/2fa/confirm")
+    @authz.login_required
+    def totp_setup_confirm():
+        uid = session["user_id"]
+        secret = session.get("pending_totp_secret")
+        code = request.form.get("code") or ""
+        if not secret:
+            flash("Setup session expired — start again", "error")
+            return redirect(url_for("totp_setup"))
+        if not totp_svc.verify_code(secret, code):
+            flash("Invalid code — check your authenticator and try again", "error")
+            return redirect(url_for("totp_setup"))
+        try:
+            recovery = totp_svc.enable(uid, secret)
+        except Exception as e:
+            log.exception("totp enable failed")
+            flash(str(e), "error")
+            return redirect(url_for("totp_setup"))
+        session.pop("pending_totp_secret", None)
+        session.pop("totp_setup_required", None)
+        session["new_recovery_codes"] = recovery
+        flash("Two-factor authentication enabled", "ok")
+        return redirect(url_for("totp_recovery_codes"))
+
+
+    @app.get("/profile/2fa/recovery-codes")
+    @authz.login_required
+    def totp_recovery_codes():
+        codes = session.pop("new_recovery_codes", None)
+        if not codes:
+            return redirect(url_for("profile"))
+        return render_template("totp_recovery.html", codes=codes)
+
+
+    @app.post("/profile/2fa/disable")
+    @authz.login_required
+    def totp_disable():
+        uid = session["user_id"]
+        if session.get("totp_setup_required"):
+            flash("You must finish setting up two-factor authentication", "error")
+            return redirect(url_for("totp_setup"))
+        if not totp_svc.is_enabled(uid):
+            flash("Two-factor authentication is not enabled", "error")
+            return redirect(url_for("profile"))
+        # When enforce is on, global admins cannot disable
+        if session.get("is_global_admin") and totp_svc.enforce_global_admins():
+            flash(
+                "Global admins cannot disable two-factor authentication while it is enforced",
+                "error",
+            )
+            return redirect(url_for("profile"))
+        code = request.form.get("code") or ""
+        ok, _method = totp_svc.verify_user_code(uid, code)
+        if not ok:
+            flash("Invalid authentication or recovery code", "error")
+            return redirect(url_for("profile"))
+        totp_svc.disable(uid)
+        session.pop("pending_totp_secret", None)
+        flash("Two-factor authentication disabled", "ok")
+        return redirect(url_for("profile"))
+
+
+    @app.post("/profile/2fa/recovery-codes/regenerate")
+    @authz.login_required
+    def totp_regenerate_recovery():
+        uid = session["user_id"]
+        if not totp_svc.is_enabled(uid):
+            flash("Enable two-factor authentication first", "error")
+            return redirect(url_for("profile"))
+        code = request.form.get("code") or ""
+        ok, _method = totp_svc.verify_user_code(uid, code)
+        if not ok:
+            flash("Invalid authentication or recovery code", "error")
+            return redirect(url_for("profile"))
+        codes = totp_svc.regenerate_recovery_codes(uid)
+        session["new_recovery_codes"] = codes
+        flash("New recovery codes generated — save them now", "ok")
+        return redirect(url_for("totp_recovery_codes"))
+
+
     @app.get("/profile")
     @authz.login_required
     def profile():
@@ -326,7 +538,8 @@ def register(app):
             with db.connect_admin() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, email, name, is_global_admin, auth_source, created_at
+                    SELECT id, email, name, is_global_admin, auth_source, created_at,
+                           totp_enabled_at
                     FROM private.users
                     WHERE id = %s::uuid
                     """,
@@ -338,6 +551,12 @@ def register(app):
         if not user:
             flash("Could not load your profile", "error")
             return redirect(url_for("projects_list"))
+
+        totp_on = bool(user.get("totp_enabled_at"))
+        recovery_left = totp_svc.recovery_codes_remaining(uid) if totp_on else 0
+        totp_enforced = bool(
+            user.get("is_global_admin") and totp_svc.enforce_global_admins()
+        )
 
         active_sessions = user_sessions.list_sessions(uid)
         current_sid = session.get("sid")
@@ -432,6 +651,9 @@ def register(app):
             recent=recent,
             active_sessions=active_sessions,
             current_sid=current_sid,
+            totp_enabled=totp_on,
+            totp_recovery_remaining=recovery_left,
+            totp_enforced_for_user=totp_enforced,
             stats={
                 "teams": len(teams),
                 "projects": len(projects),

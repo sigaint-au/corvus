@@ -63,6 +63,24 @@
   </form>
 </section>
 
+<section>
+  <h2>Two-factor authentication</h2>
+  <p class="muted">
+    Any user can enable TOTP on their profile. When enforced below, global admins
+    must enroll at next sign-in and cannot disable 2FA.
+  </p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="totp_enforce">
+    <label>
+      <input type="checkbox" name="totp_enforce_global_admins" value="1"
+             {% if settings.totp_enforce_global_admins in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Require two-factor authentication for global admins
+    </label>
+    <p style="margin-top:1rem;"><button type="submit">Save 2FA policy</button></p>
+  </form>
+</section>
+
 {% elif active_tab == 'banner' %}
 <section>
   <h2>Classification banner</h2>

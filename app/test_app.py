@@ -2689,6 +2689,142 @@ class TestSettings(unittest.TestCase):
         send.assert_called_once_with("admin@ex.com")
 
 
+class TestTotp(unittest.TestCase):
+    def test_verify_code_window(self):
+        import totp_svc
+        import pyotp
+
+        secret = pyotp.random_base32()
+        code = pyotp.TOTP(secret).now()
+        self.assertTrue(totp_svc.verify_code(secret, code))
+        self.assertFalse(totp_svc.verify_code(secret, "000000"))
+        self.assertFalse(totp_svc.verify_code(secret, "abcdef"))
+
+    def test_recovery_code_hash_roundtrip(self):
+        import totp_svc
+
+        codes = totp_svc.generate_recovery_codes(3)
+        self.assertEqual(len(codes), 3)
+        self.assertRegex(codes[0], r"^[a-f0-9]{4}-[a-f0-9]{4}$")
+        h = totp_svc.hash_recovery_code(codes[0])
+        self.assertEqual(h, totp_svc.hash_recovery_code(codes[0].upper().replace("-", "")))
+
+    def test_needs_challenge(self):
+        import totp_svc
+
+        uid = str(uuid4())
+        with patch.object(totp_svc, "is_enabled", return_value=True):
+            self.assertEqual(totp_svc.needs_challenge(uid, False), "verify")
+        with patch.object(totp_svc, "is_enabled", return_value=False), patch.object(
+            totp_svc, "enforce_global_admins", return_value=True
+        ):
+            self.assertEqual(totp_svc.needs_challenge(uid, True), "enroll")
+            self.assertIsNone(totp_svc.needs_challenge(uid, False))
+        with patch.object(totp_svc, "is_enabled", return_value=False), patch.object(
+            totp_svc, "enforce_global_admins", return_value=False
+        ):
+            self.assertIsNone(totp_svc.needs_challenge(uid, True))
+
+    def test_login_redirects_to_2fa(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = uuid4()
+        conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ), patch("lockout.is_locked", return_value=False), patch(
+            "lockout.clear_failures"
+        ), patch.object(authz, "is_global_admin", return_value=False), patch(
+            "totp_svc.needs_challenge", return_value="verify"
+        ):
+            r = client.post(
+                "/login",
+                data={"email": "a@b.c", "password": "secret12"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/login/2fa", r.location)
+        with client.session_transaction() as s:
+            self.assertEqual(s.get("pending_2fa_uid"), str(uid))
+            self.assertNotIn("user_id", s)
+
+    def test_login_2fa_ok(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = str(uuid4())
+        with client.session_transaction() as s:
+            s["pending_2fa_uid"] = uid
+            s["pending_2fa_email"] = "a@b.c"
+            s["pending_2fa_name"] = "A"
+            s["pending_2fa_admin"] = False
+        with patch("totp_svc.verify_user_code", return_value=(True, "totp")), patch(
+            "lockout.is_locked", return_value=False
+        ), patch("lockout.clear_failures"), patch(
+            "user_sessions.create_session", return_value=None
+        ), patch("mailer.login_alerts_enabled", return_value=False):
+            r = client.post(
+                "/login/2fa",
+                data={"code": "123456"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/teams", r.location)
+        with client.session_transaction() as s:
+            self.assertEqual(s.get("user_id"), uid)
+            self.assertNotIn("pending_2fa_uid", s)
+
+    def test_login_enroll_admin(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = uuid4()
+        conn, _ = _conn(fetchone={"id": uid, "email": "admin@b.c", "name": "A"})
+        with patch.object(db, "connect", return_value=conn), patch.object(
+            ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}
+        ), patch("lockout.is_locked", return_value=False), patch(
+            "lockout.clear_failures"
+        ), patch.object(authz, "is_global_admin", return_value=True), patch(
+            "totp_svc.needs_challenge", return_value="enroll"
+        ), patch("user_sessions.create_session", return_value=None):
+            r = client.post(
+                "/login",
+                data={"email": "admin@b.c", "password": "secret12"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("/profile/2fa", r.location)
+        with client.session_transaction() as s:
+            self.assertEqual(s.get("user_id"), str(uid))
+            self.assertTrue(s.get("totp_setup_required"))
+
+    def test_save_totp_enforce_setting(self):
+        store.app.config["TESTING"] = True
+        client = store.app.test_client()
+        uid = str(uuid4())
+        with client.session_transaction() as s:
+            s["user_id"] = uid
+            s["email"] = "admin@ex.com"
+            s["is_global_admin"] = True
+        sets = []
+        with patch.object(authz, "is_global_admin", return_value=True), patch.object(
+            settings_svc, "set_setting", side_effect=lambda k, v: sets.append((k, v))
+        ), patch.object(db, "as_user", return_value=_conn(fetchall=[])[0]):
+            r = client.post(
+                "/settings",
+                data={"action": "totp_enforce", "totp_enforce_global_admins": "1"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(dict(sets).get("totp_enforce_global_admins"), "true")
+
+    def test_schema_has_totp(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("totp_secret_enc", init)
+        self.assertIn("totp_recovery_codes", init)
+        self.assertIn("totp_enforce_global_admins", init)
+
+
 class TestMailer(unittest.TestCase):
     def test_smtp_configured_requires_host_and_from(self):
         import mailer

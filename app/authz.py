@@ -8,9 +8,33 @@ from flask import abort, current_app, flash, redirect, request, session, url_for
 import db
 
 
+# Endpoints allowed while pending 2FA challenge or forced TOTP enrollment
+_PENDING_2FA_OK = frozenset(
+    {
+        "login",
+        "login_2fa",
+        "logout",
+        "logout_get",
+        "forgot_password",
+        "reset_password",
+    }
+)
+_TOTP_SETUP_OK = frozenset(
+    {
+        "totp_setup",
+        "totp_setup_confirm",
+        "totp_recovery_codes",
+        "logout",
+        "logout_get",
+    }
+)
+
+
 def login_required(f):
     @wraps(f)
     def wrapped(*a, **kw):
+        if session.get("pending_2fa_uid"):
+            return redirect(url_for("login_2fa"))
         if not session.get("user_id"):
             return redirect(url_for("login"))
         return f(*a, **kw)
@@ -21,22 +45,41 @@ def login_required(f):
 def validate_registered_session():
     """
     Ensure the browser session is still registered server-side (not revoked).
+    Also gates mid-login 2FA and forced TOTP enrollment.
     Skipped in unit tests (no sid / no DB session rows).
     """
     from flask import current_app
 
     if current_app.config.get("TESTING"):
         return None
+
+    # Mid-login 2FA: no full session yet
+    if session.get("pending_2fa_uid"):
+        if request.endpoint in _PENDING_2FA_OK or request.endpoint is None:
+            return None
+        return redirect(url_for("login_2fa"))
+
     uid = session.get("user_id")
     if not uid:
         return None
-    # Exempt static-ish auth endpoints that clear session themselves
+
+    # Forced enrollment for global admins
+    if session.get("totp_setup_required"):
+        if request.endpoint in _TOTP_SETUP_OK or (
+            request.endpoint and str(request.endpoint).startswith("totp_")
+        ):
+            return None
+        flash("Set up two-factor authentication to continue.", "error")
+        return redirect(url_for("totp_setup"))
+
+    # Exempt auth endpoints that clear session themselves
     if request.endpoint in (
         "login",
         "logout",
         "register",
         "forgot_password",
         "reset_password",
+        "login_2fa",
     ):
         return None
     sid = session.get("sid")

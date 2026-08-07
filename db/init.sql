@@ -32,8 +32,22 @@ CREATE TABLE private.users (
   is_global_admin boolean NOT NULL DEFAULT false,
   auth_source text NOT NULL DEFAULT 'local'
     CHECK (auth_source IN ('local', 'ldap')),
+  totp_secret_enc text,          -- Fernet-encrypted TOTP secret when 2FA enabled
+  totp_enabled_at timestamptz,   -- null = 2FA off
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- One-time recovery codes (hashed) for TOTP lockout bypass
+CREATE TABLE private.totp_recovery_codes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  code_hash text NOT NULL,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX totp_recovery_codes_user_idx
+  ON private.totp_recovery_codes (user_id)
+  WHERE used_at IS NULL;
 
 -- Server-wide settings (classification banner, LDAP, etc.)
 CREATE TABLE private.server_settings (
@@ -68,7 +82,8 @@ INSERT INTO private.server_settings (key, value) VALUES
   ('smtp_password', ''),
   ('smtp_from_email', ''),
   ('smtp_from_name', 'Sigaint Secret Server'),
-  ('smtp_login_alerts', 'false')
+  ('smtp_login_alerts', 'false'),
+  ('totp_enforce_global_admins', 'false')
 ON CONFLICT (key) DO NOTHING;
 
 -- LDAP group → server role (global admin only for now)

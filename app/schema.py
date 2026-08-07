@@ -59,7 +59,8 @@ def ensure_schema():
           ('smtp_password', ''),
           ('smtp_from_email', ''),
           ('smtp_from_name', 'Sigaint Secret Server'),
-          ('smtp_login_alerts', 'false')
+          ('smtp_login_alerts', 'false'),
+          ('totp_enforce_global_admins', 'false')
         ON CONFLICT (key) DO NOTHING
         """,
         """
@@ -1148,6 +1149,28 @@ def ensure_schema():
         """
         CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx
           ON private.password_reset_tokens (user_id)
+          WHERE used_at IS NULL
+        """,
+        """
+        ALTER TABLE private.users
+          ADD COLUMN IF NOT EXISTS totp_secret_enc text
+        """,
+        """
+        ALTER TABLE private.users
+          ADD COLUMN IF NOT EXISTS totp_enabled_at timestamptz
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS private.totp_recovery_codes (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+          code_hash text NOT NULL,
+          used_at timestamptz,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS totp_recovery_codes_user_idx
+          ON private.totp_recovery_codes (user_id)
           WHERE used_at IS NULL
         """,
     ]

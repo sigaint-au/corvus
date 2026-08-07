@@ -73,6 +73,7 @@ DEFAULT_SETTINGS = {
     "smtp_from_email": "",
     "smtp_from_name": APP_NAME,
     "smtp_login_alerts": "false",
+    "totp_enforce_global_admins": "false",
 }
 TEAM_ROLES = ("owner", "admin", "member", "viewer")
 ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}

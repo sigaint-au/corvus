@@ -42,6 +42,52 @@
   </dl>
 </section>
 
+<section>
+  <h2>Two-factor authentication (TOTP)</h2>
+  {% if totp_enabled %}
+  <p>
+    <span class="role-badge">Enabled</span>
+    {% if user.totp_enabled_at %}
+    <span class="muted">since {{ user.totp_enabled_at }}</span>
+    {% endif %}
+  </p>
+  <p class="muted">
+    Recovery codes remaining: <strong>{{ totp_recovery_remaining }}</strong>
+    {% if totp_enforced_for_user %}
+    — required for global admins on this server.
+    {% endif %}
+  </p>
+  <form method="post" action="{{ url_for('totp_regenerate_recovery') }}" class="row"
+        style="margin-top:1rem;">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label style="flex:2;">Confirm with authenticator or recovery code
+      <input type="text" name="code" required autocomplete="one-time-code"
+             placeholder="123456 or xxxx-xxxx">
+    </label>
+    <button type="submit">Regenerate recovery codes</button>
+  </form>
+  {% if not totp_enforced_for_user %}
+  <form method="post" action="{{ url_for('totp_disable') }}" style="margin-top:1.5rem;"
+        onsubmit="return confirm('Disable two-factor authentication?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Disable 2FA — confirm with code
+      <input type="text" name="code" required autocomplete="one-time-code"
+             placeholder="123456 or xxxx-xxxx">
+    </label>
+    <p style="margin-top:1rem;"><button type="submit" class="danger">Disable 2FA</button></p>
+  </form>
+  {% endif %}
+  {% else %}
+  <p class="muted">
+    Add a second step at sign-in with an authenticator app.
+    {% if totp_enforced_for_user %}
+    <strong>Required for global admins on this server.</strong>
+    {% endif %}
+  </p>
+  <p><a href="{{ url_for('totp_setup') }}"><button type="button">Set up 2FA</button></a></p>
+  {% endif %}
+</section>
+
 {% if user.auth_source == 'local' %}
 <section>
   <h2>Change password</h2>
