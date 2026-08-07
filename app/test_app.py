@@ -1604,9 +1604,12 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(b"super-secret", r.data)
         self.assertIn(b"Save", r.data)
         self.assertIn(b"/value", r.data)
-        self.assertIn(b"expires_at", r.data)
+        self.assertIn(b"Copy", r.data)
+        self.assertIn(b"Open full view", r.data)
         self.assertIn(b">Hide</a>", r.data)
         self.assertIn(b"/hide", r.data)
+        # Expiry is edited on the full view, not the compact inline panel
+        self.assertNotIn(b'name="expires_at"', r.data)
 
     def test_hide_secret(self):
         sid = uuid4()

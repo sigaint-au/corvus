@@ -388,38 +388,28 @@
       font-size: .875rem;
     }
     .reveal-actions a.link,
-    .reveal-actions a.copy-btn {
+    .reveal-actions a.copy-btn,
+    .reveal-actions button.link,
+    .reveal-actions .save-link {
       color: inherit;
       text-decoration: none;
       background: none;
       border: none;
       padding: 0;
+      margin: 0;
       font: inherit;
       font-size: .875rem;
+      font-weight: 500;
       cursor: pointer;
+      line-height: inherit;
     }
     .reveal-actions a.link:hover,
-    .reveal-actions a.copy-btn:hover {
+    .reveal-actions a.copy-btn:hover,
+    .reveal-actions button.link:hover,
+    .reveal-actions .save-link:hover {
       text-decoration: underline;
     }
-    /* Single- and multi-line share the same body + actions stack */
-    .reveal-body .input-with-btn {
-      max-width: 16rem;
-      width: 100%;
-    }
-    .reveal-wrap.reveal-multiline .reveal-body .input-with-btn,
-    .reveal-wrap.reveal-structured .reveal-body .input-with-btn {
-      max-width: none;
-    }
-    .reveal-body .reveal-actions {
-      margin-top: .05rem;
-    }
-    .reveal-meta .field-hint {
-      display: block;
-      margin-top: .2rem;
-      text-transform: none;
-      letter-spacing: normal;
-    }
+    .reveal-wrap.reveal-single,
     .reveal-wrap.reveal-multiline,
     .reveal-wrap.reveal-structured {
       flex-direction: column;
@@ -431,8 +421,33 @@
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
       gap: .35rem .65rem;
+      width: 100%;
+    }
+    .reveal-head:has(.kind-badge) {
+      justify-content: space-between;
+    }
+    .reveal-body .input-with-btn {
+      max-width: none;
+      width: 100%;
+    }
+    /* Single-line field fills the reveal body like multi-line / structured pre */
+    .reveal-body input.secret-value-full,
+    .reveal-wrap .reveal-body input.secret-value.secret-value-full {
+      display: block;
+      width: 100%;
+      max-width: none;
+      box-sizing: border-box;
+      white-space: nowrap;
+      overflow-x: auto;
+      text-overflow: clip;
+    }
+    form.reveal-edit .reveal-body input.secret-value-full {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--muted);
+      padding: .45rem .55rem;
     }
     .reveal-body {
       display: flex;
@@ -1702,12 +1717,7 @@
       border: none;
       background: transparent;
     }
-    form.reveal-edit .save-btn {
-      width: auto;
-      padding: 0 .55rem;
-      font-size: .75rem;
-      font-weight: 600;
-    }
+
     .secret-saved {
       display: inline-block;
       margin-left: .4rem;

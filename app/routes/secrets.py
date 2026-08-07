@@ -394,7 +394,7 @@ def register(app):
             secret_id=secret_id,
             project_id=project_id,
             kind=kind,
-            view_url=view_url if structured else None,
+            view_url=view_url,
             editable=not structured,
             can_write=can_write and not structured,
             is_pinned=is_fav,
