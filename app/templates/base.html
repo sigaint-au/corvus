@@ -795,9 +795,149 @@
       flex-wrap: wrap;
       align-items: center;
       justify-content: flex-end;
-      gap: .5rem;
+      gap: .4rem;
+      margin-left: auto;
     }
     .section-tools .toolbar { margin: 0; }
+    .section-head-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .5rem .65rem;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .section-head-main h1,
+    .section-head-main h2 {
+      margin: 0;
+    }
+    .section-tools .toolbar-link {
+      font-size: .75rem;
+      font-weight: 500;
+      color: var(--muted-foreground);
+      text-decoration: none;
+      white-space: nowrap;
+      padding: .28rem .15rem;
+      line-height: 1.2;
+    }
+    .section-tools .toolbar-link:hover {
+      color: var(--foreground);
+      text-decoration: underline;
+    }
+    a.btn-toolbar,
+    button.btn-toolbar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .75rem;
+      font-weight: 600;
+      line-height: 1.2;
+      padding: .32rem .65rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--background);
+      color: var(--foreground);
+      text-decoration: none;
+      white-space: nowrap;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    a.btn-toolbar:hover,
+    button.btn-toolbar:hover {
+      background: var(--muted);
+      text-decoration: none;
+    }
+    a.btn-toolbar:focus-visible,
+    button.btn-toolbar:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: 1px;
+    }
+    .kind-fields { margin-top: .75rem; }
+    .kind-fields[hidden] { display: none !important; }
+    .mono-area {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .85rem;
+      width: 100%;
+    }
+    .kv-rows {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+    .kv-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: .5rem .65rem;
+      padding: .35rem 0;
+      border: none;
+      background: transparent;
+    }
+    .kv-row label {
+      margin: 0;
+      flex: 1 1 8rem;
+      min-width: 7rem;
+    }
+    .kv-row .kv-key { flex: 0 1 12rem; }
+    .kv-row .kv-val { flex: 1 1 14rem; }
+    .kv-row .kv-remove {
+      flex: 0 0 auto;
+      margin-bottom: .35rem;
+      background: none;
+      border: none;
+      font: inherit;
+      font-size: .8rem;
+      cursor: pointer;
+      padding: 0;
+    }
+    .kind-badge {
+      display: inline-block;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      padding: .2rem .45rem;
+      border-radius: 4px;
+      background: var(--muted);
+      color: var(--muted-foreground);
+    }
+    .kind-badge.kind-kv { color: var(--success); }
+    .kind-badge.kind-certificate,
+    .kind-badge.kind-ssh { color: var(--warning); }
+    .kind-badge.kind-database { color: var(--foreground); }
+    .secret-view .kv-view-table td { vertical-align: middle; }
+    .secret-view .input-with-btn { max-width: 100%; }
+    .secret-view .secret-value { max-width: none; width: 100%; }
+    .pem-card { margin: 0 0 1rem; }
+    .pem-block {
+      margin: 0;
+      padding: .75rem .85rem;
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .8rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-x: auto;
+      max-height: 22rem;
+      overflow-y: auto;
+    }
+    .db-view-dl { margin-bottom: 1rem; }
+    .secret-view-form .kv-val .input-with-btn { width: 100%; }
+    .secret-view-form textarea.mono-area { margin-top: .25rem; }
+    .secret-view-form .secret-meta-section,
+    .secret-view-form .secret-value-section {
+      margin: 1rem 0 0;
+    }
+    .secret-view-form .secret-meta-section h2,
+    .secret-view-form .secret-value-section h2 {
+      margin: 0 0 .65rem;
+      font-size: 1rem;
+    }
+    .secret-view-form .secret-meta-section .row {
+      margin: 0;
+    }
     .bulk-toolbar {
       display: flex;
       flex-wrap: nowrap;
@@ -1438,8 +1578,15 @@
       if (!btn) return;
       e.preventDefault();
       var id = btn.getAttribute('data-copy-target');
-      var inp = id ? document.getElementById(id) : null;
-      var text = btn.getAttribute('data-copy-text') || (inp ? inp.value : '');
+      var el = id ? document.getElementById(id) : null;
+      var text = btn.getAttribute('data-copy-text') || '';
+      if (!text && el) {
+        if ('value' in el && el.tagName !== 'PRE' && el.tagName !== 'DIV') {
+          text = el.value;
+        } else {
+          text = el.textContent || '';
+        }
+      }
       if (!text) return;
       var secs = parseInt(btn.getAttribute('data-clear-seconds') || '30', 10);
       function done() {
@@ -1459,10 +1606,10 @@
       }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done).catch(function () {
-          if (inp) { inp.select(); document.execCommand('copy'); done(); }
+          if (el && el.select) { el.select(); document.execCommand('copy'); done(); }
         });
-      } else if (inp) {
-        inp.select();
+      } else if (el && el.select) {
+        el.select();
         document.execCommand('copy');
         done();
       }
@@ -1562,7 +1709,8 @@
         var btn = e.target && e.target.closest && e.target.closest('#bulk-apply');
         if (!btn) return;
         e.preventDefault();
-        var form = document.getElementById('bulk-secrets-form');
+        var form = document.getElementById('bulk-secrets-form')
+          || document.getElementById('bulk-trash');
         var action = document.getElementById('bulk-action');
         if (!form || !action || !action.value) return;
         if (!selected().length) {
@@ -1574,7 +1722,13 @@
         var confirmMsg = opt && opt.getAttribute('data-confirm');
         if (!url) return;
         if (confirmMsg && !window.confirm(confirmMsg)) return;
-        var field = document.getElementById('bulk-action-field');
+        // Extra confirm for permanent delete
+        if (action.value === 'purge'
+            && !window.confirm('Delete forever? This cannot be undone.')) {
+          return;
+        }
+        var field = form.querySelector('#bulk-action-field')
+          || document.getElementById('bulk-action-field');
         if (field) field.value = action.value;
         form.setAttribute('action', url);
         form.method = 'post';

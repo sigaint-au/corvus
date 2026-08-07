@@ -87,7 +87,12 @@
 {% endif %}
 <section>
   <div class="section-head">
-    <h2>Secrets</h2>
+    <div class="section-head-main">
+      <h2>Secrets</h2>
+      {% if can_write %}
+      <a class="btn-toolbar" href="{{ url_for('secret_new', project_id=project.id) }}">Create secret</a>
+      {% endif %}
+    </div>
     <div class="section-tools">
       <div class="bulk-toolbar" id="bulk-toolbar" hidden>
         <label class="bulk-select" title="Select all on this page">
@@ -124,10 +129,6 @@
     </div>
   </div>
   {% if can_write %}
-  <p class="muted" style="margin-bottom:.5rem;">
-    <a href="{{ url_for('secret_new', project_id=project.id) }}">Advanced secret…</a>
-    — database URL, certificate, SSH key, or multi key/value templates.
-  </p>
   <form method="post"
         action="{{ url_for('create_secret', project_id=project.id, page=secrets_pager.page if secrets_pager else 1, q=search_q or none) }}"
         hx-post="{{ url_for('create_secret', project_id=project.id) }}"

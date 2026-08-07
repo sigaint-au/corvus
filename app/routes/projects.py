@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from flask import (
     Response,
     flash,
+    make_response,
     redirect,
     render_template,
     request,
@@ -33,6 +34,139 @@ _SOON_DAYS = 14
 _ENV_LINE = re.compile(
     r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$"
 )
+_KV_LINE = re.compile(
+    r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*(.*)$"
+)
+_PEM_BLOCK = re.compile(
+    r"(-----BEGIN [A-Z0-9 ]+-----.*?-----END [A-Z0-9 ]+-----)",
+    re.DOTALL,
+)
+_DB_URL = re.compile(
+    r"^(?P<scheme>postgresql|postgres|mysql|mongodb|redis|amqp|http|https)://",
+    re.I,
+)
+# Kinds that open a dedicated view window instead of inline reveal
+_STRUCTURED_VIEW_KINDS = frozenset({"kv", "certificate", "ssh", "database"})
+
+
+def detect_secret_kind(value: str, note: str = "") -> str:
+    """Infer secret shape from note tag and/or value content."""
+    note_l = (note or "").lower()
+    for kind in ("certificate", "kv", "ssh", "database", "plain"):
+        if f"type:{kind}" in note_l:
+            return kind
+    v = value or ""
+    if "BEGIN CERTIFICATE" in v:
+        return "certificate"
+    if re.search(
+        r"BEGIN (?:OPENSSH |RSA |EC |DSA |ED25519 )?PRIVATE KEY",
+        v,
+    ):
+        return "ssh"
+    stripped = v.strip()
+    if stripped and _DB_URL.match(stripped) and "\n" not in stripped:
+        return "database"
+    lines = [
+        ln.strip()
+        for ln in v.splitlines()
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
+    if len(lines) >= 2 and sum(1 for ln in lines if _KV_LINE.match(ln)) >= 2:
+        return "kv"
+    if len(lines) == 1 and _KV_LINE.match(lines[0]) and "\n" in v:
+        return "kv"
+    return "plain"
+
+
+def parse_kv_lines(value: str) -> list[tuple[str, str]]:
+    """Parse KEY=value lines into pairs (keeps empty values)."""
+    pairs: list[tuple[str, str]] = []
+    for line in (value or "").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        m = _KV_LINE.match(raw)
+        if m:
+            pairs.append((m.group(1), m.group(2)))
+        elif "=" in raw:
+            k, _, rest = raw.partition("=")
+            pairs.append((k.strip(), rest))
+    return pairs
+
+
+def parse_pem_blocks(value: str) -> list[dict]:
+    """Split PEM material into labeled blocks for display."""
+    blocks = []
+    for m in _PEM_BLOCK.finditer(value or ""):
+        block = m.group(1).strip()
+        header = block.splitlines()[0] if block else ""
+        label = header.replace("-----BEGIN ", "").replace("-----", "").strip().title()
+        if "CERTIFICATE" in header.upper():
+            kind = "certificate"
+        elif "PRIVATE KEY" in header.upper() or "OPENSSH" in header.upper():
+            kind = "private_key"
+        else:
+            kind = "pem"
+        blocks.append({"label": label or "PEM", "kind": kind, "text": block})
+    if not blocks and (value or "").strip():
+        blocks.append(
+            {"label": "Value", "kind": "text", "text": (value or "").strip()}
+        )
+    return blocks
+
+
+def parse_database_url(value: str) -> dict:
+    """Break a DB URL into display fields (password kept separate)."""
+    from urllib.parse import unquote, urlparse
+
+    raw = (value or "").strip()
+    try:
+        u = urlparse(raw)
+    except Exception:
+        return {"raw": raw}
+    return {
+        "raw": raw,
+        "scheme": u.scheme or "",
+        "user": unquote(u.username) if u.username else "",
+        "password": unquote(u.password) if u.password else "",
+        "host": u.hostname or "",
+        "port": str(u.port) if u.port else "",
+        "database": (u.path or "").lstrip("/"),
+        "query": u.query or "",
+    }
+
+
+def note_with_kind(note: str, kind_label: str) -> str:
+    """Ensure non-plain secrets keep a type: tag for later reveal detection."""
+    kind_label = (kind_label or "plain").strip().lower()
+    note = note_without_kind(note)
+    if kind_label == "plain":
+        return note
+    tag = f"type:{kind_label}"
+    return f"{note} ({tag})".strip() if note else tag
+
+
+def note_without_kind(note: str) -> str:
+    """Strip type: tags so the user-facing note field stays clean."""
+    note = (note or "").strip()
+    note = re.sub(r"\s*\(\s*type:[a-z]+\s*\)\s*", " ", note, flags=re.I)
+    note = re.sub(r"\btype:[a-z]+\b", "", note, flags=re.I)
+    return re.sub(r"\s{2,}", " ", note).strip(" -|,")
+
+
+def split_cert_and_key(value: str) -> tuple[str, str]:
+    """Pull certificate and private key PEM blocks out of a combined value."""
+    cert = ""
+    key = ""
+    for block in parse_pem_blocks(value):
+        if block["kind"] == "certificate" and not cert:
+            cert = block["text"]
+        elif block["kind"] == "private_key" and not key:
+            key = block["text"]
+    if not cert and not key and (value or "").strip():
+        # Single non-PEM blob — treat as cert field for editing
+        cert = (value or "").strip()
+    return cert, key
 
 
 def _as_utc(dt):
@@ -383,25 +517,47 @@ def register(app):
     def trash():
         tid = session.get("team_id")
         team, items = None, []
+        q = (request.args.get("q") or "").strip()
         if tid:
             with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
                 cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
                 team = cur.fetchone()
                 if team:
-                    cur.execute(
-                        """
-                        SELECT s.id, s.key, s.note, s.deleted_at, s.project_id,
-                               p.name AS project_name,
-                               api.can_write_project(s.project_id) AS can_write
-                        FROM api.secrets s
-                        JOIN api.projects p ON p.id = s.project_id
-                        WHERE p.team_id = %s AND s.deleted_at IS NOT NULL
-                        ORDER BY s.deleted_at DESC
-                        """,
-                        (tid,),
-                    )
+                    if q:
+                        like = f"%{q}%"
+                        cur.execute(
+                            """
+                            SELECT s.id, s.key, s.note, s.deleted_at, s.project_id,
+                                   p.name AS project_name,
+                                   api.can_write_project(s.project_id) AS can_write
+                            FROM api.secrets s
+                            JOIN api.projects p ON p.id = s.project_id
+                            WHERE p.team_id = %s AND s.deleted_at IS NOT NULL
+                              AND (
+                                s.key ILIKE %s OR s.note ILIKE %s
+                                OR p.name ILIKE %s
+                              )
+                            ORDER BY s.deleted_at DESC
+                            """,
+                            (tid, like, like, like),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            SELECT s.id, s.key, s.note, s.deleted_at, s.project_id,
+                                   p.name AS project_name,
+                                   api.can_write_project(s.project_id) AS can_write
+                            FROM api.secrets s
+                            JOIN api.projects p ON p.id = s.project_id
+                            WHERE p.team_id = %s AND s.deleted_at IS NOT NULL
+                            ORDER BY s.deleted_at DESC
+                            """,
+                            (tid,),
+                        )
                     items = cur.fetchall()
-        return render_template("trash.html", team=team, items=items)
+        return render_template(
+            "trash.html", team=team, items=items, search_q=q
+        )
 
 
     @app.post("/trash/secrets/<uuid:secret_id>/restore")
@@ -421,7 +577,7 @@ def register(app):
                 if not row:
                     flash("Could not restore — missing permission or key already exists", "error")
                     conn.commit()
-                    return redirect(url_for("trash"))
+                    return redirect(url_for("trash", q=request.args.get("q") or None))
                 cur.execute(
                     """
                     UPDATE api.secrets
@@ -445,7 +601,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(url_for("trash"))
+        return redirect(url_for("trash", q=request.args.get("q") or None))
 
 
     @app.post("/trash/secrets/<uuid:secret_id>/purge")
@@ -477,7 +633,7 @@ def register(app):
                     (str(secret_id),),
                 )
             conn.commit()
-        return redirect(url_for("trash"))
+        return redirect(url_for("trash", q=request.args.get("q") or None))
 
 
     @app.get("/projects/<uuid:project_id>")
@@ -807,10 +963,11 @@ def register(app):
     @authz.login_required
     def reveal_secret(project_id, secret_id):
         cell = (request.args.get("cell") or "").strip() or None
+        force_inline = (request.args.get("inline") or "").strip() in ("1", "true", "yes")
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, key, value_enc, expires_at FROM api.secrets
+                SELECT id, key, value_enc, note, expires_at FROM api.secrets
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
                 (str(secret_id), str(project_id)),
@@ -829,6 +986,21 @@ def register(app):
                 is_fav = pins.is_pinned(cur, session["user_id"], secret_id)
             except Exception:
                 pass
+            plaintext = crypto.decrypt(row["value_enc"])
+            kind = detect_secret_kind(plaintext, row.get("note") or "")
+            if kind in _STRUCTURED_VIEW_KINDS and not force_inline:
+                # Audit on the view page; navigate in the current window.
+                conn.commit()
+                view_url = url_for(
+                    "secret_view",
+                    project_id=project_id,
+                    secret_id=secret_id,
+                )
+                if authz.htmx():
+                    resp = make_response("", 204)
+                    resp.headers["HX-Redirect"] = view_url
+                    return resp
+                return redirect(view_url)
             audit.log_secret(
                 cur,
                 project_id=project_id,
@@ -846,7 +1018,7 @@ def register(app):
                 exp_date = str(exp)[:10]
         body = render_template(
             "partials/reveal.html",
-            value=crypto.decrypt(row["value_enc"]),
+            value=plaintext,
             secret_id=secret_id,
             project_id=project_id,
             editable=True,
@@ -860,6 +1032,205 @@ def register(app):
                 project_id, secret_id, revealed=True, cell=cell
             )
         return body
+
+    def _render_secret_view(
+        *,
+        project_id,
+        secret_id,
+        row,
+        plaintext: str,
+        kind: str,
+        can_write: bool,
+        is_version: bool = False,
+        status: int = 200,
+    ):
+        exp = row.get("expires_at")
+        exp_date = ""
+        if exp is not None:
+            try:
+                exp_date = _as_utc(exp).date().isoformat()
+            except Exception:
+                exp_date = str(exp)[:10]
+        cert_pem, cert_key = ("", "")
+        if kind == "certificate":
+            cert_pem, cert_key = split_cert_and_key(plaintext)
+        return (
+            render_template(
+                "secret_view.html",
+                project_id=project_id,
+                project_name=row.get("project_name") or "",
+                secret_id=secret_id,
+                secret_key=row["key"],
+                note=note_without_kind(row.get("note") or ""),
+                kind=kind,
+                value=plaintext,
+                is_version=is_version,
+                kv_pairs=parse_kv_lines(plaintext) if kind == "kv" else [("", "")],
+                pem_blocks=parse_pem_blocks(plaintext)
+                if kind in ("certificate", "ssh")
+                else [],
+                cert_pem=cert_pem,
+                cert_key=cert_key,
+                db_parts=parse_database_url(plaintext) if kind == "database" else {},
+                expires_at=exp_date,
+                can_write=can_write and not is_version,
+                clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
+            ),
+            status,
+        )
+
+    @app.route(
+        "/projects/<uuid:project_id>/secrets/<uuid:secret_id>/view",
+        methods=["GET", "POST"],
+    )
+    @authz.login_required
+    def secret_view(project_id, secret_id):
+        """Type-specific view/edit page (KV, cert, SSH, database URL)."""
+        version_id = (request.args.get("version_id") or "").strip() or None
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT s.id, s.key, s.value_enc, s.note, s.expires_at,
+                       p.name AS project_name
+                FROM api.secrets s
+                JOIN api.projects p ON p.id = s.project_id
+                WHERE s.id = %s AND s.project_id = %s AND s.deleted_at IS NULL
+                """,
+                (str(secret_id), str(project_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                return "Not found", 404
+            value_enc = row["value_enc"]
+            is_version = False
+            if version_id:
+                cur.execute(
+                    """
+                    SELECT value_enc FROM api.secret_versions
+                    WHERE id = %s::uuid AND secret_id = %s::uuid
+                    """,
+                    (version_id, str(secret_id)),
+                )
+                ver = cur.fetchone()
+                if not ver:
+                    return "Not found", 404
+                value_enc = ver["value_enc"]
+                is_version = True
+            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+            can_write = bool(cur.fetchone()["w"])
+
+            if request.method == "POST":
+                if is_version or not can_write:
+                    flash("You don't have permission to do that", "error")
+                    return redirect(
+                        url_for(
+                            "secret_view",
+                            project_id=project_id,
+                            secret_id=secret_id,
+                        )
+                    )
+                kind = (request.form.get("kind") or "plain").strip().lower()
+                if kind not in config.SECRET_KINDS:
+                    kind = detect_secret_kind(
+                        crypto.decrypt(row["value_enc"]), row.get("note") or ""
+                    )
+                value, kind_label = _compose_secret_value(kind, request.form)
+                if kind == "plain":
+                    value = request.form.get("plain_value") or value or ""
+                if kind == "ssh" and not value:
+                    value = (request.form.get("ssh_key") or "").strip()
+                note_in = (request.form.get("note") or "").strip()
+                note = note_with_kind(note_in, kind_label)
+                row_view = dict(row)
+                row_view["note"] = note_in
+                row_view["project_name"] = row.get("project_name") or ""
+                if not value:
+                    flash("Value is required", "error")
+                    body, code = _render_secret_view(
+                        project_id=project_id,
+                        secret_id=secret_id,
+                        row=row_view,
+                        plaintext=crypto.decrypt(row["value_enc"]),
+                        kind=kind,
+                        can_write=True,
+                        status=400,
+                    )
+                    return body, code
+                try:
+                    expires_at = _parse_expires_at(request.form, allow_clear=True)
+                except (ValueError, TypeError) as e:
+                    flash(str(e), "error")
+                    body, code = _render_secret_view(
+                        project_id=project_id,
+                        secret_id=secret_id,
+                        row=row_view,
+                        plaintext=value,
+                        kind=kind,
+                        can_write=True,
+                        status=400,
+                    )
+                    return body, code
+                cur.execute(
+                    """
+                    UPDATE api.secrets
+                    SET value_enc = %s, note = %s, expires_at = %s
+                    WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                    """,
+                    (
+                        crypto.encrypt(value),
+                        note,
+                        expires_at,
+                        str(secret_id),
+                        str(project_id),
+                    ),
+                )
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    flash("You don't have permission to do that", "error")
+                    return redirect(
+                        url_for("project_detail", project_id=project_id, tab="secrets")
+                    )
+                audit.log_secret(
+                    cur,
+                    project_id=project_id,
+                    secret_id=row["id"],
+                    secret_key=row["key"],
+                    action="updated",
+                )
+                conn.commit()
+                flash("Secret updated", "ok")
+                return redirect(
+                    url_for(
+                        "secret_view",
+                        project_id=project_id,
+                        secret_id=secret_id,
+                    )
+                )
+
+            try:
+                pins.touch_recent(cur, session["user_id"], secret_id)
+            except Exception:
+                pass
+            audit.log_secret(
+                cur,
+                project_id=project_id,
+                secret_id=row["id"],
+                secret_key=row["key"],
+                action="revealed",
+            )
+            conn.commit()
+        plaintext = crypto.decrypt(value_enc)
+        kind = detect_secret_kind(plaintext, row.get("note") or "")
+        body, code = _render_secret_view(
+            project_id=project_id,
+            secret_id=secret_id,
+            row=row,
+            plaintext=plaintext,
+            kind=kind,
+            can_write=can_write,
+            is_version=is_version,
+        )
+        return body, code
 
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/hide")
     @authz.login_required
@@ -1060,10 +1431,11 @@ def register(app):
     )
     @authz.login_required
     def reveal_secret_version(project_id, secret_id, version_id):
+        force_inline = (request.args.get("inline") or "").strip() in ("1", "true", "yes")
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT v.value_enc, s.key, s.id AS secret_id
+                SELECT v.value_enc, s.key, s.note, s.id AS secret_id
                 FROM api.secret_versions v
                 JOIN api.secrets s ON s.id = v.secret_id
                 WHERE v.id = %s AND s.id = %s AND s.project_id = %s
@@ -1082,9 +1454,23 @@ def register(app):
                 action="revealed",
             )
             conn.commit()
+        plaintext = crypto.decrypt(row["value_enc"])
+        kind = detect_secret_kind(plaintext, row.get("note") or "")
+        if kind in _STRUCTURED_VIEW_KINDS and not force_inline:
+            view_url = url_for(
+                "secret_view",
+                project_id=project_id,
+                secret_id=secret_id,
+                version_id=version_id,
+            )
+            if authz.htmx():
+                resp = make_response("", 204)
+                resp.headers["HX-Redirect"] = view_url
+                return resp
+            return redirect(view_url)
         body = render_template(
             "partials/reveal.html",
-            value=crypto.decrypt(row["value_enc"]),
+            value=plaintext,
             secret_id=secret_id,
             project_id=project_id,
             editable=False,
@@ -1483,9 +1869,10 @@ def register(app):
     def bulk_trash():
         action = (request.form.get("bulk_action") or "").strip()
         ids = request.form.getlist("secret_ids")
+        q = (request.form.get("q") or request.args.get("q") or "").strip() or None
         if not ids:
             flash("Select at least one secret", "error")
-            return redirect(url_for("trash"))
+            return redirect(url_for("trash", q=q))
         n = 0
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             for sid in ids:
@@ -1540,10 +1927,10 @@ def register(app):
             flash(f"Restored {n} secret(s)", "ok")
         else:
             flash(f"Permanently deleted {n} secret(s)", "ok")
-        return redirect(url_for("trash"))
+        return redirect(url_for("trash", q=q))
 
     def _compose_secret_value(kind: str, form) -> tuple[str, str]:
-        """Build (value, note_suffix) from advanced form fields."""
+        """Build (value, kind_label) from advanced form fields."""
         kind = (kind or "plain").strip().lower()
         if kind == "database":
             scheme = (form.get("db_scheme") or "postgresql").strip()
@@ -1573,6 +1960,19 @@ def register(app):
         if kind == "ssh":
             return (form.get("ssh_key") or "").strip(), "ssh"
         if kind == "kv":
+            keys = form.getlist("kv_keys")
+            values = form.getlist("kv_values")
+            lines = []
+            if keys:
+                for i, k in enumerate(keys):
+                    k = (k or "").strip()
+                    if not k:
+                        continue
+                    v = values[i] if i < len(values) else ""
+                    lines.append(f"{k}={v}")
+            if lines:
+                return "\n".join(lines), "kv"
+            # Back-compat: single textarea paste
             return (form.get("kv_block") or "").strip(), "kv"
         return form.get("plain_value") or "", "plain"
 
@@ -1605,6 +2005,7 @@ def register(app):
                 key="",
                 note="",
                 expires_at="",
+                kv_pairs=[("", "")],
             )
         kind = (request.form.get("kind") or "plain").strip().lower()
         if kind not in config.SECRET_KINDS:
@@ -1612,6 +2013,7 @@ def register(app):
         key = (request.form.get("key") or "").strip()
         note = (request.form.get("note") or "").strip()
         value, kind_label = _compose_secret_value(kind, request.form)
+        kv_pairs = parse_kv_lines(value) if kind == "kv" else []
         if not key or not value:
             flash("Key and value are required", "error")
             return render_template(
@@ -1621,9 +2023,9 @@ def register(app):
                 key=key,
                 note=note,
                 expires_at=request.form.get("expires_at") or "",
+                kv_pairs=kv_pairs or [("", "")],
             ), 400
-        if kind_label != "plain" and not note:
-            note = f"type:{kind_label}"
+        note = note_with_kind(note, kind_label)
         try:
             expires_at = _parse_expires_at(request.form)
         except (ValueError, TypeError) as e:
@@ -1635,6 +2037,7 @@ def register(app):
                 key=key,
                 note=note,
                 expires_at=request.form.get("expires_at") or "",
+                kv_pairs=kv_pairs or [("", "")],
             ), 400
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
@@ -1666,6 +2069,7 @@ def register(app):
                     key=key,
                     note=note,
                     expires_at=request.form.get("expires_at") or "",
+                    kv_pairs=kv_pairs or [("", "")],
                 ), 400
         return redirect(
             url_for("project_detail", project_id=project_id, tab="secrets")
