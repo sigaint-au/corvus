@@ -798,6 +798,57 @@
       gap: .5rem;
     }
     .section-tools .toolbar { margin: 0; }
+    .bulk-toolbar {
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: .35rem;
+    }
+    .bulk-toolbar[hidden] { display: none !important; }
+    .bulk-toolbar .bulk-select {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      margin: 0;
+      font-size: .75rem;
+      color: var(--muted-foreground);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    .bulk-toolbar .bulk-select input {
+      width: auto;
+      margin: 0;
+      cursor: pointer;
+    }
+    .bulk-toolbar .bulk-count {
+      min-width: 1ch;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+    .bulk-toolbar .bulk-count::after {
+      content: " selected";
+      font-weight: 500;
+    }
+    .bulk-toolbar .bulk-action {
+      width: auto;
+      min-width: 7.5rem;
+      max-width: 11rem;
+      margin: 0;
+      padding: .28rem .4rem;
+      font-size: .75rem;
+      line-height: 1.2;
+      border-radius: 4px;
+    }
+    .bulk-toolbar .bulk-apply {
+      font-size: .75rem;
+      padding: .28rem .55rem;
+      line-height: 1.2;
+    }
+    .bulk-toolbar .bulk-apply:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
     .menu {
       position: relative;
     }
@@ -1463,15 +1514,81 @@
         if (w) scheduleAutoHide(w);
       }
     });
-    /* Bulk select helpers */
-    document.addEventListener('change', function (e) {
-      if (e.target && e.target.id === 'bulk-select-all') {
-        var on = e.target.checked;
-        document.querySelectorAll('input.bulk-secret-cb').forEach(function (cb) {
-          cb.checked = on;
-        });
+    /* Bulk multi-select toolbar (secrets list) */
+    (function () {
+      function boxes() {
+        return document.querySelectorAll('input.bulk-secret-cb');
       }
-    });
+      function selected() {
+        return document.querySelectorAll('input.bulk-secret-cb:checked');
+      }
+      function syncBulkToolbar() {
+        var tb = document.getElementById('bulk-toolbar');
+        var all = document.getElementById('bulk-select-all');
+        var countEl = document.getElementById('bulk-count');
+        var apply = document.getElementById('bulk-apply');
+        var action = document.getElementById('bulk-action');
+        var cbs = boxes();
+        var n = selected().length;
+        var total = cbs.length;
+        if (tb) tb.hidden = total === 0;
+        if (countEl) countEl.textContent = String(n);
+        if (all) {
+          all.checked = total > 0 && n === total;
+          all.indeterminate = n > 0 && n < total;
+        }
+        if (apply) {
+          apply.disabled = n === 0 || !action || !action.value;
+        }
+      }
+      document.addEventListener('change', function (e) {
+        var t = e.target;
+        if (!t) return;
+        if (t.id === 'bulk-select-all') {
+          var on = t.checked;
+          boxes().forEach(function (cb) { cb.checked = on; });
+          syncBulkToolbar();
+          return;
+        }
+        if (t.classList && t.classList.contains('bulk-secret-cb')) {
+          syncBulkToolbar();
+          return;
+        }
+        if (t.id === 'bulk-action') {
+          syncBulkToolbar();
+        }
+      });
+      document.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest && e.target.closest('#bulk-apply');
+        if (!btn) return;
+        e.preventDefault();
+        var form = document.getElementById('bulk-secrets-form');
+        var action = document.getElementById('bulk-action');
+        if (!form || !action || !action.value) return;
+        if (!selected().length) {
+          if (window.ssToast) window.ssToast('Select at least one secret');
+          return;
+        }
+        var opt = action.options[action.selectedIndex];
+        var url = opt && opt.getAttribute('data-url');
+        var confirmMsg = opt && opt.getAttribute('data-confirm');
+        if (!url) return;
+        if (confirmMsg && !window.confirm(confirmMsg)) return;
+        var field = document.getElementById('bulk-action-field');
+        if (field) field.value = action.value;
+        form.setAttribute('action', url);
+        form.method = 'post';
+        form.submit();
+      });
+      document.addEventListener('htmx:afterSwap', function () {
+        syncBulkToolbar();
+      });
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', syncBulkToolbar);
+      } else {
+        syncBulkToolbar();
+      }
+    })();
   })();
   </script>
 </body>
