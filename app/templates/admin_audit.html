@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Auditing — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>Auditing</h1>
-<p class="muted">Global admin only. Access reviews, role-change history, and audit export / retention.</p>
+<div class="page-head"><h1>Auditing</h1></div>
+<p class="page-desc muted">Global admin only. Access reviews, role-change history, and audit export / retention.</p>
 
 <nav class="tabs" role="tablist" aria-label="Auditing sections">
   <a href="{{ url_for('admin_audit', tab='access') }}"
@@ -22,7 +22,7 @@
 {% if active_tab == 'access' %}
 <section>
   <div class="section-head">
-    <h2 style="margin:0">Access review</h2>
+    <h2>Access review</h2>
     <div class="section-tools">
       <a class="btn-toolbar" href="{{ url_for('admin_audit_access_export', format='csv') }}">Export CSV</a>
       <a class="btn-toolbar" href="{{ url_for('admin_audit_access_export', format='json') }}">Export JSON</a>
@@ -68,14 +68,14 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No membership grants found.</p>
+  <p class="empty">No membership grants found.</p>
   {% endif %}
 </section>
 
 {% elif active_tab == 'roles' %}
 <section>
   <div class="section-head">
-    <h2 style="margin:0">Role-change audit</h2>
+    <h2>Role-change audit</h2>
   </div>
   <p class="muted">
     Membership and role changes from org audit (team roles, project roles, ownership, invites, LDAP maps).
@@ -130,7 +130,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">
+  <p class="empty">
     {% if search_q or audit_actor or audit_since or audit_until %}
     No role-change events match these filters.
     {% else %}
@@ -143,12 +143,12 @@
 {% elif active_tab == 'export' %}
 <section>
   <div class="section-head">
-    <h2 style="margin:0">Audit export</h2>
+    <h2>Audit export</h2>
   </div>
   <p class="muted">
     Export secret activity and org (membership) audit logs as CSV or JSON for evidence packs.
   </p>
-  <div class="profile-stats" style="margin-bottom:1rem;">
+  <div class="profile-stats">
     <div class="profile-stat">
       <span class="profile-stat-n">{{ counts.secret_audit }}</span>
       <span class="profile-stat-l">Secret audit</span>
@@ -163,7 +163,7 @@
     Oldest event: {{ counts.oldest }} · Newest: {{ counts.newest }}
   </p>
   {% endif %}
-  <form method="get" action="{{ url_for('admin_audit_export') }}" class="row" style="align-items:end;">
+  <form method="get" action="{{ url_for('admin_audit_export') }}" class="row row-end">
     <label>Source
       <select name="source">
         <option value="both">Secret + org</option>
@@ -193,7 +193,7 @@
     Configure how long audit rows are kept. Set to <strong>0</strong> to keep forever.
     Purge permanently deletes rows older than the retention window (cannot be undone).
   </p>
-  <form method="post" class="row" style="align-items:end;">
+  <form method="post" class="row row-end">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="tab" value="export">
     <input type="hidden" name="action" value="retention">
@@ -203,7 +203,7 @@
     </label>
     <button type="submit">Save retention</button>
   </form>
-  <form method="post" style="margin-top:1rem;"
+  <form method="post" class="form-actions"
         onsubmit="return confirm('Permanently delete audit rows older than the configured retention? This cannot be undone.')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="tab" value="export">

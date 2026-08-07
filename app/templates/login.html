@@ -14,13 +14,13 @@
 {% endif %}
 {% if oidc_enabled %}
 <p>
-  <a class="btn-secondary" style="display:inline-block;width:100%;text-align:center;box-sizing:border-box;"
+  <a class="btn-secondary auth-sso"
      href="{{ url_for('login_oidc') }}">{{ oidc_button_label or 'Sign in with SSO' }}</a>
 </p>
-<p class="muted" style="text-align:center;margin:.75rem 0;">or</p>
+<p class="muted auth-divider">or</p>
 {% endif %}
 <form method="post">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <label>{% if ldap_enabled %}Email or username{% else %}Email{% endif %}
     <input type="{% if ldap_enabled %}text{% else %}email{% endif %}"
            name="email" required autocomplete="username">
@@ -29,7 +29,7 @@
   <button type="submit">Sign in</button>
 </form>
 <p class="muted"><a href="{{ url_for('forgot_password') }}">Forgot password?</a>
-  <span class="muted">(local accounts)</span>
+  <span>(local accounts)</span>
 </p>
 {% if registration_enabled %}
 <p class="muted">No account? <a href="{{ url_for('register') }}">Register</a>

@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Search — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>Search</h1>
-<form method="get" action="{{ url_for('global_search') }}" class="toolbar" role="search" style="justify-content:flex-start;margin-bottom:1.25rem;">
+<div class="page-head">
+  <h1>Search</h1>
+</div>
+<form method="get" action="{{ url_for('global_search') }}" class="page-search" role="search">
   <label class="search-field">
     <span class="visually-hidden">Search everything</span>
     <input type="search" name="q" value="{{ search_q or '' }}"
            placeholder="Teams, projects, secrets…" autocomplete="off"
-           autofocus aria-label="Global search" style="width:18rem;max-width:70vw;">
+           autofocus aria-label="Global search">
   </label>
   <button type="submit">Search</button>
   {% if search_q %}
@@ -16,7 +18,7 @@
 </form>
 
 {% if not search_q %}
-<p class="muted">Search across all teams, projects, and secrets you can access.</p>
+<p class="empty">Search across all teams, projects, and secrets you can access.</p>
 {% else %}
 
 <section>
@@ -31,7 +33,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No teams match.</p>
+  <p class="empty">No teams match.</p>
   {% endif %}
 </section>
 
@@ -50,7 +52,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No projects match.</p>
+  <p class="empty">No projects match.</p>
   {% endif %}
 </section>
 
@@ -75,7 +77,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No secrets match.</p>
+  <p class="empty">No secrets match.</p>
   {% endif %}
 </section>
 

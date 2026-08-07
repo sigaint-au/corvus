@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}My profile — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>My profile</h1>
-<p class="muted">Your account, security, memberships, and recent activity.</p>
+<div class="page-head"><h1>My profile</h1></div>
+<p class="page-desc muted">Your account, security, memberships, and recent activity.</p>
 
 <nav class="tabs" role="tablist" aria-label="Profile sections">
   <a href="{{ url_for('profile', tab='account') }}"
@@ -106,7 +106,7 @@
     <input type="text" id="session-jwt" class="session-jwt-field"
            value="" readonly placeholder="Not loaded" autocomplete="off">
   </label>
-  <p class="acts" style="margin:.35rem 0 0;">
+  <p class="acts form-actions-tight">
     <button type="button" class="link" id="show-session-jwt">Show</button>
     <button type="button" class="link copy-btn" data-copy-target="session-jwt"
             data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
@@ -143,7 +143,7 @@
 <div class="token-once">
   <strong>New token (copy now)</strong>
   <pre id="new-pat-value">{{ new_pat }}</pre>
-  <p style="margin:.5rem 0 0;">
+  <p class="form-actions form-actions-tight">
     <button type="button" class="link copy-btn" data-copy-target="new-pat-value"
             data-clear-seconds="0">Copy</button>
   </p>
@@ -153,9 +153,9 @@
 <section>
   <h2>Personal access tokens</h2>
   <p class="muted">Long-lived <code class="k">pat_…</code> tokens for CLI. Exchange via <code class="k">/api/token</code>.</p>
-  <form method="post" action="{{ url_for('create_personal_token') }}" class="row" style="align-items:end;">
+  <form method="post" action="{{ url_for('create_personal_token') }}" class="row row-end">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label style="flex:2;">Name
+    <label class="flex-2">Name
       <input type="text" name="name" required maxlength="80" placeholder="laptop-cli" autocomplete="off">
     </label>
     <label>Expires (days)
@@ -164,7 +164,7 @@
     <button type="submit">Create token</button>
   </form>
   {% if personal_tokens %}
-  <table style="margin-top:1rem;">
+  <table class="table-spaced">
     <thead>
       <tr>
         <th>Name</th>
@@ -197,7 +197,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted" style="margin-top:1rem;">None yet.</p>
+  <p class="empty">None yet.</p>
   {% endif %}
 </section>
 
@@ -212,24 +212,23 @@
     · {{ totp_recovery_remaining }} recovery codes left
     {% if totp_enforced_for_user %}<span class="muted">(required for global admins)</span>{% endif %}
   </p>
-  <form method="post" action="{{ url_for('totp_regenerate_recovery') }}" class="row"
-        style="margin-top:1rem;">
+  <form method="post" action="{{ url_for('totp_regenerate_recovery') }}" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label style="flex:2;">Confirm with code
+    <label class="flex-2">Confirm with code
       <input type="text" name="code" required autocomplete="one-time-code"
              placeholder="123456 or xxxx-xxxx">
     </label>
     <button type="submit">Regenerate recovery codes</button>
   </form>
   {% if not totp_enforced_for_user %}
-  <form method="post" action="{{ url_for('totp_disable') }}" style="margin-top:1.5rem;"
+  <form method="post" action="{{ url_for('totp_disable') }}" class="mt-1"
         onsubmit="return confirm('Disable two-factor authentication?')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Disable — confirm with code
       <input type="text" name="code" required autocomplete="one-time-code"
              placeholder="123456 or xxxx-xxxx">
     </label>
-    <p style="margin-top:1rem;"><button type="submit" class="danger">Disable 2FA</button></p>
+    <p class="form-actions"><button type="submit" class="danger">Disable 2FA</button></p>
   </form>
   {% endif %}
   {% else %}
@@ -237,7 +236,7 @@
     Authenticator app at sign-in.
     {% if totp_enforced_for_user %}<strong>Required for global admins.</strong>{% endif %}
   </p>
-  <p><a href="{{ url_for('totp_setup') }}"><button type="button">Set up 2FA</button></a></p>
+  <p class="form-actions"><a class="btn-secondary" href="{{ url_for('totp_setup') }}">Set up 2FA</a></p>
   {% endif %}
 </section>
 
@@ -256,7 +255,7 @@
     <label>Confirm new password
       <input type="password" name="new_password_confirm" required minlength="8" autocomplete="new-password">
     </label>
-    <p style="margin-top:1rem;"><button type="submit">Update password</button></p>
+    <p class="form-actions"><button type="submit">Update password</button></p>
   </form>
 </section>
 {% else %}
@@ -272,7 +271,7 @@
 
 <section>
   <div class="section-head">
-    <h2 style="margin:0">Active sessions</h2>
+    <h2>Active sessions</h2>
     {% if active_sessions and active_sessions|length > 1 %}
     <form method="post" action="{{ url_for('revoke_other_sessions') }}" class="inline"
           onsubmit="return confirm('Sign out all other devices?')">
@@ -321,7 +320,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No active sessions recorded for this account.</p>
+  <p class="empty">No active sessions recorded for this account.</p>
   {% endif %}
 </section>
 
@@ -353,7 +352,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">You are not a member of any teams yet.</p>
+  <p class="empty">You are not a member of any teams yet.</p>
   {% endif %}
 </section>
 
@@ -420,7 +419,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No projects available to you yet.</p>
+  <p class="empty">No projects available to you yet.</p>
   {% endif %}
 </section>
 
@@ -451,7 +450,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No pinned secrets. Pin keys from a project secrets list to keep them handy.</p>
+  <p class="empty">No pinned secrets. Pin keys from a project secrets list to keep them handy.</p>
   {% endif %}
 </section>
 
@@ -483,7 +482,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No recent secret access yet.</p>
+  <p class="empty">No recent secret access yet.</p>
   {% endif %}
 </section>
 {% endif %}

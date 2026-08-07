@@ -1,12 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<p class="muted">
-  <a href="{{ url_for('teams') }}">Teams</a> /
+<p class="breadcrumb">
+  <a href="{{ url_for('teams') }}">Teams</a>
+  <span class="breadcrumb-sep">/</span>
   <a href="{{ url_for('team_detail', team_id=project.team_id) }}">{{ project.team_name }}</a>
+  <span class="breadcrumb-sep">/</span>
+  {{ project.name }}
 </p>
 <h1>{{ project.name }}</h1>
-<p class="muted">Project ID: <code class="k">{{ project.id }}</code></p>
+<p class="page-desc muted">Project ID: <code class="k">{{ project.id }}</code></p>
 
 {% if new_token %}
 <div class="token-once">
@@ -48,16 +51,16 @@
 {% if due_overdue or due_soon %}
 <section class="due-dashboard">
   <h2>Expiry reminders</h2>
-  <div class="profile-stats" style="margin-bottom:1rem;">
+  <div class="profile-stats">
     {% if due_overdue %}
     <div class="profile-stat">
-      <span class="profile-stat-n" style="color:var(--danger);">{{ due_overdue|length }}</span>
+      <span class="profile-stat-n is-danger">{{ due_overdue|length }}</span>
       <span class="profile-stat-l">Overdue</span>
     </div>
     {% endif %}
     {% if due_soon %}
     <div class="profile-stat">
-      <span class="profile-stat-n" style="color:var(--warning);">{{ due_soon|length }}</span>
+      <span class="profile-stat-n is-warning">{{ due_soon|length }}</span>
       <span class="profile-stat-l">Expiring soon</span>
     </div>
     {% endif %}
@@ -125,7 +128,7 @@
           <input type="search" name="q" value="{{ search_q or '' }}"
                  placeholder="Search…" autocomplete="off" aria-label="Search secrets">
         </label>
-        <button type="submit">Go</button>
+        <button type="submit">Search</button>
         {% if search_q %}
         <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
         {% endif %}
@@ -306,7 +309,7 @@
     {% include "partials/pager.html" %}
   {% endwith %}
   {% else %}
-  <p class="muted">
+  <p class="empty">
     {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
     No audit events match these filters.
     {% else %}
@@ -379,16 +382,16 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No machine accounts.</p>
+  <p class="empty">No machine accounts.</p>
   {% endif %}
 </section>
 {% elif active_tab == 'integrations' %}
-<section class="eso-integration" id="eso-integration"
+<div class="stack eso-integration" id="eso-integration"
          data-project-id="{{ project.id }}"
          data-project-name="{{ project.name }}"
          data-base-url="{{ public_base_url or '' }}">
   <div class="section-head">
-    <h2 style="margin:0">External Secrets Operator</h2>
+    <h2>External Secrets Operator</h2>
   </div>
 
   {% if can_write %}
@@ -443,7 +446,7 @@
         <span class="input-with-btn">
           <input type="password" id="eso-token" value="{{ new_token or '' }}"
                  placeholder="ss_… paste or create above" autocomplete="off">
-          <button type="button" class="icon-btn" id="eso-token-toggle" title="Show/hide token"
+          <button type="button" class="icon-btn text-btn" id="eso-token-toggle" title="Show/hide token"
                   aria-label="Show or hide token">Show</button>
         </span>
       </label>
@@ -458,7 +461,7 @@
 
   <section class="eso-yaml-out" id="eso-yaml-panel" {% if not new_token %}hidden{% endif %}>
     <div class="section-head">
-      <h3 style="margin:0">Generated YAML</h3>
+      <h3>Generated YAML</h3>
       <button type="button" class="btn-toolbar copy-btn" id="eso-copy"
               data-copy-target="eso-yaml"
               data-clear-seconds="0">Copy YAML</button>
@@ -469,7 +472,7 @@
   <p class="muted" id="eso-yaml-hint" {% if new_token %}hidden{% endif %}>
     Create a machine account above (or paste a token) to generate the Secret and SecretStore YAML.
   </p>
-</section>
+</div>
 <script>
 (function () {
   var root = document.getElementById('eso-integration');
@@ -617,7 +620,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No project-level members. Team members still have access via their team role.</p>
+  <p class="empty">No project-level members. Team members still have access via their team role.</p>
   {% endif %}
 </section>
 {% endif %}

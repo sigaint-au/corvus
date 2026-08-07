@@ -6,11 +6,13 @@
   Save these codes now. Each can be used once if you lose access to your authenticator.
   They will not be shown again.
 </p>
-<ul class="recovery-codes" style="font-family:ui-monospace,monospace;font-size:1.05rem;line-height:1.8;">
+<ul class="recovery-codes">
   {% for c in codes %}
   <li><code>{{ c }}</code></li>
   {% endfor %}
 </ul>
 <p class="muted">Store them offline (password manager, printed copy).</p>
-<p><a href="{{ url_for('profile', tab='security') }}"><button type="button">Done — I saved them</button></a></p>
+<p class="form-actions">
+  <a class="btn-secondary" href="{{ url_for('profile', tab='security') }}">Done — I saved them</a>
+</p>
 {% endblock %}

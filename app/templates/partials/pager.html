@@ -38,5 +38,5 @@
   </div>
 </nav>
 {% elif pager and pager.total > 0 %}
-<p class="muted" style="margin-top:1rem;">Showing {{ pager.total }} entr{{ 'y' if pager.total == 1 else 'ies' }}{% if pager.q or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>
+<p class="muted pager-count">Showing {{ pager.total }} entr{{ 'y' if pager.total == 1 else 'ies' }}{% if pager.q or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>
 {% endif %}

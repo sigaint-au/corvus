@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Import preview — {{ project.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<p class="muted">
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">← Import / Export</a>
+<p class="breadcrumb">
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">{{ project.name }}</a>
+  <span class="breadcrumb-sep">/</span>
+  Import preview
 </p>
 <h1>Import preview</h1>
-<p class="muted">
+<p class="page-desc muted">
   Project <strong>{{ project.name }}</strong>:
   <strong>{{ creates|length }}</strong> create(s),
   <strong>{{ updates|length }}</strong> update(s).
@@ -46,7 +48,7 @@
 </section>
 {% endif %}
 
-<form method="post" action="{{ url_for('import_commit', project_id=project.id) }}" class="row" style="margin-top:1.5rem;">
+<form method="post" action="{{ url_for('import_commit', project_id=project.id) }}" class="form-actions">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <button type="submit">Commit import</button>
   <a class="btn-secondary" href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">Cancel</a>

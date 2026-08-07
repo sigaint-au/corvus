@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Set up 2FA — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>Set up two-factor authentication</h1>
+<div class="page-head">
+  <h1>Set up two-factor authentication</h1>
+</div>
 {% if required %}
 <p class="flash error">Global admins must enable 2FA before using Secret Server.</p>
 {% endif %}
-<p class="muted">
+<p class="page-desc muted">
   Scan the QR code with an authenticator app (Google Authenticator, Authy, 1Password, etc.),
   then enter a code to confirm.
 </p>
@@ -13,12 +15,11 @@
 <section>
   {% if qr_data_uri %}
   <p>
-    <img src="{{ qr_data_uri }}" alt="TOTP QR code" width="200" height="200"
-         style="background:#fff;padding:.5rem;border-radius:8px;">
+    <img class="totp-qr" src="{{ qr_data_uri }}" alt="TOTP QR code" width="200" height="200">
   </p>
   {% endif %}
   <p class="muted">Or enter this key manually:</p>
-  <p><code class="k" style="font-size:1.1rem;letter-spacing:.05em;">{{ secret }}</code></p>
+  <p><code class="k totp-secret">{{ secret }}</code></p>
 </section>
 
 <section>
@@ -29,7 +30,7 @@
              inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
              placeholder="123456" autofocus>
     </label>
-    <p style="margin-top:1rem;"><button type="submit">Enable 2FA</button></p>
+    <p class="form-actions"><button type="submit">Enable 2FA</button></p>
   </form>
 </section>
 

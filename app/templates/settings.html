@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Server settings — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>Server settings</h1>
-<p class="muted">Global admin only. Changes apply immediately for all users.</p>
+<div class="page-head"><h1>Server settings</h1></div>
+<p class="page-desc muted">Global admin only. Changes apply immediately for all users.</p>
 
 <nav class="tabs" role="tablist" aria-label="Server settings sections">
   <a href="{{ url_for('server_settings', tab='general') }}"
@@ -53,7 +53,7 @@
       <input type="url" name="server_url" value="{{ settings.server_url or '' }}"
              placeholder="https://secrets.example.com or http://…" autocomplete="off">
     </label>
-    <p style="margin-top:1rem;"><button type="submit">Save server URL</button></p>
+    <p class="form-actions"><button type="submit">Save server URL</button></p>
   </form>
 </section>
 
@@ -66,12 +66,12 @@
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="registration">
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="registration_enabled" value="1"
              {% if settings.registration_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Allow new account registration
     </label>
-    <p style="margin-top:1rem;"><button type="submit">Save registration setting</button></p>
+    <p class="form-actions"><button type="submit">Save registration setting</button></p>
   </form>
 </section>
 
@@ -83,12 +83,12 @@
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="team_creation">
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="user_team_creation_enabled" value="1"
              {% if settings.user_team_creation_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Allow non–global admins to create teams
     </label>
-    <p style="margin-top:1rem;"><button type="submit">Save team creation setting</button></p>
+    <p class="form-actions"><button type="submit">Save team creation setting</button></p>
   </form>
 </section>
 
@@ -101,12 +101,12 @@
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="totp_enforce">
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="totp_enforce_global_admins" value="1"
              {% if settings.totp_enforce_global_admins in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Require two-factor authentication for global admins
     </label>
-    <p style="margin-top:1rem;"><button type="submit">Save 2FA policy</button></p>
+    <p class="form-actions"><button type="submit">Save 2FA policy</button></p>
   </form>
 </section>
 
@@ -130,7 +130,7 @@
              value="{{ settings.brand_tagline if settings.brand_tagline is not none else 'Secret Server' }}"
              placeholder="Secret Server">
     </label>
-    <p class="muted" style="margin-top:.5rem;">
+    <p class="muted field-spacer">
       Preview:
       <strong>{{ settings.brand_name or 'Sigaint' }}</strong>
       {% if settings.brand_tagline %}
@@ -139,7 +139,7 @@
       · page titles:
       <code class="k">{{ settings.brand_name or 'Sigaint' }}{% if settings.brand_tagline %} {{ settings.brand_tagline }}{% endif %}</code>
     </p>
-    <p style="margin-top:1rem;"><button type="submit">Save branding</button></p>
+    <p class="form-actions"><button type="submit">Save branding</button></p>
   </form>
 </section>
 
@@ -150,7 +150,7 @@
   <form method="post" id="banner-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="classification">
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="classification_enabled" value="1"
              {% if settings.classification_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Show classification banner
@@ -184,30 +184,30 @@
         </div>
       </div>
     </div>
-    <p class="muted" style="margin:.5rem 0 .25rem;">Presets</p>
+    <p class="muted preset-label">Presets</p>
     <div class="swatch-row">
-      <button type="button" class="swatch" style="background:#000000" title="Black"
+      <button type="button" class="swatch" data-bg="#000000" title="Black"
               onclick="applyPreset('#000000','#ffffff')"></button>
-      <button type="button" class="swatch" style="background:#677381" title="Slate"
+      <button type="button" class="swatch" data-bg="#677381" title="Slate"
               onclick="applyPreset('#677381','#ffffff')"></button>
-      <button type="button" class="swatch" style="background:#47817F" title="Teal-grey"
+      <button type="button" class="swatch" data-bg="#47817F" title="Teal-grey"
               onclick="applyPreset('#47817F','#ffffff')"></button>
-      <button type="button" class="swatch" style="background:#c62828" title="Red"
+      <button type="button" class="swatch" data-bg="#c62828" title="Red"
               onclick="applyPreset('#c62828','#ffffff')"></button>
-      <button type="button" class="swatch" style="background:#ef6c00" title="Orange"
+      <button type="button" class="swatch" data-bg="#ef6c00" title="Orange"
               onclick="applyPreset('#ef6c00','#000000')"></button>
-      <button type="button" class="swatch" style="background:#f9a825" title="Amber"
+      <button type="button" class="swatch" data-bg="#f9a825" title="Amber"
               onclick="applyPreset('#f9a825','#000000')"></button>
-      <button type="button" class="swatch" style="background:#1565c0" title="Blue"
+      <button type="button" class="swatch" data-bg="#1565c0" title="Blue"
               onclick="applyPreset('#1565c0','#ffffff')"></button>
-      <button type="button" class="swatch" style="background:#ffffff;border-color:#d4d4d8" title="White"
+      <button type="button" class="swatch swatch-light" data-bg="#ffffff" title="White"
               onclick="applyPreset('#ffffff','#000000')"></button>
     </div>
     <div class="banner-preview" id="banner-preview"
          style="background: {{ settings.classification_color }}; color: {{ settings.classification_fg }};">
       {{ settings.classification_text or 'Preview' }}
     </div>
-    <p style="margin-top:1rem;"><button type="submit">Save banner</button></p>
+    <p class="form-actions"><button type="submit">Save banner</button></p>
   </form>
 </section>
 <script>
@@ -332,7 +332,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No users found.</p>
+  <p class="empty">No users found.</p>
   {% endif %}
 </section>
 
@@ -351,13 +351,13 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
           {% if u.auth_source %}<span class="muted">({{ u.auth_source }})</span>{% endif %}
         </td>
         <td>Global admin</td>
-        <td>
+        <td class="acts">
           {% if u.id|string != session.user_id %}
           <form method="post" class="inline" onsubmit="return confirm('Remove global admin?');">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <input type="hidden" name="action" value="demote">
             <input type="hidden" name="user_id" value="{{ u.id }}">
-            <button type="submit">Remove</button>
+            <button type="submit" class="link danger">Remove</button>
           </form>
           {% else %}
           <span class="muted">you</span>
@@ -365,14 +365,14 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="3" class="muted">No global admins found.</td></tr>
+      <tr><td colspan="3" class="empty">No global admins found.</td></tr>
       {% endfor %}
     </tbody>
   </table>
-  <form method="post" class="row" style="margin-top:1rem;">
+  <form method="post" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="promote">
-    <label style="flex:2;">Promote user by email
+    <label class="flex-2">Promote user by email
       <input type="email" name="email" required class="user-suggest"
              list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
     </label>
@@ -392,7 +392,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="ldap">
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="ldap_enabled" value="1"
              {% if settings.ldap_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Enable LDAP login
@@ -401,7 +401,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       <input type="text" name="ldap_url" value="{{ settings.ldap_url }}"
              placeholder="ldap://ipa.example.com:389 or ldaps://ipa.example.com">
     </label>
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="ldap_start_tls" value="1"
              {% if settings.ldap_start_tls in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       StartTLS after connect
@@ -430,7 +430,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         <input type="text" name="ldap_name_attr" value="{{ settings.ldap_name_attr or 'displayName' }}">
       </label>
     </div>
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="ldap_use_memberof" value="1"
              {% if settings.ldap_use_memberof in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Use <code>memberOf</code> for groups
@@ -443,7 +443,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       <input type="text" name="ldap_group_filter" value="{{ settings.ldap_group_filter }}"
              placeholder="(member={dn})">
     </label>
-    <p style="margin-top:1rem;"><button type="submit">Save LDAP settings</button></p>
+    <p class="form-actions"><button type="submit">Save LDAP settings</button></p>
   </form>
 </section>
 
@@ -460,7 +460,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     {% for m in ldap_role_maps %}
       <tr>
         <td><code class="k">{{ m.ldap_group }}</code></td>
-        <td>{{ m.role }}</td>
+        <td><span class="role-badge">{{ m.role }}</span></td>
         <td class="acts">
           <form method="post" class="inline"
                 onsubmit="return confirm('Remove this mapping?')">
@@ -475,12 +475,12 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No role maps yet.</p>
+  <p class="empty">No role maps yet.</p>
   {% endif %}
-  <form method="post" class="row" style="margin-top:1rem;">
+  <form method="post" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="ldap_role_map_add">
-    <label style="flex:2;">LDAP group (CN or DN)
+    <label class="flex-2">LDAP group (CN or DN)
       <input type="text" name="ldap_group" required
              placeholder="secretstore-admins or cn=secretstore-admins,cn=groups,cn=accounts,dc=example,dc=com">
     </label>
@@ -504,7 +504,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="oidc">
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="oidc_enabled" value="1"
              {% if settings.oidc_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Enable OIDC login
@@ -513,7 +513,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       <input type="url" name="oidc_issuer" value="{{ settings.oidc_issuer }}"
              placeholder="https://keycloak.example.com/realms/myrealm">
     </label>
-    <p class="muted" style="margin-top:0;">
+    <p class="muted mt-0">
       Discovery: <code class="k">{issuer}/.well-known/openid-configuration</code>
     </p>
     <label>Client ID
@@ -535,7 +535,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
              value="{{ settings.oidc_username_claim or 'preferred_username' }}"
              placeholder="preferred_username">
     </label>
-    <p class="muted" style="margin-top:0;">
+    <p class="muted mt-0">
       Claim used as the account display name on SSO onboarding (default
       <code class="k">preferred_username</code>). Falls back to <code class="k">name</code>,
       then given/family name, then the email local-part. Account identity remains <strong>email</strong>.
@@ -544,21 +544,21 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       <input type="text" name="oidc_groups_claim" value="{{ settings.oidc_groups_claim or 'groups' }}"
              placeholder="groups">
     </label>
-    <p class="muted" style="margin-top:0;">
+    <p class="muted mt-0">
       Claim path for group names (Keycloak: add a “Group Membership” mapper named
       <code class="k">groups</code>). Also reads <code class="k">realm_access.roles</code> when present.
     </p>
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="oidc_require_email_verified" value="1"
              {% if settings.oidc_require_email_verified not in ('false', '0', 'no', 'off') %}checked{% endif %}>
       Require verified email (<code class="k">email_verified</code> claim)
     </label>
-    <p class="muted" style="margin-top:0;">
+    <p class="muted mt-0">
       When enabled (recommended), SSO is rejected if the IdP does not assert a verified email.
       Turn off only if your provider never sends <code class="k">email_verified</code>
       and you trust its email claim (account linking is by email).
     </p>
-    <p style="margin-top:1rem;"><button type="submit">Save OIDC settings</button></p>
+    <p class="form-actions"><button type="submit">Save OIDC settings</button></p>
   </form>
 </section>
 <section>
@@ -575,7 +575,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     {% for m in oidc_role_maps %}
       <tr>
         <td><code class="k">{{ m.oidc_group }}</code></td>
-        <td>{{ m.role }}</td>
+        <td><span class="role-badge">{{ m.role }}</span></td>
         <td class="acts">
           <form method="post" class="inline"
                 onsubmit="return confirm('Remove this mapping?')">
@@ -590,12 +590,12 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     </tbody>
   </table>
   {% else %}
-  <p class="muted">No role maps yet.</p>
+  <p class="empty">No role maps yet.</p>
   {% endif %}
-  <form method="post" class="row" style="margin-top:1rem;">
+  <form method="post" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="oidc_role_map_add">
-    <label style="flex:2;">OIDC group / role name
+    <label class="flex-2">OIDC group / role name
       <input type="text" name="oidc_group" required
              placeholder="secretstore-admins">
     </label>
@@ -612,7 +612,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <p class="muted">
     Works with any OpenID Connect provider (Keycloak, Authentik, Okta, Azure AD, etc.).
   </p>
-  <ul class="muted" style="padding-left:1.2rem;">
+  <ul class="muted checklist">
     <li>Client type: <strong>confidential</strong> (client secret), authorization code flow enabled</li>
     <li>Redirect / callback URI:
       {% if oidc_redirect_uri %}
@@ -640,7 +640,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="smtp">
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="smtp_enabled" value="1"
              {% if settings.smtp_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Enable outbound email
@@ -682,16 +682,16 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
                placeholder="{{ app_name }}">
       </label>
     </div>
-    <label>
+    <label class="check-row">
       <input type="checkbox" name="smtp_login_alerts" value="1"
              {% if settings.smtp_login_alerts in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Send login alert emails on successful sign-in
     </label>
-    <p class="muted" style="margin-top:.5rem;">
+    <p class="muted field-spacer">
       Password reset emails are sent whenever SMTP is enabled and a local user
       requests a reset. Login alerts require the checkbox above.
     </p>
-    <p style="margin-top:1rem;"><button type="submit">Save email settings</button></p>
+    <p class="form-actions"><button type="submit">Save email settings</button></p>
   </form>
 </section>
 
@@ -701,7 +701,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <form method="post" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="smtp_test">
-    <label style="flex:2;">Recipient
+    <label class="flex-2">Recipient
       <input type="email" name="test_email"
              value="{{ session.email or '' }}"
              placeholder="you@example.com" required>
