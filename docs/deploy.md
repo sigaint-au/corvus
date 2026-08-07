@@ -75,6 +75,99 @@ RLS enforces team/project membership.
 
 5 failed attempts → locked for 5 minutes (`private.login_failures`, shared across workers).
 
+## Audit retention purge (daily cron)
+
+Retention is configured in the UI (**Administration → Auditing → Export & retention**,
+setting `audit_retention_days`). **0** means keep forever (purge is a no-op).
+Rows are **not** deleted automatically until something runs the CLI.
+
+### CLI
+
+Runs inside the app image (needs `DATABASE_ADMIN_URL` like the web process):
+
+```bash
+# Dry-run (counts only)
+flask --app app purge-audit --dry-run
+
+# Use server setting audit_retention_days
+flask --app app purge-audit
+
+# Override retention for this run
+flask --app app purge-audit --days 90
+```
+
+Compose / Podman example (container name may vary):
+
+```bash
+podman exec secretstore_app_1 flask --app app purge-audit --dry-run
+podman exec secretstore_app_1 flask --app app purge-audit
+```
+
+### Host crontab
+
+Run once per day (e.g. 03:15 UTC). Adjust container name and log path:
+
+```cron
+15 3 * * * podman exec secretstore_app_1 flask --app app purge-audit >> /var/log/secretstore-purge-audit.log 2>&1
+```
+
+Docker Compose variant:
+
+```cron
+15 3 * * * cd /path/to/secretstore && docker compose exec -T app flask --app app purge-audit >> /var/log/secretstore-purge-audit.log 2>&1
+```
+
+### OpenShift CronJob
+
+Use the **same app image and env** as the Deployment (especially `DATABASE_URL` /
+`DATABASE_ADMIN_URL` / secrets). Example:
+
+```yaml
+# docs/openshift-purge-audit-cronjob.yaml — also see that file for a full copy
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: secretstore-purge-audit
+  namespace: secretstore   # change me
+spec:
+  # 03:15 UTC daily
+  schedule: "15 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: purge-audit
+              image: image-registry.openshift-image-registry.svc:5000/secretstore/secretstore:latest
+              imagePullPolicy: IfNotPresent
+              command: ["flask", "--app", "app", "purge-audit"]
+              # Optional dry-run first: ["flask", "--app", "app", "purge-audit", "--dry-run"]
+              envFrom:
+                - secretRef:
+                    name: secretstore-app-env   # JWT_SECRET, MASTER_KEY, SECRET_KEY, DATABASE_*
+              # If env is not in a single Secret, copy the Deployment env: block instead.
+          # Uncomment if the app uses a service account / pull secrets:
+          # serviceAccountName: secretstore
+```
+
+Apply:
+
+```bash
+oc apply -f docs/openshift-purge-audit-cronjob.yaml
+oc get cronjobs -n secretstore
+# Manual one-shot test:
+oc create job --from=cronjob/secretstore-purge-audit purge-audit-manual -n secretstore
+oc logs job/purge-audit-manual -n secretstore
+```
+
+See [openshift-purge-audit-cronjob.yaml](./openshift-purge-audit-cronjob.yaml) for a
+standalone manifest.
+
 ## Layout
 
 | Path | Role |

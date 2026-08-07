@@ -122,6 +122,354 @@ def list_org_for_team(cur, team_id, limit=40):
     return cur.fetchall()
 
 
+# Org actions that represent access / role changes (for access reviews)
+ROLE_CHANGE_ACTIONS = (
+    ORG_MEMBER_ADD,
+    ORG_MEMBER_REMOVE,
+    ORG_MEMBER_ROLE,
+    ORG_OWNERSHIP,
+    ORG_INVITE_CREATE,
+    ORG_INVITE_REVOKE,
+    ORG_JOIN_APPROVE,
+    ORG_JOIN_REJECT,
+    ORG_LDAP_MAP_ADD,
+    ORG_LDAP_MAP_DELETE,
+    ORG_PROJECT_MEMBER_ADD,
+    ORG_PROJECT_MEMBER_REMOVE,
+    ORG_PROJECT_MEMBER_ROLE,
+)
+
+
+def access_review_rows(cur) -> list[dict]:
+    """
+    Membership matrix for SOC2-style access reviews.
+    One row per explicit grant: global admin, team role, or project role.
+    Uses admin connection (caller must bypass RLS).
+    """
+    rows: list[dict] = []
+    cur.execute(
+        """
+        SELECT id::text AS user_id, email, name, is_global_admin,
+               disabled_at IS NOT NULL AS disabled
+        FROM private.users
+        WHERE is_global_admin
+        ORDER BY email
+        """
+    )
+    for r in cur.fetchall() or []:
+        rows.append(
+            {
+                "user_id": r["user_id"],
+                "email": r["email"],
+                "name": r["name"] or "",
+                "is_global_admin": True,
+                "disabled": bool(r["disabled"]),
+                "scope": "global",
+                "team": "",
+                "team_role": "",
+                "project": "",
+                "project_role": "",
+                "access_via": "global_admin",
+            }
+        )
+    cur.execute(
+        """
+        SELECT u.id::text AS user_id, u.email, u.name, u.is_global_admin,
+               u.disabled_at IS NOT NULL AS disabled,
+               t.name AS team_name, tm.role AS team_role
+        FROM api.team_members tm
+        JOIN private.users u ON u.id = tm.user_id
+        JOIN api.teams t ON t.id = tm.team_id
+        ORDER BY u.email, t.name
+        """
+    )
+    for r in cur.fetchall() or []:
+        rows.append(
+            {
+                "user_id": r["user_id"],
+                "email": r["email"],
+                "name": r["name"] or "",
+                "is_global_admin": bool(r["is_global_admin"]),
+                "disabled": bool(r["disabled"]),
+                "scope": "team",
+                "team": r["team_name"] or "",
+                "team_role": r["team_role"] or "",
+                "project": "",
+                "project_role": "",
+                "access_via": f"team:{r['team_role']}",
+            }
+        )
+    cur.execute(
+        """
+        SELECT u.id::text AS user_id, u.email, u.name, u.is_global_admin,
+               u.disabled_at IS NOT NULL AS disabled,
+               t.name AS team_name, p.name AS project_name, pm.role AS project_role
+        FROM api.project_members pm
+        JOIN private.users u ON u.id = pm.user_id
+        JOIN api.projects p ON p.id = pm.project_id
+        JOIN api.teams t ON t.id = p.team_id
+        ORDER BY u.email, t.name, p.name
+        """
+    )
+    for r in cur.fetchall() or []:
+        rows.append(
+            {
+                "user_id": r["user_id"],
+                "email": r["email"],
+                "name": r["name"] or "",
+                "is_global_admin": bool(r["is_global_admin"]),
+                "disabled": bool(r["disabled"]),
+                "scope": "project",
+                "team": r["team_name"] or "",
+                "team_role": "",
+                "project": r["project_name"] or "",
+                "project_role": r["project_role"] or "",
+                "access_via": f"project:{r['project_role']}",
+            }
+        )
+    return rows
+
+
+def list_org_audit(
+    cur,
+    *,
+    actions: tuple[str, ...] | None = None,
+    q: str = "",
+    actor: str = "",
+    since: str = "",
+    until: str = "",
+    limit: int = 100,
+    offset: int = 0,
+):
+    """List org_audit rows (admin connection recommended for full visibility)."""
+    parts = [" WHERE 1=1 "]
+    params: list = []
+    if actions:
+        parts.append(" AND a.action = ANY(%s) ")
+        params.append(list(actions))
+    q = (q or "").strip()
+    if q:
+        like = f"%{q}%"
+        parts.append(
+            """
+            AND (
+              a.action ILIKE %s OR a.detail ILIKE %s OR a.actor_email ILIKE %s
+              OR t.name ILIKE %s OR p.name ILIKE %s
+            )
+            """
+        )
+        params.extend([like, like, like, like, like])
+    actor = (actor or "").strip()
+    if actor:
+        parts.append(" AND a.actor_email ILIKE %s ")
+        params.append(f"%{actor}%")
+    since_dt = _parse_day(since, end=False)
+    if since_dt:
+        parts.append(" AND a.created_at >= %s ")
+        params.append(since_dt)
+    until_dt = _parse_day(until, end=True)
+    if until_dt:
+        parts.append(" AND a.created_at <= %s ")
+        params.append(until_dt)
+    where = "".join(parts)
+    cur.execute(
+        f"""
+        SELECT a.id, a.team_id, a.project_id, a.action, a.detail,
+               a.actor_email, a.user_id, a.created_at,
+               t.name AS team_name, p.name AS project_name
+        FROM api.org_audit a
+        LEFT JOIN api.teams t ON t.id = a.team_id
+        LEFT JOIN api.projects p ON p.id = a.project_id
+        {where}
+        ORDER BY a.created_at DESC
+        LIMIT %s OFFSET %s
+        """,
+        (*params, limit, offset),
+    )
+    rows = cur.fetchall() or []
+    for r in rows:
+        r["when_display"] = format_when(r.get("created_at"))
+    return rows
+
+
+def count_org_audit(
+    cur,
+    *,
+    actions: tuple[str, ...] | None = None,
+    q: str = "",
+    actor: str = "",
+    since: str = "",
+    until: str = "",
+) -> int:
+    parts = [" WHERE 1=1 "]
+    params: list = []
+    if actions:
+        parts.append(" AND a.action = ANY(%s) ")
+        params.append(list(actions))
+    q = (q or "").strip()
+    if q:
+        like = f"%{q}%"
+        parts.append(
+            """
+            AND (
+              a.action ILIKE %s OR a.detail ILIKE %s OR a.actor_email ILIKE %s
+              OR t.name ILIKE %s OR p.name ILIKE %s
+            )
+            """
+        )
+        params.extend([like, like, like, like, like])
+    actor = (actor or "").strip()
+    if actor:
+        parts.append(" AND a.actor_email ILIKE %s ")
+        params.append(f"%{actor}%")
+    since_dt = _parse_day(since, end=False)
+    if since_dt:
+        parts.append(" AND a.created_at >= %s ")
+        params.append(since_dt)
+    until_dt = _parse_day(until, end=True)
+    if until_dt:
+        parts.append(" AND a.created_at <= %s ")
+        params.append(until_dt)
+    where = "".join(parts)
+    cur.execute(
+        f"""
+        SELECT count(*) AS n
+        FROM api.org_audit a
+        LEFT JOIN api.teams t ON t.id = a.team_id
+        LEFT JOIN api.projects p ON p.id = a.project_id
+        {where}
+        """,
+        params,
+    )
+    return int((cur.fetchone() or {}).get("n") or 0)
+
+
+def export_secret_audit(
+    cur,
+    *,
+    since: str = "",
+    until: str = "",
+    limit: int = 50000,
+):
+    parts = [" WHERE 1=1 "]
+    params: list = []
+    since_dt = _parse_day(since, end=False)
+    if since_dt:
+        parts.append(" AND a.created_at >= %s ")
+        params.append(since_dt)
+    until_dt = _parse_day(until, end=True)
+    if until_dt:
+        parts.append(" AND a.created_at <= %s ")
+        params.append(until_dt)
+    where = "".join(parts)
+    cur.execute(
+        f"""
+        SELECT a.id::text, a.created_at, a.action, a.secret_key, a.actor_email,
+               a.project_id::text, p.name AS project_name,
+               t.name AS team_name, a.user_id::text
+        FROM api.secret_audit a
+        LEFT JOIN api.projects p ON p.id = a.project_id
+        LEFT JOIN api.teams t ON t.id = p.team_id
+        {where}
+        ORDER BY a.created_at DESC
+        LIMIT %s
+        """,
+        (*params, limit),
+    )
+    return cur.fetchall() or []
+
+
+def export_org_audit(
+    cur,
+    *,
+    since: str = "",
+    until: str = "",
+    limit: int = 50000,
+):
+    parts = [" WHERE 1=1 "]
+    params: list = []
+    since_dt = _parse_day(since, end=False)
+    if since_dt:
+        parts.append(" AND a.created_at >= %s ")
+        params.append(since_dt)
+    until_dt = _parse_day(until, end=True)
+    if until_dt:
+        parts.append(" AND a.created_at <= %s ")
+        params.append(until_dt)
+    where = "".join(parts)
+    cur.execute(
+        f"""
+        SELECT a.id::text, a.created_at, a.action, a.detail, a.actor_email,
+               a.team_id::text, t.name AS team_name,
+               a.project_id::text, p.name AS project_name,
+               a.user_id::text
+        FROM api.org_audit a
+        LEFT JOIN api.teams t ON t.id = a.team_id
+        LEFT JOIN api.projects p ON p.id = a.project_id
+        {where}
+        ORDER BY a.created_at DESC
+        LIMIT %s
+        """,
+        (*params, limit),
+    )
+    return cur.fetchall() or []
+
+
+def purge_old_audit(cur, retention_days: int) -> dict:
+    """Delete secret + org audit rows older than retention_days. Returns counts."""
+    if retention_days <= 0:
+        return {"secret_audit": 0, "org_audit": 0, "skipped": True}
+    cur.execute(
+        """
+        WITH d AS (
+          DELETE FROM api.secret_audit
+          WHERE created_at < now() - (%s || ' days')::interval
+          RETURNING 1
+        )
+        SELECT count(*)::int AS n FROM d
+        """,
+        (str(int(retention_days)),),
+    )
+    n_secret = int((cur.fetchone() or {}).get("n") or 0)
+    cur.execute(
+        """
+        WITH d AS (
+          DELETE FROM api.org_audit
+          WHERE created_at < now() - (%s || ' days')::interval
+          RETURNING 1
+        )
+        SELECT count(*)::int AS n FROM d
+        """,
+        (str(int(retention_days)),),
+    )
+    n_org = int((cur.fetchone() or {}).get("n") or 0)
+    return {"secret_audit": n_secret, "org_audit": n_org, "skipped": False}
+
+
+def audit_counts(cur) -> dict:
+    cur.execute("SELECT count(*)::int AS n FROM api.secret_audit")
+    n_secret = int((cur.fetchone() or {}).get("n") or 0)
+    cur.execute("SELECT count(*)::int AS n FROM api.org_audit")
+    n_org = int((cur.fetchone() or {}).get("n") or 0)
+    cur.execute(
+        """
+        SELECT min(created_at) AS oldest, max(created_at) AS newest
+        FROM (
+          SELECT created_at FROM api.secret_audit
+          UNION ALL
+          SELECT created_at FROM api.org_audit
+        ) x
+        """
+    )
+    span = cur.fetchone() or {}
+    return {
+        "secret_audit": n_secret,
+        "org_audit": n_org,
+        "oldest": span.get("oldest"),
+        "newest": span.get("newest"),
+    }
+
+
 def _parse_day(s: str, *, end: bool = False):
     """Parse YYYY-MM-DD to UTC datetime (start or end of day)."""
     s = (s or "").strip()

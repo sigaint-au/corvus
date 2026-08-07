@@ -74,6 +74,8 @@ DEFAULT_SETTINGS = {
     "smtp_from_name": APP_NAME,
     "smtp_login_alerts": "false",
     "totp_enforce_global_admins": "false",
+    # Audit log retention (days). 0 = keep forever. Applied by global-admin purge.
+    "audit_retention_days": "365",
 }
 TEAM_ROLES = ("owner", "admin", "member", "viewer")
 ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}

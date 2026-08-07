@@ -1,0 +1,78 @@
+# OpenShift CronJob: daily audit retention purge
+#
+# Prerequisites:
+#   - Same app image as the secretstore Deployment
+#   - Secret/env with DATABASE_ADMIN_URL (and other app env vars as needed)
+#   - Retention configured in UI: Administration → Auditing → Export & retention
+#     (audit_retention_days; 0 = forever → job exits without deleting)
+#
+# Apply:
+#   oc apply -f docs/openshift-purge-audit-cronjob.yaml
+# Manual run:
+#   oc create job --from=cronjob/secretstore-purge-audit purge-audit-manual -n secretstore
+#   oc logs job/purge-audit-manual -n secretstore
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: secretstore-purge-audit
+  namespace: secretstore
+  labels:
+    app: secretstore
+    component: purge-audit
+spec:
+  # 03:15 UTC every day
+  schedule: "15 3 * * *"
+  timeZone: "UTC" # requires Kubernetes 1.27+ / recent OpenShift; remove if unsupported
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app: secretstore
+            component: purge-audit
+        spec:
+          restartPolicy: Never
+          # serviceAccountName: secretstore
+          containers:
+            - name: purge-audit
+              # Replace with your ImageStream / registry tag
+              image: image-registry.openshift-image-registry.svc:5000/secretstore/secretstore:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - flask
+                - --app
+                - app
+                - purge-audit
+              # Dry-run instead of delete:
+              # command: ["flask", "--app", "app", "purge-audit", "--dry-run"]
+              # Override retention for this run only:
+              # command: ["flask", "--app", "app", "purge-audit", "--days", "90"]
+              envFrom:
+                # Must include at least DATABASE_ADMIN_URL (and usually DATABASE_URL,
+                # JWT_SECRET, MASTER_KEY, SECRET_KEY — same as the web Deployment).
+                - secretRef:
+                    name: secretstore-app-env
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop: ["ALL"]
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
