@@ -10,14 +10,43 @@ log = logging.getLogger(__name__)
 
 
 def ldap_cfg() -> dict:
+    """Build the LDAP settings dict from stored server settings.
+
+    Returns:
+        Mapping of each LDAP setting key to its configured value, using
+        defaults from DEFAULT_SETTINGS when a key is unset.
+
+    Example:
+        >>> cfg = ldap_cfg()
+        >>> "ldap_url" in cfg
+        True
+    """
     s = get_settings()
     return {k: s.get(k, DEFAULT_SETTINGS.get(k, "")) for k in LDAP_SETTING_KEYS}
 
 
 def ldap_tls_required_ok(url: str, start_tls: bool) -> bool:
-    """
-    Credentials must not go over cleartext LDAP.
-    Accept ldaps:// always, or ldap:// only when StartTLS is enabled.
+    """Check that LDAP credentials will not go over cleartext.
+
+    Accepts ldaps:// always, or ldap:// only when StartTLS is enabled.
+    Unknown schemes require StartTLS rather than guessing.
+
+    Args:
+        url: LDAP server URL (e.g. ``ldaps://ldap.example.com`` or
+            ``ldap://ldap.example.com``).
+        start_tls: Whether StartTLS is enabled in LDAP settings.
+
+    Returns:
+        True if the transport is safe enough for credentials; False if
+        the URL is empty, cleartext without StartTLS, or otherwise unsafe.
+
+    Example:
+        >>> ldap_tls_required_ok("ldaps://ldap.example.com", False)
+        True
+        >>> ldap_tls_required_ok("ldap://ldap.example.com", False)
+        False
+        >>> ldap_tls_required_ok("ldap://ldap.example.com", True)
+        True
     """
     u = (url or "").strip().lower()
     if not u:
@@ -31,6 +60,20 @@ def ldap_tls_required_ok(url: str, start_tls: bool) -> bool:
 
 
 def ldap_password_plain(cfg: dict) -> str:
+    """Decrypt the LDAP bind password from encrypted settings.
+
+    Args:
+        cfg: LDAP settings mapping that may contain ``ldap_bind_password``
+            (encrypted ciphertext).
+
+    Returns:
+        Decrypted plaintext bind password, or an empty string if unset
+        or decryption fails.
+
+    Example:
+        >>> ldap_password_plain({"ldap_bind_password": ""})
+        ''
+    """
     enc = (cfg.get("ldap_bind_password") or "").strip()
     if not enc:
         return ""
@@ -42,7 +85,22 @@ def ldap_password_plain(cfg: dict) -> str:
 
 
 def group_tokens(group: str) -> set:
-    """Normalize an LDAP group DN/CN into match tokens (lowercased)."""
+    """Normalize an LDAP group DN/CN into match tokens (lowercased).
+
+    Args:
+        group: Group DN or CN string (e.g. ``CN=Admins,OU=Groups,DC=ex``
+            or a bare name like ``admins``).
+
+    Returns:
+        Set of lowercased tokens used for membership matching (full DN,
+        bare CN, and ``cn=...`` forms as applicable). Empty set if
+        ``group`` is blank.
+
+    Example:
+        >>> tokens = group_tokens("CN=Admins,OU=Groups,DC=ex")
+        >>> "admins" in tokens
+        True
+    """
     g = (group or "").strip()
     if not g:
         return set()
@@ -58,6 +116,22 @@ def group_tokens(group: str) -> set:
 
 
 def group_matches(map_group: str, user_groups: list) -> bool:
+    """Return whether any user group matches a configured map group.
+
+    Args:
+        map_group: Group name or DN from a role/team map entry.
+        user_groups: List of group DNs/CNs belonging to the user.
+
+    Returns:
+        True if any entry in ``user_groups`` shares tokens with
+        ``map_group``; False if ``map_group`` is empty or no overlap.
+
+    Example:
+        >>> group_matches("admins", ["CN=Admins,OU=Groups,DC=ex"])
+        True
+        >>> group_matches("admins", ["CN=Users,OU=Groups,DC=ex"])
+        False
+    """
     want = group_tokens(map_group)
     if not want:
         return False
@@ -68,6 +142,21 @@ def group_matches(map_group: str, user_groups: list) -> bool:
 
 
 def ldap_attr(entry, attr: str, default: str = "") -> str:
+    """Read the first value of an LDAP attribute from an entry.
+
+    Args:
+        entry: ldap3 entry object with ``entry_attributes_as_dict``, or
+            a falsy value when no entry is available.
+        attr: Attribute name to read (e.g. ``mail``, ``displayName``).
+        default: Value returned when the attribute is missing or empty.
+
+    Returns:
+        String form of the first attribute value, or ``default``.
+
+    Example:
+        >>> ldap_attr(None, "mail", "nobody@example.com")
+        'nobody@example.com'
+    """
     if not entry or not attr:
         return default
     try:
@@ -80,7 +169,19 @@ def ldap_attr(entry, attr: str, default: str = "") -> str:
 
 
 def ldap_escape(value: str) -> str:
-    """Escape special chars for LDAP filter values."""
+    """Escape special characters for use in LDAP filter values.
+
+    Args:
+        value: Raw string to embed in an LDAP filter (login, DN, etc.).
+
+    Returns:
+        Escaped string safe for LDAP filter interpolation (handles
+        ``\\``, ``*``, ``(``, ``)``, and null bytes).
+
+    Example:
+        >>> ldap_escape("user*name")
+        'user\\\\2aname'
+    """
     out = []
     for ch in value or "":
         if ch in r"\*()":
@@ -93,9 +194,25 @@ def ldap_escape(value: str) -> str:
 
 
 def _ldap_bind(server, user=None, password=None, start_tls=False, receive_timeout=10):
-    """
-    open → optional start_tls (fail closed) → bind.
-    Never auto_bind: credentials must not go over cleartext when StartTLS is required.
+    """Open an LDAP connection, optionally StartTLS, then bind.
+
+    Never uses auto_bind so credentials do not go over cleartext when
+    StartTLS is required. Order is: open → optional start_tls (fail
+    closed) → bind.
+
+    Args:
+        server: ldap3 ``Server`` instance to connect to.
+        user: Bind DN or username; omit for anonymous open/bind.
+        password: Bind password corresponding to ``user``.
+        start_tls: If True, negotiate StartTLS after open and before bind.
+        receive_timeout: Socket receive timeout in seconds.
+
+    Returns:
+        Bound ldap3 ``Connection`` ready for search/operations.
+
+    Example:
+        >>> # conn = _ldap_bind(server, user="cn=svc,dc=ex", password="secret", start_tls=True)
+        >>> # conn.search(...)
     """
     from ldap3 import Connection
 
@@ -123,9 +240,24 @@ def _ldap_bind(server, user=None, password=None, start_tls=False, receive_timeou
 
 
 def ldap_authenticate(login: str, password: str) -> dict | None:
-    """
-    Bind as user against LDAP. Returns {email, name, groups} or None.
-    groups is a list of group DNs/CNs (strings).
+    """Authenticate a user against LDAP and collect profile/group data.
+
+    Binds with service credentials (if configured) to locate the user,
+    proves the user's password with a second bind, and resolves groups
+    via memberOf and/or a group search.
+
+    Args:
+        login: User login identifier used in the user filter (often email).
+        password: Plaintext password to verify via user bind.
+
+    Returns:
+        Dict with keys ``email``, ``name``, ``groups`` (list of group
+        DNs/CNs), and ``dn`` on success; None if LDAP is disabled,
+        misconfigured, transport is unsafe, user not found, or auth fails.
+
+    Example:
+        >>> result = ldap_authenticate("user@example.com", "secret")
+        >>> # result is None or {"email": "...", "name": "...", "groups": [...], "dn": "..."}
     """
     cfg = ldap_cfg()
     if not truthy(cfg.get("ldap_enabled")):
@@ -216,7 +348,20 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
 
 
 def sync_ldap_user(email: str, name: str, groups: list) -> dict:
-    """Upsert LDAP user, apply global role maps + team membership maps. Returns user row."""
+    """Upsert an LDAP user and apply role/team membership maps.
+
+    Args:
+        email: Normalized user email address.
+        name: Display name (empty string allowed).
+        groups: List of LDAP group DNs/CNs for map matching.
+
+    Returns:
+        User row dict from the database after upsert and map application.
+
+    Example:
+        >>> # user = sync_ldap_user("a@b.com", "Ada", ["CN=Admins,DC=ex"])
+        >>> # user["email"] == "a@b.com"
+    """
     from dir_sync import apply_global_admin_maps, apply_team_membership_maps, fetch_user_row
 
     with db.connect_admin() as conn, conn.cursor() as cur:
@@ -229,4 +374,3 @@ def sync_ldap_user(email: str, name: str, groups: list) -> dict:
             cur, uid, groups, cur.fetchall() or [], group_key="ldap_group", source="ldap"
         )
         return fetch_user_row(cur, uid)
-

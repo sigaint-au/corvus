@@ -14,17 +14,60 @@ MAX_TOKENS_PER_USER = 50
 
 
 def _hash(raw: str) -> str:
+    """Hash a raw PAT for storage and lookup.
+
+    Args:
+        raw: Full plaintext personal access token.
+
+    Returns:
+        Hex SHA-256 digest of ``raw``.
+
+    Example:
+        >>> _hash("pat_xxxxx") == sha256_hex("pat_xxxxx")
+        True
+    """
     return sha256_hex(raw)
 
 
 def mint_raw() -> tuple[str, str, str]:
-    """Return (raw_token, token_hash, token_prefix)."""
+    """Generate a new personal access token and its stored metadata.
+
+    Args:
+        None.
+
+    Returns:
+        Tuple ``(raw_token, token_hash, token_prefix)`` where:
+        - ``raw_token`` is shown once to the user (``pat_`` + urlsafe secret)
+        - ``token_hash`` is the SHA-256 hex to store
+        - ``token_prefix`` is the first 12 characters for UI identification
+
+    Example:
+        >>> raw, thash, prefix = mint_raw()
+        >>> raw.startswith("pat_")
+        True
+        >>> len(thash)
+        64
+    """
     raw = PREFIX + secrets.token_urlsafe(32)
     thash = _hash(raw)
     return raw, thash, raw[:12]
 
 
 def list_for_user(user_id: str) -> list[dict]:
+    """List PAT metadata for a user (never returns the raw token).
+
+    Args:
+        user_id: UUID of the token owner.
+
+    Returns:
+        List of dicts with ``id``, ``name``, ``token_prefix``, ``expires_at``,
+        ``last_used_at``, ``created_at``, newest first.
+
+    Example:
+        >>> tokens = list_for_user(session["user_id"])
+        >>> for t in tokens:
+        ...     print(t["name"], t["token_prefix"])
+    """
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -39,6 +82,18 @@ def list_for_user(user_id: str) -> list[dict]:
 
 
 def count_for_user(user_id: str) -> int:
+    """Count how many PATs the user currently has.
+
+    Args:
+        user_id: UUID of the user.
+
+    Returns:
+        Integer count (0 if none).
+
+    Example:
+        >>> if count_for_user(uid) >= MAX_TOKENS_PER_USER:
+        ...     raise ValueError("limit reached")
+    """
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -53,7 +108,23 @@ def count_for_user(user_id: str) -> int:
 
 
 def create(user_id: str, name: str, expires_days: int | None = None) -> str:
-    """Create PAT; returns raw token (shown once). Raises ValueError on bad input."""
+    """Create a PAT for the user and return the raw token (shown once).
+
+    Args:
+        user_id: UUID of the owner.
+        name: Human label (required, truncated to ``MAX_NAME_LEN``).
+        expires_days: Optional lifetime in days (1–3650). ``None`` means no expiry.
+
+    Returns:
+        Plaintext raw token string (``pat_...``). Store only the hash server-side.
+
+    Raises:
+        ValueError: Missing name, over token limit, or invalid ``expires_days``.
+
+    Example:
+        >>> raw = create(uid, "CI bot", expires_days=90)
+        >>> # Show raw once; cannot retrieve later
+    """
     name = (name or "").strip()[:MAX_NAME_LEN]
     if not name:
         raise ValueError("Name is required")
@@ -78,6 +149,19 @@ def create(user_id: str, name: str, expires_days: int | None = None) -> str:
 
 
 def revoke(user_id: str, token_id: str) -> bool:
+    """Delete a PAT owned by the user.
+
+    Args:
+        user_id: UUID of the owner (must match the row).
+        token_id: UUID of the PAT row to delete.
+
+    Returns:
+        True if a row was deleted; False if not found or not owned.
+
+    Example:
+        >>> if revoke(session["user_id"], token_id):
+        ...     flash("Token revoked")
+    """
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -90,7 +174,21 @@ def revoke(user_id: str, token_id: str) -> bool:
 
 
 def resolve(raw: str) -> str | None:
-    """Validate raw PAT; return user_id or None. Updates last_used_at on success."""
+    """Validate a raw PAT and return the owning user_id.
+
+    Updates ``last_used_at`` on success. Rejects disabled users and expired tokens.
+
+    Args:
+        raw: Full plaintext token from Authorization or form field.
+
+    Returns:
+        User UUID string on success, or None if invalid/expired/disabled.
+
+    Example:
+        >>> uid = resolve(request.headers.get("Authorization", "").removeprefix("Bearer "))
+        >>> if uid:
+        ...     jwt = make_jwt(uid)
+    """
     raw = (raw or "").strip()
     if not raw.startswith(PREFIX) or len(raw) < 20:
         return None

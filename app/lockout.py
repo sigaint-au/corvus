@@ -10,6 +10,22 @@ WINDOW = "5 minutes"
 
 
 def is_locked(email: str) -> bool:
+    """Return whether ``email`` is temporarily locked out of login.
+
+    Counts rows in ``private.login_failures`` within the last ``WINDOW``
+    (5 minutes). Locked when count >= ``MAX_ATTEMPTS`` (5). On DB errors,
+    fails open (returns False) so login is not blocked by infrastructure issues.
+
+    Args:
+        email: Login email (normalized to lowercase). Empty string never locks.
+
+    Returns:
+        True if the account should be refused login; False otherwise.
+
+    Example:
+        >>> if is_locked("user@example.com"):
+        ...     flash("Too many failed attempts; try again later")
+    """
     email = (email or "").strip().lower()
     if not email:
         return False
@@ -30,6 +46,19 @@ def is_locked(email: str) -> bool:
 
 
 def record_failure(email: str):
+    """Record a failed login attempt for lockout accounting.
+
+    Args:
+        email: Login email that failed authentication. Empty values are ignored.
+
+    Returns:
+        None. Inserts a row into ``private.login_failures`` (best-effort).
+
+    Example:
+        >>> record_failure("user@example.com")
+        >>> is_locked("user@example.com")  # after MAX_ATTEMPTS failures
+        True
+    """
     email = (email or "").strip().lower()
     if not email:
         return
@@ -44,6 +73,19 @@ def record_failure(email: str):
 
 
 def clear_failures(email: str):
+    """Clear all login failure records for ``email`` after a successful login.
+
+    Args:
+        email: Login email that just authenticated successfully.
+
+    Returns:
+        None. Deletes matching rows from ``private.login_failures`` (best-effort).
+
+    Example:
+        >>> clear_failures("user@example.com")
+        >>> is_locked("user@example.com")
+        False
+    """
     email = (email or "").strip().lower()
     if not email:
         return

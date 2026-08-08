@@ -16,10 +16,29 @@ log = logging.getLogger(__name__)
 
 
 def register(app):
+    """Register machine-token list, create, and delete routes on the app.
+
+    Args:
+        app: Flask application instance to attach routes to.
+
+    Returns:
+        None.
+
+    Example:
+        register(app)
+    """
 
     @app.get("/machines")
     @authz.login_required
     def machines_list():
+        """List machine tokens for all projects under the session team.
+
+        Returns:
+            Rendered machines list template for the active team.
+
+        Example:
+            GET /machines
+        """
         tid = session.get("team_id")
         team, tokens = None, []
         if tid:
@@ -46,6 +65,17 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/tokens")
     @authz.login_required
     def create_token(project_id):
+        """Create a project machine token; raw secret is shown once via session.
+
+        Args:
+            project_id: UUID of the project that owns the token.
+
+        Returns:
+            Redirect to the project detail page (return_tab or tokens).
+
+        Example:
+            POST /projects/<project_id>/tokens with name, role, expires_days form fields
+        """
         name = request.form.get("name", "machine").strip() or "machine"
         role = (request.form.get("role") or "read-only").strip()
         if role not in config.MACHINE_TOKEN_ROLES:
@@ -62,6 +92,14 @@ def register(app):
             return_tab = "tokens"
 
         def _token_redirect():
+            """Redirect back to project detail using the chosen return tab.
+
+            Returns:
+                Flask redirect response to project_detail with return_tab.
+
+            Example:
+                return _token_redirect()
+            """
             return redirect(
                 url_for("project_detail", project_id=project_id, tab=return_tab)
             )
@@ -127,6 +165,18 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/tokens/<uuid:token_id>/delete")
     @authz.login_required
     def delete_token(project_id, token_id):
+        """Delete a project machine token.
+
+        Args:
+            project_id: UUID of the project that owns the token.
+            token_id: UUID of the machine token to delete.
+
+        Returns:
+            Redirect to the project tokens tab.
+
+        Example:
+            POST /projects/<project_id>/tokens/<token_id>/delete
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
             if not cur.fetchone()["w"]:

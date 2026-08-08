@@ -46,6 +46,18 @@ _ALLOWED_ID_TOKEN_ALGS = frozenset(
 
 
 def oidc_cfg() -> dict:
+    """Load and normalize OIDC settings from the server settings store.
+
+    Returns:
+        Dict of OIDC configuration keys (enabled flag, issuer, client id,
+        secret, scopes, button label, username/groups claims, and email
+        verification requirement), with stripped strings and defaults.
+
+    Example:
+        >>> cfg = oidc_cfg()
+        >>> "oidc_issuer" in cfg and "oidc_client_id" in cfg
+        True
+    """
     s = settings_svc.get_settings()
     return {
         "oidc_enabled": s.get("oidc_enabled", "false"),
@@ -63,6 +75,16 @@ def oidc_cfg() -> dict:
 
 
 def oidc_enabled() -> bool:
+    """Return whether OIDC login is configured and turned on.
+
+    Returns:
+        True when ``oidc_enabled`` is truthy and both issuer and client
+        id are non-empty; False otherwise.
+
+    Example:
+        >>> isinstance(oidc_enabled(), bool)
+        True
+    """
     c = oidc_cfg()
     return settings_svc.truthy(c["oidc_enabled"]) and bool(
         c["oidc_issuer"] and c["oidc_client_id"]
@@ -70,6 +92,19 @@ def oidc_enabled() -> bool:
 
 
 def _client_secret_plain() -> str:
+    """Decrypt the OIDC client secret, falling back to stored value.
+
+    On decrypt failure (e.g. plaintext mis-save or MASTER_KEY rotation),
+    logs a warning and returns the stored string as plaintext.
+
+    Returns:
+        Plaintext client secret string, or empty string if unset.
+
+    Example:
+        >>> secret = _client_secret_plain()
+        >>> isinstance(secret, str)
+        True
+    """
     enc = oidc_cfg().get("oidc_client_secret") or ""
     if not enc:
         return ""
@@ -85,6 +120,23 @@ def _client_secret_plain() -> str:
 
 
 def _http_json(method: str, url: str, data: dict | None = None, headers: dict | None = None) -> dict:
+    """Perform an HTTP request and parse a JSON response body.
+
+    Args:
+        method: HTTP method (e.g. ``GET``, ``POST``).
+        url: Absolute request URL.
+        data: Optional form fields encoded as
+            ``application/x-www-form-urlencoded`` for the body.
+        headers: Optional extra request headers merged over defaults
+            (Accept JSON, User-Agent).
+
+    Returns:
+        Parsed JSON object as a dict, or empty dict if the body is empty.
+
+    Example:
+        >>> # doc = _http_json("GET", "https://idp.example/.well-known/openid-configuration")
+        >>> # "authorization_endpoint" in doc
+    """
     body = None
     hdrs = {"Accept": "application/json", "User-Agent": "secretstore-oidc/1"}
     if headers:
@@ -105,6 +157,20 @@ def _http_json(method: str, url: str, data: dict | None = None, headers: dict | 
 
 
 def discover(issuer: str | None = None) -> dict:
+    """Fetch (and cache) the OpenID Connect discovery document for an issuer.
+
+    Args:
+        issuer: Issuer base URL; when None, uses configured ``oidc_issuer``.
+            Trailing slashes are stripped.
+
+    Returns:
+        Discovery document dict including at least
+        ``authorization_endpoint`` and ``token_endpoint``.
+
+    Example:
+        >>> # doc = discover("https://keycloak.example/realms/app")
+        >>> # "jwks_uri" in doc
+    """
     issuer = (issuer or oidc_cfg()["oidc_issuer"]).rstrip("/")
     if not issuer:
         raise RuntimeError("OIDC issuer not configured")
@@ -121,12 +187,35 @@ def discover(issuer: str | None = None) -> dict:
 
 
 def clear_discovery_cache():
+    """Clear cached OIDC discovery documents and JWKS clients.
+
+    Returns:
+        None.
+
+    Example:
+        >>> clear_discovery_cache()
+    """
     _discovery_cache.clear()
     _jwks_clients.clear()
 
 
 def redirect_uri_for_request(url_root: str = "") -> str:
-    """OIDC redirect URI: prefer configured server_url, else request url_root."""
+    """Build the OIDC redirect URI for the callback endpoint.
+
+    Prefers the configured public server URL; falls back to the request
+    ``url_root``.
+
+    Args:
+        url_root: Request root URL (e.g. ``https://app.example/``) used
+            when no configured public base URL is available.
+
+    Returns:
+        Absolute redirect URI ending in ``/login/oidc/callback``.
+
+    Example:
+        >>> redirect_uri_for_request("https://app.example/")
+        'https://app.example/login/oidc/callback'
+    """
     base = settings_svc.public_base_url(url_root)
     if not base:
         base = (url_root or "").rstrip("/")
@@ -134,6 +223,26 @@ def redirect_uri_for_request(url_root: str = "") -> str:
 
 
 def build_authorize_url(*, redirect_uri: str, state: str, nonce: str) -> str:
+    """Build the authorization-code redirect URL for the identity provider.
+
+    Args:
+        redirect_uri: Registered OIDC callback URL.
+        state: Opaque CSRF/state token returned by the IdP.
+        nonce: Nonce embedded in the ID token for replay protection.
+
+    Returns:
+        Full authorization endpoint URL with query parameters
+        (response_type, client_id, redirect_uri, scope, state, nonce).
+        Ensures ``openid`` is included in the scope.
+
+    Example:
+        >>> # url = build_authorize_url(
+        ... #     redirect_uri="https://app.example/login/oidc/callback",
+        ... #     state="abc",
+        ... #     nonce="xyz",
+        ... # )
+        >>> # url.startswith("https://")
+    """
     c = oidc_cfg()
     doc = discover(c["oidc_issuer"])
     scopes = c["oidc_scopes"] or "openid email profile"
@@ -151,6 +260,23 @@ def build_authorize_url(*, redirect_uri: str, state: str, nonce: str) -> str:
 
 
 def exchange_code(*, code: str, redirect_uri: str) -> dict:
+    """Exchange an authorization code for tokens at the token endpoint.
+
+    Args:
+        code: Authorization code from the IdP callback query string.
+        redirect_uri: Same redirect URI used in the authorize request.
+
+    Returns:
+        Token response dict (typically includes ``id_token``,
+        ``access_token``, etc.).
+
+    Example:
+        >>> # tokens = exchange_code(
+        ... #     code="auth-code",
+        ... #     redirect_uri="https://app.example/login/oidc/callback",
+        ... # )
+        >>> # "id_token" in tokens
+    """
     c = oidc_cfg()
     doc = discover(c["oidc_issuer"])
     data = {
@@ -166,6 +292,22 @@ def exchange_code(*, code: str, redirect_uri: str) -> dict:
 
 
 def verify_id_token(id_token: str, *, nonce: str) -> dict[str, Any]:
+    """Verify and decode an OIDC ID token using the IdP JWKS.
+
+    Validates signature, audience, issuer, required claims (exp, iat, sub),
+    allowed asymmetric algorithms only, and exact nonce match.
+
+    Args:
+        id_token: Compact JWT string from the token endpoint.
+        nonce: Expected nonce previously sent in the authorize request.
+
+    Returns:
+        Decoded ID token claims as a dict.
+
+    Example:
+        >>> # claims = verify_id_token(id_token, nonce=session_nonce)
+        >>> # claims["sub"]
+    """
     c = oidc_cfg()
     issuer = c["oidc_issuer"]
     doc = discover(issuer)
@@ -197,7 +339,22 @@ def verify_id_token(id_token: str, *, nonce: str) -> dict[str, Any]:
 
 
 def _claim_value(claims: dict, claim_name: str) -> str:
-    """Read a top-level or dotted claim (e.g. preferred_username)."""
+    """Read a top-level or dotted claim as a non-container string.
+
+    Args:
+        claims: ID token (or userinfo) claims mapping.
+        claim_name: Claim key, or dotted path (e.g. ``preferred_username``).
+
+    Returns:
+        Stripped string value, or empty string if missing, blank, or if
+        the value is a dict/list.
+
+    Example:
+        >>> _claim_value({"preferred_username": "ada"}, "preferred_username")
+        'ada'
+        >>> _claim_value({"a": {"b": "x"}}, "a.b")
+        'x'
+    """
     claim_name = (claim_name or "").strip()
     if not claim_name:
         return ""
@@ -219,7 +376,24 @@ def _claim_value(claims: dict, claim_name: str) -> str:
 
 
 def _email_verified(claims: dict) -> bool:
-    """Accept only explicit true / "true" (reject missing/false for account linking)."""
+    """Return whether the ID token asserts a verified email.
+
+    Accepts only explicit true / ``"true"`` / ``"1"`` / ``"yes"``;
+    missing or false values are rejected for account linking safety.
+
+    Args:
+        claims: ID token claims mapping that may include
+            ``email_verified``.
+
+    Returns:
+        True if email is explicitly verified; False otherwise.
+
+    Example:
+        >>> _email_verified({"email_verified": True})
+        True
+        >>> _email_verified({"email_verified": False})
+        False
+    """
     v = claims.get("email_verified")
     if v is True:
         return True
@@ -229,6 +403,31 @@ def _email_verified(claims: dict) -> bool:
 
 
 def claims_to_identity(claims: dict) -> dict:
+    """Map verified ID token claims to an application identity dict.
+
+    Requires a usable email claim; optionally enforces
+    ``email_verified`` per settings. Display name prefers the configured
+    username claim, then ``name``, then given/family name, then the
+    email local-part.
+
+    Args:
+        claims: Decoded ID token claims (after signature/nonce checks).
+
+    Returns:
+        Dict with ``email``, ``name``, ``username``, ``sub``, and
+        ``groups`` (list of group/role strings).
+
+    Example:
+        >>> idt = claims_to_identity({
+        ...     "email": "A@B.COM",
+        ...     "email_verified": True,
+        ...     "preferred_username": "ada.l",
+        ...     "sub": "1",
+        ...     "groups": ["admins"],
+        ... })
+        >>> idt["email"]
+        'a@b.com'
+    """
     cfg = oidc_cfg()
     email = (claims.get("email") or "").strip().lower()
     if not email or "@" not in email:
@@ -261,11 +460,39 @@ def claims_to_identity(claims: dict) -> dict:
 
 
 def groups_from_claims(claims: dict, claim_name: str | None = None) -> list[str]:
-    """Collect group/role names from ID token claims (Keycloak-friendly)."""
+    """Collect group/role names from ID token claims (Keycloak-friendly).
+
+    Reads the configured (or provided) groups claim, supports dotted
+    nested paths, and also merges Keycloak ``realm_access.roles``.
+    Deduplicates case-insensitively while preserving first-seen order.
+
+    Args:
+        claims: ID token claims mapping.
+        claim_name: Optional claim key or dotted path; defaults to
+            configured ``oidc_groups_claim`` (usually ``groups``).
+
+    Returns:
+        List of unique group/role name strings.
+
+    Example:
+        >>> groups_from_claims({"groups": ["admins", "eng"], "realm_access": {"roles": ["admins"]}})
+        ['admins', 'eng']
+    """
     claim_name = (claim_name or oidc_cfg().get("oidc_groups_claim") or "groups").strip()
     out: list[str] = []
 
     def _add(val):
+        """Append group names from a claim value into the outer list.
+
+        Args:
+            val: Claim value: a list of names, a single string, or None.
+
+        Returns:
+            None.
+
+        Example:
+            >>> # _add(["admins"]); _add("eng")  # mutates outer ``out``
+        """
         if val is None:
             return
         if isinstance(val, list):
@@ -303,7 +530,21 @@ def groups_from_claims(claims: dict, claim_name: str | None = None) -> list[str]
 
 
 def sync_oidc_user(email: str, name: str, groups: list | None = None) -> dict:
-    """Upsert OIDC user; apply global + team group maps. Returns user row."""
+    """Upsert an OIDC user and apply global/team group maps.
+
+    Args:
+        email: Normalized user email address.
+        name: Display name (empty string allowed).
+        groups: Optional list of OIDC group/role names for map matching;
+            treated as empty list when None.
+
+    Returns:
+        User row dict from the database after upsert and map application.
+
+    Example:
+        >>> # user = sync_oidc_user("a@b.com", "Ada", ["admins"])
+        >>> # user["email"] == "a@b.com"
+    """
     from dir_sync import apply_global_admin_maps, apply_team_membership_maps, fetch_user_row
 
     groups = list(groups or [])
@@ -323,6 +564,17 @@ def sync_oidc_user(email: str, name: str, groups: list | None = None) -> dict:
 
 
 def new_state_nonce() -> tuple[str, str]:
+    """Generate cryptographically strong OIDC state and nonce values.
+
+    Returns:
+        Tuple ``(state, nonce)`` of URL-safe random tokens (24 bytes each
+        before encoding).
+
+    Example:
+        >>> state, nonce = new_state_nonce()
+        >>> len(state) > 0 and len(nonce) > 0 and state != nonce
+        True
+    """
     return secrets.token_urlsafe(24), secrets.token_urlsafe(24)
 
 

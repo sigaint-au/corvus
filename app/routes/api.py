@@ -13,11 +13,36 @@ log = logging.getLogger(__name__)
 
 
 def register(app):
+    """Register JSON API helper routes on the Flask app.
+
+    Args:
+        app: Flask application instance to attach routes to.
+
+    Returns:
+        None.
+
+    Example:
+        >>> from app.routes import api
+        >>> api.register(app)
+    """
     @app.get("/api/token")
     def api_token():
-        """Return short-lived JWT for PostgREST.
+        """Return a short-lived JWT for PostgREST API access.
 
-        Auth: browser session, or ``Authorization: Bearer pat_…`` personal access token.
+        Auth: browser session, or ``Authorization: Bearer pat_…`` personal
+        access token. Unauthenticated JSON/XHR clients get 401; browsers are
+        redirected to login (or 2FA if pending).
+
+        Args:
+            None (reads ``Authorization`` header and Flask session).
+
+        Returns:
+            JSON with ``access_token``, ``token_type``, ``expires_in``, and
+            ``postgrest`` URL; or 401 JSON; or redirect to login/2FA.
+
+        Example:
+            GET /api/token
+            GET /api/token with Authorization: Bearer pat_…
         """
         uid = None
         auth = request.headers.get("Authorization") or ""
@@ -52,9 +77,19 @@ def register(app):
     @app.get("/api/users/suggest")
     @authz.login_required
     def users_suggest():
-        """
-        Autocomplete for member/admin email fields.
-        Global admins see all active users; others see users who share a team.
+        """Autocomplete user emails for member/admin fields.
+
+        Global admins see all active users; others only users who share a team.
+        Empty query returns an empty list.
+
+        Args:
+            None (reads query ``q``; uses session ``user_id``).
+
+        Returns:
+            JSON list of objects with ``email``, ``name``, and ``label``.
+
+        Example:
+            GET /api/users/suggest?q=ada
         """
         q = (request.args.get("q") or "").strip().lower()[:80]
         if len(q) < 1:

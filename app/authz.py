@@ -31,8 +31,39 @@ _TOTP_SETUP_OK = frozenset(
 
 
 def login_required(f):
+    """Require an authenticated browser session before running a view.
+
+    Redirects users with a pending 2FA challenge to the 2FA page, and
+    unauthenticated users to login. Otherwise calls the wrapped view.
+
+    Args:
+        f: The Flask view function to protect.
+
+    Returns:
+        A decorator wrapper that enforces login before invoking ``f``.
+
+    Example:
+        >>> @login_required
+        ... def dashboard():
+        ...     return "ok"
+    """
+
     @wraps(f)
     def wrapped(*a, **kw):
+        """Enforce session login and 2FA state for the protected view.
+
+        Args:
+            *a: Positional arguments forwarded to the original view.
+            **kw: Keyword arguments forwarded to the original view.
+
+        Returns:
+            A redirect to 2FA or login when unauthenticated, otherwise
+            the result of the original view function.
+
+        Example:
+            Applied automatically when a route is decorated with
+            ``@login_required``; Flask invokes this wrapper on each request.
+        """
         if session.get("pending_2fa_uid"):
             return redirect(url_for("login_2fa"))
         if not session.get("user_id"):
@@ -43,10 +74,20 @@ def login_required(f):
 
 
 def validate_registered_session():
-    """
-    Ensure the browser session is still registered server-side (not revoked).
-    Also gates mid-login 2FA and forced TOTP enrollment.
-    Skipped in unit tests (no sid / no DB session rows).
+    """Ensure the browser session is still registered server-side (not revoked).
+
+    Also gates mid-login 2FA and forced TOTP enrollment. Skipped in unit
+    tests (no sid / no DB session rows). May clear the session and redirect
+    when the account is disabled, enrollment is required, or the server-side
+    session is missing/expired.
+
+    Returns:
+        ``None`` when the request may proceed, or a Flask redirect response
+        when the user must re-authenticate, complete 2FA, or set up TOTP.
+
+    Example:
+        >>> # Register as a before_request handler
+        >>> app.before_request(validate_registered_session)
     """
     from flask import current_app
 
@@ -112,8 +153,39 @@ def validate_registered_session():
 
 
 def global_admin_required(f):
+    """Require a logged-in global administrator before running a view.
+
+    Checks the database (not only the session flag) so demotions take effect
+    immediately. Redirects non-admins to the projects list.
+
+    Args:
+        f: The Flask view function to protect.
+
+    Returns:
+        A decorator wrapper that enforces global-admin access before invoking ``f``.
+
+    Example:
+        >>> @global_admin_required
+        ... def admin_users():
+        ...     return "admin only"
+    """
+
     @wraps(f)
     def wrapped(*a, **kw):
+        """Enforce global-admin membership for the protected view.
+
+        Args:
+            *a: Positional arguments forwarded to the original view.
+            **kw: Keyword arguments forwarded to the original view.
+
+        Returns:
+            A redirect to login or projects list when unauthorized, otherwise
+            the result of the original view function.
+
+        Example:
+            Applied automatically when a route is decorated with
+            ``@global_admin_required``; Flask invokes this wrapper on each request.
+        """
         if not session.get("user_id"):
             return redirect(url_for("login"))
         # Always verify against DB (session flag alone can be stale after demotion)
@@ -128,10 +200,33 @@ def global_admin_required(f):
 
 
 def htmx():
+    """Report whether the current request was issued by HTMX.
+
+    Returns:
+        ``True`` if the ``HX-Request`` header is present and equal to
+        ``"true"``, otherwise ``False``.
+
+    Example:
+        >>> if htmx():
+        ...     return render_template("partial.html")
+    """
     return request.headers.get("HX-Request") == "true"
 
 
 def is_global_admin(user_id: str) -> bool:
+    """Check whether a user has the global administrator flag in the database.
+
+    Args:
+        user_id: UUID string of the user to look up.
+
+    Returns:
+        ``True`` if the user exists and ``is_global_admin`` is set; ``False``
+        on missing user, DB errors, or when the flag is unset.
+
+    Example:
+        >>> if is_global_admin(session["user_id"]):
+        ...     show_admin_menu()
+    """
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
@@ -145,7 +240,20 @@ def is_global_admin(user_id: str) -> bool:
 
 
 def is_account_disabled(user_id: str) -> bool:
-    """True when a global admin has disabled this account."""
+    """True when a global admin has disabled this account.
+
+    Args:
+        user_id: UUID string of the user to look up. Empty/falsy values
+            short-circuit to ``False``.
+
+    Returns:
+        ``True`` if the user row has a non-null ``disabled_at``; ``False``
+        for missing users, empty ids, or DB errors.
+
+    Example:
+        >>> if is_account_disabled(uid):
+        ...     session.clear()
+    """
     if not user_id:
         return False
     try:
@@ -161,6 +269,18 @@ def is_account_disabled(user_id: str) -> bool:
 
 
 def csrf_token() -> str:
+    """Return the session CSRF token, creating one if missing.
+
+    Stores a 16-byte hex token under ``session["_csrf"]`` on first use.
+
+    Returns:
+        The current CSRF token string for embedding in forms or headers.
+
+    Example:
+        >>> # In a template context or form helper
+        >>> token = csrf_token()
+        >>> html = f'<input type="hidden" name="_csrf" value="{token}">'
+    """
     tok = session.get("_csrf")
     if not tok:
         tok = secrets.token_hex(16)
@@ -169,7 +289,20 @@ def csrf_token() -> str:
 
 
 def csrf_protect():
-    """Reject POSTs without a valid session CSRF token (form or X-CSRF-Token)."""
+    """Reject POSTs without a valid session CSRF token (form or X-CSRF-Token).
+
+    No-op for non-POST methods, ``/eso/`` and ``/api/token`` paths, and unit
+    tests unless ``CSRF_TESTING`` is enabled. Compares ``session["_csrf"]``
+    to the form field ``_csrf`` or header ``X-CSRF-Token``.
+
+    Returns:
+        ``None`` when the request is allowed. Aborts with HTTP 400 when the
+        token is missing or does not match.
+
+    Example:
+        >>> # Register as a before_request handler
+        >>> app.before_request(csrf_protect)
+    """
     if request.method != "POST":
         return
     # Bearer-token ESO/machine API — not session-cookie CSRF surface
@@ -188,7 +321,23 @@ def csrf_protect():
 
 
 def safe_redirect_target(nxt: str | None, fallback: str) -> str:
-    """Allow only same-origin relative paths (blocks //evil open redirects)."""
+    """Allow only same-origin relative paths (blocks //evil open redirects).
+
+    Args:
+        nxt: Candidate redirect target from a query parameter or form field.
+            May be ``None`` or empty.
+        fallback: URL to use when ``nxt`` is missing or unsafe.
+
+    Returns:
+        ``nxt`` when it is a relative path with no scheme or netloc;
+        otherwise ``fallback``.
+
+    Example:
+        >>> safe_redirect_target("/projects", "/dashboard")
+        '/projects'
+        >>> safe_redirect_target("//evil.example", "/dashboard")
+        '/dashboard'
+    """
     if not nxt:
         return fallback
     parts = urlsplit(nxt)

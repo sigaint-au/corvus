@@ -27,7 +27,22 @@ _TYPE_BARE_RE = re.compile(r"\btype:([a-z]+)\b", re.I)
 
 
 def env_line_match(line: str, *, allow_dots: bool = False):
-    """Match KEY=value; allow_dots enables KV key charset."""
+    """Match KEY=value; allow_dots enables KV key charset.
+
+    Args:
+        line: Single line that may contain a KEY=value assignment.
+        allow_dots: If True, allow dots and hyphens in the key (KV mode);
+            if False, keys must match [A-Za-z_][A-Za-z0-9_]*.
+
+    Returns:
+        A re.Match for the key and value groups, or None if the line is
+        not a valid env-style assignment under the chosen key rules.
+
+    Example:
+        >>> m = env_line_match("FOO=bar")
+        >>> m.group(1), m.group(2)
+        ('FOO', 'bar')
+    """
     m = _KEY_LINE.match(line)
     if not m:
         return None
@@ -37,10 +52,20 @@ def env_line_match(line: str, *, allow_dots: bool = False):
 
 
 def detect_secret_kind(value: str, note: str = "") -> str:
-    """
-    Infer kind from value content (creation-time auto-suggest / one-shot backfill).
+    """Infer kind from value content (creation-time auto-suggest / one-shot backfill).
 
     ``note`` is ignored for inference; kept optional for call-site compatibility.
+
+    Args:
+        value: Secret plaintext to inspect for certificates, keys, URLs, or KV.
+        note: Unused; retained so existing callers can pass note without change.
+
+    Returns:
+        One of "certificate", "ssh", "database", "kv", or "plain".
+
+    Example:
+        >>> detect_secret_kind("postgresql://u:p@localhost/db")
+        'database'
     """
     del note  # not used — kind is stored explicitly
     v = value or ""
@@ -67,7 +92,18 @@ def detect_secret_kind(value: str, note: str = "") -> str:
 
 
 def kind_from_legacy_note(note: str) -> str | None:
-    """Read legacy type: tag from note (migration backfill only)."""
+    """Read legacy type: tag from note (migration backfill only).
+
+    Args:
+        note: Historical secret note that may contain type:kind markers.
+
+    Returns:
+        The matching kind string if a type: tag is found, else None.
+
+    Example:
+        >>> kind_from_legacy_note("prod (type:ssh)")
+        'ssh'
+    """
     note_l = (note or "").lower()
     for kind in ("certificate", "kv", "ssh", "database", "plain"):
         if f"type:{kind}" in note_l:
@@ -76,7 +112,18 @@ def kind_from_legacy_note(note: str) -> str | None:
 
 
 def strip_legacy_type_tags(note: str) -> str:
-    """Remove legacy type: tags from a note (migration / display cleanup)."""
+    """Remove legacy type: tags from a note (migration / display cleanup).
+
+    Args:
+        note: Note text possibly containing parenthesized or bare type: tags.
+
+    Returns:
+        Cleaned note with type tags removed and excess whitespace collapsed.
+
+    Example:
+        >>> strip_legacy_type_tags("prod (type:kv)")
+        'prod'
+    """
     note = (note or "").strip()
     note = _TYPE_TAG_RE.sub(" ", note)
     note = _TYPE_BARE_RE.sub("", note)
@@ -84,12 +131,39 @@ def strip_legacy_type_tags(note: str) -> str:
 
 
 def normalize_kind(kind: str | None, default: str = "plain") -> str:
+    """Normalize a secret kind string to a known VALID_KINDS value.
+
+    Args:
+        kind: Raw kind from form, DB, or API (may be None or unknown).
+        default: Fallback kind when kind is missing or invalid.
+
+    Returns:
+        Lowercased kind if it is in VALID_KINDS; otherwise default.
+
+    Example:
+        >>> normalize_kind("SSH")
+        'ssh'
+        >>> normalize_kind("unknown")
+        'plain'
+    """
     k = (kind or default).strip().lower()
     return k if k in VALID_KINDS else default
 
 
 def parse_kv_lines(value: str) -> list[tuple[str, str]]:
-    """Parse KEY=value lines into pairs (keeps empty values)."""
+    """Parse KEY=value lines into pairs (keeps empty values).
+
+    Args:
+        value: Multiline text of KEY=value lines (comments and blanks skipped).
+
+    Returns:
+        List of (key, value) tuples; non-matching lines with "=" still split
+        once on the first equals.
+
+    Example:
+        >>> parse_kv_lines("A=1\\n# c\\nB=")
+        [('A', '1'), ('B', '')]
+    """
     pairs: list[tuple[str, str]] = []
     for line in (value or "").splitlines():
         raw = line.strip()
@@ -105,7 +179,20 @@ def parse_kv_lines(value: str) -> list[tuple[str, str]]:
 
 
 def parse_pem_blocks(value: str) -> list[dict]:
-    """Split PEM material into labeled blocks for display."""
+    """Split PEM material into labeled blocks for display.
+
+    Args:
+        value: Text that may contain one or more PEM BEGIN/END blocks.
+
+    Returns:
+        List of dicts with keys label, kind (certificate|private_key|pem|text),
+        and text. If no PEM found but value is non-empty, a single text block.
+
+    Example:
+        >>> blocks = parse_pem_blocks("-----BEGIN CERTIFICATE-----\\nX\\n-----END CERTIFICATE-----")
+        >>> blocks[0]["kind"]
+        'certificate'
+    """
     blocks = []
     for m in _PEM_BLOCK.finditer(value or ""):
         block = m.group(1).strip()
@@ -126,7 +213,20 @@ def parse_pem_blocks(value: str) -> list[dict]:
 
 
 def parse_database_url(value: str) -> dict:
-    """Break a DB URL into display fields (password kept separate)."""
+    """Break a DB URL into display fields (password kept separate).
+
+    Args:
+        value: Connection URL string (e.g. postgresql://user:pass@host/db).
+
+    Returns:
+        Dict with raw, scheme, user, password, host, port, database, and query.
+        On parse failure, returns {"raw": raw} only.
+
+    Example:
+        >>> d = parse_database_url("postgresql://u:p@localhost:5432/app")
+        >>> d["host"], d["database"]
+        ('localhost', 'app')
+    """
     from urllib.parse import unquote, urlparse
 
     raw = (value or "").strip()
@@ -147,7 +247,20 @@ def parse_database_url(value: str) -> dict:
 
 
 def split_cert_and_key(value: str) -> tuple[str, str]:
-    """Pull certificate and private key PEM blocks out of a combined value."""
+    """Pull certificate and private key PEM blocks out of a combined value.
+
+    Args:
+        value: Combined PEM text that may include cert and private key blocks.
+
+    Returns:
+        Tuple (cert_pem, key_pem). If neither PEM kind is found but value is
+        non-empty, the whole stripped value is returned as cert and key is "".
+
+    Example:
+        >>> cert, key = split_cert_and_key("-----BEGIN CERTIFICATE-----\\nx\\n-----END CERTIFICATE-----")
+        >>> bool(cert), key
+        (True, '')
+    """
     cert = ""
     key = ""
     for block in parse_pem_blocks(value):
@@ -161,6 +274,19 @@ def split_cert_and_key(value: str) -> tuple[str, str]:
 
 
 def as_utc(dt):
+    """Normalize a datetime to timezone-aware UTC.
+
+    Args:
+        dt: A datetime instance, or None.
+
+    Returns:
+        None if dt is None; naive datetimes get UTC tzinfo attached;
+        aware datetimes are returned unchanged.
+
+    Example:
+        >>> as_utc(None) is None
+        True
+    """
     if dt is None:
         return None
     if getattr(dt, "tzinfo", None) is None:
@@ -169,7 +295,20 @@ def as_utc(dt):
 
 
 def expires_status(expires_at, soon_days=_SOON_DAYS):
-    """Return 'overdue', 'soon', or None for a single expiry timestamp."""
+    """Return 'overdue', 'soon', or None for a single expiry timestamp.
+
+    Args:
+        expires_at: Expiry datetime (naive treated as UTC) or None for no expiry.
+        soon_days: Days before expiry that count as "soon" (default 14).
+
+    Returns:
+        "overdue" if past now, "soon" if within soon_days, else None
+        (including when expires_at is None).
+
+    Example:
+        >>> expires_status(None) is None
+        True
+    """
     due = as_utc(expires_at)
     if due is None:
         return None
@@ -182,18 +321,59 @@ def expires_status(expires_at, soon_days=_SOON_DAYS):
 
 
 def secret_due_status(row, soon_days=_SOON_DAYS):
-    """Return 'overdue', 'soon', or None from expires_at."""
+    """Return 'overdue', 'soon', or None from expires_at.
+
+    Args:
+        row: Mapping with optional "expires_at" key (e.g. a secret row).
+        soon_days: Days-before-expiry window for "soon" (default 14).
+
+    Returns:
+        Same as expires_status for row["expires_at"].
+
+    Example:
+        >>> secret_due_status({"expires_at": None}) is None
+        True
+    """
     return expires_status(row.get("expires_at"), soon_days=soon_days)
 
 
 def annotate_token_expiry(rows):
+    """Add a due status field to each machine-token (or similar) row.
+
+    Args:
+        rows: Iterable of mutable mappings with optional expires_at.
+
+    Returns:
+        The same list of rows, each with a "due" key set via expires_status.
+
+    Example:
+        >>> annotate_token_expiry([{"expires_at": None}])[0]["due"] is None
+        True
+    """
     for r in rows:
         r["due"] = expires_status(r.get("expires_at"))
     return rows
 
 
 def parse_secret_pairs(text: str) -> list[tuple[str, str]]:
-    """Parse .env, JSON object/list, or CSV (key,value) into (key, value) pairs."""
+    """Parse .env, JSON object/list, or CSV (key,value) into (key, value) pairs.
+
+    Args:
+        text: Bulk import body as env lines, JSON object/array, or CSV with
+            key/value headers.
+
+    Returns:
+        List of (key, value) pairs. Values may be str or, for encrypted
+        import shapes, a dict with _enc/note. Empty input yields [].
+
+    Raises:
+        ValueError: If JSON is present but not an object or key/value array.
+        json.JSONDecodeError: If text starts with { or [ but is invalid JSON.
+
+    Example:
+        >>> parse_secret_pairs("FOO=bar")
+        [('FOO', 'bar')]
+    """
     text = (text or "").strip()
     if not text:
         return []

@@ -13,6 +13,22 @@ from settings_svc import branding, classification
 
 
 def nav_teams(user_id: str):
+    """List teams visible to the user for the sidebar team switcher.
+
+    Global admins see all teams; others see only teams they belong to.
+
+    Args:
+        user_id: UUID of the current user.
+
+    Returns:
+        List of team dicts with ``id``, ``name``, and classification columns,
+        ordered by name.
+
+    Example:
+        >>> teams = nav_teams(session["user_id"])
+        >>> for t in teams:
+        ...     print(t["name"])
+    """
     with db.as_user(user_id) as conn, conn.cursor() as cur:
         if session.get("is_global_admin"):
             cur.execute(
@@ -40,7 +56,21 @@ def nav_teams(user_id: str):
 
 
 def active_team_id(teams):
-    """Session team if still a member, else first team."""
+    """Resolve the active team for the session, or clear it if none.
+
+    Uses ``session["team_id"]`` when still a member of that team; otherwise
+    picks the first team and stores it. Clears session key if ``teams`` is empty.
+
+    Args:
+        teams: Iterable of team dicts with an ``id`` key (from :func:`nav_teams`).
+
+    Returns:
+        Active team UUID string, or None if the user has no teams.
+
+    Example:
+        >>> tid = active_team_id(teams)
+        >>> session["team_id"]  # may be updated
+    """
     ids = {str(t["id"]) for t in teams}
     tid = session.get("team_id")
     if tid in ids:
@@ -54,6 +84,24 @@ def active_team_id(teams):
 
 
 def inject_nav():
+    """Flask context processor: template globals for chrome and sidebar.
+
+    Always provides branding, classification banner, clipboard/reveal settings,
+    and CSRF token. When logged in and not an HTMX partial request, also loads
+    teams, pins, and recent secrets (and may override banner from active team).
+
+    Args:
+        None (reads Flask ``session`` and request via helpers).
+
+    Returns:
+        Dict of template variables (``app_name``, ``nav_teams``, ``nav_pins``,
+        ``csrf_token``, etc.).
+
+    Example:
+        >>> # In app factory:
+        >>> app.context_processor(inject_nav)
+        >>> # Templates use {{ nav_teams }}, {{ classification }}, ...
+    """
     banner = classification()
     brand = branding()
     base = {

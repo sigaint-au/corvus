@@ -16,11 +16,39 @@ RESET_TOKEN_HOURS = 1
 
 
 def hash_token(token: str) -> str:
+    """Hash a password-reset token for storage (SHA-256 hex).
+
+    Args:
+        token: Plaintext reset token (never stored as-is).
+
+    Returns:
+        Hex SHA-256 digest of the token.
+
+    Example:
+        >>> h = hash_token("abc123")
+        >>> len(h)
+        64
+    """
     return sha256_hex(token)
 
 
 def change_password(user_id: str, old_password: str, new_password: str) -> tuple[bool, str]:
-    """Change password for a local user. Returns (ok, error_message)."""
+    """Change password for a local user after verifying the current password.
+
+    Args:
+        user_id: UUID of the user whose password will change.
+        old_password: Current password for verification.
+        new_password: Desired new password (must be at least ``MIN_PASSWORD_LEN``).
+
+    Returns:
+        ``(True, "")`` on success, or ``(False, error_message)`` on failure
+        (too short, wrong current password, non-local account, or DB error).
+
+    Example:
+        >>> ok, err = change_password(uid, "old-pass", "new-secure-pass")
+        >>> if not ok:
+        ...     flash(err, "error")
+    """
     if len(new_password or "") < MIN_PASSWORD_LEN:
         return False, f"Password must be at least {MIN_PASSWORD_LEN} characters"
     if not old_password:
@@ -41,7 +69,22 @@ def change_password(user_id: str, old_password: str, new_password: str) -> tuple
 
 
 def create_reset_token(email: str) -> str | None:
-    """Create a reset token for a local user. Returns plaintext token or None."""
+    """Create a password-reset token for a local user by email.
+
+    Only succeeds for enabled local accounts with a password hash. Invalid or
+    unknown emails return None (no enumeration).
+
+    Args:
+        email: Account email (normalized to lowercase).
+
+    Returns:
+        Plaintext reset token to email to the user, or None if no eligible user.
+
+    Example:
+        >>> token = create_reset_token("user@example.com")
+        >>> if token:
+        ...     send_password_reset("user@example.com", token)
+    """
     email = (email or "").strip().lower()
     if not email:
         return None
@@ -67,9 +110,22 @@ def create_reset_token(email: str) -> str | None:
 
 
 def create_reset_token_for_user(user_id: str) -> tuple[str | None, str]:
-    """
-    Admin: create a password-reset token for a local account.
-    Returns (token, error_message).
+    """Admin helper: create a password-reset token for a specific local account.
+
+    Args:
+        user_id: UUID of the target user.
+
+    Returns:
+        ``(token, "")`` on success, or ``(None, error_message)`` if the user is
+        missing, disabled, or not a local password account.
+
+    Example:
+        >>> token, err = create_reset_token_for_user(user_id)
+        >>> if err:
+        ...     flash(err, "error")
+        ... else:
+        ...     # show one-time link to admin or email user
+        ...     pass
     """
     if not user_id:
         return None, "User required"
@@ -100,6 +156,21 @@ def create_reset_token_for_user(user_id: str) -> tuple[str | None, str]:
 
 
 def _insert_reset_token(cur, user_id: str) -> str | None:
+    """Invalidate prior unused tokens and insert a new reset token row.
+
+    Args:
+        cur: Open DB cursor (admin connection, transactional context).
+        user_id: UUID string of the user receiving the reset token.
+
+    Returns:
+        Plaintext token (``secrets.token_urlsafe(32)``), or None only if insert
+        fails unexpectedly (normally always returns the token).
+
+    Example:
+        >>> with db.connect_admin() as conn, conn.cursor() as cur:
+        ...     token = _insert_reset_token(cur, user_id)
+        ...     # email token; store only hash in DB
+    """
     token = secrets.token_urlsafe(32)
     th = hash_token(token)
     expires = datetime.now(timezone.utc) + timedelta(hours=RESET_TOKEN_HOURS)
@@ -123,7 +194,24 @@ def _insert_reset_token(cur, user_id: str) -> str | None:
 
 
 def consume_reset_token(token: str, new_password: str) -> tuple[bool, str]:
-    """Validate token and set new password. Returns (ok, error_message)."""
+    """Validate a reset token, set the new password, and revoke all sessions.
+
+    Marks the token used, updates the password via ``private.set_local_password``,
+    and revokes active ``user_sessions`` for that user.
+
+    Args:
+        token: Plaintext token from the reset link/email.
+        new_password: New password (min ``MIN_PASSWORD_LEN`` characters).
+
+    Returns:
+        ``(True, "")`` on success, or ``(False, error_message)`` for invalid/
+        expired token, weak password, or DB errors.
+
+    Example:
+        >>> ok, err = consume_reset_token(request.args["token"], form["password"])
+        >>> if ok:
+        ...     flash("Password updated — please sign in")
+    """
     if len(new_password or "") < MIN_PASSWORD_LEN:
         return False, f"Password must be at least {MIN_PASSWORD_LEN} characters"
     if not token:

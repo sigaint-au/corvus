@@ -27,7 +27,15 @@ _KIND_OPTIONS = (
 
 
 def _items_from_import_form():
-    """Read import rows from commit form (values live in POST body, not session)."""
+    """Read import rows from commit form (values live in POST body, not session).
+
+    Returns:
+        list[dict]: Import item dicts with key, enc/value or value_enc, note, and kind.
+            Empty list if no keys were posted.
+
+    Example:
+        items = _items_from_import_form()
+    """
     keys = request.form.getlist("key")
     values = request.form.getlist("value")
     value_encs = request.form.getlist("value_enc")
@@ -39,6 +47,17 @@ def _items_from_import_form():
         return []
     # Pad shorter lists so zip doesn't silently drop rows
     def pad(lst):
+        """Pad a form list with empty strings to length n.
+
+        Args:
+            lst: Sequence of form values (may be shorter than n).
+
+        Returns:
+            list: Copy of lst extended with "" so len(result) == n.
+
+        Example:
+            pad(["a"])  # when n == 3 -> ["a", "", ""]
+        """
         return list(lst) + [""] * (n - len(lst))
 
     items = []
@@ -73,10 +92,32 @@ def _items_from_import_form():
 
 
 def register(app):
+    """Register project secret export and import routes on the app.
+
+    Args:
+        app: Flask application instance to attach routes to.
+
+    Returns:
+        None.
+
+    Example:
+        register(app)
+    """
 
     @app.get("/projects/<uuid:project_id>/export")
     @authz.login_required
     def export_secrets(project_id):
+        """Export all live project secrets as env, JSON, or CSV (plain or encrypted).
+
+        Args:
+            project_id: UUID of the project whose secrets are exported.
+
+        Returns:
+            File download Response, or a 404 string if the project is not readable.
+
+        Example:
+            GET /projects/<project_id>/export?format=json&mode=plain
+        """
         fmt = (request.args.get("format") or "env").strip().lower()
         mode = (request.args.get("mode") or "plain").strip().lower()
         if fmt not in ("env", "json", "csv"):
@@ -138,7 +179,15 @@ def register(app):
 
 
     def _read_import_payload():
-        """Return (raw_text, error_message)."""
+        """Return raw import text from form payload or uploaded file.
+
+        Returns:
+            tuple: (raw_text, error_message). On success error_message is None;
+                on failure raw_text is None and error_message is a user-facing string.
+
+        Example:
+            raw, err = _read_import_payload()
+        """
         raw = request.form.get("payload") or ""
         f = request.files.get("file")
         if f and f.filename:
@@ -161,6 +210,17 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/import/preview")
     @authz.login_required
     def import_preview(project_id):
+        """Parse an import payload and render a create/update preview for commit.
+
+        Args:
+            project_id: UUID of the project to import into.
+
+        Returns:
+            Rendered import_preview template, or redirect back to import tab on error.
+
+        Example:
+            POST /projects/<project_id>/import/preview with payload or file
+        """
         back = url_for("project_detail", project_id=project_id, tab="import")
         raw, err = _read_import_payload()
         if err:
@@ -246,12 +306,33 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/import")
     @authz.login_required
     def import_secrets(project_id):
-        """Legacy direct import — prefer preview + commit."""
+        """Legacy direct import — prefer preview + commit.
+
+        Args:
+            project_id: UUID of the project to import into.
+
+        Returns:
+            Same response as import_preview (preview page or redirect).
+
+        Example:
+            POST /projects/<project_id>/import
+        """
         return import_preview(project_id)
 
     @app.post("/projects/<uuid:project_id>/import/commit")
     @authz.login_required
     def import_commit(project_id):
+        """Commit previewed import rows into the project secrets store.
+
+        Args:
+            project_id: UUID of the project to write secrets into.
+
+        Returns:
+            Redirect to the project import tab with a success or error flash.
+
+        Example:
+            POST /projects/<project_id>/import/commit with key/value form lists
+        """
         back = url_for("project_detail", project_id=project_id, tab="import")
         items = _items_from_import_form()
         if not items:
@@ -308,6 +389,17 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/export/bulk")
     @authz.login_required
     def bulk_export(project_id):
+        """Export selected secrets as env, JSON, or CSV plaintext download.
+
+        Args:
+            project_id: UUID of the project containing the selected secrets.
+
+        Returns:
+            File download Response, 404 if not readable, or redirect if none selected.
+
+        Example:
+            POST /projects/<project_id>/export/bulk with secret_ids[] and format
+        """
         fmt = (request.args.get("format") or request.form.get("format") or "env").strip().lower()
         if fmt not in ("env", "json", "csv"):
             fmt = "env"

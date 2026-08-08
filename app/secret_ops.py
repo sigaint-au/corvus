@@ -11,7 +11,22 @@ from secret_kinds import secret_due_status
 
 
 def _load_secrets_page(cur, project_id, page, q):
-    """Count + page live secrets for a project. Returns (rows, pager)."""
+    """Count + page live secrets for a project. Returns (rows, pager).
+
+    Args:
+        cur: Open DB cursor (authenticated project context).
+        project_id: UUID of the project whose secrets to list.
+        page: 1-based page number for paging.page_window.
+        q: Optional search string matched against key and note (ILIKE).
+
+    Returns:
+        Tuple of (rows, pager) where rows are secret dicts with due and
+        is_pinned annotations, and pager is the paging window dict.
+
+    Example:
+        >>> # rows, pager = _load_secrets_page(cur, project_id, 1, "")
+        >>> # isinstance(rows, list) and "limit" in pager
+    """
     where = "project_id = %s AND deleted_at IS NULL"
     params = [str(project_id)]
     if q:
@@ -58,9 +73,25 @@ def _load_secrets_page(cur, project_id, page, q):
 
 
 def _parse_expires_at(form, *, allow_clear: bool = True):
-    """
-    Return expires_at datetime or None from form (capped at MAX_EXPIRY_DAYS).
+    """Return expires_at datetime or None from form (capped at MAX_EXPIRY_DAYS).
+
     Empty / clear_expires → None (no expiry).
+
+    Args:
+        form: Mapping of form fields (e.g. request.form) with optional
+            expires_at and clear_expires keys.
+        allow_clear: If True, clear_expires truthy values force None.
+
+    Returns:
+        A timezone-aware datetime for the expiry, or None when cleared/empty.
+
+    Raises:
+        ValueError: If expires_at is not parseable ISO/date, or exceeds
+            config.MAX_EXPIRY_DAYS from now.
+
+    Example:
+        >>> _parse_expires_at({"expires_at": ""}) is None
+        True
     """
     if allow_clear and form.get("clear_expires") in ("1", "true", "on", "yes"):
         return None
@@ -91,7 +122,29 @@ def _upsert_secret(
     already_enc=False,
     touch_meta=True,
 ):
-    """Insert/update one secret; returns (id, was_new)."""
+    """Insert/update one secret; returns (id, was_new).
+
+    Args:
+        cur: Open DB cursor for the project-scoped connection.
+        project_id: UUID of the project that owns the secret.
+        key: Secret key name (unique among live secrets in the project).
+        value_or_enc: Plaintext value, or ciphertext if already_enc is True.
+        note: Optional note stored with the secret.
+        expires_at: Optional expiry datetime, or None for no expiry.
+        kind: Secret kind string (normalized via normalize_kind).
+        already_enc: If True, value_or_enc is stored as-is without encrypting.
+        touch_meta: If True, also update note and expires_at on conflict;
+            if False, preserve existing note when the new note is empty and
+            do not set expires_at.
+
+    Returns:
+        Tuple (secret_id, was_new) where was_new is True when no live row
+        existed for (project_id, key) before the upsert.
+
+    Example:
+        >>> # sid, created = _upsert_secret(cur, pid, "API_KEY", "secret")
+        >>> # created in (True, False)
+    """
     from secret_kinds import normalize_kind
 
     kind = normalize_kind(kind)
@@ -138,7 +191,20 @@ def _upsert_secret(
 
 
 def compose_secret_value(kind: str, form) -> str:
-    """Build plaintext value from advanced form fields for the given kind."""
+    """Build plaintext value from advanced form fields for the given kind.
+
+    Args:
+        kind: Secret kind (database, certificate, ssh, kv, or plain).
+        form: Form-like mapping (and getlist for kv) with kind-specific fields
+            such as db_host, cert_pem, ssh_key, kv_keys, or plain_value.
+
+    Returns:
+        Composed plaintext secret string suitable for encryption/storage.
+
+    Example:
+        >>> compose_secret_value("plain", {"plain_value": "hello"})
+        'hello'
+    """
     from secret_kinds import normalize_kind
 
     kind = normalize_kind(kind)

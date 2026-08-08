@@ -31,10 +31,34 @@ log = logging.getLogger(__name__)
 
 
 def register(app):
+    """Register secret CRUD, reveal, history, and trash routes on the app.
+
+    Args:
+        app: Flask application instance to attach routes to.
+
+    Returns:
+        None
+
+    Example:
+        >>> from routes.secrets import register
+        >>> register(app)
+    """
 
     @app.get("/secrets")
     @authz.login_required
     def secrets_list():
+        """List all non-deleted secrets for the current team with optional search.
+
+        Args:
+            None
+
+        Returns:
+            str: Rendered ``secrets.html`` template with team, secrets, and
+                search query context.
+
+        Example:
+            GET /secrets?q=password
+        """
         tid = session.get("team_id")
         q = (request.args.get("q") or "").strip()
         team, secrets = None, []
@@ -63,6 +87,18 @@ def register(app):
     @app.get("/trash")
     @authz.login_required
     def trash():
+        """List soft-deleted secrets for the current team with optional search.
+
+        Args:
+            None
+
+        Returns:
+            str: Rendered ``trash.html`` template with team, trash items, and
+                search query context.
+
+        Example:
+            GET /trash?q=old-key
+        """
         tid = session.get("team_id")
         team, items = None, []
         q = (request.args.get("q") or "").strip()
@@ -111,6 +147,18 @@ def register(app):
     @app.post("/trash/secrets/<uuid:secret_id>/restore")
     @authz.login_required
     def restore_secret(secret_id):
+        """Restore a soft-deleted secret from the trash.
+
+        Args:
+            secret_id: UUID of the soft-deleted secret to restore.
+
+        Returns:
+            werkzeug.wrappers.Response: Redirect to the trash page, preserving
+                the search query when present.
+
+        Example:
+            POST /trash/secrets/<secret_id>/restore
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
                 cur.execute(
@@ -155,6 +203,18 @@ def register(app):
     @app.post("/trash/secrets/<uuid:secret_id>/purge")
     @authz.login_required
     def purge_secret(secret_id):
+        """Permanently delete a soft-deleted secret from the trash.
+
+        Args:
+            secret_id: UUID of the soft-deleted secret to purge.
+
+        Returns:
+            werkzeug.wrappers.Response: Redirect to the trash page, preserving
+                the search query when present.
+
+        Example:
+            POST /trash/secrets/<secret_id>/purge
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -187,6 +247,18 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets")
     @authz.login_required
     def create_secret(project_id):
+        """Create or upsert a secret from a project form submission.
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+
+        Returns:
+            str | werkzeug.wrappers.Response: HTMX secrets partial when
+                requested; otherwise a redirect to the project secrets tab.
+
+        Example:
+            POST /projects/<project_id>/secrets
+        """
         key = request.form["key"].strip()
         value = request.form["value"]
         note = request.form.get("note", "").strip()
@@ -240,6 +312,19 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/delete")
     @authz.login_required
     def delete_secret(project_id, secret_id):
+        """Soft-delete a secret (move to trash).
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret to soft-delete.
+
+        Returns:
+            str | werkzeug.wrappers.Response: HTMX secrets partial when
+                requested; otherwise a redirect to the project secrets tab.
+
+        Example:
+            POST /projects/<project_id>/secrets/<secret_id>/delete
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -286,7 +371,21 @@ def register(app):
 
 
     def _reveal_cell_ids(secret_id, cell: str | None = None, version_id=None):
-        """Return (cell_id, toggle_id) for HTMX reveal/hide targets."""
+        """Return HTMX element ids for a reveal/hide target cell and toggle.
+
+        Args:
+            secret_id: UUID of the secret being revealed or hidden.
+            cell: Optional cell discriminator (e.g. ``"current"``) for
+                multi-cell layouts; ignored when ``version_id`` is set.
+            version_id: Optional version UUID; when set, version-specific
+                element ids are returned.
+
+        Returns:
+            tuple[str, str]: Pair of ``(cell_id, toggle_id)`` HTML element ids.
+
+        Example:
+            >>> cell_id, toggle_id = _reveal_cell_ids(secret_id, cell="current")
+        """
         if version_id is not None:
             return f"reveal-v-{version_id}", f"reveal-toggle-v-{version_id}"
         if (cell or "").strip().lower() == "current":
@@ -304,6 +403,22 @@ def register(app):
         cell: str | None = None,
         version_id=None,
     ):
+        """Render the out-of-band HTMX reveal/hide toggle partial.
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret.
+            revealed: Whether the secret value is currently shown.
+            cell: Optional cell discriminator for multi-cell layouts.
+            version_id: Optional version UUID for history reveal toggles.
+
+        Returns:
+            str: Rendered ``partials/reveal_toggle.html`` HTML fragment with
+                OOB swap enabled.
+
+        Example:
+            >>> html = _reveal_toggle_html(project_id, secret_id, revealed=True)
+        """
         cell_id, toggle_id = _reveal_cell_ids(secret_id, cell, version_id)
         if version_id is not None:
             reveal_url = url_for(
@@ -337,6 +452,19 @@ def register(app):
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/reveal")
     @authz.login_required
     def reveal_secret(project_id, secret_id):
+        """Decrypt and show a secret value inline (audited).
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret to reveal.
+
+        Returns:
+            str | tuple: HTML fragment with plaintext (and OOB toggle for HTMX),
+                or ``("Not found", 404)`` when the secret is missing.
+
+        Example:
+            GET /projects/<project_id>/secrets/<secret_id>/reveal?cell=current
+        """
         cell = (request.args.get("cell") or "").strip() or None
         force_inline = (request.args.get("inline") or "").strip() in ("1", "true", "yes")
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -419,6 +547,28 @@ def register(app):
         is_version: bool = False,
         status: int = 200,
     ):
+        """Render the type-specific secret view/edit page template.
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret being viewed.
+            row: Mapping with secret metadata (key, note, expires_at,
+                project_name, etc.).
+            plaintext: Decrypted secret value.
+            kind: Normalized secret kind (e.g. ``"kv"``, ``"certificate"``).
+            can_write: Whether the current user may edit the secret.
+            is_version: If True, render a historical version (read-only).
+            status: HTTP status code to pair with the rendered body.
+
+        Returns:
+            tuple: ``(html_body, status)`` for the secret view page.
+
+        Example:
+            >>> body, code = _render_secret_view(
+            ...     project_id=pid, secret_id=sid, row=row,
+            ...     plaintext=text, kind="kv", can_write=True,
+            ... )
+        """
         exp = row.get("expires_at")
         exp_date = ""
         if exp is not None:
@@ -460,7 +610,22 @@ def register(app):
     )
     @authz.login_required
     def secret_view(project_id, secret_id):
-        """Type-specific view/edit page (KV, cert, SSH, database URL)."""
+        """Type-specific view/edit page (KV, cert, SSH, database URL).
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret to view or update.
+
+        Returns:
+            tuple | werkzeug.wrappers.Response: ``(html, status)`` for GET or
+                failed POST validation; redirect on successful POST or when
+                unauthorized; ``("Not found", 404)`` if missing.
+
+        Example:
+            GET /projects/<project_id>/secrets/<secret_id>/view
+            POST /projects/<project_id>/secrets/<secret_id>/view
+            GET /projects/<project_id>/secrets/<secret_id>/view?version_id=<id>
+        """
         version_id = (request.args.get("version_id") or "").strip() or None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
@@ -607,7 +772,18 @@ def register(app):
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/hide")
     @authz.login_required
     def hide_secret(project_id, secret_id):
-        """Mask a revealed secret (client re-mask; no audit)."""
+        """Mask a revealed secret (client re-mask; no audit).
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret to re-mask.
+
+        Returns:
+            str: HTML fragment for the masked cell, plus OOB toggle when HTMX.
+
+        Example:
+            GET /projects/<project_id>/secrets/<secret_id>/hide?cell=current
+        """
         cell = (request.args.get("cell") or "").strip() or None
         cell_id, _toggle_id = _reveal_cell_ids(secret_id, cell)
         reveal_url = url_for(
@@ -635,7 +811,20 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/pin")
     @authz.login_required
     def toggle_secret_pin(project_id, secret_id):
-        """Pin or unpin a secret for the current user."""
+        """Pin or unpin a secret for the current user.
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret to pin or unpin.
+
+        Returns:
+            str | tuple | werkzeug.wrappers.Response: HTMX pin button plus
+                sidebar OOB fragment when HTMX; redirect to project secrets
+                otherwise; ``("Not found", 404)`` if the secret is missing.
+
+        Example:
+            POST /projects/<project_id>/secrets/<secret_id>/pin
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -673,7 +862,19 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/value")
     @authz.login_required
     def update_secret_value(project_id, secret_id):
-        """In-place update after reveal (archives prior value via trigger)."""
+        """In-place update after reveal (archives prior value via trigger).
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret whose value to update.
+
+        Returns:
+            str | tuple | werkzeug.wrappers.Response: HTMX saved/masked partial
+                when HTMX; redirect with flash otherwise; 400/403/404 on error.
+
+        Example:
+            POST /projects/<project_id>/secrets/<secret_id>/value
+        """
         value = request.form.get("value")
         if value is None:
             return "Value required", 400
@@ -758,6 +959,18 @@ def register(app):
 
 
     def _secrets_partial(project_id):
+        """Render the HTMX secrets list partial for a project.
+
+        Args:
+            project_id: UUID of the project whose secrets to load.
+
+        Returns:
+            str: Rendered ``partials/secrets.html`` with rows, pager, and
+                write permission context.
+
+        Example:
+            >>> return _secrets_partial(project_id)
+        """
         page = paging.page_arg("page")
         q = paging.list_state_q()
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -777,6 +990,19 @@ def register(app):
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/history")
     @authz.login_required
     def secret_history(project_id, secret_id):
+        """Show version history for a secret.
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret whose history to display.
+
+        Returns:
+            str | tuple: Rendered ``secret_history.html``, or
+                ``("Not found", 404)`` if the secret is missing.
+
+        Example:
+            GET /projects/<project_id>/secrets/<secret_id>/history
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -826,6 +1052,20 @@ def register(app):
     )
     @authz.login_required
     def reveal_secret_version(project_id, secret_id, version_id):
+        """Decrypt and show a historical secret version inline (audited).
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the parent secret.
+            version_id: UUID of the archived version to reveal.
+
+        Returns:
+            str | tuple: HTML reveal fragment (and OOB toggle for HTMX), or
+                ``("Not found", 404)`` when the version is missing.
+
+        Example:
+            GET /projects/<project_id>/secrets/<secret_id>/versions/<version_id>/reveal
+        """
         force_inline = (request.args.get("inline") or "").strip() in ("1", "true", "yes")
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
@@ -887,6 +1127,19 @@ def register(app):
     )
     @authz.login_required
     def hide_secret_version(project_id, secret_id, version_id):
+        """Mask a revealed historical secret version (client re-mask; no audit).
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the parent secret.
+            version_id: UUID of the version cell to re-mask.
+
+        Returns:
+            str: HTML masked fragment, plus OOB toggle when HTMX.
+
+        Example:
+            GET /projects/<project_id>/secrets/<secret_id>/versions/<version_id>/hide
+        """
         cell_id = f"reveal-v-{version_id}"
         reveal_url = url_for(
             "reveal_secret_version",
@@ -912,6 +1165,19 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/rollback/<uuid:version_id>")
     @authz.login_required
     def rollback_secret(project_id, secret_id, version_id):
+        """Restore the current secret value from a historical version.
+
+        Args:
+            project_id: UUID of the project that owns the secret.
+            secret_id: UUID of the secret to roll back.
+            version_id: UUID of the version whose value/note to restore.
+
+        Returns:
+            werkzeug.wrappers.Response: Redirect to the secret history page.
+
+        Example:
+            POST /projects/<project_id>/secrets/<secret_id>/rollback/<version_id>
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -956,6 +1222,19 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/bulk")
     @authz.login_required
     def bulk_secrets(project_id):
+        """Apply a bulk action (currently delete) to selected project secrets.
+
+        Args:
+            project_id: UUID of the project containing the secrets.
+
+        Returns:
+            werkzeug.wrappers.Response: Redirect to the project secrets tab
+                with a flash message summarizing the result.
+
+        Example:
+            POST /projects/<project_id>/secrets/bulk
+            form: bulk_action=delete, secret_ids=<id>...
+        """
         action = (request.form.get("bulk_action") or "").strip()
         ids = request.form.getlist("secret_ids")
         back = url_for("project_detail", project_id=project_id, tab="secrets")
@@ -1005,6 +1284,19 @@ def register(app):
     @app.post("/trash/bulk")
     @authz.login_required
     def bulk_trash():
+        """Apply bulk restore or purge to selected trash secrets.
+
+        Args:
+            None
+
+        Returns:
+            werkzeug.wrappers.Response: Redirect to the trash page with a flash
+                summary and optional search query preserved.
+
+        Example:
+            POST /trash/bulk
+            form: bulk_action=restore|purge, secret_ids=<id>...
+        """
         action = (request.form.get("bulk_action") or "").strip()
         ids = request.form.getlist("secret_ids")
         q = (request.form.get("q") or request.args.get("q") or "").strip() or None
@@ -1070,6 +1362,20 @@ def register(app):
     @app.route("/projects/<uuid:project_id>/secrets/new", methods=["GET", "POST"])
     @authz.login_required
     def secret_new(project_id):
+        """Show the new-secret form or create a secret of any kind.
+
+        Args:
+            project_id: UUID of the project that will own the new secret.
+
+        Returns:
+            str | tuple | werkzeug.wrappers.Response: New-secret form on GET
+                or validation error (with status 400); redirect to project
+                secrets on success; ``("Not found", 404)`` if project missing.
+
+        Example:
+            GET /projects/<project_id>/secrets/new
+            POST /projects/<project_id>/secrets/new
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """

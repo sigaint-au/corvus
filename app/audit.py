@@ -56,10 +56,25 @@ def log_secret(
     secret_id=None,
     actor_email: str | None = None,
 ):
-    """Insert an audit row via SECURITY DEFINER private.audit_secret (no direct INSERT).
+    """Insert a secret audit row via private.audit_secret.
 
-    Actor user_id is taken from JWT claims inside the DB function (as_user connections).
-    Optional actor_email is only used when there is no JWT user (e.g. machine paths).
+    Actor user_id is taken from JWT claims inside the DB function (as_user
+    connections). Optional actor_email is only used when there is no JWT user
+    (e.g. machine paths).
+
+    Args:
+        cur: Database cursor used to execute the audit insert.
+        project_id: UUID of the project the secret belongs to.
+        action: Audit action name; must be one of ACTIONS.
+        secret_key: Human-readable secret key/name (default empty).
+        secret_id: Optional UUID of the secret row.
+        actor_email: Optional actor email override; defaults to session email.
+
+    Returns:
+        None. The audit row is written via a side-effect SQL call.
+
+    Example:
+        >>> log_secret(cur, project_id=pid, action="created", secret_key="API_KEY")
     """
     if action not in ACTIONS:
         raise ValueError(f"invalid audit action: {action}")
@@ -90,7 +105,22 @@ def log_org(
     project_id=None,
     actor_email: str | None = None,
 ):
-    """Membership / settings / access-control audit via private.audit_org."""
+    """Insert a membership/settings audit row via private.audit_org.
+
+    Args:
+        cur: Database cursor used to execute the audit insert.
+        action: Org audit action string (e.g. ORG_MEMBER_ADD); required.
+        detail: Free-text detail about the change (default empty).
+        team_id: Optional team UUID related to the event.
+        project_id: Optional project UUID related to the event.
+        actor_email: Optional actor email override; defaults to session email.
+
+    Returns:
+        None. The audit row is written via a side-effect SQL call.
+
+    Example:
+        >>> log_org(cur, action=ORG_MEMBER_ADD, detail="user@ex.com as member", team_id=tid)
+    """
     if not action:
         raise ValueError("org audit action required")
     email = actor_email if actor_email is not None else (session.get("email") or "")
@@ -111,6 +141,21 @@ def log_org(
 
 
 def list_org_for_team(cur, team_id, limit=40):
+    """List recent org audit rows for a single team.
+
+    Args:
+        cur: Database cursor used to run the SELECT.
+        team_id: UUID of the team whose audit rows to return.
+        limit: Maximum number of rows to return (default 40).
+
+    Returns:
+        Sequence of org_audit row mappings ordered by created_at descending.
+
+    Example:
+        >>> rows = list_org_for_team(cur, team_id, limit=20)
+        >>> rows[0]["action"]
+        'member_add'
+    """
     cur.execute(
         """
         SELECT id, team_id, project_id, action, detail, actor_email, created_at
@@ -145,10 +190,23 @@ ROLE_CHANGE_ACTIONS = (
 
 
 def access_review_rows(cur) -> list[dict]:
-    """
-    Membership matrix for SOC2-style access reviews.
+    """Build a membership matrix for SOC2-style access reviews.
+
     One row per explicit grant: global admin, team role, or project role.
     Uses admin connection (caller must bypass RLS).
+
+    Args:
+        cur: Database cursor (admin connection recommended to bypass RLS).
+
+    Returns:
+        List of dicts, each describing one access grant with keys such as
+        user_id, email, name, is_global_admin, disabled, scope, team,
+        team_role, project, project_role, and access_via.
+
+    Example:
+        >>> matrix = access_review_rows(cur)
+        >>> matrix[0]["scope"]
+        'global'
     """
     rows: list[dict] = []
     cur.execute(
@@ -245,7 +303,29 @@ def list_org_audit(
     limit: int = 100,
     offset: int = 0,
 ):
-    """List org_audit rows (admin connection recommended for full visibility)."""
+    """List org_audit rows with optional filters and display fields.
+
+    Admin connection recommended for full visibility.
+
+    Args:
+        cur: Database cursor used to run the SELECT.
+        actions: Optional tuple of action names to restrict results to.
+        q: Free-text search across action, detail, actor, team, and project.
+        actor: Substring filter on actor_email (case-insensitive).
+        since: Inclusive start date as YYYY-MM-DD (UTC start of day).
+        until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+        limit: Maximum number of rows to return (default 100).
+        offset: Number of rows to skip for pagination (default 0).
+
+    Returns:
+        List of org_audit row mappings including team_name, project_name,
+        and when_display (formatted created_at).
+
+    Example:
+        >>> rows = list_org_audit(cur, actions=(ORG_MEMBER_ADD,), limit=10)
+        >>> "when_display" in rows[0]
+        True
+    """
     parts = [" WHERE 1=1 "]
     params: list = []
     if actions:
@@ -305,6 +385,24 @@ def count_org_audit(
     since: str = "",
     until: str = "",
 ) -> int:
+    """Count org_audit rows matching the same filters as list_org_audit.
+
+    Args:
+        cur: Database cursor used to run the COUNT query.
+        actions: Optional tuple of action names to restrict the count to.
+        q: Free-text search across action, detail, actor, team, and project.
+        actor: Substring filter on actor_email (case-insensitive).
+        since: Inclusive start date as YYYY-MM-DD (UTC start of day).
+        until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+
+    Returns:
+        Integer count of matching org_audit rows.
+
+    Example:
+        >>> n = count_org_audit(cur, actor="admin@example.com")
+        >>> isinstance(n, int)
+        True
+    """
     parts = [" WHERE 1=1 "]
     params: list = []
     if actions:
@@ -355,6 +453,22 @@ def export_secret_audit(
     until: str = "",
     limit: int = 50000,
 ):
+    """Export secret_audit rows for a date range (compliance/export use).
+
+    Args:
+        cur: Database cursor used to run the SELECT.
+        since: Inclusive start date as YYYY-MM-DD (UTC start of day).
+        until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+        limit: Maximum number of rows to return (default 50000).
+
+    Returns:
+        List of secret_audit row mappings with project/team names joined.
+
+    Example:
+        >>> rows = export_secret_audit(cur, since="2026-01-01", until="2026-01-31")
+        >>> len(rows) <= 50000
+        True
+    """
     parts = [" WHERE 1=1 "]
     params: list = []
     since_dt = _parse_day(since, end=False)
@@ -390,6 +504,22 @@ def export_org_audit(
     until: str = "",
     limit: int = 50000,
 ):
+    """Export org_audit rows for a date range (compliance/export use).
+
+    Args:
+        cur: Database cursor used to run the SELECT.
+        since: Inclusive start date as YYYY-MM-DD (UTC start of day).
+        until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+        limit: Maximum number of rows to return (default 50000).
+
+    Returns:
+        List of org_audit row mappings with team/project names joined.
+
+    Example:
+        >>> rows = export_org_audit(cur, since="2026-01-01", limit=1000)
+        >>> isinstance(rows, list)
+        True
+    """
     parts = [" WHERE 1=1 "]
     params: list = []
     since_dt = _parse_day(since, end=False)
@@ -420,7 +550,21 @@ def export_org_audit(
 
 
 def purge_old_audit(cur, retention_days: int) -> dict:
-    """Delete audit/login-failure rows older than retention_days. Returns counts."""
+    """Delete audit and login-failure rows older than retention_days.
+
+    Args:
+        cur: Database cursor used to run DELETE statements.
+        retention_days: Keep this many days of history; if <= 0, skip purge.
+
+    Returns:
+        Dict with counts deleted for secret_audit, org_audit, and
+        login_failures, plus skipped=True when retention_days <= 0.
+
+    Example:
+        >>> result = purge_old_audit(cur, retention_days=90)
+        >>> result["skipped"]
+        False
+    """
     if retention_days <= 0:
         return {
             "secret_audit": 0,
@@ -479,6 +623,20 @@ def purge_old_audit(cur, retention_days: int) -> dict:
 
 
 def audit_counts(cur) -> dict:
+    """Return row counts and time span for secret and org audit tables.
+
+    Args:
+        cur: Database cursor used to run the COUNT and MIN/MAX queries.
+
+    Returns:
+        Dict with secret_audit and org_audit counts, plus oldest and newest
+        created_at across both tables (or None if empty).
+
+    Example:
+        >>> stats = audit_counts(cur)
+        >>> "secret_audit" in stats and "org_audit" in stats
+        True
+    """
     cur.execute("SELECT count(*)::int AS n FROM api.secret_audit")
     n_secret = int((cur.fetchone() or {}).get("n") or 0)
     cur.execute("SELECT count(*)::int AS n FROM api.org_audit")
@@ -503,7 +661,21 @@ def audit_counts(cur) -> dict:
 
 
 def _parse_day(s: str, *, end: bool = False):
-    """Parse YYYY-MM-DD to UTC datetime (start or end of day)."""
+    """Parse YYYY-MM-DD to a UTC datetime at start or end of day.
+
+    Args:
+        s: Date string; first 10 characters are parsed as YYYY-MM-DD.
+        end: If True, return 23:59:59.999999 UTC; else 00:00:00 UTC.
+
+    Returns:
+        Timezone-aware UTC datetime, or None if s is empty/invalid.
+
+    Example:
+        >>> _parse_day("2026-08-08", end=False).hour
+        0
+        >>> _parse_day("bad") is None
+        True
+    """
     s = (s or "").strip()
     if not s:
         return None
@@ -522,7 +694,24 @@ def _filter_clause(
     since: str = "",
     until: str = "",
 ):
-    """Return (sql_fragment, params) for audit list filters."""
+    """Build SQL fragment and params for secret audit list filters.
+
+    Args:
+        q: Free-text ILIKE filter on secret_key, action, and actor_email.
+        actor: Substring filter on actor_email (case-insensitive).
+        action: Exact action filter; only applied if action is in ACTIONS.
+        since: Inclusive start date as YYYY-MM-DD (UTC start of day).
+        until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+
+    Returns:
+        Tuple of (sql_fragment, params) where sql_fragment is AND-clauses
+        to append after WHERE, and params is the bound parameter list.
+
+    Example:
+        >>> clause, params = _filter_clause(action="created", actor="alice")
+        >>> "a.action" in clause and len(params) >= 1
+        True
+    """
     parts = []
     params = []
     q = (q or "").strip()
@@ -558,7 +747,19 @@ def _filter_clause(
 
 
 def describe_event(row) -> str:
-    """Human-readable who/what line for an audit row."""
+    """Build a human-readable who/what line for a secret audit row.
+
+    Args:
+        row: Mapping with optional keys actor_email, action, and secret_key.
+
+    Returns:
+        Sentence describing the actor and action, e.g.
+        'alice@ex.com created “API_KEY”'.
+
+    Example:
+        >>> describe_event({"actor_email": "a@x.com", "action": "created", "secret_key": "K"})
+        'a@x.com created “K”'
+    """
     who = (row.get("actor_email") or "").strip() or "Someone"
     action = row.get("action") or ""
     key = (row.get("secret_key") or "").strip()
@@ -575,7 +776,20 @@ def describe_event(row) -> str:
 
 
 def _as_utc_dt(dt):
-    """Coerce datetime/ISO string to timezone-aware UTC, or None."""
+    """Coerce a datetime or ISO string to timezone-aware UTC.
+
+    Args:
+        dt: A datetime, ISO-8601 string (Z or offset allowed), or None.
+
+    Returns:
+        Timezone-aware UTC datetime, or None if input is missing/invalid.
+
+    Example:
+        >>> _as_utc_dt("2026-08-08T12:00:00Z").tzinfo is not None
+        True
+        >>> _as_utc_dt(None) is None
+        True
+    """
     if dt is None:
         return None
     if isinstance(dt, str):
@@ -594,7 +808,19 @@ def _as_utc_dt(dt):
 
 
 def format_when(dt) -> str:
-    """Compact absolute timestamp for display."""
+    """Format a timestamp as a compact absolute UTC display string.
+
+    Args:
+        dt: Datetime, ISO string, or None to format.
+
+    Returns:
+        String like '2026-08-08 12:00 UTC', '—' for None, or str(dt)
+        if unparseable.
+
+    Example:
+        >>> format_when(None)
+        '—'
+    """
     d = _as_utc_dt(dt)
     if d is None:
         return "—" if dt is None else str(dt)
@@ -602,7 +828,22 @@ def format_when(dt) -> str:
 
 
 def format_expires(dt, *, prefix: bool = True) -> str:
-    """Human-friendly expiry, e.g. 'expires in 3 days (10 Aug 2026)'."""
+    """Format an expiry time as a human-friendly relative string.
+
+    Args:
+        dt: Expiry datetime or ISO string; empty result if missing/invalid.
+        prefix: If True, prefix with 'expires'/'expired'; if False, omit
+            the leading word for future dates far out, still include it
+            for past relative forms as implemented.
+
+    Returns:
+        Human-friendly expiry string such as
+        'expires in 3 days (10 Aug 2026)', or empty string if dt is invalid.
+
+    Example:
+        >>> format_expires(None)
+        ''
+    """
     d = _as_utc_dt(dt)
     if d is None:
         return ""
@@ -641,7 +882,19 @@ def format_expires(dt, *, prefix: bool = True) -> str:
 
 
 def format_time_ago(dt) -> str:
-    """Relative time for Updated columns, e.g. '3 hours ago'."""
+    """Format a timestamp as relative time for Updated columns.
+
+    Args:
+        dt: Datetime or ISO string representing a past (or slightly future) time.
+
+    Returns:
+        Relative string such as '3 hours ago', 'just now', absolute format
+        for future/clock-skew, or '—' for None.
+
+    Example:
+        >>> format_time_ago(None)
+        '—'
+    """
     d = _as_utc_dt(dt)
     if d is None:
         return "—" if dt is None else str(dt)
@@ -687,6 +940,25 @@ def count_for_project(
     since: str = "",
     until: str = "",
 ) -> int:
+    """Count secret_audit rows for a project with optional filters.
+
+    Args:
+        cur: Database cursor used to run the COUNT query.
+        project_id: UUID of the project to count audit rows for.
+        q: Free-text filter on secret_key, action, and actor_email.
+        actor: Substring filter on actor_email (case-insensitive).
+        action: Exact action filter if it is a known ACTIONS value.
+        since: Inclusive start date as YYYY-MM-DD (UTC start of day).
+        until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+
+    Returns:
+        Integer count of matching secret_audit rows for the project.
+
+    Example:
+        >>> n = count_for_project(cur, project_id, action="revealed")
+        >>> n >= 0
+        True
+    """
     extra, params = _filter_clause(q=q, actor=actor, action=action, since=since, until=until)
     cur.execute(
         f"""
@@ -712,6 +984,28 @@ def list_for_project(
     since: str = "",
     until: str = "",
 ):
+    """List secret_audit rows for a project with filters and display fields.
+
+    Args:
+        cur: Database cursor used to run the SELECT.
+        project_id: UUID of the project whose audit rows to return.
+        limit: Maximum number of rows to return (default 25).
+        offset: Number of rows to skip for pagination (default 0).
+        q: Free-text filter on secret_key, action, and actor_email.
+        actor: Substring filter on actor_email (case-insensitive).
+        action: Exact action filter if it is a known ACTIONS value.
+        since: Inclusive start date as YYYY-MM-DD (UTC start of day).
+        until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+
+    Returns:
+        List of secret_audit row mappings with summary (from describe_event)
+        and when_display (from format_when) added.
+
+    Example:
+        >>> rows = list_for_project(cur, project_id, limit=10)
+        >>> "summary" in rows[0] and "when_display" in rows[0]
+        True
+    """
     extra, params = _filter_clause(q=q, actor=actor, action=action, since=since, until=until)
     cur.execute(
         f"""

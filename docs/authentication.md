@@ -134,57 +134,140 @@ curl -s -H "Authorization: Bearer $JWT" \
 
 ---
 
-## 3. Machine token flow (ESO / CI)
+## 3. Machine token flow (ESO / CI / CLI)
 
 Machine tokens (`ss_…`) are **project-scoped** and only authenticate the
-`/eso/v1` routes. They are created on a project under **Integrations** (or
-**Tokens**). Roles:
+`/eso/v1` routes. They are the **recommended way to manage secrets from a CLI
+or CI pipeline** (list, get, create, update, delete) with **plaintext** values.
 
-| Role | `GET` / list secrets | `POST` upsert |
-|------|----------------------|---------------|
+Create a token on a project under **Integrations** (or **Tokens**). Roles:
+
+| Role | `GET` / list | Create / update / delete |
+|------|--------------|---------------------------|
 | `read-only` (default) | yes | **403** |
 | `write` | yes | yes |
 
 Raw `ss_…` tokens are stored only as SHA-256 hashes; the raw value is shown
 once at creation.
 
-### Fetch a single secret (ESO webhook)
+```bash
+export SS_URL="http://localhost:8080"
+export SS_TOKEN="ss_XXXX..."
+export PID="<PROJECT_ID>"
+AUTH=(-H "Authorization: Bearer $SS_TOKEN")
+```
+
+### Fetch a single secret (ESO webhook / CLI get)
 
 ```bash
-curl -s -H "Authorization: Bearer ss_XXXX..." \
-  "http://localhost:8080/eso/v1/projects/<PROJECT_ID>/secrets/DATABASE_URL"
+curl -s "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$PID/secrets/DATABASE_URL"
 ```
 
 ```json
-{"value": "postgres://...", "key": "DATABASE_URL"}
+{
+  "id": "<uuid>",
+  "key": "DATABASE_URL",
+  "value": "postgres://...",
+  "note": "",
+  "kind": "plain",
+  "expires_at": null,
+  "created_at": "…",
+  "updated_at": "…"
+}
 ```
 
-### Fetch all secrets (bulk sync)
+ESO continues to use `jsonPath: $.value` (extra fields are additive).
+
+### Fetch all secrets (bulk value map)
 
 ```bash
-curl -s -H "Authorization: Bearer ss_XXXX..." \
-  "http://localhost:8080/eso/v1/projects/<PROJECT_ID>/secrets"
+curl -s "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$PID/secrets"
 ```
 
 ```json
 {"secrets": {"DATABASE_URL": "...", "API_KEY": "..."}}
 ```
 
-### Upsert a secret (write role)
+### List metadata only (CLI — no plaintext)
 
 ```bash
-curl -s -X POST \
-  -H "Authorization: Bearer ss_XXXX..." \
-  -H "Content-Type: application/json" \
-  -d '{"key":"API_KEY","value":"new-value","note":"optional label"}' \
-  "http://localhost:8080/eso/v1/projects/<PROJECT_ID>/secrets"
+curl -s "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$PID/secrets?meta=1"
+# optional filter: &q=api
+```
+
+```json
+{
+  "items": [
+    {
+      "id": "…",
+      "key": "API_KEY",
+      "note": "",
+      "kind": "plain",
+      "expires_at": null,
+      "created_at": "…",
+      "updated_at": "…"
+    }
+  ]
+}
+```
+
+### Create or replace (write role)
+
+**POST** with `key` in the body, or **PUT** with `key` in the path:
+
+```bash
+# POST upsert
+curl -s -X POST "${AUTH[@]}" -H "Content-Type: application/json" \
+  -d '{"key":"API_KEY","value":"new-value","note":"optional label","expires_days":90}' \
+  "$SS_URL/eso/v1/projects/$PID/secrets"
+
+# PUT replace / create by path
+curl -s -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
+  -d '{"value":"rotated","note":"from cli"}' \
+  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+```
+
+Optional body fields: `note`, `kind` (`plain`|`database`|`certificate`|`ssh`|`kv`),
+`expires_at`, `expires_days`, `clear_expires`.
+
+### Partial update (write role)
+
+Secret must already exist. Omitted fields keep current values; omit `value` to
+change only metadata without rotating ciphertext.
+
+```bash
+curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" \
+  -d '{"note":"rotated in CI","expires_days":90}' \
+  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+```
+
+### Soft-delete (write role)
+
+Moves the secret to trash (restorable in the UI). Audited as `deleted`.
+
+```bash
+curl -s -X DELETE "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
 ```
 
 ```json
 {"ok": true, "id": "<uuid>", "key": "API_KEY"}
 ```
 
-Errors: `400` missing key/value, `403` read-only token, `401` unauthorized.
+### Errors
+
+| Code | Meaning |
+|------|---------|
+| `400` | Missing key/value, bad `kind`, bad expiry |
+| `401` | Missing/invalid/wrong-project/expired token |
+| `403` | Read-only token used for a write |
+| `404` | Key not found (get / patch / delete) |
+
+Full request/response field tables and CLI cookbook:
+[api.md — Managing secrets via the machine API](./api.md#managing-secrets-via-the-machine-api).
 
 ---
 

@@ -2268,24 +2268,53 @@ class TestESO(unittest.TestCase):
 
     def test_get_secret_ok(self):
         enc = crypto.encrypt("val")
-        conn, _ = _conn(fetchone={"value_enc": enc})
+        sid = uuid4()
+        # get_row, machine_token_label (audit_secret does not fetch)
+        fo = [
+            {
+                "id": sid,
+                "key": "KEY",
+                "value_enc": enc,
+                "note": "n",
+                "kind": "plain",
+                "expires_at": None,
+                "created_at": None,
+                "updated_at": None,
+            },
+            {"label": "eso:ss_testtoke"},
+        ]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
         with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
                 f"/eso/v1/projects/{self.pid}/secrets/KEY",
                 headers={"Authorization": "Bearer ss_testtoken"},
             )
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.get_json()["value"], "val")
-        self.assertEqual(r.get_json()["key"], "KEY")
+        body = r.get_json()
+        self.assertEqual(body["value"], "val")
+        self.assertEqual(body["key"], "KEY")
+        self.assertEqual(body["id"], str(sid))
+        self.assertEqual(body["note"], "n")
+        self.assertEqual(body["kind"], "plain")
+        conn.commit.assert_called()
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("audit_secret", sql)
+        audit_params = [
+            c.args[1]
+            for c in cur.execute.call_args_list
+            if c.args and "audit_secret" in str(c.args[0])
+        ]
+        self.assertTrue(any("revealed" in p for p in audit_params))
 
     def test_get_secret_not_found(self):
-        # first fetch: no value; second: auth ok (same connection)
+        # first fetch: no row; second: auth ok (same connection)
         state = {"n": 0}
 
         def fetchone():
             state["n"] += 1
             if state["n"] == 1:
-                return {"value_enc": None}
+                return None
             return {"ok": True}
 
         conn, _ = _conn(fetchone=fetchone)
@@ -2306,14 +2335,11 @@ class TestESO(unittest.TestCase):
         self.assertEqual(r.status_code, 401)
 
     def test_list_ok(self):
-        state = {"n": 0}
-
-        def fetchone():
-            state["n"] += 1
-            return {"ok": True}
-
+        # auth ok, token label; then fetchall values; audit does not fetch
+        fo = [{"ok": True}, {"label": "eso:ss_ok"}]
         enc = crypto.encrypt("v1")
-        conn, cur = _conn(fetchone=fetchone, fetchall=[{"key": "A", "value_enc": enc}])
+        conn, cur = _conn(fetchall=[{"key": "A", "value_enc": enc}])
+        cur.fetchone.side_effect = fo
         with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
                 f"/eso/v1/projects/{self.pid}/secrets",
@@ -2321,6 +2347,56 @@ class TestESO(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json()["secrets"], {"A": "v1"})
+        conn.commit.assert_called()
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("audit_secret", sql)
+        audit_params = [
+            c.args[1]
+            for c in cur.execute.call_args_list
+            if c.args and "audit_secret" in str(c.args[0])
+        ]
+        self.assertTrue(any("exported" in p for p in audit_params))
+        self.assertTrue(any(any(isinstance(x, str) and "machine/values" in x for x in p) for p in audit_params))
+
+    def test_list_meta_ok(self):
+        sid = uuid4()
+        fo = [{"ok": True}, {"label": "eso:ss_ok"}]
+        conn, cur = _conn(
+            fetchall=[
+                {
+                    "id": sid,
+                    "key": "API_KEY",
+                    "note": "prod",
+                    "kind": "plain",
+                    "expires_at": None,
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            ],
+        )
+        cur.fetchone.side_effect = fo
+        with patch.object(db, "connect", return_value=conn):
+            r = self.client.get(
+                f"/eso/v1/projects/{self.pid}/secrets?meta=1&q=api",
+                headers={"Authorization": "Bearer ss_ok"},
+            )
+        self.assertEqual(r.status_code, 200)
+        items = r.get_json()["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["key"], "API_KEY")
+        self.assertEqual(items[0]["id"], str(sid))
+        self.assertNotIn("value", items[0])
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("machine_list_meta", sql)
+        self.assertIn("audit_secret", sql)
+        audit_params = [
+            c.args[1]
+            for c in cur.execute.call_args_list
+            if c.args and "audit_secret" in str(c.args[0])
+        ]
+        self.assertTrue(any("exported" in p for p in audit_params))
+        self.assertTrue(any(any(isinstance(x, str) and "machine/meta" in x for x in p) for p in audit_params))
+        conn.commit.assert_called()
 
     def test_bearer_hash_none(self):
         with store.app.test_request_context("/", headers={}):
@@ -2340,7 +2416,22 @@ class TestESO(unittest.TestCase):
 
     def test_upsert_write_ok(self):
         sid = uuid4()
-        fo = [{"role": "write"}, {"id": sid}, None]  # role, upsert id, audit_secret
+        # role, upsert id, token label, get_row (audit does not fetch)
+        fo = [
+            {"role": "write"},
+            {"id": sid},
+            {"label": "ci:ss_write"},
+            {
+                "id": sid,
+                "key": "K",
+                "value_enc": crypto.encrypt("secret"),
+                "note": "",
+                "kind": "plain",
+                "expires_at": None,
+                "created_at": None,
+                "updated_at": None,
+            },
+        ]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, "connect", return_value=conn):
@@ -2353,17 +2444,126 @@ class TestESO(unittest.TestCase):
         body = r.get_json()
         self.assertTrue(body["ok"])
         self.assertEqual(body["key"], "K")
+        self.assertEqual(body["value"], "secret")
         conn.commit.assert_called()
         sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
         self.assertIn("audit_secret", sql)
         self.assertIn("machine_upsert", sql)
+
+    def test_put_secret_ok(self):
+        sid = uuid4()
+        fo = [
+            {"role": "write"},
+            {"id": sid},
+            {"label": "ci:ss_write"},
+            {
+                "id": sid,
+                "key": "API_KEY",
+                "value_enc": crypto.encrypt("new"),
+                "note": "rotated",
+                "kind": "plain",
+                "expires_at": None,
+                "created_at": None,
+                "updated_at": None,
+            },
+        ]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, "connect", return_value=conn):
+            r = self.client.put(
+                f"/eso/v1/projects/{self.pid}/secrets/API_KEY",
+                json={"value": "new", "note": "rotated"},
+                headers={"Authorization": "Bearer ss_write"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["key"], "API_KEY")
+        self.assertEqual(r.get_json()["value"], "new")
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("machine_upsert", sql)
+
+    def test_patch_secret_not_found(self):
+        fo = [{"role": "write"}, None]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, "connect", return_value=conn):
+            r = self.client.patch(
+                f"/eso/v1/projects/{self.pid}/secrets/MISSING",
+                json={"note": "x"},
+                headers={"Authorization": "Bearer ss_write"},
+            )
+        self.assertEqual(r.status_code, 404)
+
+    def test_delete_secret_ok(self):
+        sid = uuid4()
+        enc = crypto.encrypt("v")
+        # role, get_row existing, machine_delete id, token label
+        fo = [
+            {"role": "write"},
+            {
+                "id": sid,
+                "key": "K",
+                "value_enc": enc,
+                "note": "",
+                "kind": "plain",
+                "expires_at": None,
+                "created_at": None,
+                "updated_at": None,
+            },
+            {"id": sid},
+            {"label": "ci:ss_write"},
+        ]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, "connect", return_value=conn):
+            r = self.client.delete(
+                f"/eso/v1/projects/{self.pid}/secrets/K",
+                headers={"Authorization": "Bearer ss_write"},
+            )
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["key"], "K")
+        self.assertEqual(body["id"], str(sid))
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("machine_delete", sql)
+        self.assertIn("audit_secret", sql)
+        audit_params = [
+            c.args[1]
+            for c in cur.execute.call_args_list
+            if c.args and "audit_secret" in str(c.args[0])
+        ]
+        self.assertTrue(any("deleted" in p for p in audit_params))
+        conn.commit.assert_called()
+
+    def test_delete_read_only_forbidden(self):
+        conn, _ = _conn(fetchone={"role": "read-only"})
+        with patch.object(db, "connect", return_value=conn):
+            r = self.client.delete(
+                f"/eso/v1/projects/{self.pid}/secrets/K",
+                headers={"Authorization": "Bearer ss_ro"},
+            )
+        self.assertEqual(r.status_code, 403)
 
     def test_eso_post_exempt_from_csrf(self):
         """Bearer ESO upsert must not require session CSRF when CSRF_TESTING is on."""
         store.app.config["CSRF_TESTING"] = True
         try:
             sid = uuid4()
-            fo = [{"role": "write"}, {"id": sid}, None]
+            fo = [
+                {"role": "write"},
+                {"id": sid},
+                {"label": "ci:ss_write"},
+                {
+                    "id": sid,
+                    "key": "K",
+                    "value_enc": crypto.encrypt("v"),
+                    "note": "",
+                    "kind": "plain",
+                    "expires_at": None,
+                    "created_at": None,
+                    "updated_at": None,
+                },
+            ]
             conn, cur = _conn()
             cur.fetchone.side_effect = fo
             with patch.object(db, "connect", return_value=conn):
@@ -2391,6 +2591,15 @@ class TestESO(unittest.TestCase):
             headers={"Authorization": "Bearer ss_x"},
         )
         self.assertEqual(r.status_code, 400)
+
+    def test_upsert_invalid_kind(self):
+        r = self.client.post(
+            f"/eso/v1/projects/{self.pid}/secrets",
+            json={"key": "K", "value": "v", "kind": "nope"},
+            headers={"Authorization": "Bearer ss_x"},
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("kind", r.get_json()["error"])
 
     def test_create_token_with_expiry(self):
         # reuse token create path with expires_days (writer)
@@ -2445,7 +2654,7 @@ class TestESO(unittest.TestCase):
         self.assertEqual(store.app.config.get("MAX_CONTENT_LENGTH"), config.MAX_CONTENT_LENGTH)
 
     def test_parse_expires_at_capped(self):
-        from routes.projects import _parse_expires_at
+        from secret_ops import _parse_expires_at
         from datetime import datetime, timezone, timedelta
         from werkzeug.datastructures import MultiDict
 

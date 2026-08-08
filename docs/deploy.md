@@ -129,36 +129,52 @@ Then, in order:
 
 ---
 
-## 4. Machine accounts (ESO / CI)
+## 4. Machine accounts (ESO / CI / CLI)
 
 Machine tokens (`ss_…`) are project-scoped and only authenticate the `/eso/v1`
-routes.
+routes. Use them for **External Secrets Operator**, **CI**, and **CLI** secret
+management (list / get / create / update / soft-delete) with **plaintext**
+values.
 
-| Role | `GET` secret / list | `POST /eso/v1/projects/{id}/secrets` |
-|------|---------------------|--------------------------------------|
+| Role | `GET` secret / list | Mutate (`POST`/`PUT`/`PATCH`/`DELETE`) |
+|------|---------------------|----------------------------------------|
 | `read-only` (default) | yes | 403 |
-| `write` | yes | upsert `{"key","value","note?"}` |
+| `write` | yes | create, update, soft-delete |
 
-Create one under a project (**Integrations** or **Tokens**), then test it:
+Create one under a project (**Integrations** or **Tokens**), then:
 
 ```bash
-# Fetch a single secret
-curl -s -H "Authorization: Bearer ss_…" \
-  "http://localhost:8080/eso/v1/projects/<PROJECT_ID>/secrets/DATABASE_URL"
+export SS_URL=http://localhost:8080
+export SS_TOKEN=ss_…
+export PID=<PROJECT_ID>
+AUTH=(-H "Authorization: Bearer $SS_TOKEN")
 
-# Fetch all secrets (bulk)
-curl -s -H "Authorization: Bearer ss_…" \
-  "http://localhost:8080/eso/v1/projects/<PROJECT_ID>/secrets"
+# List keys (CLI; no values)
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets?meta=1"
 
-# Upsert (write role only)
-curl -s -X POST \
-  -H "Authorization: Bearer ss_…" \
-  -H "Content-Type: application/json" \
-  -d '{"key":"API_KEY","value":"new-value","note":"optional"}' \
-  "http://localhost:8080/eso/v1/projects/<PROJECT_ID>/secrets"
+# Get one secret
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets/DATABASE_URL"
+
+# Bulk values (ESO-style map)
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets"
+
+# Create / replace (write role)
+curl -s -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
+  -d '{"value":"new-value","note":"optional","expires_days":90}' \
+  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+
+# Patch metadata only (write role)
+curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" \
+  -d '{"note":"rotated in CI"}' \
+  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+
+# Soft-delete (write role)
+curl -s -X DELETE "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
 ```
 
-Full request/response shapes: [api.md](./api.md#eso--machine-api-8080esov1).
+Full field tables, errors, and CLI cookbook:
+[api.md — Managing secrets via the machine API](./api.md#managing-secrets-via-the-machine-api).
 
 ---
 

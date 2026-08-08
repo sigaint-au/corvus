@@ -32,6 +32,19 @@ log = __import__("logging").getLogger(__name__)
 
 
 def _csv_response(filename: str, fieldnames: list[str], rows: list[dict]) -> Response:
+    """Build a downloadable CSV response from row dicts.
+
+    Args:
+        filename: Suggested download filename (Content-Disposition).
+        fieldnames: Ordered CSV column names; only these keys are written.
+        rows: Sequence of dicts to export; datetimes and bools are normalized.
+
+    Returns:
+        Flask ``Response`` with ``text/csv`` body and attachment headers.
+
+    Example:
+        >>> return _csv_response("access-review.csv", fields, rows)
+    """
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
     w.writeheader()
@@ -53,6 +66,18 @@ def _csv_response(filename: str, fieldnames: list[str], rows: list[dict]) -> Res
 
 
 def _json_response(filename: str, payload) -> Response:
+    """Build a downloadable JSON response from an arbitrary payload.
+
+    Args:
+        filename: Suggested download filename (Content-Disposition).
+        payload: JSON-serializable object (uses ``default=str`` for extras).
+
+    Returns:
+        Flask ``Response`` with ``application/json`` body and attachment headers.
+
+    Example:
+        >>> return _json_response("audit-export.json", {"rows": rows})
+    """
     body = json.dumps(payload, indent=2, default=str)
     return Response(
         body,
@@ -62,11 +87,34 @@ def _json_response(filename: str, payload) -> Response:
 
 
 def register(app):
+    """Register global-admin audit and server-settings routes.
+
+    Args:
+        app: Flask application instance to attach routes to.
+
+    Returns:
+        None.
+
+    Example:
+        >>> from app.routes import admin
+        >>> admin.register(app)
+    """
     # ── Administration: audit & access reviews (global admin) ──────────
 
     @app.route("/admin/audit", methods=["GET", "POST"])
     @authz.global_admin_required
     def admin_audit():
+        """Render audit/access-review UI or handle retention/purge POSTs.
+
+        Args:
+            None (reads query/form ``tab``, filters, and POST ``action``).
+
+        Returns:
+            HTML audit template, or redirect after settings/purge actions.
+
+        Example:
+            GET/POST /admin/audit?tab=access
+        """
         tab = (request.args.get("tab") or request.form.get("tab") or "access").strip().lower()
         if tab not in ("access", "roles", "export"):
             tab = "access"
@@ -165,6 +213,17 @@ def register(app):
     @app.get("/admin/audit/access/export")
     @authz.global_admin_required
     def admin_audit_access_export():
+        """Export the access-review report as CSV or JSON download.
+
+        Args:
+            None (reads query ``format``: ``csv`` or ``json``).
+
+        Returns:
+            File download Response (CSV or JSON attachment).
+
+        Example:
+            GET /admin/audit/access/export?format=csv
+        """
         fmt = (request.args.get("format") or "csv").strip().lower()
         if fmt not in ("csv", "json"):
             fmt = "csv"
@@ -199,6 +258,17 @@ def register(app):
     @app.get("/admin/audit/export")
     @authz.global_admin_required
     def admin_audit_export():
+        """Export secret and/or org audit logs as CSV or JSON.
+
+        Args:
+            None (reads query ``format``, ``source``, ``since``, ``until``).
+
+        Returns:
+            File download Response with filtered audit rows.
+
+        Example:
+            GET /admin/audit/export?format=csv&source=both
+        """
         fmt = (request.args.get("format") or "csv").strip().lower()
         source = (request.args.get("source") or "both").strip().lower()
         since = (request.args.get("since") or "").strip()
@@ -346,6 +416,17 @@ def register(app):
     @app.route("/settings", methods=["GET", "POST"])
     @authz.global_admin_required
     def server_settings():
+        """Render or update global server settings (branding, LDAP, OIDC, users).
+
+        Args:
+            None (reads query ``tab``; POST form ``action`` and setting fields).
+
+        Returns:
+            HTML settings template, or redirect to the relevant settings tab.
+
+        Example:
+            GET/POST /settings?tab=general
+        """
         if request.method == "POST":
             action = request.form.get("action") or "classification"
             if action == "server_url":

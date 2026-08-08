@@ -12,7 +12,28 @@ _ENSURE_LOCK_K2 = 1
 
 
 def ensure_schema():
-    """Idempotent upgrades for existing volumes (init.sql only runs once)."""
+    """Apply idempotent DDL upgrades for existing database volumes.
+
+    init.sql runs only on first volume create; this function re-applies
+    additive migrations (columns, tables, RLS policies, functions) under a
+    session advisory lock so concurrent workers cannot race. Requires a
+    superuser DSN via DATABASE_ADMIN_URL. May promote the bootstrap admin
+    email and backfill secret kinds after statements succeed.
+
+    Args:
+        None.
+
+    Returns:
+        None. Logs success; re-raises on failure after logging.
+
+    Raises:
+        RuntimeError: If DATABASE_ADMIN_URL is not set.
+        Exception: Any database error while applying statements (re-raised).
+
+    Example:
+        >>> # ensure_schema()  # call once at app startup
+        >>> # schema ensure complete (logged)
+    """
     if not DATABASE_ADMIN_URL:
         # Do not fall back to the app/authenticator role — policy DDL would fail
         # and hide misconfiguration. Compose sets DATABASE_ADMIN_URL explicitly.
@@ -564,6 +585,31 @@ def ensure_schema():
         $$
         """,
         """
+        CREATE OR REPLACE FUNCTION private.machine_get_row(p_project uuid, p_hash text, p_key text)
+        RETURNS TABLE (
+          id uuid,
+          key text,
+          value_enc text,
+          note text,
+          kind text,
+          expires_at timestamptz,
+          created_at timestamptz,
+          updated_at timestamptz
+        )
+        LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
+        BEGIN
+          IF NOT private.auth_machine(p_project, p_hash) THEN
+            RETURN;
+          END IF;
+          RETURN QUERY
+            SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at, s.created_at, s.updated_at
+            FROM api.secrets s
+            WHERE s.project_id = p_project AND s.key = p_key AND s.deleted_at IS NULL;
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.machine_get_row TO authenticator",
+        """
         CREATE OR REPLACE FUNCTION private.machine_list_enc(p_project uuid, p_hash text)
         RETURNS TABLE (key text, value_enc text)
         LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
@@ -577,6 +623,64 @@ def ensure_schema():
         END;
         $$
         """,
+        """
+        CREATE OR REPLACE FUNCTION private.machine_list_meta(
+          p_project uuid, p_hash text, p_q text DEFAULT NULL
+        )
+        RETURNS TABLE (
+          id uuid,
+          key text,
+          note text,
+          kind text,
+          expires_at timestamptz,
+          created_at timestamptz,
+          updated_at timestamptz
+        )
+        LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
+        DECLARE q text := NULLIF(btrim(COALESCE(p_q, '')), '');
+        BEGIN
+          IF NOT private.auth_machine(p_project, p_hash) THEN
+            RETURN;
+          END IF;
+          RETURN QUERY
+            SELECT s.id, s.key, s.note, s.kind, s.expires_at, s.created_at, s.updated_at
+            FROM api.secrets s
+            WHERE s.project_id = p_project
+              AND s.deleted_at IS NULL
+              AND (
+                q IS NULL
+                OR s.key ILIKE ('%' || q || '%')
+                OR s.note ILIKE ('%' || q || '%')
+              )
+            ORDER BY s.key;
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.machine_list_meta TO authenticator",
+        """
+        CREATE OR REPLACE FUNCTION private.machine_delete(
+          p_project uuid, p_hash text, p_key text
+        )
+        RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api AS $$
+        DECLARE sid uuid;
+        BEGIN
+          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+            RETURN NULL;
+          END IF;
+          IF p_key IS NULL OR btrim(p_key) = '' THEN
+            RETURN NULL;
+          END IF;
+          UPDATE api.secrets
+          SET deleted_at = now()
+          WHERE project_id = p_project
+            AND key = p_key
+            AND deleted_at IS NULL
+          RETURNING id INTO sid;
+          RETURN sid;
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.machine_delete TO authenticator",
         # Secret audit log
         """
         CREATE TABLE IF NOT EXISTS api.secret_audit (
@@ -711,11 +815,33 @@ def ensure_schema():
         """,
         "GRANT EXECUTE ON FUNCTION private.machine_role TO authenticator",
         """
+        CREATE OR REPLACE FUNCTION private.machine_token_label(p_project uuid, p_hash text)
+        RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
+          SELECT COALESCE(NULLIF(btrim(name), ''), 'token') || ':' || token_prefix
+          FROM api.machine_tokens
+          WHERE project_id = p_project AND token_hash = p_hash
+            AND (expires_at IS NULL OR expires_at > now())
+          LIMIT 1;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.machine_token_label TO authenticator",
+        # Drop 5-arg overload from older volumes before creating extended signature.
+        "DROP FUNCTION IF EXISTS private.machine_upsert_enc(uuid, text, text, text, text)",
+        """
         CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
-          p_project uuid, p_hash text, p_key text, p_value_enc text, p_note text
+          p_project uuid,
+          p_hash text,
+          p_key text,
+          p_value_enc text,
+          p_note text,
+          p_kind text DEFAULT 'plain',
+          p_expires_at timestamptz DEFAULT NULL,
+          p_set_expires boolean DEFAULT false
         )
         RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api AS $$
-        DECLARE sid uuid;
+        DECLARE
+          sid uuid;
+          k text := COALESCE(NULLIF(btrim(p_kind), ''), 'plain');
         BEGIN
           IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
             RETURN NULL;
@@ -723,11 +849,26 @@ def ensure_schema():
           IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
             RETURN NULL;
           END IF;
-          INSERT INTO api.secrets (project_id, key, value_enc, note, kind)
-          VALUES (p_project, p_key, p_value_enc, COALESCE(p_note, ''), 'plain')
+          IF k NOT IN ('plain', 'database', 'certificate', 'ssh', 'kv') THEN
+            k := 'plain';
+          END IF;
+          INSERT INTO api.secrets (project_id, key, value_enc, note, kind, expires_at)
+          VALUES (
+            p_project,
+            p_key,
+            p_value_enc,
+            COALESCE(p_note, ''),
+            k,
+            CASE WHEN p_set_expires THEN p_expires_at ELSE NULL END
+          )
           ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
             SET value_enc = EXCLUDED.value_enc,
-                note = EXCLUDED.note
+                note = EXCLUDED.note,
+                kind = EXCLUDED.kind,
+                expires_at = CASE
+                  WHEN p_set_expires THEN p_expires_at
+                  ELSE api.secrets.expires_at
+                END
           RETURNING id INTO sid;
           RETURN sid;
         END;
@@ -1362,9 +1503,21 @@ def ensure_schema():
 
 
 def _backfill_secret_kinds(cur) -> None:
-    """
-    One-shot: set kind from legacy note type: tags / value heuristics, then strip tags.
-    Safe to re-run — only rows with type: in note are rewritten after first pass.
+    """Backfill api.secrets.kind from legacy note tags or value heuristics.
+
+    One-shot migration helper: set kind from legacy note type: tags / value
+    heuristics, then strip tags from notes. Safe to re-run — after the first
+    pass only rows still matching type: (or empty kind) are candidates.
+
+    Args:
+        cur: Open admin DB cursor used to SELECT/UPDATE api.secrets.
+
+    Returns:
+        None. Logs how many rows were updated when any change was made.
+
+    Example:
+        >>> # with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:
+        ... #     _backfill_secret_kinds(cur)
     """
     from secret_kinds import (
         detect_secret_kind,

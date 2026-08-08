@@ -20,12 +20,41 @@ BOOTSTRAP_ADMIN_EMAIL = os.environ.get("BOOTSTRAP_ADMIN_EMAIL", "").strip().lowe
 
 
 def bootstrap_admin_email() -> str:
-    """Email that may be promoted to global admin (GLOBAL_ADMIN_EMAIL or BOOTSTRAP_ADMIN_EMAIL)."""
+    """Return the email allowed for one-time global-admin bootstrap promotion.
+
+    Prefers ``GLOBAL_ADMIN_EMAIL``; falls back to ``BOOTSTRAP_ADMIN_EMAIL``.
+
+    Args:
+        None.
+
+    Returns:
+        Lowercased email string, or ``""`` if neither env var is set.
+
+    Example:
+        >>> # With GLOBAL_ADMIN_EMAIL=admin@example.com
+        >>> bootstrap_admin_email()
+        'admin@example.com'
+    """
     return GLOBAL_ADMIN_EMAIL or BOOTSTRAP_ADMIN_EMAIL
 
 
 def refuse_insecure_defaults():
-    """Exit if production still uses baked-in default secrets."""
+    """Exit the process if production still uses baked-in default secrets.
+
+    Skipped when ``FLASK_ENV=development`` or ``ALLOW_INSECURE_DEFAULTS`` is
+    truthy (``1`` / ``true`` / ``yes``). Checks ``SECRET_KEY``, ``JWT_SECRET``,
+    and ``MASTER_KEY`` against their compile-time defaults.
+
+    Args:
+        None.
+
+    Returns:
+        None. Raises ``SystemExit`` if a default secret is still in use.
+
+    Example:
+        >>> # Called once at app import:
+        >>> refuse_insecure_defaults()  # no-op in development
+    """
     if os.environ.get("FLASK_ENV") == "development":
         return
     if os.environ.get("ALLOW_INSECURE_DEFAULTS", "").lower() in ("1", "true", "yes"):

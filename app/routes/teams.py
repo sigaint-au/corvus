@@ -18,12 +18,31 @@ log = logging.getLogger(__name__)
 
 
 def register(app):
+    """Register team, member, invite, and project-creation routes on the app.
+
+    Args:
+        app: Flask application instance to attach routes to.
+
+    Returns:
+        None.
+
+    Example:
+        register(app)
+    """
     # ── Teams ─────────────────────────────────────────────────────────
 
 
     @app.get("/teams")
     @authz.login_required
     def teams():
+        """List teams the current user can access, with optional name search.
+
+        Returns:
+            Rendered teams list template (HTML response).
+
+        Example:
+            GET /teams?q=ops
+        """
         q = (request.args.get("q") or "").strip()
         like = f"%{q}%" if q else None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -65,6 +84,14 @@ def register(app):
     @app.post("/teams")
     @authz.login_required
     def create_team():
+        """Create a new team and redirect to its detail page.
+
+        Returns:
+            Redirect to the new team detail page, or back to the teams list on error.
+
+        Example:
+            POST /teams with form field name=My Team
+        """
         if not settings_svc.can_create_team(session.get("is_global_admin")):
             flash("Only global admins can create teams", "error")
             return redirect(url_for("teams"))
@@ -85,6 +112,17 @@ def register(app):
     @app.get("/teams/<uuid:team_id>")
     @authz.login_required
     def team_detail(team_id):
+        """Show team detail with projects, members, activity, or settings tab.
+
+        Args:
+            team_id: UUID of the team to display.
+
+        Returns:
+            Rendered team detail template, or a 404 response if the team is missing.
+
+        Example:
+            GET /teams/<team_id>?tab=members&q=api
+        """
         session["team_id"] = str(team_id)
         tab = (request.args.get("tab") or "projects").strip().lower()
         if tab not in ("projects", "members", "activity", "settings"):
@@ -220,6 +258,17 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/members")
     @authz.login_required
     def add_team_member(team_id):
+        """Add or update a team member by email and role.
+
+        Args:
+            team_id: UUID of the team to modify.
+
+        Returns:
+            Redirect to the team members tab.
+
+        Example:
+            POST /teams/<team_id>/members with email and role form fields
+        """
         email = request.form["email"].strip().lower()
         role = request.form.get("role", "member")
         if role not in config.TEAM_ROLES:
@@ -266,6 +315,18 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/members/<uuid:user_id>/remove")
     @authz.login_required
     def remove_team_member(team_id, user_id):
+        """Remove a member from a team.
+
+        Args:
+            team_id: UUID of the team.
+            user_id: UUID of the user to remove.
+
+        Returns:
+            Redirect to the team members tab.
+
+        Example:
+            POST /teams/<team_id>/members/<user_id>/remove
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
                 cur.execute(
@@ -303,6 +364,17 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/transfer")
     @authz.login_required
     def transfer_team_ownership(team_id):
+        """Transfer team ownership to another registered user by email.
+
+        Args:
+            team_id: UUID of the team whose ownership is transferred.
+
+        Returns:
+            Redirect to the team settings tab.
+
+        Example:
+            POST /teams/<team_id>/transfer with form field email=newowner@example.com
+        """
         email = (request.form.get("email") or "").strip().lower()
         if not email:
             flash("Email required", "error")
@@ -356,6 +428,17 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/invites")
     @authz.login_required
     def create_team_invite(team_id):
+        """Create a single-use team invite link with role and expiry.
+
+        Args:
+            team_id: UUID of the team to invite users into.
+
+        Returns:
+            Redirect to the team members tab; invite URL is stored once in session.
+
+        Example:
+            POST /teams/<team_id>/invites with role and expires_days form fields
+        """
         role = request.form.get("role", "member")
         if role not in config.INVITE_ROLES:
             role = "member"
@@ -408,6 +491,18 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/invites/<uuid:invite_id>/revoke")
     @authz.login_required
     def revoke_team_invite(team_id, invite_id):
+        """Revoke an outstanding team invite.
+
+        Args:
+            team_id: UUID of the team that owns the invite.
+            invite_id: UUID of the invite to revoke.
+
+        Returns:
+            Redirect to the team members tab.
+
+        Example:
+            POST /teams/<team_id>/invites/<invite_id>/revoke
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -432,6 +527,18 @@ def register(app):
 
     @app.get("/invite/<token>")
     def redeem_invite(token):
+        """Redeem a team invite token and create a pending join request.
+
+        Args:
+            token: Raw invite token from the invite URL.
+
+        Returns:
+            Redirect to login (if unauthenticated), team detail (if already a
+            member), or the teams list after submitting a join request.
+
+        Example:
+            GET /invite/<token>
+        """
         # Preserve invite across login (bearer token in URL is lost if bounced without context)
         if not session.get("user_id"):
             session["invite_token"] = token
@@ -496,6 +603,18 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/join-requests/<uuid:req_id>/approve")
     @authz.login_required
     def approve_join_request(team_id, req_id):
+        """Approve a pending team join request and add the user as a member.
+
+        Args:
+            team_id: UUID of the team.
+            req_id: UUID of the join request to approve.
+
+        Returns:
+            Redirect to the team members tab.
+
+        Example:
+            POST /teams/<team_id>/join-requests/<req_id>/approve
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
@@ -547,6 +666,18 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/join-requests/<uuid:req_id>/reject")
     @authz.login_required
     def reject_join_request(team_id, req_id):
+        """Reject a pending team join request.
+
+        Args:
+            team_id: UUID of the team.
+            req_id: UUID of the join request to reject.
+
+        Returns:
+            Redirect to the team members tab.
+
+        Example:
+            POST /teams/<team_id>/join-requests/<req_id>/reject
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
@@ -577,6 +708,17 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/settings")
     @authz.login_required
     def update_team_settings(team_id):
+        """Update team default token expiry and optional classification banner.
+
+        Args:
+            team_id: UUID of the team to update.
+
+        Returns:
+            Redirect to the team settings tab.
+
+        Example:
+            POST /teams/<team_id>/settings with default_token_days and classification fields
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
@@ -666,6 +808,17 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/ldap-maps")
     @authz.login_required
     def add_team_ldap_map(team_id):
+        """Add or update an LDAP group to team role mapping.
+
+        Args:
+            team_id: UUID of the team to map.
+
+        Returns:
+            Redirect to the team settings tab.
+
+        Example:
+            POST /teams/<team_id>/ldap-maps with ldap_group and role form fields
+        """
         ldap_group = (request.form.get("ldap_group") or "").strip()
         role = request.form.get("role", "member")
         if role not in config.TEAM_ROLES:
@@ -699,6 +852,18 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/ldap-maps/<uuid:map_id>/delete")
     @authz.login_required
     def delete_team_ldap_map(team_id, map_id):
+        """Delete an LDAP group mapping for a team.
+
+        Args:
+            team_id: UUID of the team.
+            map_id: UUID of the LDAP map row to delete.
+
+        Returns:
+            Redirect to the team settings tab.
+
+        Example:
+            POST /teams/<team_id>/ldap-maps/<map_id>/delete
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM api.team_ldap_maps WHERE id = %s AND team_id = %s",
@@ -717,6 +882,17 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/oidc-maps")
     @authz.login_required
     def add_team_oidc_map(team_id):
+        """Add or update an OIDC group to team role mapping.
+
+        Args:
+            team_id: UUID of the team to map.
+
+        Returns:
+            Redirect to the team settings tab.
+
+        Example:
+            POST /teams/<team_id>/oidc-maps with oidc_group and role form fields
+        """
         oidc_group = (request.form.get("oidc_group") or "").strip()
         role = request.form.get("role", "member")
         if role not in config.TEAM_ROLES:
@@ -749,6 +925,18 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/oidc-maps/<uuid:map_id>/delete")
     @authz.login_required
     def delete_team_oidc_map(team_id, map_id):
+        """Delete an OIDC group mapping for a team.
+
+        Args:
+            team_id: UUID of the team.
+            map_id: UUID of the OIDC map row to delete.
+
+        Returns:
+            Redirect to the team settings tab.
+
+        Example:
+            POST /teams/<team_id>/oidc-maps/<map_id>/delete
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM api.team_oidc_maps WHERE id = %s AND team_id = %s",
@@ -768,6 +956,17 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/projects")
     @authz.login_required
     def create_project(team_id):
+        """Create a project under the given team.
+
+        Args:
+            team_id: UUID of the parent team.
+
+        Returns:
+            Redirect to the new project detail page, or back to the team on error.
+
+        Example:
+            POST /teams/<team_id>/projects with form field name=My Project
+        """
         name = request.form["name"].strip()
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
@@ -791,7 +990,17 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/delete")
     @authz.login_required
     def delete_team(team_id):
-        """Owner (or global admin via team_role) only — RLS teams_delete enforces."""
+        """Delete a team. Owner (or global admin via team_role) only — RLS teams_delete enforces.
+
+        Args:
+            team_id: UUID of the team to delete.
+
+        Returns:
+            Redirect to the teams list on success, or team settings on failure.
+
+        Example:
+            POST /teams/<team_id>/delete
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             row = cur.fetchone()
@@ -819,7 +1028,18 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/projects/<uuid:project_id>/delete")
     @authz.login_required
     def delete_project_from_team(team_id, project_id):
-        """Owner/admin only — RLS projects_delete enforces."""
+        """Delete a project from a team. Owner/admin only — RLS projects_delete enforces.
+
+        Args:
+            team_id: UUID of the parent team.
+            project_id: UUID of the project to delete.
+
+        Returns:
+            Redirect to the team projects tab.
+
+        Example:
+            POST /teams/<team_id>/projects/<project_id>/delete
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             row = cur.fetchone()

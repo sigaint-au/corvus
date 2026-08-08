@@ -38,6 +38,25 @@ _schema_ready = False
 
 @app.before_request
 def _bootstrap_schema():
+    """Ensure the database schema is applied once before handling requests.
+
+    Flask before_request hook. Runs on every request until the schema has been
+    successfully ensured; subsequent requests skip the work via a module flag.
+    When ``app.config['TESTING']`` is true, marks ready without touching the DB.
+
+    Args:
+        None. Uses the current Flask request/app context implicitly.
+
+    Returns:
+        None. May raise if ``ensure_schema()`` fails (misconfig or DB error);
+        in that case the ready flag is not set so the next request retries.
+
+    Example:
+        >>> # Registered via @app.before_request; Flask invokes it automatically.
+        >>> # In tests with TESTING=True, it only sets _schema_ready and returns.
+        >>> with app.test_request_context('/'):
+        ...     _bootstrap_schema()
+    """
     global _schema_ready
     if _schema_ready:
         return
@@ -55,6 +74,26 @@ app.before_request(authz.validate_registered_session)
 
 @app.after_request
 def security_headers(resp):
+    """Attach security-related HTTP headers to every response.
+
+    Flask after_request hook. Sets content-type sniffing protection, frame
+    denial, referrer policy, and a restrictive Content-Security-Policy. When
+    ``COOKIE_SECURE=1`` is set in the environment, also adds HSTS.
+
+    Args:
+        resp: The Flask response object for the current request. Headers are
+            mutated in place and the same object is returned.
+
+    Returns:
+        The same response object with security headers applied.
+
+    Example:
+        >>> # Registered via @app.after_request; Flask invokes it automatically.
+        >>> with app.test_request_context('/'):
+        ...     from flask import make_response
+        ...     r = security_headers(make_response('ok'))
+        ...     assert r.headers['X-Frame-Options'] == 'DENY'
+    """
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["Referrer-Policy"] = "no-referrer"
@@ -91,9 +130,26 @@ import settings_svc  # noqa: E402
     help="Print how many rows would be deleted without deleting.",
 )
 def purge_audit_command(days, dry_run):
-    """Delete secret + org audit rows older than retention. For cron / CronJob.
+    """Delete secret and org audit rows older than the retention window.
 
-    Uses server setting audit_retention_days when --days is omitted (0 = forever).
+    Intended for cron / Kubernetes CronJob. Uses the server setting
+    ``audit_retention_days`` when ``--days`` is omitted (0 means forever).
+
+    Args:
+        days: Retention days override. If None, loaded from
+            ``settings_svc.get_settings()['audit_retention_days']`` (default 0).
+            Values <= 0 skip purging (retention forever).
+        dry_run: If True, print how many rows would be deleted from
+            ``api.secret_audit``, ``api.org_audit``, and ``private.login_failures``
+            without deleting anything.
+
+    Returns:
+        None. Prints a summary line to stdout via click.echo.
+
+    Example:
+        >>> # flask --app app purge-audit --days 90
+        >>> # flask --app app purge-audit --dry-run
+        >>> # flask --app app purge-audit  # uses audit_retention_days setting
     """
     if days is None:
         try:

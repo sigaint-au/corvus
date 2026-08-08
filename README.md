@@ -25,9 +25,26 @@ OIDC/LDAP, audit retention).
 | **[docs/deploy.md](docs/deploy.md)** | Deploy, env vars, bootstrap, OIDC/LDAP, audit purge |
 | **[docs/authentication.md](docs/authentication.md)** | Every auth flow (session, PAT, machine, JWT, OIDC, LDAP) + curl examples |
 | **[docs/building.md](docs/building.md)** | Build & push the app container image (Docker/Podman/OpenShift) |
-| **[docs/api.md](docs/api.md)** | HTTP / machine / PAT / PostgREST API reference |
+| **[docs/api.md](docs/api.md)** | API reference — **manage secrets via CLI/CI** (list/get/create/update/delete), ESO, PAT, PostgREST |
 | **[docs/openshift-eso.yaml](docs/openshift-eso.yaml)** | Sample SecretStore + ExternalSecret |
 | **[docs/openshift-purge-audit-cronjob.yaml](docs/openshift-purge-audit-cronjob.yaml)** | Daily audit retention CronJob |
+
+### Manage secrets from the CLI
+
+Use a project **machine token** (`ss_…`) against `/eso/v1` (prefer role
+**write** for mutate). Full details:
+[docs/api.md — Managing secrets via the machine API](docs/api.md#managing-secrets-via-the-machine-api).
+
+```bash
+export SS_URL=http://localhost:8080 SS_TOKEN=ss_… PID=<project-uuid>
+AUTH=(-H "Authorization: Bearer $SS_TOKEN")
+
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets?meta=1"          # list
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"         # get
+curl -s -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
+  -d '{"value":"s3cret"}' "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"   # set
+curl -s -X DELETE "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"  # delete
+```
 
 ## Features
 
@@ -37,8 +54,9 @@ OIDC/LDAP, audit retention).
 | Structured secret kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
 | Browser UI | Bulk actions, trash, version history, search, pins |
 | Postgres RLS enforcement | Access control at the database, not just the app |
-| PostgREST API | SQL-style API with JWT auth for clients |
-| ESO / machine tokens | Project-scoped `ss_…` webhook for OpenShift ESO & CI |
+| Machine / CLI secret API | Project-scoped `ss_…` tokens: list, get, create, update, soft-delete (plaintext) |
+| PostgREST API | SQL-style API with JWT auth for metadata / org clients |
+| ESO integration | Same machine API powers OpenShift External Secrets Operator webhooks |
 | Personal access tokens | `pat_…` for scripts, exchanged for a short-lived PostgREST JWT |
 | TOTP 2FA | Per-user 2FA with single-use recovery codes |
 | LDAP & OIDC / SSO | Group to team role / global-admin maps |

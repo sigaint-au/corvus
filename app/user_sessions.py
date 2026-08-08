@@ -16,7 +16,19 @@ SESSION_IDLE_DAYS = 14
 
 
 def client_meta() -> tuple[str, str]:
-    """Return (user_agent, ip) for the current request."""
+    """Return (user_agent, ip) for the current request.
+
+    Args:
+        None.
+
+    Returns:
+        Tuple of (user_agent truncated to 400 chars, ip truncated to 100 chars).
+        IP prefers the first X-Forwarded-For hop when present.
+
+    Example:
+        >>> # ua, ip = client_meta()
+        >>> # isinstance(ua, str) and isinstance(ip, str)
+    """
     ua = (request.headers.get("User-Agent") or "")[:400]
     # Prefer first X-Forwarded-For hop when behind a proxy
     xff = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
@@ -29,7 +41,18 @@ _client_meta = client_meta
 
 
 def create_session(user_id) -> str | None:
-    """Insert a session row; return session id or None on failure."""
+    """Insert a session row; return session id or None on failure.
+
+    Args:
+        user_id: UUID of the user owning the new session.
+
+    Returns:
+        New session UUID string, or None when TESTING is set or insert fails.
+
+    Example:
+        >>> # sid = create_session(user_id)
+        >>> # sid is None or isinstance(sid, str)
+    """
     from flask import current_app, has_app_context
 
     if has_app_context() and current_app.config.get("TESTING"):
@@ -55,7 +78,20 @@ def create_session(user_id) -> str | None:
 
 
 def touch_session(session_id: str, user_id: str) -> bool:
-    """Validate session is active and bump last_seen / sliding expiry."""
+    """Validate session is active and bump last_seen / sliding expiry.
+
+    Args:
+        session_id: UUID of the server-side session row.
+        user_id: UUID of the session owner (must match the row).
+
+    Returns:
+        True if the session was found, not revoked, and not expired;
+        False if missing args, not found, or on DB error.
+
+    Example:
+        >>> touch_session("", "user")
+        False
+    """
     if not session_id or not user_id:
         return False
     expires = datetime.now(timezone.utc) + timedelta(days=SESSION_IDLE_DAYS)
@@ -80,6 +116,21 @@ def touch_session(session_id: str, user_id: str) -> bool:
 
 
 def revoke_session(session_id: str, user_id: str) -> bool:
+    """Revoke a single active session for a user.
+
+    Args:
+        session_id: UUID of the session to revoke.
+        user_id: UUID of the session owner (scoped for safety).
+
+    Returns:
+        True if a row was revoked (or when TESTING short-circuits);
+        False if no matching active session or on DB error.
+
+    Example:
+        >>> revoke_session("00000000-0000-0000-0000-000000000000",
+        ...                "00000000-0000-0000-0000-000000000001")
+        False
+    """
     from flask import current_app, has_app_context
 
     if has_app_context() and current_app.config.get("TESTING"):
@@ -102,6 +153,23 @@ def revoke_session(session_id: str, user_id: str) -> bool:
 
 
 def revoke_other_sessions(user_id: str, keep_session_id: str) -> int:
+    """Revoke all of a user's sessions except the current one.
+
+    Args:
+        user_id: UUID of the user whose other devices to sign out.
+        keep_session_id: Session UUID to leave active.
+
+    Returns:
+        Number of sessions revoked, or 0 on error.
+
+    Example:
+        >>> n = revoke_other_sessions(
+        ...     "00000000-0000-0000-0000-000000000001",
+        ...     "00000000-0000-0000-0000-000000000002",
+        ... )
+        >>> n >= 0
+        True
+    """
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
@@ -121,6 +189,19 @@ def revoke_other_sessions(user_id: str, keep_session_id: str) -> int:
 
 
 def revoke_all_sessions(user_id: str) -> int:
+    """Revoke every active session for a user.
+
+    Args:
+        user_id: UUID of the user to sign out everywhere.
+
+    Returns:
+        Number of sessions revoked, or 0 on error.
+
+    Example:
+        >>> n = revoke_all_sessions("00000000-0000-0000-0000-000000000001")
+        >>> n >= 0
+        True
+    """
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
@@ -138,6 +219,20 @@ def revoke_all_sessions(user_id: str) -> int:
 
 
 def list_sessions(user_id: str) -> list:
+    """List active (non-revoked, non-expired) sessions for a user.
+
+    Args:
+        user_id: UUID of the user whose sessions to list.
+
+    Returns:
+        List of session row dicts (id, timestamps, user_agent, ip), newest
+        last_seen first, up to 50 rows; empty list on error.
+
+    Example:
+        >>> sessions = list_sessions("00000000-0000-0000-0000-000000000001")
+        >>> isinstance(sessions, list)
+        True
+    """
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(

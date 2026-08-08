@@ -18,10 +18,28 @@ log = logging.getLogger(__name__)
 __all__ = ["register", "expires_status", "parse_secret_pairs", "secret_due_status"]
 
 def register(app):
+    """Register project list, detail, search, and member routes on the app.
+
+    Args:
+        app: Flask application instance to attach routes to.
+
+    Returns:
+        None.
+
+    Example:
+        register(app)
+    """
     @app.get("/search")
     @authz.login_required
     def global_search():
-        """Search teams, projects, and secrets the user can access."""
+        """Search teams, projects, and secrets the user can access.
+
+        Returns:
+            Rendered search results template (HTML response).
+
+        Example:
+            GET /search?q=database
+        """
         q = (request.args.get("q") or "").strip()
         teams, projects, secrets = [], [], []
         if q:
@@ -76,6 +94,14 @@ def register(app):
     @app.get("/projects")
     @authz.login_required
     def projects_list():
+        """List projects for the currently selected team in session.
+
+        Returns:
+            Rendered projects list template for the active team.
+
+        Example:
+            GET /projects
+        """
         tid = session.get("team_id")
         team, projects = None, []
         if tid:
@@ -94,6 +120,17 @@ def register(app):
     @app.get("/projects/<uuid:project_id>")
     @authz.login_required
     def project_detail(project_id):
+        """Show project detail for secrets, audit, tokens, import, integrations, or settings.
+
+        Args:
+            project_id: UUID of the project to display.
+
+        Returns:
+            Rendered project detail template, or a 404 response if missing.
+
+        Example:
+            GET /projects/<project_id>?tab=secrets&page=1&q=API
+        """
         tab = (request.args.get("tab") or "secrets").strip().lower()
         if tab not in (
             "secrets",
@@ -251,7 +288,17 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/delete")
     @authz.login_required
     def delete_project(project_id):
-        """Delete project (and secrets/tokens via CASCADE). Team owner/admin only."""
+        """Delete project (and secrets/tokens via CASCADE). Team owner/admin only.
+
+        Args:
+            project_id: UUID of the project to delete.
+
+        Returns:
+            Redirect to the parent team detail on success, or project/list on error.
+
+        Example:
+            POST /projects/<project_id>/delete
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -281,6 +328,17 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/members")
     @authz.login_required
     def add_project_member(project_id):
+        """Add or update a project member by email and role.
+
+        Args:
+            project_id: UUID of the project to modify.
+
+        Returns:
+            Redirect to the project settings tab.
+
+        Example:
+            POST /projects/<project_id>/members with email and role form fields
+        """
         email = (request.form.get("email") or "").strip().lower()
         role = (request.form.get("role") or "read").strip()
         if role not in config.PROJECT_ROLES:
@@ -347,6 +405,18 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/members/<uuid:user_id>/remove")
     @authz.login_required
     def remove_project_member(project_id, user_id):
+        """Remove a member from a project.
+
+        Args:
+            project_id: UUID of the project.
+            user_id: UUID of the user to remove from project membership.
+
+        Returns:
+            Redirect to the project settings tab.
+
+        Example:
+            POST /projects/<project_id>/members/<user_id>/remove
+        """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             if not cur.fetchone()["a"]:

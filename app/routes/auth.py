@@ -28,6 +28,19 @@ PROFILE_TABS = ("account", "security", "teams", "projects", "activity")
 
 
 def _profile_url(tab: str = "account") -> str:
+    """Build the profile URL for a validated tab name.
+
+    Args:
+        tab: Profile tab slug (account, security, teams, projects, activity).
+            Invalid values fall back to ``account``.
+
+    Returns:
+        Absolute path string for the profile route with the chosen tab.
+
+    Example:
+        >>> _profile_url("security")
+        '/profile?tab=security'
+    """
     tab = (tab or "account").strip().lower()
     if tab not in PROFILE_TABS:
         tab = "account"
@@ -35,7 +48,20 @@ def _profile_url(tab: str = "account") -> str:
 
 
 def _maybe_promote_bootstrap_admin(email: str, user_id) -> bool:
-    """Promote email to global admin if it matches bootstrap config. Returns new is_global_admin."""
+    """Promote a user to global admin if email matches bootstrap config.
+
+    Args:
+        email: User email to compare against bootstrap admin email.
+        user_id: UUID of the user to promote (string or UUID-like).
+
+    Returns:
+        ``True`` if the user is (or was just made) a global admin; otherwise
+        the current global-admin flag from the database.
+
+    Example:
+        >>> _maybe_promote_bootstrap_admin("admin@example.com", user_id)
+        True
+    """
     boot = bootstrap_admin_email()
     if not boot or (email or "").strip().lower() != boot:
         return authz.is_global_admin(str(user_id))
@@ -52,7 +78,19 @@ def _maybe_promote_bootstrap_admin(email: str, user_id) -> bool:
 
 
 def _preserve_auth_extras():
-    """Keep invite + CSRF across session regeneration."""
+    """Snapshot invite token and CSRF for session regeneration.
+
+    Args:
+        None (reads Flask session).
+
+    Returns:
+        Dict with ``invite_token`` and ``_csrf`` values from the current session.
+
+    Example:
+        >>> extras = _preserve_auth_extras()
+        >>> session.clear()
+        >>> _restore_auth_extras(extras)
+    """
     return {
         "invite_token": session.get("invite_token"),
         "_csrf": session.get("_csrf"),
@@ -60,6 +98,17 @@ def _preserve_auth_extras():
 
 
 def _restore_auth_extras(extras: dict):
+    """Restore invite token and CSRF into the Flask session.
+
+    Args:
+        extras: Mapping previously returned by ``_preserve_auth_extras``.
+
+    Returns:
+        None.
+
+    Example:
+        >>> _restore_auth_extras({"invite_token": "abc", "_csrf": "tok"})
+    """
     if extras.get("invite_token"):
         session["invite_token"] = extras["invite_token"]
     if extras.get("_csrf"):
@@ -67,7 +116,20 @@ def _restore_auth_extras(extras: dict):
 
 
 def _establish_session(user_id, email, name, is_global_admin: bool):
-    """Clear session then set auth values (session regeneration)."""
+    """Clear session, restore extras, and set authenticated session values.
+
+    Args:
+        user_id: Authenticated user UUID.
+        email: User email to store in session.
+        name: Display name (empty string if missing).
+        is_global_admin: Whether the user is a global admin.
+
+    Returns:
+        None (mutates Flask session; may create a server-side session row).
+
+    Example:
+        >>> _establish_session(uid, "u@example.com", "Ada", False)
+    """
     extras = _preserve_auth_extras()
     session.clear()
     _restore_auth_extras(extras)
@@ -82,6 +144,21 @@ def _establish_session(user_id, email, name, is_global_admin: bool):
 
 
 def _begin_2fa_challenge(user_id, email, name, is_global_admin: bool):
+    """Start a pending 2FA challenge after primary credentials succeed.
+
+    Args:
+        user_id: User UUID awaiting second factor.
+        email: User email for lockout and display.
+        name: Display name to use after successful 2FA.
+        is_global_admin: Admin flag to restore after 2FA.
+
+    Returns:
+        None (writes ``pending_2fa_*`` keys into the session).
+
+    Example:
+        >>> _begin_2fa_challenge(uid, "u@example.com", "Ada", True)
+        >>> # then redirect to /login/2fa
+    """
     extras = _preserve_auth_extras()
     session.clear()
     _restore_auth_extras(extras)
@@ -92,6 +169,17 @@ def _begin_2fa_challenge(user_id, email, name, is_global_admin: bool):
 
 
 def _finish_login_redirect():
+    """Redirect after successful login, honoring a pending invite token.
+
+    Args:
+        None (reads Flask session for ``invite_token``).
+
+    Returns:
+        Flask redirect Response to invite redemption or teams list.
+
+    Example:
+        >>> return _finish_login_redirect()
+    """
     pending_invite = session.get("invite_token")
     if pending_invite:
         return redirect(url_for("redeem_invite", token=pending_invite))
@@ -99,9 +187,19 @@ def _finish_login_redirect():
 
 
 def _post_password_login(user):
-    """
-    After password/LDAP success: 2FA challenge, forced enroll, or full session.
-    Returns a Flask response.
+    """Complete login after password/LDAP/OIDC primary auth succeeds.
+
+    Handles bootstrap admin promotion, TOTP challenge or forced enrollment,
+    optional login-alert email, and final redirect.
+
+    Args:
+        user: Mapping with at least ``id``, ``email``, and optional ``name``.
+
+    Returns:
+        Flask response: redirect to 2FA, TOTP setup, invite, teams, or login.
+
+    Example:
+        >>> return _post_password_login(user_row)
     """
     _maybe_promote_bootstrap_admin(user["email"], user["id"])
     is_admin = authz.is_global_admin(str(user["id"]))
@@ -135,9 +233,32 @@ def _post_password_login(user):
 
 
 def register(app):
+    """Register authentication and profile routes on the Flask app.
+
+    Args:
+        app: Flask application instance to attach routes to.
+
+    Returns:
+        None.
+
+    Example:
+        >>> from app.routes import auth
+        >>> auth.register(app)
+    """
     @app.post("/select-team")
     @authz.login_required
     def select_team():
+        """Set the active team in session and redirect safely.
+
+        Args:
+            None (reads ``team_id`` and ``next`` from the form; uses session).
+
+        Returns:
+            Redirect Response to ``next``, referrer, or projects list.
+
+        Example:
+            POST /select-team
+        """
         tid = (request.form.get("team_id") or "").strip()
         session["team_id"] = tid or None
         nxt = request.form.get("next") or request.referrer or url_for("projects_list")
@@ -150,12 +271,35 @@ def register(app):
 
     @app.get("/")
     def index():
+        """Redirect root URL to teams when logged in, otherwise login.
+
+        Args:
+            None (reads Flask session for ``user_id``).
+
+        Returns:
+            Redirect Response to teams or login.
+
+        Example:
+            GET /
+        """
         if session.get("user_id"):
             return redirect(url_for("teams"))
         return redirect(url_for("login"))
 
 
     def _login_page(**extra):
+        """Render the login template with current auth provider flags.
+
+        Args:
+            **extra: Extra template context keyword arguments.
+
+        Returns:
+            Rendered HTML for ``login.html``.
+
+        Example:
+            >>> return _login_page()
+            >>> return _login_page(), 401
+        """
         ldap_on = settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled"))
         oidc_on = oidc_auth.oidc_enabled()
         cfg = oidc_auth.oidc_cfg()
@@ -171,6 +315,17 @@ def register(app):
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
+        """Render login form or process local/LDAP credentials.
+
+        Args:
+            None (reads form ``email``/``password`` on POST; uses session).
+
+        Returns:
+            HTML login page, or redirect after success; may return 401/403/429/500.
+
+        Example:
+            GET/POST /login
+        """
         if request.method == "POST":
             email = request.form["email"].strip()
             password = request.form["password"]
@@ -210,6 +365,17 @@ def register(app):
 
     @app.get("/login/oidc")
     def login_oidc():
+        """Begin OIDC SSO by redirecting to the identity provider.
+
+        Args:
+            None (reads OIDC settings and request URL root for redirect URI).
+
+        Returns:
+            Redirect to the IdP authorize URL, or back to login on error.
+
+        Example:
+            GET /login/oidc
+        """
         if not oidc_auth.oidc_enabled():
             flash("SSO is not enabled", "error")
             return redirect(url_for("login"))
@@ -230,6 +396,17 @@ def register(app):
 
     @app.get("/login/oidc/callback")
     def login_oidc_callback():
+        """Handle OIDC callback: exchange code, sync user, complete login.
+
+        Args:
+            None (reads query ``code``, ``state``, ``error``; uses session OIDC keys).
+
+        Returns:
+            Redirect after successful login, or to login with an error flash.
+
+        Example:
+            GET /login/oidc/callback?code=...&state=...
+        """
         if not oidc_auth.oidc_enabled():
             flash("SSO is not enabled", "error")
             return redirect(url_for("login"))
@@ -270,6 +447,17 @@ def register(app):
 
     @app.route("/login/2fa", methods=["GET", "POST"])
     def login_2fa():
+        """Render or process the second-factor (TOTP/recovery) challenge.
+
+        Args:
+            None (reads pending 2FA session keys; form ``code`` on POST).
+
+        Returns:
+            HTML 2FA form, or redirect after success; may return 401/429.
+
+        Example:
+            GET/POST /login/2fa
+        """
         uid = session.get("pending_2fa_uid")
         if not uid:
             return redirect(url_for("login"))
@@ -315,6 +503,17 @@ def register(app):
 
     @app.route("/register", methods=["GET", "POST"])
     def register():
+        """Render registration form or create a new local account.
+
+        Args:
+            None (reads form ``email``, ``password``, ``name`` on POST).
+
+        Returns:
+            HTML register page, redirect on success/disabled, or 400 on error.
+
+        Example:
+            GET/POST /register
+        """
         notice = settings_svc.setup_notice()
         if not settings_svc.registration_enabled():
             flash(notice or "Account registration is disabled", "error")
@@ -354,6 +553,17 @@ def register(app):
 
     @app.post("/logout")
     def logout():
+        """Sign out the current user via POST and clear the session.
+
+        Args:
+            None (reads ``user_id`` and ``sid`` from session).
+
+        Returns:
+            Redirect Response to the login page.
+
+        Example:
+            POST /logout
+        """
         uid = session.get("user_id")
         sid = session.get("sid")
         if uid and sid:
@@ -364,6 +574,17 @@ def register(app):
     # Allow GET cancel from 2FA page without CSRF form complexity when needed
     @app.get("/logout")
     def logout_get():
+        """Sign out via GET (e.g. cancel 2FA) when a session or pending 2FA exists.
+
+        Args:
+            None (reads pending 2FA / user session keys).
+
+        Returns:
+            Redirect Response to the login page.
+
+        Example:
+            GET /logout
+        """
         if session.get("pending_2fa_uid") or session.get("user_id"):
             uid = session.get("user_id")
             sid = session.get("sid")
@@ -375,7 +596,20 @@ def register(app):
 
     @app.route("/forgot-password", methods=["GET", "POST"])
     def forgot_password():
-        """Request a password reset link (local accounts only)."""
+        """Request a password reset link for a local account.
+
+        Always shows a generic success message to avoid account enumeration.
+        When SMTP is configured, emails the link; in insecure-dev mode may flash it.
+
+        Args:
+            None (reads form ``email`` on POST; uses session if already logged in).
+
+        Returns:
+            HTML forgot-password form, or redirect to login/profile.
+
+        Example:
+            GET/POST /forgot-password
+        """
         if session.get("user_id"):
             return redirect(url_for("profile"))
         if request.method == "POST":
@@ -422,6 +656,17 @@ def register(app):
 
     @app.route("/reset-password/<token>", methods=["GET", "POST"])
     def reset_password(token):
+        """Show reset form or consume a password-reset token.
+
+        Args:
+            token: One-time reset token from the URL path.
+
+        Returns:
+            HTML reset form, redirect to login/profile, or 400 on validation failure.
+
+        Example:
+            GET/POST /reset-password/<token>
+        """
         if session.get("user_id"):
             return redirect(url_for("profile"))
         if request.method == "POST":
@@ -442,6 +687,17 @@ def register(app):
     @app.post("/profile/tokens")
     @authz.login_required
     def create_personal_token():
+        """Create a personal access token for the current user.
+
+        Args:
+            None (reads form ``name`` and ``expires_days``; uses session user).
+
+        Returns:
+            Redirect to profile security tab (raw token stored in session once).
+
+        Example:
+            POST /profile/tokens
+        """
         name = (request.form.get("name") or "").strip()
         days_raw = (request.form.get("expires_days") or "").strip()
         expires_days = None
@@ -465,6 +721,17 @@ def register(app):
     @app.post("/profile/tokens/<uuid:token_id>/delete")
     @authz.login_required
     def delete_personal_token(token_id):
+        """Revoke a personal access token owned by the current user.
+
+        Args:
+            token_id: UUID of the PAT to revoke (path parameter).
+
+        Returns:
+            Redirect to profile security tab with success or error flash.
+
+        Example:
+            POST /profile/tokens/<uuid>/delete
+        """
         if pats.revoke(session["user_id"], str(token_id)):
             flash("Token revoked", "ok")
         else:
@@ -474,6 +741,18 @@ def register(app):
     @app.post("/profile/password")
     @authz.login_required
     def change_password():
+        """Change the current user's local password and revoke other sessions.
+
+        Args:
+            None (reads form ``current_password``, ``new_password``,
+            ``new_password_confirm``; uses session).
+
+        Returns:
+            Redirect to profile security tab with status flash.
+
+        Example:
+            POST /profile/password
+        """
         uid = session["user_id"]
         old = request.form.get("current_password") or ""
         new = request.form.get("new_password") or ""
@@ -501,6 +780,17 @@ def register(app):
     @app.post("/profile/sessions/revoke-others")
     @authz.login_required
     def revoke_other_sessions():
+        """Revoke all of the user's sessions except the current browser.
+
+        Args:
+            None (reads ``user_id`` and ``sid`` from session).
+
+        Returns:
+            Redirect to profile security tab.
+
+        Example:
+            POST /profile/sessions/revoke-others
+        """
         uid = session["user_id"]
         sid = session.get("sid")
         if not sid:
@@ -514,6 +804,17 @@ def register(app):
     @app.post("/profile/sessions/<uuid:session_id>/revoke")
     @authz.login_required
     def revoke_session(session_id):
+        """Revoke one session; signing out the current session clears cookies.
+
+        Args:
+            session_id: UUID of the session to revoke (path parameter).
+
+        Returns:
+            Redirect to login if current session was revoked, else profile security.
+
+        Example:
+            POST /profile/sessions/<uuid>/revoke
+        """
         uid = session["user_id"]
         sid = str(session_id)
         if sid == session.get("sid"):
@@ -531,7 +832,17 @@ def register(app):
     @app.get("/profile/2fa")
     @authz.login_required
     def totp_setup():
-        """Start or continue TOTP enrollment."""
+        """Start or continue TOTP enrollment and show QR / secret.
+
+        Args:
+            None (uses session user, pending secret, and setup-required flag).
+
+        Returns:
+            HTML TOTP setup page, or redirect if already enabled.
+
+        Example:
+            GET /profile/2fa
+        """
         uid = session["user_id"]
         if totp_svc.is_enabled(uid) and not session.get("totp_setup_required"):
             flash("Two-factor authentication is already enabled", "ok")
@@ -559,6 +870,17 @@ def register(app):
     @app.post("/profile/2fa/confirm")
     @authz.login_required
     def totp_setup_confirm():
+        """Confirm TOTP enrollment with a code from the authenticator app.
+
+        Args:
+            None (reads form ``code`` and session ``pending_totp_secret``).
+
+        Returns:
+            Redirect to recovery-codes page on success, or back to setup on error.
+
+        Example:
+            POST /profile/2fa/confirm
+        """
         uid = session["user_id"]
         secret = session.get("pending_totp_secret")
         code = request.form.get("code") or ""
@@ -584,6 +906,17 @@ def register(app):
     @app.get("/profile/2fa/recovery-codes")
     @authz.login_required
     def totp_recovery_codes():
+        """Display newly generated recovery codes once from the session.
+
+        Args:
+            None (pops ``new_recovery_codes`` from session).
+
+        Returns:
+            HTML recovery-codes page, or redirect if no codes are pending.
+
+        Example:
+            GET /profile/2fa/recovery-codes
+        """
         codes = session.pop("new_recovery_codes", None)
         if not codes:
             return redirect(_profile_url("security"))
@@ -593,6 +926,17 @@ def register(app):
     @app.post("/profile/2fa/disable")
     @authz.login_required
     def totp_disable():
+        """Disable TOTP after verifying a current code or recovery code.
+
+        Args:
+            None (reads form ``code``; uses session for user and enforcement flags).
+
+        Returns:
+            Redirect to profile security or forced setup page.
+
+        Example:
+            POST /profile/2fa/disable
+        """
         uid = session["user_id"]
         if session.get("totp_setup_required"):
             flash("You must finish setting up two-factor authentication", "error")
@@ -621,6 +965,17 @@ def register(app):
     @app.post("/profile/2fa/recovery-codes/regenerate")
     @authz.login_required
     def totp_regenerate_recovery():
+        """Regenerate TOTP recovery codes after verifying a second factor.
+
+        Args:
+            None (reads form ``code``; uses session user).
+
+        Returns:
+            Redirect to recovery-codes page or profile security on error.
+
+        Example:
+            POST /profile/2fa/recovery-codes/regenerate
+        """
         uid = session["user_id"]
         if not totp_svc.is_enabled(uid):
             flash("Enable two-factor authentication first", "error")
@@ -639,7 +994,17 @@ def register(app):
     @app.get("/profile")
     @authz.login_required
     def profile():
-        """My profile: account info, memberships, projects, and activity (tabbed)."""
+        """Render the tabbed profile page (account, security, teams, etc.).
+
+        Args:
+            None (reads query ``tab``; uses session ``user_id`` and related data).
+
+        Returns:
+            HTML profile template, or redirect if the user cannot be loaded.
+
+        Example:
+            GET /profile?tab=security
+        """
         tab = (request.args.get("tab") or "account").strip().lower()
         if tab not in PROFILE_TABS:
             tab = "account"

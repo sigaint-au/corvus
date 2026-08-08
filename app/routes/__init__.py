@@ -2,6 +2,24 @@
 
 
 def register_all(app):
+    """Register every route blueprint/module on the given Flask application.
+
+    Imports route modules and calls each module's ``register(app)`` in a fixed
+    order (auth, teams, projects, secrets, project_io, project_tokens, admin,
+    api, eso).
+
+    Args:
+        app: The Flask application instance that will own all registered routes.
+
+    Returns:
+        None. Side effect is registering handlers and blueprints on ``app``.
+
+    Example:
+        >>> from flask import Flask
+        >>> from routes import register_all
+        >>> app = Flask(__name__)
+        >>> register_all(app)
+    """
     from routes import admin, api, auth, eso, project_io, project_tokens, projects, secrets, teams
 
     auth.register(app)
