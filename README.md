@@ -5,6 +5,17 @@ key/value secrets with Postgres RLS enforcement, a browser UI (Flask + HTMX),
 OpenShift External Secrets Operator (ESO) webhooks, and PostgREST for API
 clients. Values are encrypted at rest with `MASTER_KEY`.
 
+## Documentation
+
+| Doc | Contents |
+|-----|----------|
+| **[docs/deploy.md](docs/deploy.md)** | Deploy, env vars, bootstrap, OIDC/LDAP, audit purge |
+| **[docs/authentication.md](docs/authentication.md)** | Every auth flow (session, PAT, machine, JWT, OIDC, LDAP) + curl examples |
+| **[docs/building.md](docs/building.md)** | Build & push the app container image (Docker/Podman/OpenShift) |
+| **[docs/api.md](docs/api.md)** | HTTP / machine / PAT / PostgREST API reference |
+| **[docs/openshift-eso.yaml](docs/openshift-eso.yaml)** | Sample SecretStore + ExternalSecret |
+| **[docs/openshift-purge-audit-cronjob.yaml](docs/openshift-purge-audit-cronjob.yaml)** | Daily audit retention CronJob |
+
 ## Screenshots
 
 ![Login with classification banner](docs/images/login-classiification-banner.png)
@@ -24,17 +35,6 @@ clients. Values are encrypted at rest with `MASTER_KEY`.
 ![Server settings](docs/images/settings.png)
 
 ![Auditing](docs/images/audit.png)
-
-## Documentation
-
-| Doc | Contents |
-|-----|----------|
-| **[docs/deploy.md](docs/deploy.md)** | Deploy, env vars, bootstrap, OIDC/LDAP, audit purge |
-| **[docs/authentication.md](docs/authentication.md)** | Every auth flow (session, PAT, machine, JWT, OIDC, LDAP) + curl examples |
-| **[docs/building.md](docs/building.md)** | Build & push the app container image (Docker/Podman/OpenShift) |
-| **[docs/api.md](docs/api.md)** | HTTP / machine / PAT / PostgREST API reference |
-| **[docs/openshift-eso.yaml](docs/openshift-eso.yaml)** | Sample SecretStore + ExternalSecret |
-| **[docs/openshift-purge-audit-cronjob.yaml](docs/openshift-purge-audit-cronjob.yaml)** | Daily audit retention CronJob |
 
 ## Quick start
 
