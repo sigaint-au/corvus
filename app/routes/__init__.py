@@ -20,7 +20,18 @@ def register_all(app):
         >>> app = Flask(__name__)
         >>> register_all(app)
     """
-    from routes import admin, api, auth, eso, project_io, project_tokens, projects, secrets, teams
+    from routes import (
+        admin,
+        api,
+        auth,
+        eso,
+        mgmt_api,
+        project_io,
+        project_tokens,
+        projects,
+        secrets,
+        teams,
+    )
 
     auth.register(app)
     teams.register(app)
@@ -31,3 +42,4 @@ def register_all(app):
     admin.register(app)
     api.register(app)
     eso.register(app)
+    mgmt_api.register(app)

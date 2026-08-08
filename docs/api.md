@@ -644,6 +644,14 @@ Full flows: [authentication.md](./authentication.md).
 
 ---
 
+
+## Management API (PAT)
+
+In addition to secret CRUD, PAT-authenticated routes under `/eso/v1` cover
+teams, projects, members, trash, machine tokens, project audit, and global
+admin lists (`/eso/v1/admin/users`, `/eso/v1/admin/audit`). Server settings
+are not exposed. Used by `secretserver-cli` on branch `feature/cli-full-mgmt`.
+
 ## Related docs
 
 - Authentication flows & token lifecycle: [authentication.md](./authentication.md)
