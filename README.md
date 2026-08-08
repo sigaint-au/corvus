@@ -5,6 +5,17 @@ key/value secrets with Postgres RLS enforcement, a browser UI (Flask + HTMX),
 OpenShift External Secrets Operator (ESO) webhooks, and PostgREST for API
 clients. Values are encrypted at rest with `MASTER_KEY`.
 
+## Quick start
+
+```bash
+export GLOBAL_ADMIN_EMAIL=you@example.com
+ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
+# UI: http://localhost:8080 — register as you@example.com
+```
+
+See [docs/deploy.md](docs/deploy.md) for production setup (strong secrets,
+OIDC/LDAP, audit retention).
+
 ## Documentation
 
 | Doc | Contents |
@@ -56,14 +67,3 @@ clients. Values are encrypted at rest with `MASTER_KEY`.
 ![Server settings](docs/images/settings.png)
 
 ![Auditing](docs/images/audit.png)
-
-## Quick start
-
-```bash
-export GLOBAL_ADMIN_EMAIL=you@example.com
-ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
-# UI: http://localhost:8080 — register as you@example.com
-```
-
-See [docs/deploy.md](docs/deploy.md) for production setup (strong secrets,
-OIDC/LDAP, audit retention).
