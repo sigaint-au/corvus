@@ -1,16 +1,18 @@
 # Sigaint Secret Server
 
-A small **team secrets store** for people and platforms — team → project →
-key/value secrets with Postgres RLS enforcement, a browser UI (Flask + HTMX),
-OpenShift External Secrets Operator (ESO) webhooks, and PostgREST for API
-clients. Values are encrypted at rest with `MASTER_KEY`.
+A small **team secrets store** for people and platforms: team, project,
+key/value secrets with Postgres RLS enforcement, a browser UI, OpenShift
+External Secrets Operator (ESO) webhooks, and PostgREST for API clients.
+Values are encrypted at rest with `MASTER_KEY`.
+
+This repository is a mirror of [https://git.sigaint.au/Sigaint/secretserver](https://git.sigaint.au/Sigaint/secretserver).
 
 ## Quick start
 
 ```bash
 export GLOBAL_ADMIN_EMAIL=you@example.com
 ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
-# UI: http://localhost:8080 — register as you@example.com
+# UI: http://localhost:8080; register as you@example.com
 ```
 
 See [docs/deploy.md](docs/deploy.md) for production setup (strong secrets,
@@ -31,22 +33,22 @@ OIDC/LDAP, audit retention).
 
 | Feature | Description |
 |---------|-------------|
-| Team → project → secret store | Organise secrets as **team → project → key/value** |
+| Team / project / secret store | Organise secrets as **team / project / key/value** |
 | Structured secret kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
-| Browser UI (Flask + HTMX) | Bulk actions, trash, version history, search, pins |
+| Browser UI | Bulk actions, trash, version history, search, pins |
 | Postgres RLS enforcement | Access control at the database, not just the app |
 | PostgREST API | SQL-style API with JWT auth for clients |
 | ESO / machine tokens | Project-scoped `ss_…` webhook for OpenShift ESO & CI |
-| Personal access tokens | `pat_…` for scripts → short-lived PostgREST JWT |
+| Personal access tokens | `pat_…` for scripts, exchanged for a short-lived PostgREST JWT |
 | TOTP 2FA | Per-user 2FA with single-use recovery codes |
-| LDAP & OIDC / SSO | Group → team role / global-admin maps |
+| LDAP & OIDC / SSO | Group to team role / global-admin maps |
 | SMTP | Password-reset emails and login alerts |
 | Auditing | Secret & org audit logs, access review, export, retention purge |
 | Secret expiry | Optional per-secret expiry with overdue/soon dashboard |
 | Import / export | `.env`, JSON, CSV bulk import and export with audit trail |
 | Classification banner | Optional per-server / per-team banner (e.g. OFFICIAL) |
 | Server-side sessions | Multi-device sign-out and per-session revocation |
-| Login lockout | 5 failed attempts → 5 minute lockout |
+| Login lockout | 5 failed attempts lock out for 5 minutes |
 
 ## Screenshots
 
