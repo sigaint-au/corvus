@@ -178,23 +178,6 @@ CREATE TABLE api.project_members (
   PRIMARY KEY (project_id, user_id)
 );
 
--- Per-user pins (favorites) and recently accessed secrets
-CREATE TABLE api.secret_pins (
-  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
-  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (user_id, secret_id)
-);
-
-CREATE TABLE api.secret_recent (
-  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
-  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
-  accessed_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (user_id, secret_id)
-);
-CREATE INDEX secret_recent_user_accessed_idx
-  ON api.secret_recent (user_id, accessed_at DESC);
-
 -- Membership / settings / access-control audit (not secret values)
 CREATE TABLE api.org_audit (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -227,6 +210,23 @@ CREATE TABLE api.secrets (
 );
 CREATE UNIQUE INDEX secrets_project_key_live
   ON api.secrets (project_id, key) WHERE deleted_at IS NULL;
+
+-- Per-user pins (favorites) and recently accessed secrets
+CREATE TABLE api.secret_pins (
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, secret_id)
+);
+
+CREATE TABLE api.secret_recent (
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+  accessed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, secret_id)
+);
+CREATE INDEX secret_recent_user_accessed_idx
+  ON api.secret_recent (user_id, accessed_at DESC);
 
 -- Prior value_enc snapshots on update (trigger-filled; human + machine paths)
 CREATE TABLE api.secret_versions (

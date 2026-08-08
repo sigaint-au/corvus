@@ -129,48 +129,51 @@ Then, in order:
 
 ---
 
-## 4. Machine accounts (ESO / CI / CLI)
+## 4. Machine accounts & CLI auth (ESO / CI / CLI)
 
-Machine tokens (`ss_…`) are project-scoped and only authenticate the `/eso/v1`
-routes. Use them for **External Secrets Operator**, **CI**, and **CLI** secret
-management (list / get / create / update / soft-delete) with **plaintext**
-values.
+The unified secret API is **`/eso/v1`**. Authenticate with either:
 
-| Role | `GET` secret / list | Mutate (`POST`/`PUT`/`PATCH`/`DELETE`) |
-|------|---------------------|----------------------------------------|
-| `read-only` (default) | yes | 403 |
-| `write` | yes | create, update, soft-delete |
+- **Machine token** `ss_…` — project-scoped (Integrations / Tokens); UUID required
+- **Personal access token** `pat_…` — user RLS (My profile → Security); UUID or project name
 
-Create one under a project (**Integrations** or **Tokens**), then:
+| Token | `GET` / list | Mutate |
+|-------|--------------|--------|
+| `ss_…` read-only | yes | 403 |
+| `ss_…` write | yes | create / update / soft-delete |
+| `pat_…` | if user can read project | if user can write project |
 
 ```bash
 export SS_URL=http://localhost:8080
-export SS_TOKEN=ss_…
-export PID=<PROJECT_ID>
+export SS_TOKEN=ss_…   # or pat_…
+export SS_PROJECT=<PROJECT_UUID_OR_NAME>
 AUTH=(-H "Authorization: Bearer $SS_TOKEN")
 
-# List keys (CLI; no values)
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets?meta=1"
+# Official CLI
+secretserver login --url "$SS_URL" --token "$SS_TOKEN" --project "$SS_PROJECT"
+secretserver list
+
+# List keys (curl; no values)
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1"
 
 # Get one secret
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets/DATABASE_URL"
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/DATABASE_URL"
 
 # Bulk values (ESO-style map)
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets"
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets"
 
 # Create / replace (write role)
 curl -s -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"value":"new-value","note":"optional","expires_days":90}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 
 # Patch metadata only (write role)
 curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"note":"rotated in CI"}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 
 # Soft-delete (write role)
 curl -s -X DELETE "${AUTH[@]}" \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 ```
 
 Full field tables, errors, and CLI cookbook:

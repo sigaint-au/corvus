@@ -289,11 +289,11 @@ def csrf_token() -> str:
 
 
 def csrf_protect():
-    """Reject POSTs without a valid session CSRF token (form or X-CSRF-Token).
+    """Reject mutating requests without a valid session CSRF token.
 
-    No-op for non-POST methods, ``/eso/`` and ``/api/token`` paths, and unit
-    tests unless ``CSRF_TESTING`` is enabled. Compares ``session["_csrf"]``
-    to the form field ``_csrf`` or header ``X-CSRF-Token``.
+    No-op for safe methods, ``/eso/`` (Bearer machine/PAT secret API),
+    ``/api/token``, and unit tests unless ``CSRF_TESTING`` is enabled.
+    Compares ``session["_csrf"]`` to form ``_csrf`` or header ``X-CSRF-Token``.
 
     Returns:
         ``None`` when the request is allowed. Aborts with HTTP 400 when the
@@ -303,9 +303,9 @@ def csrf_protect():
         >>> # Register as a before_request handler
         >>> app.before_request(csrf_protect)
     """
-    if request.method != "POST":
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
         return
-    # Bearer-token ESO/machine API — not session-cookie CSRF surface
+    # Bearer-token ESO/machine/PAT secret API — not session-cookie CSRF surface
     if request.path.startswith("/eso/"):
         return
     # PAT exchange / JSON API token minting is GET-only; keep path free for future POSTs

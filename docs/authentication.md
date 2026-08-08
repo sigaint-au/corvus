@@ -9,13 +9,13 @@ enforcement planes:
 | Credential | Prefix / form | Where it is used | Enforced by |
 |------------|---------------|------------------|-------------|
 | Browser session | cookie (`session`) | UI (HTML), `GET /api/token` | Flask session + server-side session registry |
-| Personal Access Token (PAT) | `pat_…` | `GET /api/token` only | Flask (`private.personal_access_tokens`) |
+| Personal Access Token (PAT) | `pat_…` | `/api/token` → JWT; **and** `/eso/v1/…` plaintext | Flask PAT table; user RLS on secrets |
 | Short-lived JWT | `eyJ…` (HS256) | PostgREST `:3000` | Postgres RLS (`request.jwt.claims`) |
 | Machine token | `ss_…` | `/eso/v1/…` only | Postgres SECURITY DEFINER functions |
 
 > **Plaintext** secret values are only returned by the browser UI and the
-> `/eso/v1` machine routes (after decryption with `MASTER_KEY`). PostgREST
-> returns `value_enc` (Fernet ciphertext), never plaintext.
+> `/eso/v1` routes (after decryption with `MASTER_KEY`), for **machine tokens**
+> or **PATs**. PostgREST returns `value_enc` (Fernet ciphertext), never plaintext.
 
 ---
 
@@ -136,9 +136,10 @@ curl -s -H "Authorization: Bearer $JWT" \
 
 ## 3. Machine token flow (ESO / CI / CLI)
 
-Machine tokens (`ss_…`) are **project-scoped** and only authenticate the
-`/eso/v1` routes. They are the **recommended way to manage secrets from a CLI
-or CI pipeline** (list, get, create, update, delete) with **plaintext** values.
+Machine tokens (`ss_…`) are **project-scoped** and authenticate the
+`/eso/v1` routes. **PATs** (`pat_…`) also authenticate `/eso/v1` under user RLS
+(project UUID or unique name). Either is suitable for CLI/CI with **plaintext**
+values (list, get, create, update, delete).
 
 Create a token on a project under **Integrations** (or **Tokens**). Roles:
 
@@ -153,7 +154,7 @@ once at creation.
 ```bash
 export SS_URL="http://localhost:8080"
 export SS_TOKEN="ss_XXXX..."
-export PID="<PROJECT_ID>"
+export SS_PROJECT="<PROJECT_ID>"
 AUTH=(-H "Authorization: Bearer $SS_TOKEN")
 ```
 
@@ -161,7 +162,7 @@ AUTH=(-H "Authorization: Bearer $SS_TOKEN")
 
 ```bash
 curl -s "${AUTH[@]}" \
-  "$SS_URL/eso/v1/projects/$PID/secrets/DATABASE_URL"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/DATABASE_URL"
 ```
 
 ```json
@@ -183,7 +184,7 @@ ESO continues to use `jsonPath: $.value` (extra fields are additive).
 
 ```bash
 curl -s "${AUTH[@]}" \
-  "$SS_URL/eso/v1/projects/$PID/secrets"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets"
 ```
 
 ```json
@@ -194,7 +195,7 @@ curl -s "${AUTH[@]}" \
 
 ```bash
 curl -s "${AUTH[@]}" \
-  "$SS_URL/eso/v1/projects/$PID/secrets?meta=1"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1"
 # optional filter: &q=api
 ```
 
@@ -222,12 +223,12 @@ curl -s "${AUTH[@]}" \
 # POST upsert
 curl -s -X POST "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"key":"API_KEY","value":"new-value","note":"optional label","expires_days":90}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets"
 
 # PUT replace / create by path
 curl -s -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"value":"rotated","note":"from cli"}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 ```
 
 Optional body fields: `note`, `kind` (`plain`|`database`|`certificate`|`ssh`|`kv`),
@@ -241,7 +242,7 @@ change only metadata without rotating ciphertext.
 ```bash
 curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"note":"rotated in CI","expires_days":90}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 ```
 
 ### Soft-delete (write role)
@@ -250,7 +251,7 @@ Moves the secret to trash (restorable in the UI). Audited as `deleted`.
 
 ```bash
 curl -s -X DELETE "${AUTH[@]}" \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 ```
 
 ```json

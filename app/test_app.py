@@ -2269,8 +2269,9 @@ class TestESO(unittest.TestCase):
     def test_get_secret_ok(self):
         enc = crypto.encrypt("val")
         sid = uuid4()
-        # get_row, machine_token_label (audit_secret does not fetch)
+        # auth_machine, get_row, machine_token_label
         fo = [
+            {"ok": True},
             {
                 "id": sid,
                 "key": "KEY",
@@ -2308,16 +2309,10 @@ class TestESO(unittest.TestCase):
         self.assertTrue(any("revealed" in p for p in audit_params))
 
     def test_get_secret_not_found(self):
-        # first fetch: no row; second: auth ok (same connection)
-        state = {"n": 0}
-
-        def fetchone():
-            state["n"] += 1
-            if state["n"] == 1:
-                return None
-            return {"ok": True}
-
-        conn, _ = _conn(fetchone=fetchone)
+        # auth ok, then no secret row
+        fo = [{"ok": True}, None]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
         with patch.object(db, "connect", return_value=conn):
             r = self.client.get(
                 f"/eso/v1/projects/{self.pid}/secrets/MISSING",
@@ -2403,7 +2398,9 @@ class TestESO(unittest.TestCase):
             self.assertIsNone(eso_routes.bearer_hash())
 
     def test_upsert_read_only_forbidden(self):
-        conn, _ = _conn(fetchone={"role": "read-only"})
+        fo = [{"ok": True}, {"role": "read-only"}]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
         with patch.object(db, "connect", return_value=conn):
             r = self.client.post(
                 f"/eso/v1/projects/{self.pid}/secrets",
@@ -2416,8 +2413,9 @@ class TestESO(unittest.TestCase):
 
     def test_upsert_write_ok(self):
         sid = uuid4()
-        # role, upsert id, token label, get_row (audit does not fetch)
+        # auth, role, upsert id, token label, get_row
         fo = [
+            {"ok": True},
             {"role": "write"},
             {"id": sid},
             {"label": "ci:ss_write"},
@@ -2453,6 +2451,7 @@ class TestESO(unittest.TestCase):
     def test_put_secret_ok(self):
         sid = uuid4()
         fo = [
+            {"ok": True},
             {"role": "write"},
             {"id": sid},
             {"label": "ci:ss_write"},
@@ -2482,7 +2481,7 @@ class TestESO(unittest.TestCase):
         self.assertIn("machine_upsert", sql)
 
     def test_patch_secret_not_found(self):
-        fo = [{"role": "write"}, None]
+        fo = [{"ok": True}, {"role": "write"}, None]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, "connect", return_value=conn):
@@ -2496,8 +2495,9 @@ class TestESO(unittest.TestCase):
     def test_delete_secret_ok(self):
         sid = uuid4()
         enc = crypto.encrypt("v")
-        # role, get_row existing, machine_delete id, token label
+        # auth, role, get_row existing, machine_delete id, token label
         fo = [
+            {"ok": True},
             {"role": "write"},
             {
                 "id": sid,
@@ -2536,7 +2536,9 @@ class TestESO(unittest.TestCase):
         conn.commit.assert_called()
 
     def test_delete_read_only_forbidden(self):
-        conn, _ = _conn(fetchone={"role": "read-only"})
+        fo = [{"ok": True}, {"role": "read-only"}]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
         with patch.object(db, "connect", return_value=conn):
             r = self.client.delete(
                 f"/eso/v1/projects/{self.pid}/secrets/K",
@@ -2550,6 +2552,7 @@ class TestESO(unittest.TestCase):
         try:
             sid = uuid4()
             fo = [
+                {"ok": True},
                 {"role": "write"},
                 {"id": sid},
                 {"label": "ci:ss_write"},
@@ -2621,6 +2624,63 @@ class TestESO(unittest.TestCase):
             if c.args and "INSERT INTO api.machine_tokens" in str(c.args[0])
         ][0]
         self.assertIsNotNone(insert.args[1][5])  # expires_at set
+
+    def test_pat_list_projects(self):
+        uid = str(uuid4())
+        conn, cur = _conn(
+            fetchall=[
+                {
+                    "id": self.pid,
+                    "name": "ios-app",
+                    "team_id": uuid4(),
+                    "team_name": "Mobile",
+                }
+            ]
+        )
+        with patch.object(pats, "resolve", return_value=uid), patch.object(
+            db, "as_user", return_value=conn
+        ):
+            r = self.client.get(
+                "/eso/v1/projects?name=ios",
+                headers={"Authorization": "Bearer pat_testtoken1234567890"},
+            )
+        self.assertEqual(r.status_code, 200)
+        items = r.get_json()["items"]
+        self.assertEqual(items[0]["name"], "ios-app")
+
+    def test_pat_get_secret_by_name(self):
+        uid = str(uuid4())
+        sid = uuid4()
+        enc = crypto.encrypt("secret-val")
+        # name resolve uses fetchall (LIMIT 2); secret row uses fetchone
+        conn, cur = _conn()
+        cur.fetchall.return_value = [{"id": self.pid}]
+        cur.fetchone.return_value = {
+            "id": sid,
+            "key": "API_KEY",
+            "value_enc": enc,
+            "note": "",
+            "kind": "plain",
+            "expires_at": None,
+            "created_at": None,
+            "updated_at": None,
+        }
+        with patch.object(pats, "resolve", return_value=uid), patch.object(
+            db, "as_user", return_value=conn
+        ):
+            r = self.client.get(
+                "/eso/v1/projects/ios-app/secrets/API_KEY",
+                headers={"Authorization": "Bearer pat_testtoken1234567890"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["value"], "secret-val")
+
+    def test_machine_rejects_project_name(self):
+        r = self.client.get(
+            "/eso/v1/projects/ios-app/secrets/KEY",
+            headers={"Authorization": "Bearer ss_x"},
+        )
+        self.assertEqual(r.status_code, 401)
 
     def test_create_token_rejects_huge_expiry(self):
         c = store.app.test_client()

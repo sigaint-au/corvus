@@ -31,19 +31,21 @@ OIDC/LDAP, audit retention).
 
 ### Manage secrets from the CLI
 
-Use a project **machine token** (`ss_…`) against `/eso/v1` (prefer role
-**write** for mutate). Full details:
-[docs/api.md — Managing secrets via the machine API](docs/api.md#managing-secrets-via-the-machine-api).
+Unified **`/eso/v1`** API accepts **machine tokens** (`ss_…`) or **PATs**
+(`pat_…`). Full details:
+[docs/api.md — Managing secrets](docs/api.md#managing-secrets-via-the-unified-api-esov1).
 
 ```bash
-export SS_URL=http://localhost:8080 SS_TOKEN=ss_… PID=<project-uuid>
-AUTH=(-H "Authorization: Bearer $SS_TOKEN")
+# Official CLI (sibling secretserver-cli/)
+secretserver login --url http://localhost:8080 --token ss_… --project <uuid>
+# or: --token pat_… --project ios-app
+secretserver list && secretserver get API_KEY
 
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets?meta=1"          # list
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"         # get
-curl -s -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
-  -d '{"value":"s3cret"}' "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"   # set
-curl -s -X DELETE "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"  # delete
+# curl
+export SS_URL=http://localhost:8080 SS_TOKEN=ss_… SS_PROJECT=<project-uuid>
+AUTH=(-H "Authorization: Bearer $SS_TOKEN")
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1"
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 ```
 
 ## Features
@@ -54,10 +56,10 @@ curl -s -X DELETE "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY"  #
 | Structured secret kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
 | Browser UI | Bulk actions, trash, version history, search, pins |
 | Postgres RLS enforcement | Access control at the database, not just the app |
-| Machine / CLI secret API | Project-scoped `ss_…` tokens: list, get, create, update, soft-delete (plaintext) |
+| Unified secret API (`/eso/v1`) | `ss_…` or `pat_…`: list, get, create, update, soft-delete (plaintext) |
 | PostgREST API | SQL-style API with JWT auth for metadata / org clients |
 | ESO integration | Same machine API powers OpenShift External Secrets Operator webhooks |
-| Personal access tokens | `pat_…` for scripts, exchanged for a short-lived PostgREST JWT |
+| Personal access tokens | `pat_…` for `/eso/v1` secrets (RLS) and `/api/token` → PostgREST JWT |
 | TOTP 2FA | Per-user 2FA with single-use recovery codes |
 | LDAP & OIDC / SSO | Group to team role / global-admin maps |
 | SMTP | Password-reset emails and login alerts |

@@ -5,7 +5,7 @@ Sigaint Secret Server exposes three machine-facing surfaces:
 | Surface | Base | Auth | Plaintext secrets? |
 |---------|------|------|--------------------|
 | **App JSON** | `:8080` | Session or PAT (route-dependent) | No (except via UI HTML) |
-| **ESO / machine / CLI** | `:8080/eso/v1/…` | `Authorization: Bearer ss_…` | **Yes** (decrypt with `MASTER_KEY`) |
+| **Unified secret API (ESO / CLI)** | `:8080/eso/v1/…` | `Authorization: Bearer ss_…` **or** `pat_…` | **Yes** (decrypt with `MASTER_KEY`) |
 | **PostgREST** | `:3000` (default) | `Authorization: Bearer <JWT>` | **No** — returns `value_enc` only |
 
 > **Authentication flows, token lifecycle, and credential curl examples:**
@@ -17,14 +17,14 @@ Sigaint Secret Server exposes three machine-facing surfaces:
 
 | Goal | Recommended API | Token |
 |------|-----------------|-------|
-| **CLI / CI: list, get, create, update, delete secrets (plaintext)** | ESO / machine API | Project machine token `ss_…` (**write** for mutate) |
-| **OpenShift External Secrets Operator pull** | ESO `GET …/secrets/{key}` | Machine token `ss_…` (**read-only** is enough) |
-| **Scripts: list teams/projects/metadata under user RLS** | PostgREST | PAT → JWT via `/api/token` |
+| **CLI / CI: list, get, create, update, delete secrets (plaintext)** | `/eso/v1` secret API | `ss_…` (**write** to mutate) **or** `pat_…` (user write access) |
+| **OpenShift External Secrets Operator pull** | `GET /eso/v1/…/secrets/{key}` | Machine token `ss_…` (**read-only** is enough) |
+| **Scripts: list teams/projects/metadata under user RLS** | PostgREST **or** `GET /eso/v1/projects` (PAT) | PAT → JWT via `/api/token`, or PAT on `/eso/v1` |
 | **Browser UI** | HTML session routes | Cookie session |
 
-**Prefer the machine API** whenever a tool needs **plaintext** secret values or
-to **create/update/delete** secrets without a browser. PostgREST cannot
-decrypt values and cannot write plaintext `value` fields.
+**Prefer `/eso/v1`** whenever a tool needs **plaintext** secret values or to
+**create/update/delete** secrets without a browser. PostgREST cannot decrypt
+values and cannot write plaintext `value` fields.
 
 ---
 
@@ -41,8 +41,8 @@ Bearer header.
 Create under **My profile → Security**. Format: `pat_` + URL-safe secret
 (shown once). Max 50 per user; optional expiry (1–3650 days).
 
-- Act as that user under RLS after exchanging for a JWT.
-- **Not** accepted on ESO routes (use machine tokens).
+- Act as that user under RLS after exchanging for a JWT (PostgREST).
+- Also accepted on **`/eso/v1`** for plaintext secret CRUD (user membership).
 
 ```http
 GET /api/token HTTP/1.1
@@ -157,56 +157,74 @@ On query failure returns `[]` (does not 500).
 
 ---
 
-## Managing secrets via the machine API
+## Managing secrets via the unified API (`/eso/v1`)
 
-**Base path:** `https://<host>/eso/v1/projects/<project_id>`
+**Base path:** `https://<host>/eso/v1/projects/<project_ref>`
+
+`project_ref` is a project **UUID** (required for machine tokens) or, with a
+**PAT**, a UUID or a unique project **name** the user can access.
 
 **Auth (all routes):**
 
 ```http
-Authorization: Bearer ss_…
+Authorization: Bearer ss_…   # machine token (project-scoped)
+Authorization: Bearer pat_…  # personal access token (user RLS)
 Content-Type: application/json   # for POST / PUT / PATCH bodies
 ```
 
-Invalid token, expired token, or token for a different project →
-**401** `{"error":"unauthorized"}`.
+| Token | Access model | `project_ref` | Mutate |
+|-------|--------------|---------------|--------|
+| `ss_…` | Project machine role | UUID only | machine role **write** |
+| `pat_…` | User RLS (`can_read` / `can_write`) | UUID or unique name | project write access |
+
+Invalid / wrong-project machine token → **401**. Missing PAT project → **404**.
 
 These routes are **CSRF-exempt** (Bearer token auth; no session cookie required).
 
+Also: **`GET /eso/v1/projects`** (PAT only) lists projects visible to the user
+(`?q=` / `?name=` optional filter).
+
 ### Setup for CLI / CI
 
-1. Open the project in the UI → **Integrations** (or **Tokens**).
-2. Create a machine token:
-   - **read-only** — list/get only  
-   - **write** — full secret management  
-3. Copy the `ss_…` value (shown once) and the project UUID.
-4. Optionally set a token expiry (1–3650 days).
+**Machine token**
+
+1. Project → **Integrations** / **Tokens** → create **write** (or read-only).
+2. Copy `ss_…` and the project UUID.
+
+**Personal access token**
+
+1. **My profile → Security** → create PAT (`pat_…`).
+2. Use any project the user can access (UUID or unique name).
 
 ```bash
 export SS_URL="https://secrets.example.com"   # no trailing slash
-export SS_TOKEN="ss_…"
-export PID="<project-uuid>"
+export SS_TOKEN="ss_…"   # or pat_…
+export SS_PROJECT="<project-uuid-or-name>"
 export AUTH="Authorization: Bearer $SS_TOKEN"
 ```
 
+Official CLI (`secretserver-cli`) uses the same env vars and endpoints.
+
 ### Endpoint map
 
-| Method | Path | Role | Purpose |
-|--------|------|------|---------|
-| `GET` | `/secrets` | any | List bulk values **or** metadata |
-| `GET` | `/secrets/{key}` | any | Get one secret (value + metadata) |
+| Method | Path | Access | Purpose |
+|--------|------|--------|---------|
+| `GET` | `/eso/v1/projects` | **PAT only** | List projects (name/id) |
+| `GET` | `/secrets` | read | List bulk values **or** metadata (`meta=1`) |
+| `GET` | `/secrets/{key}` | read | Get one secret (value + metadata) |
 | `POST` | `/secrets` | **write** | Create or upsert (`key` in JSON body) |
 | `PUT` | `/secrets/{key}` | **write** | Create or replace by path key |
 | `PATCH` | `/secrets/{key}` | **write** | Partial update (secret must exist) |
 | `DELETE` | `/secrets/{key}` | **write** | Soft-delete (moves to trash) |
 
+Paths under `/eso/v1/projects/<project_ref>/…`.  
 `{key}` supports path-style keys (Flask `<path:key>`), e.g. `db/password`.
 
 Full URLs look like:
 
 ```text
-{SS_URL}/eso/v1/projects/{PID}/secrets
-{SS_URL}/eso/v1/projects/{PID}/secrets/{key}
+{SS_URL}/eso/v1/projects/{SS_PROJECT}/secrets
+{SS_URL}/eso/v1/projects/{SS_PROJECT}/secrets/{key}
 ```
 
 ---
@@ -239,7 +257,7 @@ Returns every live secret as a key → plaintext map. Suitable for bulk sync;
 
 ```bash
 curl -s -H "$AUTH" \
-  "$SS_URL/eso/v1/projects/$PID/secrets"
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets"
 ```
 
 **200**
@@ -269,11 +287,11 @@ Query flags (any one enables metadata mode):
 ```bash
 # All keys in the project
 curl -s -H "$AUTH" \
-  "$SS_URL/eso/v1/projects/$PID/secrets?meta=1" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1" | jq .
 
 # Filter
 curl -s -H "$AUTH" \
-  "$SS_URL/eso/v1/projects/$PID/secrets?meta=1&q=api" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1&q=api" | jq .
 ```
 
 **200**
@@ -300,7 +318,7 @@ curl -s -H "$AUTH" \
 
 ```bash
 curl -s -H "$AUTH" \
-  "$SS_URL/eso/v1/projects/$PID/secrets/DATABASE_URL" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/DATABASE_URL" | jq .
 ```
 
 **200**
@@ -352,7 +370,7 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
     "kind": "plain",
     "expires_days": 90
   }' \
-  "$SS_URL/eso/v1/projects/$PID/secrets" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets" | jq .
 ```
 
 **200** — full secret object plus `"ok": true` (includes `value`).
@@ -378,7 +396,7 @@ Body must include `value`; optional `note`, `kind`, expiry fields as above.
 ```bash
 curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"value":"rotated-secret","note":"from cli"}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq .
 ```
 
 **200** — same shape as POST upsert.
@@ -406,12 +424,12 @@ version archive from re-encryption).
 # Metadata only
 curl -s -X PATCH -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"note":"rotated in CI","expires_days":90}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq .
 
 # Rotate value only
 curl -s -X PATCH -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"value":"brand-new-secret"}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq .
 ```
 
 **200** — updated secret object (includes current `value`) + `"ok": true`  
@@ -430,7 +448,7 @@ Audited as `deleted` with actor email `machine`.
 
 ```bash
 curl -s -X DELETE -H "$AUTH" \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq .
 ```
 
 **200**
@@ -450,28 +468,28 @@ curl -s -X DELETE -H "$AUTH" \
 ```bash
 export SS_URL="https://secrets.example.com"
 export SS_TOKEN="ss_…"
-export PID="<project-uuid>"
+export SS_PROJECT="<project-uuid>"
 AUTH=(-H "Authorization: Bearer $SS_TOKEN")
 
 # 1) List keys (no values)
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets?meta=1" | jq '.items[] | {key, note, kind, expires_at}'
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1" | jq '.items[] | {key, note, kind, expires_at}'
 
 # 2) Get one value
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY" | jq -r .value
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq -r .value
 
 # 3) Create or replace
 curl -s -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"value":"s3cret","note":"cli","kind":"plain"}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq .
 
 # 4) Patch note / expiry without rotating value
 curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"note":"updated","expires_days":30}' \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq .
 
 # 5) Soft-delete
 curl -s -X DELETE "${AUTH[@]}" \
-  "$SS_URL/eso/v1/projects/$PID/secrets/API_KEY" | jq .
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq .
 ```
 
 ### Error reference (machine API)
@@ -577,7 +595,7 @@ Default compose port: **3000**. Prefer the `postgrest` URL returned by
 
 ```bash
 curl -s -H "Authorization: Bearer $JWT" \
-  "http://localhost:3000/secrets?project_id=eq.$PID&deleted_at=is.null&select=id,key,note,kind,expires_at,updated_at"
+  "http://localhost:3000/secrets?project_id=eq.$SS_PROJECT&deleted_at=is.null&select=id,key,note,kind,expires_at,updated_at"
 ```
 
 ### Example: list projects
@@ -606,7 +624,8 @@ See [postgrest-openapi.json](./postgrest-openapi.json) for a checked-in snapshot
 - **Creating secrets via PostgREST** requires a pre-encrypted `value_enc`. Prefer
   the UI or the machine **write** API for plaintext values.
 - **Machine tokens** authenticate only `/eso/v1/…`, not PostgREST.
-- **PATs** never go to PostgREST directly — always exchange at `/api/token` first.
+- **PATs** authenticate `/eso/v1/…` (plaintext secrets under RLS) **and**
+  `/api/token` → JWT for PostgREST. Never send `pat_…` to PostgREST directly.
 - RLS is the access-control plane; a valid JWT without membership sees empty
   sets / permission errors, not other teams’ rows.
 
@@ -617,7 +636,7 @@ See [postgrest-openapi.json](./postgrest-openapi.json) for a checked-in snapshot
 | Token | Example prefix | Endpoint family | Becomes |
 |-------|----------------|-----------------|---------|
 | Session | (cookie) | UI, `/api/token` | JWT optional |
-| PAT | `pat_` | `/api/token` only | JWT → PostgREST |
+| PAT | `pat_` | `/api/token`, **`/eso/v1/…`** | JWT → PostgREST; or plaintext secrets under RLS |
 | JWT | `eyJ…` | PostgREST `:3000` | RLS as user |
 | Machine | `ss_` | `/eso/v1/…` only | Project-scoped secret CRUD (plaintext) |
 
