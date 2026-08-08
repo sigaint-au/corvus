@@ -16,6 +16,27 @@ clients. Values are encrypted at rest with `MASTER_KEY`.
 | **[docs/openshift-eso.yaml](docs/openshift-eso.yaml)** | Sample SecretStore + ExternalSecret |
 | **[docs/openshift-purge-audit-cronjob.yaml](docs/openshift-purge-audit-cronjob.yaml)** | Daily audit retention CronJob |
 
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| Team → project → secret store | Organise secrets as **team → project → key/value** |
+| Structured secret kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
+| Browser UI (Flask + HTMX) | Bulk actions, trash, version history, search, pins |
+| Postgres RLS enforcement | Access control at the database, not just the app |
+| PostgREST API | SQL-style API with JWT auth for clients |
+| ESO / machine tokens | Project-scoped `ss_…` webhook for OpenShift ESO & CI |
+| Personal access tokens | `pat_…` for scripts → short-lived PostgREST JWT |
+| TOTP 2FA | Per-user 2FA with single-use recovery codes |
+| LDAP & OIDC / SSO | Group → team role / global-admin maps |
+| SMTP | Password-reset emails and login alerts |
+| Auditing | Secret & org audit logs, access review, export, retention purge |
+| Secret expiry | Optional per-secret expiry with overdue/soon dashboard |
+| Import / export | `.env`, JSON, CSV bulk import and export with audit trail |
+| Classification banner | Optional per-server / per-team banner (e.g. OFFICIAL) |
+| Server-side sessions | Multi-device sign-out and per-session revocation |
+| Login lockout | 5 failed attempts → 5 minute lockout |
+
 ## Screenshots
 
 ![Login with classification banner](docs/images/login-classiification-banner.png)
