@@ -67,3 +67,7 @@ OIDC/LDAP, audit retention).
 ![Server settings](docs/images/settings.png)
 
 ![Auditing](docs/images/audit.png)
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
