@@ -10,6 +10,9 @@ Sigaint Secret Server exposes three machine-facing surfaces:
 
 Secret **plaintext** is only returned by the ESO routes and the browser UI (after decrypt with `MASTER_KEY`). PostgREST returns **`value_enc`** (Fernet ciphertext), not plaintext.
 
+> **Step-by-step authentication flows, token lifecycle, and `curl` examples for
+> every credential type are in [authentication.md](./authentication.md).**
+
 ---
 
 ## Authentication
@@ -169,6 +172,11 @@ Single secret for ESO webhook. `jsonPath: $.value`.
 
 Bulk map of all live secrets in the project.
 
+```bash
+curl -s -H "Authorization: Bearer ss_…" \
+  "http://localhost:8080/eso/v1/projects/<PROJECT_ID>/secrets"
+```
+
 **200**
 
 ```json
@@ -194,6 +202,14 @@ Create or update a secret. Requires machine role **`write`**.
   "value": "new-value",
   "note": "optional label"
 }
+```
+
+```bash
+curl -s -X POST \
+  -H "Authorization: Bearer ss_…" \
+  -H "Content-Type: application/json" \
+  -d '{"key":"API_KEY","value":"new-value","note":"optional label"}' \
+  "http://localhost:8080/eso/v1/projects/<PROJECT_ID>/secrets"
 ```
 
 - `key` and `value` required (`value` may be empty string).
@@ -321,9 +337,12 @@ See [postgrest-openapi.json](./postgrest-openapi.json) for a checked-in snapshot
 | JWT | `eyJ…` | PostgREST `:3000` | RLS as user |
 | Machine | `ss_` | `/eso/v1/…` only | Project-scoped |
 
+Full flows and curl examples: [authentication.md](./authentication.md).
+
 ---
 
 ## Related docs
 
+- Authentication flows & token lifecycle with curl examples: [authentication.md](./authentication.md)
 - Deploy, env, OIDC, audit purge: [deploy.md](./deploy.md)
 - ESO manifests: [openshift-eso.yaml](./openshift-eso.yaml)
