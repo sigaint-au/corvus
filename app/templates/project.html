@@ -438,11 +438,11 @@
     <input type="hidden" name="tab" value="audit">
     <label>Search
       <input type="search" name="q" value="{{ search_q or '' }}"
-             placeholder="Key, action, email…" autocomplete="off">
+             placeholder="Key, action, or detail…" autocomplete="off">
     </label>
     <label>Actor email
       <input type="search" name="actor" value="{{ audit_actor or '' }}"
-             placeholder="user@example.com" autocomplete="off">
+             placeholder="e.g. alice@example.com" autocomplete="off">
     </label>
     <label>Action
       <select name="action">
@@ -788,7 +788,7 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>User email
       <input type="email" name="email" required class="user-suggest"
-             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+             list="user-suggest-list" placeholder="e.g. alice@example.com" autocomplete="off">
     </label>
     <label>Role
       <select name="role">

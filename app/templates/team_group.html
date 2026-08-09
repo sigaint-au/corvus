@@ -39,7 +39,7 @@
     {% if group.source != 'manual' %}
     <label>Directory group key
       <input type="text" name="external_key" value="{{ group.external_key or '' }}"
-             placeholder="LDAP DN or OIDC groups claim value">
+             placeholder="e.g. cn=ops,ou=groups,dc=example,dc=com  or  platform-ops">
     </label>
     {% endif %}
     <button type="submit">Save</button>
@@ -68,7 +68,7 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>User email
       <input type="email" name="email" required class="user-suggest"
-             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+             list="user-suggest-list" placeholder="e.g. alice@example.com" autocomplete="off">
     </label>
     <button type="submit">Add member</button>
   </form>

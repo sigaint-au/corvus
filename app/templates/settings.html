@@ -374,7 +374,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     <input type="hidden" name="action" value="promote">
     <label class="flex-2">User email
       <input type="email" name="email" required class="user-suggest"
-             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+             list="user-suggest-list" placeholder="e.g. alice@example.com" autocomplete="off">
     </label>
     <button type="submit">Make global admin</button>
   </form>
@@ -457,12 +457,12 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         </label>
         <label class="span-2">Group search base
           <input type="text" name="ldap_group_base" value="{{ settings.ldap_group_base }}"
-                 placeholder="cn=groups,cn=accounts,dc=example,dc=com">
+                 placeholder="e.g. cn=groups,cn=accounts,dc=example,dc=com">
           <span class="field-hint">Only needed when not using memberOf</span>
         </label>
         <label class="span-2">Group filter
           <input type="text" name="ldap_group_filter" value="{{ settings.ldap_group_filter }}"
-                 placeholder="(member={dn})">
+                 placeholder="e.g. (member={dn})">
           <span class="field-hint"><code class="k">{dn}</code> is the user’s DN</span>
         </label>
       </div>
@@ -507,7 +507,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     <input type="hidden" name="action" value="ldap_role_map_add">
     <label class="flex-2">LDAP directory group (CN or DN)
       <input type="text" name="ldap_group" required
-             placeholder="secretstore-admins or cn=secretstore-admins,cn=groups,cn=accounts,dc=example,dc=com">
+             placeholder="e.g. secretstore-admins  or  cn=secretstore-admins,cn=groups,dc=example,dc=com">
     </label>
     <label>App role
       <select name="role">
@@ -578,7 +578,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         </label>
         <label>Directory groups claim
           <input type="text" name="oidc_groups_claim" value="{{ settings.oidc_groups_claim or 'groups' }}"
-                 placeholder="groups">
+                 placeholder="e.g. groups (token claim listing directory groups)">
           <span class="field-hint">Also reads <code class="k">realm_access.roles</code> when present</span>
         </label>
         <label class="check-row span-2">
@@ -632,7 +632,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     <input type="hidden" name="action" value="oidc_role_map_add">
     <label class="flex-2">OIDC directory group (token claim value)
       <input type="text" name="oidc_group" required
-             placeholder="secretstore-admins">
+             placeholder="e.g. secretstore-admins (exact groups claim value)">
     </label>
     <label>App role
       <select name="role">
@@ -709,7 +709,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     <div class="row">
       <label>From email
         <input type="email" name="smtp_from_email" value="{{ settings.smtp_from_email }}"
-               placeholder="noreply@example.com">
+               placeholder="e.g. noreply@example.com">
       </label>
       <label>From name
         <input type="text" name="smtp_from_name"
@@ -739,7 +739,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     <label class="flex-2">Recipient email
       <input type="email" name="test_email"
              value="{{ session.email or '' }}"
-             placeholder="you@example.com" required>
+             placeholder="e.g. you@example.com" required>
     </label>
     <button type="submit">Send test</button>
   </form>
