@@ -538,61 +538,36 @@ SET row_security = off AS $$
     OR api.project_role(pid) = 'admin';
 $$;
 
--- Per-secret access (tighter than project membership when acl_mode != inherit)
-CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
-RETURNS boolean
+-- Per-secret access using row fields (safe for INSERT … RETURNING RLS).
+-- Do not re-query api.secrets here — the new row is not visible mid-insert.
+CREATE OR REPLACE FUNCTION api.can_access_secret_row(
+  sid uuid,
+  pid uuid,
+  mode text,
+  need text DEFAULT 'read',
+  deleted_at timestamptz DEFAULT NULL
+) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
   SELECT CASE
-    WHEN sid IS NULL THEN false
+    WHEN sid IS NULL OR pid IS NULL THEN false
+    WHEN deleted_at IS NOT NULL THEN false
     WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
-    WHEN NOT EXISTS (
-      SELECT 1 FROM api.secrets s WHERE s.id = sid AND s.deleted_at IS NULL
-    ) THEN false
-    WHEN NOT EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND api.can_read_project(s.project_id)
-    ) THEN false
-    WHEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND api.can_admin_project(s.project_id)
-    ) THEN true
-    WHEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND s.acl_mode = 'inherit'
-    ) THEN (
+    WHEN NOT api.can_read_project(pid) THEN false
+    WHEN api.can_admin_project(pid) THEN true
+    WHEN COALESCE(mode, 'inherit') = 'inherit' THEN (
       CASE need
-        WHEN 'write' THEN EXISTS (
-          SELECT 1 FROM api.secrets s
-          WHERE s.id = sid AND api.can_write_project(s.project_id)
-        )
+        WHEN 'write' THEN api.can_write_project(pid)
         ELSE true
       END
     )
-    WHEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND s.acl_mode = 'writers'
-    ) THEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND api.can_write_project(s.project_id)
+    WHEN mode = 'writers' THEN api.can_write_project(pid)
+    WHEN mode = 'admins' THEN false
+    WHEN mode = 'owners' THEN (
+      api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
     )
-    WHEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND s.acl_mode = 'admins'
-    ) THEN false
-    WHEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND s.acl_mode = 'owners'
-    ) THEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      JOIN api.projects p ON p.id = s.project_id
-      WHERE s.id = sid AND api.team_role(p.team_id) = 'owner'
-    )
-    WHEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND s.acl_mode = 'custom'
-    ) THEN EXISTS (
+    WHEN mode = 'custom' THEN EXISTS (
       SELECT 1 FROM api.secret_acl a
       WHERE a.secret_id = sid
         AND api._perm_rank(a.permission) >= api._perm_rank(need)
@@ -607,6 +582,24 @@ SET row_security = off AS $$
     )
     ELSE false
   END;
+$$;
+
+-- App-facing helper: load the secret row then apply can_access_secret_row
+CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT COALESCE(
+    (
+      SELECT api.can_access_secret_row(
+        s.id, s.project_id, s.acl_mode, need, s.deleted_at
+      )
+      FROM api.secrets s
+      WHERE s.id = sid
+    ),
+    false
+  );
 $$;
 
 -- Prevent removing the last team owner (except when the team itself is deleted)
@@ -789,27 +782,33 @@ CREATE POLICY secret_recent_delete ON api.secret_recent FOR DELETE TO authentica
   USING (user_id = api.current_user_id());
 
 CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
-  USING (api.can_access_secret(id, 'read'));
+  USING (api.can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at));
 CREATE POLICY secrets_insert ON api.secrets FOR INSERT TO authenticated
   WITH CHECK (api.can_write_project(project_id));
 CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
-  USING (api.can_access_secret(id, 'write'));
+  USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at));
 CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
-  USING (api.can_access_secret(id, 'write'));
+  USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at));
 
 -- Versions inherit access from parent secret's project
 CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_access_secret(s.id, 'read')
+      WHERE s.id = secret_id
+        AND api.can_access_secret_row(
+          s.id, s.project_id, s.acl_mode, 'read', s.deleted_at
+        )
     )
   );
 CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT TO authenticated
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_access_secret(s.id, 'write')
+      WHERE s.id = secret_id
+        AND api.can_access_secret_row(
+          s.id, s.project_id, s.acl_mode, 'write', s.deleted_at
+        )
     )
   );
 -- No direct UPDATE/DELETE for authenticated (purge via secret CASCADE)
@@ -867,7 +866,15 @@ CREATE POLICY pgr_delete ON api.project_group_roles FOR DELETE TO authenticated
   USING (api.can_admin_project(project_id));
 
 CREATE POLICY secret_acl_select ON api.secret_acl FOR SELECT TO authenticated
-  USING (api.can_access_secret(secret_id, 'read'));
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id
+        AND api.can_access_secret_row(
+          s.id, s.project_id, s.acl_mode, 'read', s.deleted_at
+        )
+    )
+  );
 CREATE POLICY secret_acl_insert ON api.secret_acl FOR INSERT TO authenticated
   WITH CHECK (
     EXISTS (
@@ -1548,6 +1555,7 @@ GRANT EXECUTE ON FUNCTION api.project_role TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION api.can_read_project TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION api.can_write_project TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION api.can_admin_project TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon;
 
 -- Effective policy: secret.requires_approval overrides project default

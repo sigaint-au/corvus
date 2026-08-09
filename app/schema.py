@@ -1696,77 +1696,86 @@ def ensure_schema():
           END;
         $$
         """,
+        # Row-based ACL (INSERT RETURNING cannot re-query the new secrets row)
+        """
+        CREATE OR REPLACE FUNCTION api.can_access_secret_row(
+          sid uuid,
+          pid uuid,
+          mode text,
+          need text DEFAULT 'read',
+          deleted_at timestamptz DEFAULT NULL
+        ) RETURNS boolean
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT CASE
+            WHEN sid IS NULL OR pid IS NULL THEN false
+            WHEN deleted_at IS NOT NULL THEN false
+            WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
+            WHEN NOT api.can_read_project(pid) THEN false
+            WHEN api.can_admin_project(pid) THEN true
+            WHEN COALESCE(mode, 'inherit') = 'inherit' THEN (
+              CASE need
+                WHEN 'write' THEN api.can_write_project(pid)
+                ELSE true
+              END
+            )
+            WHEN mode = 'writers' THEN api.can_write_project(pid)
+            WHEN mode = 'admins' THEN false
+            WHEN mode = 'owners' THEN (
+              api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
+            )
+            WHEN mode = 'custom' THEN EXISTS (
+              SELECT 1 FROM api.secret_acl a
+              WHERE a.secret_id = sid
+                AND api._perm_rank(a.permission) >= api._perm_rank(need)
+                AND (
+                  a.user_id = api.current_user_id()
+                  OR EXISTS (
+                    SELECT 1 FROM api.group_members gm
+                    WHERE gm.group_id = a.group_id
+                      AND gm.user_id = api.current_user_id()
+                  )
+                )
+            )
+            ELSE false
+          END;
+        $$
+        """,
         """
         CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
         RETURNS boolean
         LANGUAGE sql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
-          SELECT CASE
-            WHEN sid IS NULL THEN false
-            WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
-            WHEN NOT EXISTS (
-              SELECT 1 FROM api.secrets s WHERE s.id = sid AND s.deleted_at IS NULL
-            ) THEN false
-            WHEN NOT EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND api.can_read_project(s.project_id)
-            ) THEN false
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND api.can_admin_project(s.project_id)
-            ) THEN true
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'inherit'
-            ) THEN (
-              CASE need
-                WHEN 'write' THEN EXISTS (
-                  SELECT 1 FROM api.secrets s
-                  WHERE s.id = sid AND api.can_write_project(s.project_id)
-                )
-                ELSE true
-              END
-            )
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'writers'
-            ) THEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND api.can_write_project(s.project_id)
-            )
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'admins'
-            ) THEN false
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'owners'
-            ) THEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              JOIN api.projects p ON p.id = s.project_id
-              WHERE s.id = sid AND api.team_role(p.team_id) = 'owner'
-            )
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'custom'
-            ) THEN EXISTS (
-              SELECT 1 FROM api.secret_acl a
-              WHERE a.secret_id = sid
-                AND a.user_id = api.current_user_id()
-                AND api._perm_rank(a.permission) >= api._perm_rank(need)
-            )
-            ELSE false
-          END;
+          SELECT COALESCE(
+            (
+              SELECT api.can_access_secret_row(
+                s.id, s.project_id, s.acl_mode, need, s.deleted_at
+              )
+              FROM api.secrets s
+              WHERE s.id = sid
+            ),
+            false
+          );
         $$
         """,
         "GRANT EXECUTE ON FUNCTION api._perm_rank TO authenticated, anon",
+        "GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon",
         "ALTER TABLE api.secret_acl ENABLE ROW LEVEL SECURITY",
         "DROP POLICY IF EXISTS secret_acl_select ON api.secret_acl",
         """
         CREATE POLICY secret_acl_select ON api.secret_acl FOR SELECT TO authenticated
-          USING (api.can_access_secret(secret_id, 'read'))
+          USING (
+            EXISTS (
+              SELECT 1 FROM api.secrets s
+              WHERE s.id = secret_id
+                AND api.can_access_secret_row(
+                  s.id, s.project_id, s.acl_mode, 'read', s.deleted_at
+                )
+            )
+          )
         """,
         "DROP POLICY IF EXISTS secret_acl_insert ON api.secret_acl",
         """
@@ -1800,21 +1809,27 @@ def ensure_schema():
         """,
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.secret_acl TO authenticated",
         "GRANT ALL ON api.secret_acl TO authenticator",
-        # Secrets RLS: use can_access_secret instead of project-only checks
+        # Secrets RLS: row-based ACL (safe for INSERT … RETURNING)
         "DROP POLICY IF EXISTS secrets_select ON api.secrets",
         """
         CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
-          USING (api.can_access_secret(id, 'read'))
+          USING (
+            api.can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)
+          )
         """,
         "DROP POLICY IF EXISTS secrets_update ON api.secrets",
         """
         CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
-          USING (api.can_access_secret(id, 'write'))
+          USING (
+            api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at)
+          )
         """,
         "DROP POLICY IF EXISTS secrets_delete ON api.secrets",
         """
         CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
-          USING (api.can_access_secret(id, 'write'))
+          USING (
+            api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at)
+          )
         """,
         "DROP POLICY IF EXISTS secret_versions_select ON api.secret_versions",
         """
@@ -1822,7 +1837,10 @@ def ensure_schema():
           USING (
             EXISTS (
               SELECT 1 FROM api.secrets s
-              WHERE s.id = secret_id AND api.can_access_secret(s.id, 'read')
+              WHERE s.id = secret_id
+                AND api.can_access_secret_row(
+                  s.id, s.project_id, s.acl_mode, 'read', s.deleted_at
+                )
             )
           )
         """,
@@ -1832,7 +1850,10 @@ def ensure_schema():
           WITH CHECK (
             EXISTS (
               SELECT 1 FROM api.secrets s
-              WHERE s.id = secret_id AND api.can_access_secret(s.id, 'write')
+              WHERE s.id = secret_id
+                AND api.can_access_secret_row(
+                  s.id, s.project_id, s.acl_mode, 'write', s.deleted_at
+                )
             )
           )
         """,
@@ -2092,60 +2113,34 @@ def ensure_schema():
         $$
         """,
         """
-        CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
-        RETURNS boolean
+        CREATE OR REPLACE FUNCTION api.can_access_secret_row(
+          sid uuid,
+          pid uuid,
+          mode text,
+          need text DEFAULT 'read',
+          deleted_at timestamptz DEFAULT NULL
+        ) RETURNS boolean
         LANGUAGE sql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
           SELECT CASE
-            WHEN sid IS NULL THEN false
+            WHEN sid IS NULL OR pid IS NULL THEN false
+            WHEN deleted_at IS NOT NULL THEN false
             WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
-            WHEN NOT EXISTS (
-              SELECT 1 FROM api.secrets s WHERE s.id = sid AND s.deleted_at IS NULL
-            ) THEN false
-            WHEN NOT EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND api.can_read_project(s.project_id)
-            ) THEN false
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND api.can_admin_project(s.project_id)
-            ) THEN true
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'inherit'
-            ) THEN (
+            WHEN NOT api.can_read_project(pid) THEN false
+            WHEN api.can_admin_project(pid) THEN true
+            WHEN COALESCE(mode, 'inherit') = 'inherit' THEN (
               CASE need
-                WHEN 'write' THEN EXISTS (
-                  SELECT 1 FROM api.secrets s
-                  WHERE s.id = sid AND api.can_write_project(s.project_id)
-                )
+                WHEN 'write' THEN api.can_write_project(pid)
                 ELSE true
               END
             )
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'writers'
-            ) THEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND api.can_write_project(s.project_id)
+            WHEN mode = 'writers' THEN api.can_write_project(pid)
+            WHEN mode = 'admins' THEN false
+            WHEN mode = 'owners' THEN (
+              api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
             )
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'admins'
-            ) THEN false
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'owners'
-            ) THEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              JOIN api.projects p ON p.id = s.project_id
-              WHERE s.id = sid AND api.team_role(p.team_id) = 'owner'
-            )
-            WHEN EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.acl_mode = 'custom'
-            ) THEN EXISTS (
+            WHEN mode = 'custom' THEN EXISTS (
               SELECT 1 FROM api.secret_acl a
               WHERE a.secret_id = sid
                 AND api._perm_rank(a.permission) >= api._perm_rank(need)
@@ -2162,6 +2157,48 @@ def ensure_schema():
           END;
         $$
         """,
+        """
+        CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
+        RETURNS boolean
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT COALESCE(
+            (
+              SELECT api.can_access_secret_row(
+                s.id, s.project_id, s.acl_mode, need, s.deleted_at
+              )
+              FROM api.secrets s
+              WHERE s.id = sid
+            ),
+            false
+          );
+        $$
+        """,
+        # Re-apply secrets policies after org RBAC (row-based INSERT RETURNING fix)
+        "DROP POLICY IF EXISTS secrets_select ON api.secrets",
+        """
+        CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
+          USING (
+            api.can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)
+          )
+        """,
+        "DROP POLICY IF EXISTS secrets_update ON api.secrets",
+        """
+        CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
+          USING (
+            api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at)
+          )
+        """,
+        "DROP POLICY IF EXISTS secrets_delete ON api.secrets",
+        """
+        CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
+          USING (
+            api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at)
+          )
+        """,
+        "GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon",
+        "GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon",
         "ALTER TABLE api.groups ENABLE ROW LEVEL SECURITY",
         "ALTER TABLE api.group_members ENABLE ROW LEVEL SECURITY",
         "ALTER TABLE api.project_group_roles ENABLE ROW LEVEL SECURITY",

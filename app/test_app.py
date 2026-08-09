@@ -2238,10 +2238,16 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("acl_mode", init)
         self.assertIn("CREATE TABLE api.secret_acl", init)
         self.assertIn("api.can_access_secret", init)
+        self.assertIn("api.can_access_secret_row", init)
+        # RLS must use row form so INSERT … RETURNING can see the new row
+        self.assertIn(
+            "can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)",
+            init,
+        )
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("can_access_secret", src)
+        self.assertIn("can_access_secret_row", src)
         self.assertIn("secret_acl", src)
-        self.assertIn("can_access_secret(id, 'read')", src)
 
     def test_org_groups_rbac_schema(self):
         """Groups tables, group-aware RBAC helpers, secret ACL group grants."""
