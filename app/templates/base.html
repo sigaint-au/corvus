@@ -1646,10 +1646,6 @@
       overflow: visible;
       text-overflow: clip;
     }
-    .value-field.db-pass-field {
-      flex: 1 1 12rem;
-      min-width: 10rem;
-    }
     .kv-row .kv-val.value-field {
       flex: 1 1 14rem;
       min-width: 12rem;
@@ -1665,13 +1661,95 @@
       margin-bottom: .25rem;
       justify-content: flex-end;
     }
-    .db-pass-block { display: block; }
-    .db-pass-block dd { margin: 0; }
     .section-head-actions {
       display: inline-flex;
       align-items: center;
       gap: .5rem .75rem;
       margin-left: auto;
+    }
+    /* Database URL fields — aligned grid */
+    .db-hint { margin: 0 0 .75rem; }
+    .db-fields {
+      display: grid;
+      grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr) minmax(5rem, 6.5rem);
+      gap: .65rem .75rem;
+      align-items: end;
+      max-width: 48rem;
+    }
+    .db-fields > label,
+    .db-fields > .db-scheme,
+    .db-fields > .db-host,
+    .db-fields > .db-port,
+    .db-fields > .db-user,
+    .db-fields > .db-pass,
+    .db-fields > .db-name {
+      display: flex;
+      flex-direction: column;
+      gap: .25rem;
+      margin: 0;
+      min-width: 0;
+    }
+    .db-fields .field-label {
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--muted-foreground);
+    }
+    .db-fields label > select,
+    .db-fields label > input,
+    .db-fields .input-with-btn > input {
+      width: 100%;
+      max-width: none;
+      box-sizing: border-box;
+      min-height: 2.25rem;
+    }
+    .db-fields .input-with-btn {
+      display: flex;
+      align-items: stretch;
+      gap: .35rem;
+      width: 100%;
+    }
+    .db-fields .input-with-btn > input { flex: 1; min-width: 0; }
+    .db-fields .input-with-btn .copy-btn {
+      flex: 0 0 auto;
+      align-self: center;
+      white-space: nowrap;
+    }
+    .db-fields .db-scheme { grid-column: 1; }
+    .db-fields .db-host { grid-column: 2; }
+    .db-fields .db-port { grid-column: 3; }
+    .db-fields .db-user { grid-column: 1; }
+    .db-fields .db-pass { grid-column: 2; }
+    .db-fields .db-name { grid-column: 3; }
+    .db-fields .db-url {
+      grid-column: 1 / -1;
+      margin-top: .25rem;
+    }
+    .db-fields-view > div {
+      display: flex;
+      flex-direction: column;
+      gap: .25rem;
+      min-width: 0;
+    }
+    .db-fields-view code.k {
+      display: block;
+      padding: .45rem .55rem;
+      min-height: 2.25rem;
+      box-sizing: border-box;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--background);
+      word-break: break-all;
+    }
+    @media (max-width: 640px) {
+      .db-fields {
+        grid-template-columns: 1fr 1fr;
+      }
+      .db-fields .db-scheme { grid-column: 1; }
+      .db-fields .db-host { grid-column: 1 / -1; }
+      .db-fields .db-port { grid-column: 2; grid-row: 1; }
+      .db-fields .db-user { grid-column: 1; }
+      .db-fields .db-pass { grid-column: 1 / -1; }
+      .db-fields .db-name { grid-column: 2; grid-row: 2; }
     }
     .pem-block {
       margin: 0;
@@ -1687,7 +1765,6 @@
       max-height: 22rem;
       overflow-y: auto;
     }
-    .db-view-dl { margin-bottom: 1rem; }
     .secret-view-form .kv-val .input-with-btn { width: 100%; }
     .secret-view-form textarea.mono-area { margin-top: .25rem; }
     .secret-view-form .pem-field textarea.mono-area { margin-top: 0; }
