@@ -454,10 +454,6 @@
       width: 100%;
       min-height: 1.5rem;
     }
-    .reveal-head .kind-badge {
-      font-size: .72rem;
-      padding: .22rem .5rem;
-    }
     .reveal-body .input-with-btn {
       max-width: none;
       width: 100%;
@@ -1233,25 +1229,7 @@
       font-size: .925rem;
     }
     .audit-table td { vertical-align: middle; }
-    .due-badge {
-      display: inline-block;
-      font-size: .7rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .03em;
-      padding: .1rem .35rem;
-      border-radius: 4px;
-      margin-left: .35rem;
-      vertical-align: middle;
-    }
-    .due-overdue {
-      background: color-mix(in srgb, var(--danger) 18%, var(--background));
-      color: var(--danger);
-    }
-    .due-soon {
-      background: color-mix(in srgb, var(--warning) 18%, var(--background));
-      color: var(--warning);
-    }
+    /* due labels: oat .badge data-variant danger|warning (same as kind chips) */
     .import-box { margin: 0 0 1rem; }
     .import-box textarea { width: 100%; font-family: ui-monospace, monospace; font-size: .85rem; }
     .import-preview-table { width: 100%; margin: 0 0 1rem; }
@@ -1380,18 +1358,7 @@
     .section-head-actions .kv-remove:hover {
       text-decoration: underline;
     }
-    /* Kind tint on oat .badge outline (secret type chip) */
-    .kind-badge {
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      /* rest from oat .badge; keep tint hooks below */
-      background: var(--muted);
-      color: var(--muted-foreground);
-    }
-    .kind-badge.kind-kv { color: var(--success); }
-    .kind-badge.kind-certificate,
-    .kind-badge.kind-ssh { color: var(--warning); }
-    .kind-badge.kind-database { color: var(--foreground); }
+    /* Secret kind chips use the same oat .badge solid style as overdue/soon. */
     .secret-acl-section { margin-top: 1.5rem; }
     .secret-view .kv-view-table td { vertical-align: middle; }
     .secret-view .input-with-btn { max-width: 100%; }
