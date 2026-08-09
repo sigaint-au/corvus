@@ -2276,6 +2276,8 @@ def ensure_schema():
           ORDER BY g.name;
         $$
         """,
+        # Return type changed (added group_id / group_name) — must DROP first
+        "DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid)",
         """
         CREATE OR REPLACE FUNCTION private.secret_acl_rows(p_secret uuid)
         RETURNS TABLE (
