@@ -22,6 +22,7 @@ OIDC/LDAP, audit retention).
 
 | Doc | Contents |
 |-----|----------|
+| **[docs/rbac.md](docs/rbac.md)** | **Org RBAC** — teams, groups (manual/LDAP/OIDC), project roles, secret ACLs, setup recipes |
 | **[docs/deploy.md](docs/deploy.md)** | Deploy, env vars, bootstrap, OIDC/LDAP, audit purge |
 | **[docs/authentication.md](docs/authentication.md)** | Every auth flow (session, PAT, machine, JWT, OIDC, LDAP) + curl examples |
 | **[docs/building.md](docs/building.md)** | Build & push the app container image (Docker/Podman/OpenShift) |

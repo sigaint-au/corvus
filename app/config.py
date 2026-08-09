@@ -158,7 +158,7 @@ SECRET_ACL_MODE_LABELS = {
     "writers": "Writers and above",
     "admins": "Project admins and team owners/admins",
     "owners": "Team owners only",
-    "custom": "Custom user list",
+    "custom": "Custom user or group list",
 }
 # Permissions grantable on custom secret ACLs (ordered weakest → strongest)
 SECRET_ACL_PERMISSIONS = ("read", "reveal", "write")

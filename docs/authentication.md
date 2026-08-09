@@ -364,6 +364,9 @@ POST /login  (email, password)
 - **Server settings → LDAP → LDAP group → roles** maps a group to
   `global_admin`.
 
+For team / project / secret RBAC with groups end-to-end, see
+**[rbac.md](./rbac.md)**.
+
 ---
 
 ## 7. Password reset flow

@@ -281,6 +281,9 @@ Effective access is the max of direct user grants and group grants.
 Helpers: `api.is_team_member`, `api.team_role`, `api.project_role`,
 `api.can_read|write|admin_project`, `api.can_access_secret`.
 
+Operator guide (setup, UI steps, directory mapping, recipes):
+**[rbac.md](./rbac.md)**.
+
 RLS uses `api.can_access_secret(secret_id, need)` for select/update/delete.
 
 ---
