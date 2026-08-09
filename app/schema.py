@@ -259,7 +259,7 @@ def ensure_schema():
         "DROP POLICY IF EXISTS projects_update ON api.projects",
         """
         CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin', 'member'))
+          USING (api.can_admin_project(id))
         """,
         """
         ALTER TABLE private.users
@@ -548,12 +548,24 @@ def ensure_schema():
         CREATE POLICY teams_insert ON api.teams FOR INSERT TO authenticated
           WITH CHECK (created_by = api.current_user_id() OR api.is_global_admin())
         """,
-        # team_members INSERT: owners/admins only (no self-join escape hatch).
+        # team_members INSERT/UPDATE: owners/admins only; only owners assign owner.
         # Team creators use SECURITY DEFINER private.create_team instead.
         "DROP POLICY IF EXISTS tm_insert ON api.team_members",
         """
         CREATE POLICY tm_insert ON api.team_members FOR INSERT TO authenticated
-          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+          WITH CHECK (
+            api.team_role(team_id) IN ('owner', 'admin')
+            AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
+          )
+        """,
+        "DROP POLICY IF EXISTS tm_update ON api.team_members",
+        """
+        CREATE POLICY tm_update ON api.team_members FOR UPDATE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          WITH CHECK (
+            api.team_role(team_id) IN ('owner', 'admin')
+            AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
+          )
         """,
         # Soft-delete for secrets (trash + restore)
         """
@@ -943,7 +955,9 @@ def ensure_schema():
         """,
         """
         CREATE OR REPLACE FUNCTION api.archive_secret_version()
-        RETURNS trigger LANGUAGE plpgsql AS $$
+        RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+        SET search_path = pg_catalog, api, private
+        SET row_security = off AS $$
         BEGIN
           IF OLD.value_enc IS DISTINCT FROM NEW.value_enc THEN
             INSERT INTO api.secret_versions (secret_id, value_enc, note)
@@ -970,17 +984,10 @@ def ensure_schema():
             )
           )
         """,
+        # L1: drop client forge path; trigger inserts as DEFINER
         "DROP POLICY IF EXISTS secret_versions_insert ON api.secret_versions",
-        """
-        CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT TO authenticated
-          WITH CHECK (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = secret_id AND api.can_write_project(s.project_id)
-            )
-          )
-        """,
-        "GRANT SELECT, INSERT ON api.secret_versions TO authenticated",
+        "REVOKE INSERT ON api.secret_versions FROM authenticated",
+        "GRANT SELECT ON api.secret_versions TO authenticated",
         "GRANT ALL ON api.secret_versions TO authenticator",
         # Team settings + invites + org audit + project members helpers
         """
@@ -1865,7 +1872,16 @@ def ensure_schema():
           WITH CHECK (
             EXISTS (
               SELECT 1 FROM api.secrets s
-              WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+              JOIN api.projects p ON p.id = s.project_id
+              WHERE s.id = secret_id
+                AND api.can_admin_project(s.project_id)
+                AND (
+                  group_id IS NULL
+                  OR EXISTS (
+                    SELECT 1 FROM api.groups g
+                    WHERE g.id = group_id AND g.team_id = p.team_id
+                  )
+                )
             )
           )
         """,
@@ -1876,6 +1892,21 @@ def ensure_schema():
             EXISTS (
               SELECT 1 FROM api.secrets s
               WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+            )
+          )
+          WITH CHECK (
+            EXISTS (
+              SELECT 1 FROM api.secrets s
+              JOIN api.projects p ON p.id = s.project_id
+              WHERE s.id = secret_id
+                AND api.can_admin_project(s.project_id)
+                AND (
+                  group_id IS NULL
+                  OR EXISTS (
+                    SELECT 1 FROM api.groups g
+                    WHERE g.id = group_id AND g.team_id = p.team_id
+                  )
+                )
             )
           )
         """,
@@ -1926,19 +1957,9 @@ def ensure_schema():
             )
           )
         """,
+        # L1 (re-assert after any earlier insert policy): no client version forge
         "DROP POLICY IF EXISTS secret_versions_insert ON api.secret_versions",
-        """
-        CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT TO authenticated
-          WITH CHECK (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = secret_id
-                AND api.can_access_secret_row(
-                  s.id, s.project_id, s.acl_mode, 'write', s.deleted_at
-                )
-            )
-          )
-        """,
+        "REVOKE INSERT ON api.secret_versions FROM authenticated",
         # Drop before recreate when return type changes (user-only → user/group)
         "DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid)",
         """
@@ -2478,6 +2499,121 @@ def ensure_schema():
         "GRANT ALL ON api.groups TO authenticator",
         "GRANT ALL ON api.group_members TO authenticator",
         "GRANT ALL ON api.project_group_roles TO authenticator",
+        # ── Security hardening (H1, M1, L1–L6) ─────────────────────────
+        # H1: only project admins (incl. team owner/admin) may UPDATE projects
+        "DROP POLICY IF EXISTS projects_update ON api.projects",
+        """
+        CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
+          USING (api.can_admin_project(id))
+        """,
+        # M1: only owners may set role=owner on team_members
+        "DROP POLICY IF EXISTS tm_insert ON api.team_members",
+        """
+        CREATE POLICY tm_insert ON api.team_members FOR INSERT TO authenticated
+          WITH CHECK (
+            api.team_role(team_id) IN ('owner', 'admin')
+            AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
+          )
+        """,
+        "DROP POLICY IF EXISTS tm_update ON api.team_members",
+        """
+        CREATE POLICY tm_update ON api.team_members FOR UPDATE TO authenticated
+          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          WITH CHECK (
+            api.team_role(team_id) IN ('owner', 'admin')
+            AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
+          )
+        """,
+        # L1: version history via DEFINER trigger only
+        """
+        CREATE OR REPLACE FUNCTION api.archive_secret_version()
+        RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+        SET search_path = pg_catalog, api, private
+        SET row_security = off AS $$
+        BEGIN
+          IF OLD.value_enc IS DISTINCT FROM NEW.value_enc THEN
+            INSERT INTO api.secret_versions (secret_id, value_enc, note)
+            VALUES (OLD.id, OLD.value_enc, OLD.note);
+          END IF;
+          RETURN NEW;
+        END;
+        $$
+        """,
+        "DROP POLICY IF EXISTS secret_versions_insert ON api.secret_versions",
+        "REVOKE INSERT, UPDATE, DELETE ON api.secret_versions FROM authenticated",
+        # L2: ACL group grants must share the secret's team
+        "DROP POLICY IF EXISTS secret_acl_insert ON api.secret_acl",
+        """
+        CREATE POLICY secret_acl_insert ON api.secret_acl FOR INSERT TO authenticated
+          WITH CHECK (
+            EXISTS (
+              SELECT 1 FROM api.secrets s
+              JOIN api.projects p ON p.id = s.project_id
+              WHERE s.id = secret_id
+                AND api.can_admin_project(s.project_id)
+                AND (
+                  group_id IS NULL
+                  OR EXISTS (
+                    SELECT 1 FROM api.groups g
+                    WHERE g.id = group_id AND g.team_id = p.team_id
+                  )
+                )
+            )
+          )
+        """,
+        "DROP POLICY IF EXISTS secret_acl_update ON api.secret_acl",
+        """
+        CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
+          USING (
+            EXISTS (
+              SELECT 1 FROM api.secrets s
+              WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+            )
+          )
+          WITH CHECK (
+            EXISTS (
+              SELECT 1 FROM api.secrets s
+              JOIN api.projects p ON p.id = s.project_id
+              WHERE s.id = secret_id
+                AND api.can_admin_project(s.project_id)
+                AND (
+                  group_id IS NULL
+                  OR EXISTS (
+                    SELECT 1 FROM api.groups g
+                    WHERE g.id = group_id AND g.team_id = p.team_id
+                  )
+                )
+            )
+          )
+        """,
+        # L3: no user directory SELECT for JWT clients; private not in PostgREST schemas
+        "REVOKE ALL ON api.user_directory FROM authenticated",
+        "REVOKE ALL ON api.user_directory FROM anon",
+        "GRANT SELECT ON api.user_directory TO authenticator",
+        # L5: FORCE RLS on sensitive tables
+        "ALTER TABLE api.teams FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.team_members FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.projects FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.project_members FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.secrets FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.secret_versions FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.secret_acl FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.secret_meta FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.secret_access_requests FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.machine_tokens FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.groups FORCE ROW LEVEL SECURITY",
+        "ALTER TABLE api.group_members FORCE ROW LEVEL SECURITY",
+        # L4: harden search_path on key DEFINER helpers (partial; others already set)
+        """
+        CREATE OR REPLACE FUNCTION private.lookup_user(p_email text)
+        RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = pg_catalog, private
+        SET row_security = off AS $$
+          SELECT id FROM private.users WHERE email = lower(p_email) LIMIT 1;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated",
+        "REVOKE EXECUTE ON FUNCTION private.lookup_user FROM PUBLIC",
     ]
     try:
         with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:

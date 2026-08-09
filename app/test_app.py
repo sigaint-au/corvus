@@ -2248,6 +2248,36 @@ class TestOrgAccess(unittest.TestCase):
         ops = (Path(__file__).resolve().parent / "secret_ops.py").read_text()
         self.assertIn("secret_meta", ops)
 
+    def test_security_hardening_policies(self):
+        """H1/M1/L1/L2/L5: projects_update, owner assignment, versions, ACL team, FORCE RLS."""
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        src = Path(schema_mod.__file__).read_text()
+        # H1: project update requires can_admin_project (not team member)
+        self.assertIn("USING (api.can_admin_project(id))", init)
+        self.assertIn("USING (api.can_admin_project(id))", src)
+        # M1: only owners assign owner
+        self.assertIn("role IS DISTINCT FROM 'owner'", init)
+        self.assertIn("role IS DISTINCT FROM 'owner'", src)
+        # L1: no client version insert
+        self.assertNotIn(
+            "CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT",
+            init,
+        )
+        self.assertIn(
+            "REVOKE INSERT, UPDATE, DELETE ON api.secret_versions FROM authenticated",
+            init,
+        )
+        self.assertIn("SECURITY DEFINER", init.split("archive_secret_version")[1][:400])
+        self.assertIn("REVOKE INSERT, UPDATE, DELETE ON api.secret_versions", src)
+        # L2: group ACL bound to project team
+        self.assertIn("g.team_id = p.team_id", init)
+        self.assertIn("g.team_id = p.team_id", src)
+        # L5: FORCE RLS
+        self.assertIn("FORCE ROW LEVEL SECURITY", init)
+        self.assertIn("FORCE ROW LEVEL SECURITY", src)
+
     def test_secret_acl_schema_and_config(self):
         from pathlib import Path
 

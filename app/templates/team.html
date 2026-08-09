@@ -114,7 +114,9 @@
         <option value="member">member</option>
         <option value="viewer">viewer</option>
         <option value="admin">admin</option>
+        {% if my_role == 'owner' %}
         <option value="owner">owner</option>
+        {% endif %}
       </select>
     </label>
     <button type="submit">Add</button>

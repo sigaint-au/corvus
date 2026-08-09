@@ -336,9 +336,11 @@ CREATE TRIGGER secrets_touch_updated_at
   BEFORE UPDATE ON api.secrets
   FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at();
 
--- Archive previous ciphertext when value changes
+-- Archive previous ciphertext when value changes (DEFINER: writers cannot forge history)
 CREATE OR REPLACE FUNCTION api.archive_secret_version()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, api, private
+SET row_security = off AS $$
 BEGIN
   IF OLD.value_enc IS DISTINCT FROM NEW.value_enc THEN
     INSERT INTO api.secret_versions (secret_id, value_enc, note)
@@ -687,10 +689,18 @@ CREATE POLICY teams_delete ON api.teams FOR DELETE TO authenticated
 
 CREATE POLICY tm_select ON api.team_members FOR SELECT TO authenticated
   USING (api.is_team_member(team_id));
+-- Only owners may assign role=owner (admins cannot self-promote via PostgREST)
 CREATE POLICY tm_insert ON api.team_members FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
+  WITH CHECK (
+    api.team_role(team_id) IN ('owner', 'admin')
+    AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
+  );
 CREATE POLICY tm_update ON api.team_members FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
+  USING (api.team_role(team_id) IN ('owner', 'admin'))
+  WITH CHECK (
+    api.team_role(team_id) IN ('owner', 'admin')
+    AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
+  );
 CREATE POLICY tm_delete ON api.team_members FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('owner', 'admin') OR user_id = api.current_user_id());
 
@@ -740,8 +750,9 @@ CREATE POLICY projects_select ON api.projects FOR SELECT TO authenticated
   );
 CREATE POLICY projects_insert ON api.projects FOR INSERT TO authenticated
   WITH CHECK (api.team_role(team_id) IN ('owner', 'admin', 'member'));
+-- H1: members must not change require_reveal_approval (or other settings) via PostgREST
 CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin', 'member'));
+  USING (api.can_admin_project(id));
 CREATE POLICY projects_delete ON api.projects FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('owner', 'admin'));
 
@@ -828,16 +839,7 @@ CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authen
         )
     )
   );
-CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id
-        AND api.can_access_secret_row(
-          s.id, s.project_id, s.acl_mode, 'write', s.deleted_at
-        )
-    )
-  );
+-- L1: no client INSERT — versions only via archive_secret_version() trigger
 -- No direct UPDATE/DELETE for authenticated (purge via secret CASCADE)
 
 CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
@@ -902,11 +904,21 @@ CREATE POLICY secret_acl_select ON api.secret_acl FOR SELECT TO authenticated
         )
     )
   );
+-- L2: group grants must be groups on the same team as the secret's project
 CREATE POLICY secret_acl_insert ON api.secret_acl FOR INSERT TO authenticated
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+      JOIN api.projects p ON p.id = s.project_id
+      WHERE s.id = secret_id
+        AND api.can_admin_project(s.project_id)
+        AND (
+          group_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM api.groups g
+            WHERE g.id = group_id AND g.team_id = p.team_id
+          )
+        )
     )
   );
 CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
@@ -914,6 +926,21 @@ CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
     EXISTS (
       SELECT 1 FROM api.secrets s
       WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM api.secrets s
+      JOIN api.projects p ON p.id = s.project_id
+      WHERE s.id = secret_id
+        AND api.can_admin_project(s.project_id)
+        AND (
+          group_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM api.groups g
+            WHERE g.id = group_id AND g.team_id = p.team_id
+          )
+        )
     )
   );
 CREATE POLICY secret_acl_delete ON api.secret_acl FOR DELETE TO authenticated
@@ -955,8 +982,24 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA api TO authenticated, anon;
 -- Audit rows must not be forgeable via PostgREST / authenticated INSERT
 REVOKE INSERT ON api.secret_audit FROM authenticated;
 REVOKE INSERT ON api.org_audit FROM authenticated;
+-- L1: secret version history only via SECURITY DEFINER trigger
+REVOKE INSERT, UPDATE, DELETE ON api.secret_versions FROM authenticated;
 -- Access requests: no client DELETE (resolve via UPDATE)
 REVOKE DELETE ON api.secret_access_requests FROM authenticated;
+
+-- L5: table owners still subject to RLS (PostgREST uses SET ROLE authenticated)
+ALTER TABLE api.teams FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.team_members FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.projects FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.project_members FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secrets FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_versions FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_acl FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_meta FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_access_requests FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.machine_tokens FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.groups FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.group_members FORCE ROW LEVEL SECURITY;
 
 -- Auth helpers (SECURITY DEFINER; Flask/anon only)
 -- Never auto-promote first registrant; GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL does that in app.
@@ -1587,7 +1630,10 @@ GRANT EXECUTE ON FUNCTION private.set_local_password TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_oidc_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
+-- private.lookup_user: Flask (as_user → authenticated) + authenticator; not in
+-- PostgREST db-schemas (api only) so not callable as RPC over PostgREST.
 GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated;
+REVOKE EXECUTE ON FUNCTION private.lookup_user FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.project_member_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.team_group_rows TO authenticator, authenticated;
