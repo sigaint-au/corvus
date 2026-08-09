@@ -282,6 +282,12 @@ def register(app):
         if role not in config.TEAM_ROLES:
             role = "member"
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            # M1: only team owners may assign owner (admins cannot self-promote)
+            cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+            my_role = (cur.fetchone() or {}).get("r")
+            if role == "owner" and my_role != "owner":
+                flash("Only a team owner can grant the owner role", "error")
+                return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
             u = cur.fetchone()
             if not u or not u.get("id"):

@@ -9,6 +9,7 @@ import authz
 import config
 import crypto
 import db
+import nav
 import paging
 import pins
 from secret_kinds import (
@@ -22,6 +23,7 @@ from secret_kinds import (
 )
 from secret_ops import (
     _load_secrets_page,
+    _load_team_secrets_page,
     _parse_acl_mode,
     _parse_expires_at,
     _parse_requires_approval,
@@ -184,50 +186,57 @@ def register(app):
     @app.get("/secrets")
     @authz.login_required
     def secrets_list():
-        """List all non-deleted secrets for the current team with optional search.
+        """List team secrets with pagination and filters.
 
-        Args:
-            None
-
-        Returns:
-            str: Rendered ``secrets.html`` template with team, secrets, and
-                search query context.
+        Query params: ``q``, ``page``, ``project`` (UUID), ``kind``, ``due``
+        (overdue|soon|none), ``acl`` (restricted|inherit).
 
         Example:
-            GET /secrets?q=password
+            GET /secrets?q=password&kind=database&page=2
         """
-        tid = session.get("team_id")
-        q = (request.args.get("q") or "").strip()
-        team, secrets = None, []
+        tid = nav.ensure_active_team(session["user_id"])
+        q = paging.list_state_q()
+        page = paging.page_arg()
+        project = (request.args.get("project") or "").strip() or None
+        kind = (request.args.get("kind") or "").strip() or None
+        if kind and kind not in config.SECRET_KINDS:
+            kind = None
+        due = (request.args.get("due") or "").strip() or None
+        if due not in ("overdue", "soon", "none", None):
+            due = None
+        acl = (request.args.get("acl") or "").strip() or None
+        if acl not in ("restricted", "inherit", None):
+            acl = None
+        team, secrets, team_projects = None, [], []
+        secrets_pager = None
         if tid:
             with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
                 cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
                 team = cur.fetchone()
                 if team:
-                    sql = """
-                        SELECT s.id, s.key, s.note, s.kind, s.updated_at,
-                               p.id AS project_id, p.name AS project_name
-                        FROM api.secrets s
-                        JOIN api.projects p ON p.id = s.project_id
-                        WHERE p.team_id = %s AND s.deleted_at IS NULL
-                    """
-                    params = [tid]
-                    if q:
-                        like = f"%{q}%"
-                        sql += """
-                          AND (
-                            s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s
-                            OR EXISTS (
-                              SELECT 1 FROM api.secret_meta m
-                              WHERE m.secret_id = s.id
-                                AND (m.key ILIKE %s OR m.value ILIKE %s)
-                            )
-                          )
-                        """
-                        params.extend([like, like, like, like, like])
-                    cur.execute(sql + " ORDER BY p.name, s.key", params)
-                    secrets = cur.fetchall()
-        return render_template("secrets.html", team=team, secrets=secrets, search_q=q)
+                    secrets, secrets_pager, team_projects = _load_team_secrets_page(
+                        cur,
+                        tid,
+                        page,
+                        q,
+                        project=project,
+                        kind=kind,
+                        due=due,
+                        acl=acl,
+                    )
+        return render_template(
+            "secrets.html",
+            team=team,
+            secrets=secrets,
+            search_q=q,
+            secrets_pager=secrets_pager,
+            team_projects=team_projects,
+            filter_project=project,
+            filter_kind=kind,
+            filter_due=due,
+            filter_acl=acl,
+            secret_kinds=config.SECRET_KINDS,
+        )
 
 
     @app.get("/trash")
@@ -245,7 +254,7 @@ def register(app):
         Example:
             GET /trash?q=old-key
         """
-        tid = session.get("team_id")
+        tid = nav.ensure_active_team(session["user_id"])
         team, items = None, []
         q = (request.args.get("q") or "").strip()
         if tid:

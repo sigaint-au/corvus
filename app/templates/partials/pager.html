@@ -1,42 +1,64 @@
-{# Extra filter kwargs (audit actor/action/dates) preserved across pages #}
+{# Extra filter kwargs preserved across pages #}
 {% set _q = {
   'project_id': pager.project_id if pager else none,
   'tab': pager.tab if pager else none,
-  'q': pager.q if pager and pager.q else none,
-  'actor': pager.actor if pager and pager.actor else none,
-  'action': pager.action if pager and pager.action else none,
-  'since': pager.since if pager and pager.since else none,
-  'until': pager.until if pager and pager.until else none,
+  'q': pager.q if pager else none,
+  'actor': pager.actor if pager else none,
+  'action': pager.action if pager else none,
+  'since': pager.since if pager else none,
+  'until': pager.until if pager else none,
+  'project': pager.project if pager else none,
+  'kind': pager.kind if pager else none,
+  'due': pager.due if pager else none,
+  'acl': pager.acl if pager else none,
+  'scope': pager.scope if pager else none,
 } %}
 {% if pager and pager.total > pager.per_page %}
-<nav class="pager" aria-label="Pagination">
-  <span class="pager-summary">
+<nav class="pager hstack" aria-label="Pagination" style="gap: var(--space-4); flex-wrap: wrap; margin: 1rem 0;">
+  <span class="muted pager-summary" style="font-size: var(--text-7);">
     Showing {{ pager.start }}–{{ pager.end }} of {{ pager.total }}
   </span>
-  <div class="pager-links">
-    {% if pager.has_prev %}
-    <a href="{{ url_for(pager.endpoint, page=pager.prev_page, **_q) }}">Prev</a>
-    {% else %}
-    <span class="disabled">Prev</span>
-    {% endif %}
-
+  {# oat.ink pagination: menu.buttons + .button / native <button disabled> #}
+  <menu class="buttons">
+    <li>
+      {% if pager.has_prev %}
+      <a href="{{ url_for(pager.endpoint, page=pager.prev_page, **_q) }}"
+         class="button outline small">&larr; Prev</a>
+      {% else %}
+      <button type="button" class="outline small" disabled aria-label="Previous page (unavailable)">
+        &larr; Prev
+      </button>
+      {% endif %}
+    </li>
     {% for p in range(1, pager.pages + 1) %}
       {% if p == pager.page %}
-      <span class="current" aria-current="page">{{ p }}</span>
+      <li>
+        <a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
+           class="button small" aria-current="page">{{ p }}</a>
+      </li>
       {% elif p == 1 or p == pager.pages or (p >= pager.page - 2 and p <= pager.page + 2) %}
-      <a href="{{ url_for(pager.endpoint, page=p, **_q) }}">{{ p }}</a>
+      <li>
+        <a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
+           class="button outline small">{{ p }}</a>
+      </li>
       {% elif p == pager.page - 3 or p == pager.page + 3 %}
-      <span class="disabled">…</span>
+      <li>
+        <button type="button" class="outline small" disabled aria-hidden="true" tabindex="-1">…</button>
+      </li>
       {% endif %}
     {% endfor %}
-
-    {% if pager.has_next %}
-    <a href="{{ url_for(pager.endpoint, page=pager.next_page, **_q) }}">Next</a>
-    {% else %}
-    <span class="disabled">Next</span>
-    {% endif %}
-  </div>
+    <li>
+      {% if pager.has_next %}
+      <a href="{{ url_for(pager.endpoint, page=pager.next_page, **_q) }}"
+         class="button outline small">Next &rarr;</a>
+      {% else %}
+      <button type="button" class="outline small" disabled aria-label="Next page (unavailable)">
+        Next &rarr;
+      </button>
+      {% endif %}
+    </li>
+  </menu>
 </nav>
 {% elif pager and pager.total > 0 %}
-<p class="muted pager-count">Showing {{ pager.total }} entr{{ 'y' if pager.total == 1 else 'ies' }}{% if pager.q or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>
+<p class="muted pager-count">Showing {{ pager.start }}–{{ pager.end }} of {{ pager.total }}{% if pager.q or pager.project or pager.kind or pager.due or pager.acl or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>
 {% endif %}

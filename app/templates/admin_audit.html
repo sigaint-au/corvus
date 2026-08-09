@@ -24,8 +24,8 @@
   <div class="section-head">
     <h2>Access review</h2>
     <div class="section-tools">
-      <a class="btn-toolbar" href="{{ url_for('admin_audit_access_export', format='csv') }}">Export CSV</a>
-      <a class="btn-toolbar" href="{{ url_for('admin_audit_access_export', format='json') }}">Export JSON</a>
+      <a class="button outline small" href="{{ url_for('admin_audit_access_export', format='csv') }}">Export CSV</a>
+      <a class="button outline small" href="{{ url_for('admin_audit_access_export', format='json') }}">Export JSON</a>
     </div>
   </div>
   <p class="muted">
@@ -53,14 +53,14 @@
         <td>
           {{ r.name or r.email }}
           <span class="muted">{{ r.email }}</span>
-          {% if r.is_global_admin %}<span class="role-badge">global admin</span>{% endif %}
-          {% if r.disabled %}<span class="due-badge due-overdue">disabled</span>{% endif %}
+          {% if r.is_global_admin %}<span class="badge" data-variant="secondary">global admin</span>{% endif %}
+          {% if r.disabled %}<span class="badge" data-variant="danger">disabled</span>{% endif %}
         </td>
-        <td><span class="role-badge">{{ r.scope }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ r.scope }}</span></td>
         <td>{{ r.team or '—' }}</td>
-        <td>{% if r.team_role %}<span class="role-badge">{{ r.team_role }}</span>{% else %}—{% endif %}</td>
+        <td>{% if r.team_role %}<span class="badge" data-variant="secondary">{{ r.team_role }}</span>{% else %}—{% endif %}</td>
         <td>{{ r.project or '—' }}</td>
-        <td>{% if r.project_role %}<span class="role-badge">{{ r.project_role }}</span>{% else %}—{% endif %}</td>
+        <td>{% if r.project_role %}<span class="badge" data-variant="secondary">{{ r.project_role }}</span>{% else %}—{% endif %}</td>
         <td class="muted"><code class="k">{{ r.access_via }}</code></td>
         <td></td>
       </tr>
@@ -99,7 +99,7 @@
     <div class="audit-filter-actions">
       <button type="submit">Filter</button>
       {% if search_q or audit_actor or audit_since or audit_until %}
-      <a class="btn-clear" href="{{ url_for('admin_audit', tab='roles') }}">Clear</a>
+      <a class="button ghost small" href="{{ url_for('admin_audit', tab='roles') }}">Clear</a>
       {% endif %}
     </div>
   </form>
@@ -208,7 +208,7 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="tab" value="export">
     <input type="hidden" name="action" value="purge">
-    <button type="submit" class="danger">Purge old audit rows now</button>
+    <button type="submit" data-variant="danger">Purge old audit rows now</button>
   </form>
 </section>
 {% endif %}

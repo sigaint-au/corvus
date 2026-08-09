@@ -11,7 +11,7 @@
     </label>
     <button type="submit">Search</button>
     {% if search_q %}
-    <a class="btn-clear" href="{{ url_for('teams') }}">Clear</a>
+    <a class="button ghost small" href="{{ url_for('teams') }}">Clear</a>
     {% endif %}
   </form>
 </div>
@@ -35,7 +35,7 @@
   {% for t in teams %}
     <tr>
       <td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td>
-      <td><span class="role-badge">{{ t.role }}</span></td>
+      <td><span class="badge" data-variant="secondary">{{ t.role }}</span></td>
       <td>{{ t.project_count }}</td>
     </tr>
   {% endfor %}

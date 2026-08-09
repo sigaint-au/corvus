@@ -336,9 +336,11 @@ CREATE TRIGGER secrets_touch_updated_at
   BEFORE UPDATE ON api.secrets
   FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at();
 
--- Archive previous ciphertext when value changes
+-- Archive previous ciphertext when value changes (DEFINER: writers cannot forge history)
 CREATE OR REPLACE FUNCTION api.archive_secret_version()
-RETURNS trigger LANGUAGE plpgsql AS $$
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, api, private
+SET row_security = off AS $$
 BEGIN
   IF OLD.value_enc IS DISTINCT FROM NEW.value_enc THEN
     INSERT INTO api.secret_versions (secret_id, value_enc, note)
@@ -404,6 +406,28 @@ CREATE TABLE api.machine_tokens (
   expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Per-token secret key allow-list (empty = unrestricted project access)
+-- B1 exact key OR B2 glob pattern (* and ?); not both.
+CREATE TABLE api.machine_token_scope (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  token_id uuid NOT NULL REFERENCES api.machine_tokens(id) ON DELETE CASCADE,
+  secret_key text,
+  key_pattern text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    (
+      secret_key IS NOT NULL AND btrim(secret_key) <> '' AND key_pattern IS NULL
+    ) OR (
+      key_pattern IS NOT NULL AND btrim(key_pattern) <> '' AND secret_key IS NULL
+    )
+  )
+);
+CREATE UNIQUE INDEX machine_token_scope_exact_uidx
+  ON api.machine_token_scope (token_id, secret_key) WHERE secret_key IS NOT NULL;
+CREATE UNIQUE INDEX machine_token_scope_pattern_uidx
+  ON api.machine_token_scope (token_id, key_pattern) WHERE key_pattern IS NOT NULL;
+CREATE INDEX machine_token_scope_token_idx ON api.machine_token_scope (token_id);
 
 -- Login failure throttle (Flask app; shared across workers)
 CREATE TABLE private.login_failures (
@@ -675,6 +699,7 @@ ALTER TABLE api.secret_acl ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_meta ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_access_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.machine_token_scope ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY teams_select ON api.teams FOR SELECT TO authenticated
   USING (api.is_global_admin() OR api.is_team_member(id));
@@ -687,10 +712,18 @@ CREATE POLICY teams_delete ON api.teams FOR DELETE TO authenticated
 
 CREATE POLICY tm_select ON api.team_members FOR SELECT TO authenticated
   USING (api.is_team_member(team_id));
+-- Only owners may assign role=owner (admins cannot self-promote via PostgREST)
 CREATE POLICY tm_insert ON api.team_members FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
+  WITH CHECK (
+    api.team_role(team_id) IN ('owner', 'admin')
+    AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
+  );
 CREATE POLICY tm_update ON api.team_members FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
+  USING (api.team_role(team_id) IN ('owner', 'admin'))
+  WITH CHECK (
+    api.team_role(team_id) IN ('owner', 'admin')
+    AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
+  );
 CREATE POLICY tm_delete ON api.team_members FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('owner', 'admin') OR user_id = api.current_user_id());
 
@@ -740,8 +773,9 @@ CREATE POLICY projects_select ON api.projects FOR SELECT TO authenticated
   );
 CREATE POLICY projects_insert ON api.projects FOR INSERT TO authenticated
   WITH CHECK (api.team_role(team_id) IN ('owner', 'admin', 'member'));
+-- H1: members must not change require_reveal_approval (or other settings) via PostgREST
 CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin', 'member'));
+  USING (api.can_admin_project(id));
 CREATE POLICY projects_delete ON api.projects FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('owner', 'admin'));
 
@@ -828,16 +862,7 @@ CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authen
         )
     )
   );
-CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id
-        AND api.can_access_secret_row(
-          s.id, s.project_id, s.acl_mode, 'write', s.deleted_at
-        )
-    )
-  );
+-- L1: no client INSERT — versions only via archive_secret_version() trigger
 -- No direct UPDATE/DELETE for authenticated (purge via secret CASCADE)
 
 CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
@@ -902,11 +927,21 @@ CREATE POLICY secret_acl_select ON api.secret_acl FOR SELECT TO authenticated
         )
     )
   );
+-- L2: group grants must be groups on the same team as the secret's project
 CREATE POLICY secret_acl_insert ON api.secret_acl FOR INSERT TO authenticated
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+      JOIN api.projects p ON p.id = s.project_id
+      WHERE s.id = secret_id
+        AND api.can_admin_project(s.project_id)
+        AND (
+          group_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM api.groups g
+            WHERE g.id = group_id AND g.team_id = p.team_id
+          )
+        )
     )
   );
 CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
@@ -914,6 +949,21 @@ CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
     EXISTS (
       SELECT 1 FROM api.secrets s
       WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM api.secrets s
+      JOIN api.projects p ON p.id = s.project_id
+      WHERE s.id = secret_id
+        AND api.can_admin_project(s.project_id)
+        AND (
+          group_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM api.groups g
+            WHERE g.id = group_id AND g.team_id = p.team_id
+          )
+        )
     )
   );
 CREATE POLICY secret_acl_delete ON api.secret_acl FOR DELETE TO authenticated
@@ -948,6 +998,28 @@ CREATE POLICY mt_insert ON api.machine_tokens FOR INSERT TO authenticated
 CREATE POLICY mt_delete ON api.machine_tokens FOR DELETE TO authenticated
   USING (api.can_write_project(project_id));
 
+CREATE POLICY mts_select ON api.machine_token_scope FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.machine_tokens t
+      WHERE t.id = token_id AND api.can_read_project(t.project_id)
+    )
+  );
+CREATE POLICY mts_insert ON api.machine_token_scope FOR INSERT TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM api.machine_tokens t
+      WHERE t.id = token_id AND api.can_write_project(t.project_id)
+    )
+  );
+CREATE POLICY mts_delete ON api.machine_token_scope FOR DELETE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.machine_tokens t
+      WHERE t.id = token_id AND api.can_write_project(t.project_id)
+    )
+  );
+
 -- Grants
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA api TO authenticated;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO authenticated;
@@ -955,8 +1027,25 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA api TO authenticated, anon;
 -- Audit rows must not be forgeable via PostgREST / authenticated INSERT
 REVOKE INSERT ON api.secret_audit FROM authenticated;
 REVOKE INSERT ON api.org_audit FROM authenticated;
+-- L1: secret version history only via SECURITY DEFINER trigger
+REVOKE INSERT, UPDATE, DELETE ON api.secret_versions FROM authenticated;
 -- Access requests: no client DELETE (resolve via UPDATE)
 REVOKE DELETE ON api.secret_access_requests FROM authenticated;
+
+-- L5: table owners still subject to RLS (PostgREST uses SET ROLE authenticated)
+ALTER TABLE api.teams FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.team_members FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.projects FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.project_members FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secrets FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_versions FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_acl FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_meta FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_access_requests FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.machine_tokens FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.machine_token_scope FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.groups FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.group_members FORCE ROW LEVEL SECURITY;
 
 -- Auth helpers (SECURITY DEFINER; Flask/anon only)
 -- Never auto-promote first registrant; GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL does that in app.
@@ -1400,7 +1489,9 @@ $$;
 
 -- Machine/ESO helpers (bypass RLS; token hash is the gate)
 CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
   SELECT EXISTS (
     SELECT 1 FROM api.machine_tokens
     WHERE project_id = p_project AND token_hash = p_hash
@@ -1409,7 +1500,9 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION private.machine_role(p_project uuid, p_hash text)
-RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
+RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
   SELECT role FROM api.machine_tokens
   WHERE project_id = p_project AND token_hash = p_hash
     AND (expires_at IS NULL OR expires_at > now())
@@ -1418,7 +1511,9 @@ $$;
 
 -- Label for audit actor_email (e.g. "eso-pull:ss_abc12xyz")
 CREATE OR REPLACE FUNCTION private.machine_token_label(p_project uuid, p_hash text)
-RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
+RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
   SELECT COALESCE(NULLIF(btrim(name), ''), 'token') || ':' || token_prefix
   FROM api.machine_tokens
   WHERE project_id = p_project AND token_hash = p_hash
@@ -1426,10 +1521,64 @@ RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
   LIMIT 1;
 $$;
 
-CREATE OR REPLACE FUNCTION private.machine_get_enc(p_project uuid, p_hash text, p_key text)
-RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
+-- Shell-style gl-- Shell-style glob (* ?) → SQL LIKE pattern (escape % and _)
+CREATE OR REPLACE FUNCTION private.glob_to_like(p_glob text)
+RETURNS text LANGUAGE plpgsql IMMUTABLE STRICT
+SET search_path = pg_catalog AS $$
+DECLARE s text;
 BEGIN
-  IF NOT private.auth_machine(p_project, p_hash) THEN
+  s := replace(p_glob, E'\\', E'\\\\');
+  s := replace(s, '%', E'\\%');
+  s := replace(s, '_', E'\\_');
+  s := replace(s, '*', '%');
+  s := replace(s, '?', '_');
+  RETURN s;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION private.machine_key_allowed(
+  p_project uuid, p_hash text, p_key text
+) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
+  SELECT CASE
+    WHEN p_key IS NULL OR btrim(p_key) = '' THEN false
+    WHEN NOT private.auth_machine(p_project, p_hash) THEN false
+    WHEN NOT EXISTS (
+      SELECT 1
+      FROM api.machine_token_scope sc
+      JOIN api.machine_tokens t ON t.id = sc.token_id
+      WHERE t.project_id = p_project
+        AND t.token_hash = p_hash
+        AND (t.expires_at IS NULL OR t.expires_at > now())
+    ) THEN true
+    WHEN EXISTS (
+      SELECT 1
+      FROM api.machine_token_scope sc
+      JOIN api.machine_tokens t ON t.id = sc.token_id
+      WHERE t.project_id = p_project
+        AND t.token_hash = p_hash
+        AND (t.expires_at IS NULL OR t.expires_at > now())
+        AND (
+          (sc.secret_key IS NOT NULL AND sc.secret_key = p_key)
+          OR (
+            sc.key_pattern IS NOT NULL
+            AND p_key LIKE private.glob_to_like(sc.key_pattern) ESCAPE E'\\'
+          )
+        )
+    ) THEN true
+    ELSE false
+  END;
+$$;
+
+GRANT EXECUTE ON FUNCTION private.glob_to_like TO authenticator;
+
+CREATE OR REPLACE FUNCTION private.machine_get_enc(p_project uuid, p_hash text, p_key text)
+RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
+BEGIN
+  IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
     RETURN NULL;
   END IF;
   RETURN (
@@ -1439,7 +1588,6 @@ BEGIN
 END;
 $$;
 
--- Full row for CLI/ESO get (metadata + ciphertext)
 CREATE OR REPLACE FUNCTION private.machine_get_row(p_project uuid, p_hash text, p_key text)
 RETURNS TABLE (
   id uuid,
@@ -1451,9 +1599,11 @@ RETURNS TABLE (
   created_at timestamptz,
   updated_at timestamptz
 )
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
 BEGIN
-  IF NOT private.auth_machine(p_project, p_hash) THEN
+  IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
     RETURN;
   END IF;
   RETURN QUERY
@@ -1465,18 +1615,20 @@ $$;
 
 CREATE OR REPLACE FUNCTION private.machine_list_enc(p_project uuid, p_hash text)
 RETURNS TABLE (key text, value_enc text)
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
 BEGIN
   IF NOT private.auth_machine(p_project, p_hash) THEN
     RETURN;
   END IF;
   RETURN QUERY
     SELECT s.key, s.value_enc FROM api.secrets s
-    WHERE s.project_id = p_project AND s.deleted_at IS NULL;
+    WHERE s.project_id = p_project AND s.deleted_at IS NULL
+      AND private.machine_key_allowed(p_project, p_hash, s.key);
 END;
 $$;
 
--- Metadata-only list for CLI (no ciphertext / values)
 CREATE OR REPLACE FUNCTION private.machine_list_meta(p_project uuid, p_hash text, p_q text DEFAULT NULL)
 RETURNS TABLE (
   id uuid,
@@ -1487,7 +1639,9 @@ RETURNS TABLE (
   created_at timestamptz,
   updated_at timestamptz
 )
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = api AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
 DECLARE q text := NULLIF(btrim(COALESCE(p_q, '')), '');
 BEGIN
   IF NOT private.auth_machine(p_project, p_hash) THEN
@@ -1498,23 +1652,33 @@ BEGIN
     FROM api.secrets s
     WHERE s.project_id = p_project
       AND s.deleted_at IS NULL
+      AND private.machine_key_allowed(p_project, p_hash, s.key)
       AND (
         q IS NULL
         OR s.key ILIKE ('%' || q || '%')
         OR s.note ILIKE ('%' || q || '%')
+        OR EXISTS (
+          SELECT 1 FROM api.secret_meta m
+          WHERE m.secret_id = s.id
+            AND (m.key ILIKE ('%' || q || '%') OR m.value ILIKE ('%' || q || '%'))
+        )
       )
     ORDER BY s.key;
 END;
 $$;
 
--- Soft-delete via write-scoped machine token (returns id, or NULL if denied/missing)
 CREATE OR REPLACE FUNCTION private.machine_delete(
   p_project uuid, p_hash text, p_key text
 )
-RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api AS $$
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
 DECLARE sid uuid;
 BEGIN
   IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+    RETURN NULL;
+  END IF;
+  IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
     RETURN NULL;
   END IF;
   IF p_key IS NULL OR btrim(p_key) = '' THEN
@@ -1530,8 +1694,6 @@ BEGIN
 END;
 $$;
 
--- Upsert secret via write-scoped machine token (returns id, or NULL if denied)
--- p_set_expires: when true, set expires_at to p_expires_at (NULL clears expiry)
 DROP FUNCTION IF EXISTS private.machine_upsert_enc(uuid, text, text, text, text);
 CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
   p_project uuid,
@@ -1543,12 +1705,17 @@ CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
   p_expires_at timestamptz DEFAULT NULL,
   p_set_expires boolean DEFAULT false
 )
-RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api AS $$
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
 DECLARE
   sid uuid;
   k text := COALESCE(NULLIF(btrim(p_kind), ''), 'plain');
 BEGIN
   IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+    RETURN NULL;
+  END IF;
+  IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
     RETURN NULL;
   END IF;
   IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
@@ -1587,7 +1754,10 @@ GRANT EXECUTE ON FUNCTION private.set_local_password TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_oidc_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
+-- private.lookup_user: Flask (as_user → authenticated) + authenticator; not in
+-- PostgREST db-schemas (api only) so not callable as RPC over PostgREST.
 GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated;
+REVOKE EXECUTE ON FUNCTION private.lookup_user FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.project_member_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.team_group_rows TO authenticator, authenticated;
@@ -1600,6 +1770,8 @@ GRANT EXECUTE ON FUNCTION private.audit_org TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.lookup_invite TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.audit_secret TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator;
+GRANT EXECUTE ON FUNCTION private.glob_to_like TO authenticator;
+GRANT EXECUTE ON FUNCTION private.machine_key_allowed TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_role TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_token_label TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_get_enc TO authenticator;

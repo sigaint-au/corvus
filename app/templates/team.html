@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ team.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<p class="breadcrumb">
-  <a href="{{ url_for('teams') }}">Teams</a>
-  <span class="breadcrumb-sep">/</span>
-  {{ team.name }}
-</p>
+<nav aria-label="Breadcrumb">
+  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
+    <li><a href="{{ url_for('teams') }}" class="unstyled">Teams</a></li>
+    <li aria-hidden="true">/</li>
+    <li aria-current="page"><strong>{{ team.name }}</strong></li>
+  </ol>
+</nav>
 <h1>{{ team.name }}</h1>
-<p class="page-desc muted">Your role: <span class="role-badge">{{ my_role }}</span></p>
+<p class="page-desc muted">Your role: <span class="badge" data-variant="secondary">{{ my_role }}</span></p>
 
 {% if new_invite_url %}
 <div class="token-once">
@@ -54,7 +56,7 @@
       </label>
       <button type="submit">Search</button>
       {% if search_q %}
-      <a class="btn-clear" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Clear</a>
+      <a class="button ghost small" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Clear</a>
       {% endif %}
     </form>
   </div>
@@ -112,7 +114,9 @@
         <option value="member">member</option>
         <option value="viewer">viewer</option>
         <option value="admin">admin</option>
+        {% if my_role == 'owner' %}
         <option value="owner">owner</option>
+        {% endif %}
       </select>
     </label>
     <button type="submit">Add</button>
@@ -125,7 +129,7 @@
     {% for m in members %}
       <tr>
         <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
-        <td><span class="role-badge">{{ m.role }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
         <td class="muted">{{ m.source or 'manual' }}</td>
         {% if is_admin %}
         <td class="acts">
@@ -169,7 +173,7 @@
     <tbody>
     {% for i in invites %}
       <tr>
-        <td><span class="role-badge">{{ i.role }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ i.role }}</span></td>
         <td class="muted">{{ i.expires_at }}</td>
         <td class="muted">{% if i.revoked_at %}revoked{% else %}active{% endif %}</td>
         <td class="acts">
@@ -195,7 +199,7 @@
     {% for r in join_requests %}
       <tr>
         <td>{{ r.name or r.email }} <span class="muted">{{ r.email }}</span></td>
-        <td><span class="role-badge">{{ r.role }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ r.role }}</span></td>
         <td class="muted">{{ r.created_at }}</td>
         <td class="acts">
           <form method="post" action="{{ url_for('approve_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
@@ -230,7 +234,7 @@
       </label>
       <button type="submit">Search</button>
       {% if search_q %}
-      <a class="btn-clear" href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Clear</a>
+      <a class="button ghost small" href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Clear</a>
       {% endif %}
     </form>
   </div>
@@ -272,9 +276,9 @@
     {% for g in groups %}
       <tr>
         <td><a href="{{ url_for('team_group_detail', team_id=team.id, group_id=g.id) }}">{{ g.name }}</a></td>
-        <td><span class="role-badge">{{ g.source }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ g.source }}</span></td>
         <td class="muted"><code class="k">{{ g.external_key or '—' }}</code></td>
-        <td>{% if g.team_role %}<span class="role-badge">{{ g.team_role }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if g.team_role %}<span class="badge" data-variant="secondary">{{ g.team_role }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td>{{ g.member_count }}</td>
         <td class="acts">
           {% if is_admin %}
@@ -455,7 +459,7 @@
     {% for m in ldap_maps %}
       <tr>
         <td><code class="k">{{ m.ldap_group }}</code></td>
-        <td><span class="role-badge">{{ m.role }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
         <td class="acts">
           <form method="post"
                 action="{{ url_for('delete_team_ldap_map', team_id=team.id, map_id=m.id) }}"
@@ -504,7 +508,7 @@
     {% for m in oidc_maps %}
       <tr>
         <td><code class="k">{{ m.oidc_group }}</code></td>
-        <td><span class="role-badge">{{ m.role }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
         <td class="acts">
           <form method="post"
                 action="{{ url_for('delete_team_oidc_map', team_id=team.id, map_id=m.id) }}"
@@ -560,7 +564,7 @@
   <form method="post" action="{{ url_for('delete_team', team_id=team.id) }}"
         onsubmit="return confirm('Delete team “{{ team.name }}” and everything in it? This cannot be undone.')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <button type="submit" class="danger">Delete team</button>
+    <button type="submit" data-variant="danger">Delete team</button>
   </form>
 </section>
 {% endif %}

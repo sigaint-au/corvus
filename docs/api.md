@@ -272,8 +272,14 @@ so not every project member may list, reveal, or edit them.
 **Always full access:** global admins and users with `can_admin_project`.
 
 **Machine tokens / ESO** use SECURITY DEFINER helpers and are **not** gated by
-per-secret human ACLs (project-scoped automation). Prefer a separate project
-for highly sensitive values if machine access must also be restricted.
+per-secret human ACLs or reveal-approval (project-scoped automation). Prefer a
+**separate project** (and tighter machine role) for highly sensitive values if
+machine access must also be restricted.
+
+**Key allow-list (optional):** each token may list exact secret keys and/or
+glob patterns (`prod/*`, `DB_*`, `?.api-key`). Empty allow-list = all keys in the
+project. Create via UI (**Key allow-list** on Machine accounts) or PAT API body
+`scope: ["API_KEY", "prod/*"]`. Scoped tokens get **404/empty** for other keys.
 
 **PAT bulk list with values** only includes secrets the caller may
 `can_access_secret(…, 'reveal')` and `can_reveal_secret` (approval).

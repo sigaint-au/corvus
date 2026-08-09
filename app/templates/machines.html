@@ -18,12 +18,12 @@
       <td>{{ t.name }}</td>
       <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
       <td><code class="k">{{ t.token_prefix }}…</code></td>
-      <td><span class="role-badge">{{ t.role or 'read-only' }}</span></td>
+      <td><span class="badge" data-variant="secondary">{{ t.role or 'read-only' }}</span></td>
       <td class="muted">{{ t.created_at }}</td>
       <td class="muted">
         {{ t.expires_at or 'never' }}
-        {% if t.due == 'overdue' %}<span class="due-badge due-overdue">expired</span>
-        {% elif t.due == 'soon' %}<span class="due-badge due-soon">expiring soon</span>{% endif %}
+        {% if t.due == 'overdue' %}<span class="badge" data-variant="danger">expired</span>
+        {% elif t.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
       </td>
     </tr>
   {% endfor %}

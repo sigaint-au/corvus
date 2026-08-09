@@ -9,10 +9,55 @@ from flask import flash, redirect, render_template, request, session, url_for
 import authz
 import config
 import db
+import nav
 from crypto import sha256_hex
 from secret_kinds import annotate_token_expiry
 
 log = logging.getLogger(__name__)
+
+
+def parse_token_scope_lines(raw: str) -> list[tuple[str, str]]:
+    """Parse scope lines into (kind, value) pairs: kind is ``key`` or ``pattern``.
+
+    Empty lines and comments (``#``) are ignored. Lines containing ``*`` or ``?``
+    become glob patterns; otherwise exact secret keys.
+    """
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if len(line) > 256:
+            continue
+        kind = "pattern" if (("*" in line) or ("?" in line)) else "key"
+        item = (kind, line)
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def insert_token_scopes(cur, token_id: str, scopes: list[tuple[str, str]]) -> None:
+    """Insert scope rows for a newly created machine token."""
+    for kind, val in scopes:
+        if kind == "pattern":
+            cur.execute(
+                """
+                INSERT INTO api.machine_token_scope (token_id, key_pattern)
+                VALUES (%s::uuid, %s)
+                """,
+                (token_id, val),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO api.machine_token_scope (token_id, secret_key)
+                VALUES (%s::uuid, %s)
+                """,
+                (token_id, val),
+            )
 
 
 def register(app):
@@ -39,7 +84,7 @@ def register(app):
         Example:
             GET /machines
         """
-        tid = session.get("team_id")
+        tid = nav.ensure_active_team(session["user_id"])
         team, tokens = None, []
         if tid:
             with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -140,25 +185,38 @@ def register(app):
             raw = "ss_" + secrets.token_urlsafe(32)
             thash = sha256_hex(raw)
             prefix = raw[:11]
+            scopes = parse_token_scope_lines(request.form.get("scope_keys") or "")
             try:
                 cur.execute(
                     """
                     INSERT INTO api.machine_tokens
                       (project_id, name, token_hash, token_prefix, role, expires_at)
                     VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id
                     """,
                     (str(project_id), name, thash, prefix, role, expires_at),
                 )
-                if cur.rowcount == 0:
+                row = cur.fetchone()
+                if not row:
                     flash("You don't have permission to do that", "error")
                     conn.rollback()
                     return _token_redirect()
+                if scopes:
+                    insert_token_scopes(cur, str(row["id"]), scopes)
                 conn.commit()
             except Exception as e:
                 flash(str(e), "error")
                 return _token_redirect()
         session["new_token"] = raw  # shown once
-        flash("Machine account created — copy the token now; it is shown once", "ok")
+        scope_note = (
+            f" (scoped to {len(scopes)} key rule{'s' if len(scopes) != 1 else ''})"
+            if scopes
+            else " (full project access)"
+        )
+        flash(
+            f"Machine account created{scope_note} — copy the token now; it is shown once",
+            "ok",
+        )
         return _token_redirect()
 
 

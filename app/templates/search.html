@@ -2,27 +2,129 @@
 {% block title %}Search — {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head">
-  <h1>Search</h1>
+  <h1>Search{% if scope %} · {{ scope|capitalize }}{% endif %}</h1>
 </div>
-<form method="get" action="{{ url_for('global_search') }}" class="page-search" role="search">
-  <label class="search-field">
+<form method="get" action="{{ url_for('global_search') }}" class="audit-filters" role="search">
+  {% if scope %}<input type="hidden" name="scope" value="{{ scope }}">{% endif %}
+  <label class="search-field flex-2">
     <span class="visually-hidden">Search everything</span>
     <input type="search" name="q" value="{{ search_q or '' }}"
            placeholder="Teams, projects, secrets…" autocomplete="off"
            autofocus aria-label="Global search">
   </label>
-  <button type="submit">Search</button>
-  {% if search_q %}
-  <a class="btn-clear" href="{{ url_for('global_search') }}">Clear</a>
+  {% if scope == 'secrets' or not scope %}
+  {% if scope == 'secrets' %}
+  <label>
+    <span class="field-label">Kind</span>
+    <select name="kind" aria-label="Filter secrets by kind">
+      <option value="">All kinds</option>
+      {% for k in secret_kinds or [] %}
+      <option value="{{ k }}" {% if filter_kind == k %}selected{% endif %}>{{ k }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span class="field-label">Expiry</span>
+    <select name="due" aria-label="Filter secrets by expiry">
+      <option value="">Any</option>
+      <option value="overdue" {% if filter_due == 'overdue' %}selected{% endif %}>Overdue</option>
+      <option value="soon" {% if filter_due == 'soon' %}selected{% endif %}>Expiring soon</option>
+      <option value="none" {% if filter_due == 'none' %}selected{% endif %}>No expiry</option>
+    </select>
+  </label>
   {% endif %}
+  {% endif %}
+  <div class="audit-filter-actions">
+    <button type="submit">Search</button>
+    {% if search_q or scope %}
+    <a class="button ghost small" href="{{ url_for('global_search') }}">Clear</a>
+    {% endif %}
+  </div>
 </form>
 
 {% if not search_q %}
 <p class="empty">Search across all teams, projects, and secrets you can access.</p>
+{% elif scope %}
+
+  {% if scope == 'teams' %}
+  <section>
+    <h2>Teams <span class="muted">({{ teams_total }})</span></h2>
+    {% if teams %}
+    <table>
+      <thead><tr><th>Name</th></tr></thead>
+      <tbody>
+      {% for t in teams %}
+        <tr><td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% with pager=search_pager %}{% include "partials/pager.html" %}{% endwith %}
+    {% else %}
+    <p class="empty">No teams match.</p>
+    {% endif %}
+  </section>
+  {% elif scope == 'projects' %}
+  <section>
+    <h2>Projects <span class="muted">({{ projects_total }})</span></h2>
+    {% if projects %}
+    <table>
+      <thead><tr><th>Project</th><th>Team</th><th>Description</th></tr></thead>
+      <tbody>
+      {% for p in projects %}
+        <tr>
+          <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
+          <td class="muted"><a href="{{ url_for('team_detail', team_id=p.team_id) }}">{{ p.team_name }}</a></td>
+          <td class="muted col-note">{{ p.description or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% with pager=search_pager %}{% include "partials/pager.html" %}{% endwith %}
+    {% else %}
+    <p class="empty">No projects match.</p>
+    {% endif %}
+  </section>
+  {% elif scope == 'secrets' %}
+  <section>
+    <h2>Secrets <span class="muted">({{ secrets_total }})</span></h2>
+    {% if secrets %}
+    <table>
+      <thead><tr><th>Key</th><th>Kind</th><th>Project</th><th>Team</th><th>Note</th></tr></thead>
+      <tbody>
+      {% for s in secrets %}
+        <tr>
+          <td class="col-key">
+            <a href="{{ url_for('secret_view', project_id=s.project_id, secret_id=s.id) }}">
+              <code class="k">{{ s.key }}</code>
+            </a>
+            {% if s.due == 'overdue' %}<span class="badge" data-variant="danger">overdue</span>
+            {% elif s.due == 'soon' %}<span class="badge" data-variant="warning">soon</span>{% endif %}
+          </td>
+          <td><span class="badge" data-variant="secondary">{{ s.kind or 'plain' }}</span></td>
+          <td><a href="{{ url_for('project_detail', project_id=s.project_id) }}">{{ s.project_name }}</a></td>
+          <td class="muted">{{ s.team_name }}</td>
+          <td class="col-note muted">{{ s.note }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% with pager=search_pager %}{% include "partials/pager.html" %}{% endwith %}
+    {% else %}
+    <p class="empty">No secrets match.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+  <p class="muted"><a href="{{ url_for('global_search', q=search_q) }}">← All result types</a></p>
+
 {% else %}
 
 <section>
-  <h2>Teams <span class="muted">({{ teams|length }})</span></h2>
+  <h2>
+    Teams
+    <span class="muted">
+      ({% if teams_total > (preview.teams if preview else 25) %}showing first {{ teams|length }} of {{ teams_total }}{% else %}{{ teams_total }}{% endif %})
+    </span>
+  </h2>
   {% if teams %}
   <table>
     <thead><tr><th>Name</th></tr></thead>
@@ -32,13 +134,23 @@
     {% endfor %}
     </tbody>
   </table>
+  {% if teams_total > teams|length %}
+  <p class="muted">
+    <a href="{{ url_for('global_search', q=search_q, scope='teams') }}">View all {{ teams_total }} matching teams →</a>
+  </p>
+  {% endif %}
   {% else %}
   <p class="empty">No teams match.</p>
   {% endif %}
 </section>
 
 <section>
-  <h2>Projects <span class="muted">({{ projects|length }})</span></h2>
+  <h2>
+    Projects
+    <span class="muted">
+      ({% if projects_total > (preview.projects if preview else 40) %}showing first {{ projects|length }} of {{ projects_total }}{% else %}{{ projects_total }}{% endif %})
+    </span>
+  </h2>
   {% if projects %}
   <table>
     <thead><tr><th>Project</th><th>Team</th></tr></thead>
@@ -51,24 +163,37 @@
     {% endfor %}
     </tbody>
   </table>
+  {% if projects_total > projects|length %}
+  <p class="muted">
+    <a href="{{ url_for('global_search', q=search_q, scope='projects') }}">View all {{ projects_total }} matching projects →</a>
+  </p>
+  {% endif %}
   {% else %}
   <p class="empty">No projects match.</p>
   {% endif %}
 </section>
 
 <section>
-  <h2>Secrets <span class="muted">({{ secrets|length }})</span></h2>
+  <h2>
+    Secrets
+    <span class="muted">
+      ({% if secrets_total > (preview.secrets if preview else 50) %}showing first {{ secrets|length }} of {{ secrets_total }}{% else %}{{ secrets_total }}{% endif %})
+    </span>
+  </h2>
   {% if secrets %}
   <table>
-    <thead><tr><th>Key</th><th>Project</th><th>Team</th><th>Note</th></tr></thead>
+    <thead><tr><th>Key</th><th>Kind</th><th>Project</th><th>Team</th><th>Note</th></tr></thead>
     <tbody>
     {% for s in secrets %}
       <tr>
         <td class="col-key">
-          <a href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}">
+          <a href="{{ url_for('secret_view', project_id=s.project_id, secret_id=s.id) }}">
             <code class="k">{{ s.key }}</code>
           </a>
+          {% if s.due == 'overdue' %}<span class="badge" data-variant="danger">overdue</span>
+          {% elif s.due == 'soon' %}<span class="badge" data-variant="warning">soon</span>{% endif %}
         </td>
+        <td><span class="badge" data-variant="secondary">{{ s.kind or 'plain' }}</span></td>
         <td><a href="{{ url_for('project_detail', project_id=s.project_id) }}">{{ s.project_name }}</a></td>
         <td class="muted">{{ s.team_name }}</td>
         <td class="col-note muted">{{ s.note }}</td>
@@ -76,6 +201,12 @@
     {% endfor %}
     </tbody>
   </table>
+  {% if secrets_total > secrets|length %}
+  <p class="muted">
+    <a href="{{ url_for('global_search', q=search_q, scope='secrets') }}">View all {{ secrets_total }} matching secrets →</a>
+    · filter by kind/expiry on the full results page
+  </p>
+  {% endif %}
   {% else %}
   <p class="empty">No secrets match.</p>
   {% endif %}

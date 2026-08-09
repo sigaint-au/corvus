@@ -390,29 +390,7 @@
     .side-team {
       padding: 0 .25rem .65rem;
     }
-    .toast-host {
-      position: fixed;
-      bottom: 1.25rem;
-      right: 1.25rem;
-      z-index: 200;
-      display: flex;
-      flex-direction: column;
-      gap: .4rem;
-      pointer-events: none;
-    }
-    .toast {
-      background: var(--foreground);
-      color: var(--background);
-      font-size: .85rem;
-      font-weight: 600;
-      padding: .55rem .85rem;
-      border-radius: 6px;
-      box-shadow: 0 6px 20px color-mix(in srgb, #000 25%, transparent);
-      opacity: 0;
-      transform: translateY(6px);
-      transition: opacity .15s ease, transform .15s ease;
-    }
-    .toast.show { opacity: 1; transform: translateY(0); }
+    /* Toasts: oat.ink ot.toast() — no custom host */
     .reveal-wrap {
       display: flex;
       flex-direction: column;
@@ -475,10 +453,6 @@
       gap: .5rem 1rem;
       width: 100%;
       min-height: 1.5rem;
-    }
-    .reveal-head .kind-badge {
-      font-size: .72rem;
-      padding: .22rem .5rem;
     }
     .reveal-body .input-with-btn {
       max-width: none;
@@ -822,23 +796,8 @@
       color: var(--muted-foreground);
       margin-top: .15rem;
     }
-    /* Role / status badges (content) */
-    .role-badge {
-      display: inline-block;
-      font-size: .68rem;
-      font-weight: 650;
-      line-height: 1.2;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      color: var(--muted-foreground);
-      background: var(--muted);
-      border: 1px solid transparent;
-      border-radius: var(--radius-sm);
-      padding: .18rem .4rem;
-      white-space: nowrap;
-      vertical-align: middle;
-    }
-    .sidebar-foot .who .role-badge {
+    /* Sidebar badge sizing (oat .badge inside dark shell) */
+    .sidebar-foot .who .badge {
       flex: 0 0 auto;
       font-size: .58rem;
       color: var(--side-muted);
@@ -1060,6 +1019,8 @@
     .btn-as-link {
       display: inline-block;
     }
+    /* Server-side section tabs (full-page ?tab= navigation).
+       oat <ot-tabs> is for client-side tabpanels only — not a fit here. */
     .tabs {
       display: flex;
       flex-wrap: wrap;
@@ -1202,44 +1163,17 @@
       background: transparent;
       border-bottom-color: var(--foreground);
     }
+    /* Pagination: oat menu.buttons; disabled ends use native <button disabled> */
     .pager {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: .75rem;
       margin-top: 1rem;
       font-size: .875rem;
       color: var(--muted-foreground);
-    }
-    .pager-links {
-      display: flex;
-      flex-wrap: wrap;
       align-items: center;
-      gap: .35rem;
     }
-    .pager-links a,
-    .pager-links span {
-      display: inline-block;
-      min-width: 1.75rem;
-      text-align: center;
-      padding: .25rem .4rem;
-      border-radius: 4px;
-      text-decoration: none;
+    .pager menu.buttons {
+      margin: 0;
     }
-    .pager-links a:hover {
-      background: var(--muted);
-      text-decoration: none;
-    }
-    .pager-links .current {
-      background: var(--foreground);
-      color: var(--background);
-      font-weight: 600;
-    }
-    .pager-links .disabled {
-      opacity: .4;
-      pointer-events: none;
-    }
+
     .audit-action {
       display: inline-block;
       font-size: .8rem;
@@ -1290,25 +1224,7 @@
       font-size: .925rem;
     }
     .audit-table td { vertical-align: middle; }
-    .due-badge {
-      display: inline-block;
-      font-size: .7rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .03em;
-      padding: .1rem .35rem;
-      border-radius: 4px;
-      margin-left: .35rem;
-      vertical-align: middle;
-    }
-    .due-overdue {
-      background: color-mix(in srgb, var(--danger) 18%, var(--background));
-      color: var(--danger);
-    }
-    .due-soon {
-      background: color-mix(in srgb, var(--warning) 18%, var(--background));
-      color: var(--warning);
-    }
+    /* due labels: oat .badge data-variant danger|warning (same as kind chips) */
     .import-box { margin: 0 0 1rem; }
     .import-box textarea { width: 100%; font-family: ui-monospace, monospace; font-size: .85rem; }
     .import-preview-table { width: 100%; margin: 0 0 1rem; }
@@ -1340,87 +1256,13 @@
       margin: 0;
       padding-bottom: .05rem;
     }
-    /* Shared control size so primary / secondary / danger match in form-actions */
-    a.btn-primary,
-    button.btn-primary,
-    a.btn-secondary,
-    button.btn-secondary {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      box-sizing: border-box;
-      min-height: 2.35rem;
-      padding: .5rem .9rem;
-      border-radius: 6px;
-      font-size: .875rem;
-      font-weight: 600;
-      font-family: inherit;
-      line-height: 1.25;
-      text-decoration: none;
-      cursor: pointer;
-      border: 1px solid transparent;
-    }
-    a.btn-primary,
-    button.btn-primary {
-      background: var(--primary);
-      color: var(--primary-foreground);
-      border-color: var(--primary);
-    }
-    a.btn-primary:hover,
-    button.btn-primary:hover {
-      filter: brightness(1.08);
-      text-decoration: none;
-    }
-    a.btn-primary:focus-visible,
-    button.btn-primary:focus-visible {
-      outline: 2px solid var(--ring);
-      outline-offset: 1px;
-    }
-    a.btn-secondary,
-    button.btn-secondary {
-      background: var(--background);
-      color: var(--foreground);
-      border-color: var(--border);
-      font-weight: 500;
-    }
-    a.btn-secondary:hover,
-    button.btn-secondary:hover {
-      background: var(--muted);
-      text-decoration: none;
-    }
-    a.btn-secondary:focus-visible,
-    button.btn-secondary:focus-visible {
-      outline: 2px solid var(--ring);
-      outline-offset: 1px;
-    }
-    .form-actions > button:not(.link):not(.btn-toolbar),
-    .form-actions > a.btn-secondary,
-    .form-actions > a.btn-primary {
-      min-height: 2.35rem;
-      padding: .5rem .9rem;
-      font-size: .875rem;
-      line-height: 1.25;
-      box-sizing: border-box;
-    }
-    button.danger,
-    button.btn-danger {
+    /* Buttons: prefer oat.ink (<button>, .button, data-variant, .outline, .ghost, .small).
+       class="danger" remains as a thin alias for legacy delete forms. */
+    button.danger {
+      /* align with oat data-variant="danger" */
       background: var(--danger);
       color: var(--danger-foreground);
-      border: 1px solid var(--danger);
-      border-radius: 6px;
-      font-family: inherit;
-      font-weight: 600;
-      cursor: pointer;
-      padding: .45rem .85rem;
-    }
-    button.danger:hover,
-    button.btn-danger:hover {
-      filter: brightness(1.05);
-    }
-    button.danger:focus-visible,
-    button.btn-danger:focus-visible {
-      outline: 2px solid var(--danger);
-      outline-offset: 1px;
+      border-color: var(--danger);
     }
     section h3 {
       margin: 1.25rem 0 .4rem;
@@ -1460,50 +1302,6 @@
     .section-tools .toolbar-link:hover {
       color: var(--foreground);
       text-decoration: underline;
-    }
-    a.btn-toolbar,
-    button.btn-toolbar {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: .75rem;
-      font-weight: 600;
-      line-height: 1.2;
-      padding: .32rem .65rem;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--background);
-      color: var(--foreground);
-      text-decoration: none;
-      white-space: nowrap;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    a.btn-toolbar:hover,
-    button.btn-toolbar:hover {
-      background: var(--muted);
-      text-decoration: none;
-    }
-    a.btn-toolbar:focus-visible,
-    button.btn-toolbar:focus-visible {
-      outline: 2px solid var(--ring);
-      outline-offset: 1px;
-    }
-    a.btn-toolbar-danger,
-    button.btn-toolbar-danger {
-      color: var(--danger);
-      border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
-    }
-    a.btn-toolbar-danger:hover,
-    button.btn-toolbar-danger:hover {
-      background: color-mix(in srgb, var(--danger) 12%, var(--background));
-      color: var(--danger);
-      text-decoration: none;
-    }
-    a.btn-toolbar-danger:focus-visible,
-    button.btn-toolbar-danger:focus-visible {
-      outline: 2px solid var(--danger);
-      outline-offset: 1px;
     }
     .section-tools form.inline {
       display: inline;
@@ -1555,34 +1353,7 @@
     .section-head-actions .kv-remove:hover {
       text-decoration: underline;
     }
-    .kind-badge {
-      display: inline-block;
-      font-size: .7rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      padding: .2rem .45rem;
-      border-radius: 4px;
-      background: var(--muted);
-      color: var(--muted-foreground);
-    }
-    .kind-badge.kind-kv { color: var(--success); }
-    .kind-badge.kind-certificate,
-    .kind-badge.kind-ssh { color: var(--warning); }
-    .kind-badge.kind-database { color: var(--foreground); }
-    .acl-badge {
-      display: inline-block;
-      margin-left: 0.35em;
-      padding: 0.1em 0.45em;
-      border-radius: 999px;
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      vertical-align: middle;
-      color: var(--warning, #a65b00);
-      border: 1px solid color-mix(in srgb, var(--warning, #a65b00) 40%, transparent);
-      background: color-mix(in srgb, var(--warning, #a65b00) 10%, transparent);
-    }
+    /* Secret kind chips use the same oat .badge solid style as overdue/soon. */
     .secret-acl-section { margin-top: 1.5rem; }
     .secret-view .kv-view-table td { vertical-align: middle; }
     .secret-view .input-with-btn { max-width: 100%; }
@@ -2016,23 +1787,8 @@
       margin-top: .85rem;
     }
     .muted { color: var(--muted-foreground); font-size: .9em; }
-    .flash {
-      padding: .7rem 1rem;
-      margin-bottom: 1rem;
-      border-radius: var(--radius);
-      border: 1px solid transparent;
-      font-size: .925rem;
-    }
-    .flash.error {
-      background: color-mix(in srgb, var(--danger) 12%, var(--background));
-      border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-      color: var(--danger);
-    }
-    .flash.ok {
-      background: color-mix(in srgb, var(--success) 14%, var(--background));
-      border-color: color-mix(in srgb, var(--success) 45%, var(--border));
-      color: var(--success);
-    }
+    /* Flashes: oat role="alert" — slight spacing under shell header */
+    [role="alert"] { margin-bottom: 1rem; }
     .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: end; }
     .row > * { flex: 1; min-width: 8rem; }
     table { width: 100%; border-collapse: collapse; font-size: .925rem; table-layout: auto; }
@@ -2318,6 +2074,95 @@
 
       .main { padding: 1rem 1rem 2.5rem; }
     }
+    /* ── Machine account create + scope chips ── */
+    .machine-accounts .token-create-card,
+    .eso-token-create .token-create-card {
+      margin: 0 0 1.5rem;
+      max-width: none;
+      width: 100%;
+    }
+    .token-create-card {
+      margin: 0 0 1.5rem;
+    }
+    .token-create-card > header h3 {
+      margin: 0 0 .25rem;
+      font-size: 1.05rem;
+    }
+    .token-create-card > header p { margin: 0; }
+    .token-create-form { display: flex; flex-direction: column; gap: 1rem; }
+    .token-create-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: .75rem 1rem;
+    }
+    @media (max-width: 720px) {
+      .token-create-grid { grid-template-columns: 1fr; }
+    }
+    .token-create-grid label { margin: 0; }
+    .token-scope-panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--muted);
+      padding: .85rem 1rem;
+    }
+    .token-scope-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .75rem 1.25rem;
+    }
+    .token-scope-head strong { display: block; font-size: .95rem; }
+    .token-scope-hint { margin: .2rem 0 0; font-size: .85rem; max-width: 28rem; }
+    .token-scope-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      margin: 0;
+      font-size: .875rem;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .token-scope-body { margin-top: .85rem; }
+    .token-scope-chips ot-taginput {
+      display: block;
+      width: 100%;
+    }
+    .token-scope-chips ot-taginput input {
+      min-width: 12rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .85rem;
+    }
+    .token-scope-presets {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .35rem .4rem;
+      margin-top: .65rem;
+    }
+    .token-scope-presets .muted { font-size: .8rem; margin-right: .15rem; }
+    .token-scope-help { margin: .65rem 0 0; font-size: .8rem; }
+    .token-scope-open { margin: .65rem 0 0; font-size: .875rem; }
+    .token-create-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: .5rem;
+    }
+    .token-list-section { margin-top: 1.75rem; }
+    .token-list-title {
+      margin: 0 0 .75rem;
+      font-size: 1rem;
+    }
+    .token-scope-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .3rem;
+      align-items: center;
+    }
+    .token-scope-badges .token-scope-glob {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
   </style>
 </head>
 <body class="{% if session.get('user_id') %}app{% else %}auth{% endif %}">
@@ -2352,7 +2197,8 @@
     </form>
     <form class="side-team" method="post" action="{{ url_for('select_team') }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="{{ request.path }}">
+      {# Include query (e.g. ?tab=secrets) so team switch can land on the right list #}
+      <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
       <label for="side-team-select">Team</label>
       <select id="side-team-select" name="team_id" onchange="this.form.submit()"
               aria-label="Team">
@@ -2440,7 +2286,7 @@
     <div class="sidebar-foot">
       <div class="who">
         <a class="who-email" href="{{ url_for('profile') }}" title="{{ session.email }} — My profile">{{ session.email }}</a>
-        {% if is_global_admin %}<span class="role-badge">Global admin</span>{% endif %}
+        {% if is_global_admin %}<span class="badge" data-variant="secondary">Global admin</span>{% endif %}
       </div>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -2524,7 +2370,10 @@
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for cat, msg in messages %}
-        <div class="flash {{ cat }}">{{ msg }}</div>
+        {# oat.ink Alert #}
+        <div role="alert"{% if cat in ('error', 'danger') %} data-variant="error"{% elif cat in ('ok', 'success') %} data-variant="success"{% elif cat == 'warning' %} data-variant="warning"{% endif %}>
+          {{ msg }}
+        </div>
       {% endfor %}
     {% endwith %}
 
@@ -2535,7 +2384,6 @@
   {% else %}
   </div>
   {% endif %}
-  <div class="toast-host" id="toast-host" aria-live="polite"></div>
   <datalist id="user-suggest-list"></datalist>
   <script>
   /* User email autocomplete for member fields */
@@ -2577,21 +2425,97 @@
   })();
   </script>
   <script>
+  /* Machine token create: scope chips (ot-taginput) + restrict toggle */
+  (function () {
+    function tagsOf(el) {
+      if (!el) return [];
+      try {
+        var v = el.value;
+        if (Array.isArray(v)) return v.map(String).filter(Boolean);
+        if (typeof v === 'string' && v) {
+          return v.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        }
+      } catch (e) {}
+      return [];
+    }
+    function setTags(el, arr) {
+      if (!el) return;
+      try { el.value = arr; } catch (e) {}
+    }
+    function addTag(el, tag) {
+      tag = (tag || '').trim();
+      if (!tag) return;
+      var cur = tagsOf(el);
+      if (cur.indexOf(tag) >= 0) return;
+      cur.push(tag);
+      setTags(el, cur);
+    }
+    function bindForm(form) {
+      if (!form || form._scopeBound) return;
+      form._scopeBound = true;
+      var toggle = form.querySelector('[data-scope-toggle]');
+      var body = form.querySelector('[data-scope-body]');
+      var openMsg = form.querySelector('[data-scope-open-msg]');
+      var tags = form.querySelector('[data-scope-tags]');
+      var hidden = form.querySelector('[data-scope-hidden]');
+      var roleSel = form.querySelector('[data-token-role]');
+      var writeWarn = form.querySelector('[data-token-write-warn]');
+      function syncScope() {
+        var on = toggle && toggle.checked;
+        if (body) body.hidden = !on;
+        if (openMsg) openMsg.hidden = !!on;
+        if (!on && tags) setTags(tags, []);
+      }
+      function syncRole() {
+        if (!writeWarn || !roleSel) return;
+        writeWarn.hidden = roleSel.value !== 'write';
+      }
+      if (toggle) toggle.addEventListener('change', syncScope);
+      if (roleSel) roleSel.addEventListener('change', syncRole);
+      form.querySelectorAll('[data-scope-preset]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (toggle && !toggle.checked) {
+            toggle.checked = true;
+            syncScope();
+          }
+          addTag(tags, btn.getAttribute('data-scope-preset'));
+        });
+      });
+      form.addEventListener('submit', function () {
+        if (hidden) {
+          var list = (toggle && toggle.checked) ? tagsOf(tags) : [];
+          /* '*' alone means full project — treat as unrestricted */
+          if (list.length === 1 && list[0] === '*') list = [];
+          hidden.value = list.join('\n');
+        }
+      });
+      syncScope();
+      syncRole();
+    }
+    function boot(root) {
+      (root || document).querySelectorAll('form[data-scope-form]').forEach(bindForm);
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { boot(document); });
+    } else {
+      boot(document);
+    }
+    document.addEventListener('htmx:afterSwap', function (e) {
+      boot(e && e.target ? e.target : document);
+    });
+  })();
+  </script>
+  <script>
   (function () {
     var clearTimer = null;
     var lastCopied = null;
-    function toast(msg) {
-      var host = document.getElementById('toast-host');
-      if (!host) return;
-      var el = document.createElement('div');
-      el.className = 'toast';
-      el.textContent = msg;
-      host.appendChild(el);
-      requestAnimationFrame(function () { el.classList.add('show'); });
-      setTimeout(function () {
-        el.classList.remove('show');
-        setTimeout(function () { el.remove(); }, 200);
-      }, 2200);
+    /* Prefer oat.ink toast; fall back to console if script not loaded yet */
+    function toast(msg, title, opts) {
+      if (window.ot && typeof ot.toast === 'function') {
+        ot.toast(String(msg || ''), title || '', opts || { duration: 2200 });
+        return;
+      }
+      if (window.console) console.info(msg);
     }
     window.ssToast = toast;
     function readCopyText(el, attrText) {

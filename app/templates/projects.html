@@ -3,6 +3,20 @@
 {% block body %}
 <div class="page-head">
   <h1>Projects</h1>
+  {% if team %}
+  <form method="get" action="{{ url_for('projects_list') }}" class="toolbar" role="search">
+    <label class="search-field">
+      <span class="visually-hidden">Search projects</span>
+      <input type="search" name="q" value="{{ search_q or '' }}"
+             placeholder="Search name or description…" autocomplete="off"
+             aria-label="Search projects">
+    </label>
+    <button type="submit">Search</button>
+    {% if search_q %}
+    <a class="button ghost small" href="{{ url_for('projects_list') }}">Clear</a>
+    {% endif %}
+  </form>
+  {% endif %}
 </div>
 {% if not team %}
 <p class="empty">Select a team in the sidebar.</p>
@@ -21,19 +35,32 @@
   </form>
   {% if projects %}
   <table class="table-spaced">
-    <thead><tr><th>Name</th><th>Description</th><th>ID</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Secrets</th>
+        <th>ID</th>
+      </tr>
+    </thead>
     <tbody>
     {% for p in projects %}
       <tr>
         <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
         <td class="muted col-note">{{ p.description or '—' }}</td>
+        <td class="muted">{{ p.secret_count if p.secret_count is defined else '—' }}</td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
+  {% with pager=projects_pager %}
+    {% include "partials/pager.html" %}
+  {% endwith %}
   {% else %}
-  <p class="empty">No projects yet.</p>
+  <p class="empty">
+    {% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}
+  </p>
   {% endif %}
 </section>
 {% endif %}

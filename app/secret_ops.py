@@ -133,6 +133,117 @@ def _load_secrets_page(cur, project_id, page, q):
     return rows, pager
 
 
+def _load_team_secrets_page(
+    cur,
+    team_id,
+    page,
+    q="",
+    *,
+    project=None,
+    kind=None,
+    due=None,
+    acl=None,
+):
+    """Count + page live secrets for a whole team with optional filters.
+
+    Args:
+        cur: Open DB cursor (user RLS).
+        team_id: Team UUID string.
+        page: 1-based page number.
+        q: Search string (key, note, project name, metadata).
+        project: Optional project UUID filter.
+        kind: Optional secret kind (plain, database, …).
+        due: Optional expiry bucket: ``overdue``, ``soon``, or ``none``.
+        acl: Optional ACL filter: ``restricted`` (non-inherit) or ``inherit``.
+
+    Returns:
+        ``(rows, pager, projects)`` — projects is ``[{id, name}, …]`` for filters.
+    """
+    where = "p.team_id = %s AND s.deleted_at IS NULL"
+    params: list = [str(team_id)]
+    if project:
+        where += " AND s.project_id = %s::uuid"
+        params.append(str(project))
+    if kind:
+        where += " AND s.kind = %s"
+        params.append(kind)
+    if acl == "restricted":
+        where += " AND COALESCE(s.acl_mode, 'inherit') <> 'inherit'"
+    elif acl == "inherit":
+        where += " AND COALESCE(s.acl_mode, 'inherit') = 'inherit'"
+    if due == "overdue":
+        where += " AND s.expires_at IS NOT NULL AND s.expires_at < now()"
+    elif due == "soon":
+        where += """
+          AND s.expires_at IS NOT NULL
+          AND s.expires_at >= now()
+          AND s.expires_at < now() + interval '14 days'
+        """
+    elif due == "none":
+        where += " AND s.expires_at IS NULL"
+    if q:
+        like = f"%{q}%"
+        where += """
+          AND (
+            s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s
+            OR EXISTS (
+              SELECT 1 FROM api.secret_meta m
+              WHERE m.secret_id = s.id
+                AND (m.key ILIKE %s OR m.value ILIKE %s)
+            )
+          )
+        """
+        params.extend([like, like, like, like, like])
+
+    cur.execute(
+        f"""
+        SELECT count(*) AS n
+        FROM api.secrets s
+        JOIN api.projects p ON p.id = s.project_id
+        WHERE {where}
+        """,
+        params,
+    )
+    total = int((cur.fetchone() or {}).get("n") or 0)
+    pager = paging.page_window(total, page)
+    pager.update(
+        endpoint="secrets_list",
+        q=q or None,
+        project=project or None,
+        kind=kind or None,
+        due=due or None,
+        acl=acl or None,
+    )
+    cur.execute(
+        f"""
+        SELECT s.id, s.key, s.note, s.kind, s.updated_at, s.expires_at, s.acl_mode,
+               p.id AS project_id, p.name AS project_name
+        FROM api.secrets s
+        JOIN api.projects p ON p.id = s.project_id
+        WHERE {where}
+        ORDER BY p.name, s.key
+        LIMIT %s OFFSET %s
+        """,
+        (*params, pager["limit"], pager["offset"]),
+    )
+    rows = cur.fetchall() or []
+    for r in rows:
+        r["due"] = secret_due_status(r)
+        mode = (r.get("acl_mode") or "inherit").strip() or "inherit"
+        r["acl_mode"] = mode
+        r["acl_restricted"] = mode != "inherit"
+    cur.execute(
+        """
+        SELECT id, name FROM api.projects
+        WHERE team_id = %s
+        ORDER BY name
+        """,
+        (str(team_id),),
+    )
+    projects = cur.fetchall() or []
+    return rows, pager, projects
+
+
 def _parse_expires_at(form, *, allow_clear: bool = True):
     """Return expires_at datetime or None from form (capped at MAX_EXPIRY_DAYS).
 
