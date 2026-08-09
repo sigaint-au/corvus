@@ -440,9 +440,9 @@
       <input type="search" name="q" value="{{ search_q or '' }}"
              placeholder="Key, action, email…" autocomplete="off">
     </label>
-    <label>Actor
+    <label>Actor email
       <input type="search" name="actor" value="{{ audit_actor or '' }}"
-             placeholder="email…" autocomplete="off">
+             placeholder="user@example.com" autocomplete="off">
     </label>
     <label>Action
       <select name="action">
@@ -786,7 +786,7 @@
   </p>
   <form method="post" action="{{ url_for('add_project_member', project_id=project.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Email
+    <label>User email
       <input type="email" name="email" required class="user-suggest"
              list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
     </label>
@@ -835,7 +835,7 @@
   {% if team_groups %}
   <form method="post" action="{{ url_for('add_project_group_role', project_id=project.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Group
+    <label>Team group
       <select name="group_id" required>
         {% for g in team_groups %}
         <option value="{{ g.id }}">{{ g.name }}</option>

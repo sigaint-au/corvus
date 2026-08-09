@@ -37,8 +37,9 @@
       </select>
     </label>
     {% if group.source != 'manual' %}
-    <label>External key
-      <input type="text" name="external_key" value="{{ group.external_key or '' }}">
+    <label>Directory group key
+      <input type="text" name="external_key" value="{{ group.external_key or '' }}"
+             placeholder="LDAP DN or OIDC groups claim value">
     </label>
     {% endif %}
     <button type="submit">Save</button>
@@ -65,11 +66,11 @@
   {% if is_admin %}
   <form method="post" action="{{ url_for('add_group_member', team_id=team.id, group_id=group.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Add member
+    <label>User email
       <input type="email" name="email" required class="user-suggest"
              list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
     </label>
-    <button type="submit">Add</button>
+    <button type="submit">Add member</button>
   </form>
   {% endif %}
   {% if group_members %}

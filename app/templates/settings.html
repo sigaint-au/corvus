@@ -372,7 +372,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <form method="post" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="promote">
-    <label class="flex-2">Promote user by email
+    <label class="flex-2">User email
       <input type="email" name="email" required class="user-suggest"
              list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
     </label>
@@ -505,11 +505,11 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <form method="post" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="ldap_role_map_add">
-    <label class="flex-2">LDAP group (CN or DN)
+    <label class="flex-2">LDAP directory group (CN or DN)
       <input type="text" name="ldap_group" required
              placeholder="secretstore-admins or cn=secretstore-admins,cn=groups,cn=accounts,dc=example,dc=com">
     </label>
-    <label>Role
+    <label>App role
       <select name="role">
         <option value="global_admin">global_admin</option>
       </select>
@@ -576,7 +576,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
                  placeholder="preferred_username">
           <span class="field-hint">Display name on first SSO (identity is still email)</span>
         </label>
-        <label>Groups claim
+        <label>Directory groups claim
           <input type="text" name="oidc_groups_claim" value="{{ settings.oidc_groups_claim or 'groups' }}"
                  placeholder="groups">
           <span class="field-hint">Also reads <code class="k">realm_access.roles</code> when present</span>
@@ -630,11 +630,11 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <form method="post" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="oidc_role_map_add">
-    <label class="flex-2">OIDC group / role name
+    <label class="flex-2">OIDC directory group (token claim value)
       <input type="text" name="oidc_group" required
              placeholder="secretstore-admins">
     </label>
-    <label>Role
+    <label>App role
       <select name="role">
         <option value="global_admin">global_admin</option>
       </select>
@@ -707,7 +707,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
              placeholder="{% if settings.smtp_password_set %}•••••••• (leave blank to keep){% else %}optional{% endif %}">
     </label>
     <div class="row">
-      <label>From address
+      <label>From email
         <input type="email" name="smtp_from_email" value="{{ settings.smtp_from_email }}"
                placeholder="noreply@example.com">
       </label>
@@ -736,7 +736,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <form method="post" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="smtp_test">
-    <label class="flex-2">Recipient
+    <label class="flex-2">Recipient email
       <input type="email" name="test_email"
              value="{{ session.email or '' }}"
              placeholder="you@example.com" required>

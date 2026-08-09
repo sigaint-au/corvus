@@ -8,7 +8,7 @@
 <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <label>Name <input type="text" name="name" autocomplete="name"></label>
-  <label>Email <input type="email" name="email" required autocomplete="username"></label>
+  <label>Account email <input type="email" name="email" required autocomplete="username"></label>
   <label>Password <input type="password" name="password" required minlength="8" autocomplete="new-password"></label>
   <button type="submit">Register</button>
 </form>

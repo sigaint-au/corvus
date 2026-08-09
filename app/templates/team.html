@@ -103,7 +103,7 @@
   {% if is_admin %}
   <form method="post" action="{{ url_for('add_team_member', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Email
+    <label>User email
       <input type="email" name="email" required class="user-suggest"
              list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
     </label>
@@ -250,7 +250,9 @@
         <option value="oidc">oidc</option>
       </select>
     </label>
-    <label>External key <input type="text" name="external_key" placeholder="LDAP DN / OIDC claim"></label>
+    <label>Directory group key
+      <input type="text" name="external_key" placeholder="LDAP DN or OIDC groups claim value">
+    </label>
     <label>Team role
       <select name="team_role">
         <option value="">— none —</option>
@@ -471,11 +473,11 @@
   {% endif %}
   <form method="post" action="{{ url_for('add_team_ldap_map', team_id=team.id) }}" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label class="flex-2">LDAP group (CN or DN)
+    <label class="flex-2">LDAP directory group (CN or DN)
       <input type="text" name="ldap_group" required
              placeholder="eng-secrets or cn=eng-secrets,cn=groups,cn=accounts,dc=example,dc=com">
     </label>
-    <label>Role
+    <label>Team role
       <select name="role">
         <option value="member">member</option>
         <option value="viewer">viewer</option>
@@ -520,11 +522,11 @@
   {% endif %}
   <form method="post" action="{{ url_for('add_team_oidc_map', team_id=team.id) }}" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label class="flex-2">OIDC group / role name
+    <label class="flex-2">OIDC directory group (token claim value)
       <input type="text" name="oidc_group" required
              placeholder="eng-secrets">
     </label>
-    <label>Role
+    <label>Team role
       <select name="role">
         <option value="member">member</option>
         <option value="viewer">viewer</option>
@@ -543,7 +545,7 @@
   <form method="post" action="{{ url_for('transfer_team_ownership', team_id=team.id) }}" class="row"
         onsubmit="return confirm('Transfer ownership to this user?')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>New owner email
+    <label>New owner (user email)
       <input type="email" name="email" required class="user-suggest"
              list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
     </label>

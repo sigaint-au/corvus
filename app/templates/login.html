@@ -21,7 +21,7 @@
 {% endif %}
 <form method="post">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-  <label>{% if ldap_enabled %}Email or username{% else %}Email{% endif %}
+  <label>{% if ldap_enabled %}Account email or username{% else %}Account email{% endif %}
     <input type="{% if ldap_enabled %}text{% else %}email{% endif %}"
            name="email" required autocomplete="username">
   </label>
