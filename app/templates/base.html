@@ -1922,42 +1922,9 @@
     table { width: 100%; border-collapse: collapse; font-size: .925rem; table-layout: auto; }
     th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
     th { color: var(--muted-foreground); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
-    /* Selected row (e.g. team Groups tab when membership panel is open) */
+    /* Selected table row (e.g. team Groups tab) */
     tr.selected > td {
-      background: color-mix(in srgb, var(--side-accent, #47817F) 16%, var(--background));
-      border-bottom-color: color-mix(in srgb, var(--side-accent, #47817F) 40%, var(--border));
-      box-shadow: inset 3px 0 0 var(--side-accent, #47817F);
-    }
-    tr.selected > td:first-child {
-      font-weight: 600;
-    }
-    tr.selected a {
-      color: var(--foreground);
-      text-decoration: none;
-    }
-    .row-selected-mark {
-      display: inline-block;
-      margin-left: .4rem;
-      padding: .1rem .4rem;
-      font-size: .68rem;
-      font-weight: 650;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      border-radius: 4px;
-      background: var(--side-accent, #47817F);
-      color: #fff;
-      vertical-align: middle;
-    }
-    .group-members-panel {
-      margin-top: 1.25rem;
-      padding: 1rem 1rem 1.1rem;
-      border: 1px solid color-mix(in srgb, var(--side-accent, #47817F) 35%, var(--border));
-      border-radius: var(--radius, 8px);
-      background: color-mix(in srgb, var(--side-accent, #47817F) 6%, var(--background));
-      box-shadow: inset 3px 0 0 var(--side-accent, #47817F);
-    }
-    .group-members-panel > h2 {
-      margin-top: 0;
+      background: var(--muted);
     }
     td.col-key,
     td.col-note {
