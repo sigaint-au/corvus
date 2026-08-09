@@ -519,8 +519,16 @@
       <input type="number" name="expires_days" min="1" max="{{ max_expiry_days|default(3650) }}"
              placeholder="{% if default_token_days %}{{ default_token_days }} (team default){% else %}never{% endif %}">
     </label>
+    <label class="flex-2">Key allow-list <span class="muted">(optional)</span>
+      <textarea name="scope_keys" rows="3" class="mono-area"
+                placeholder="Empty = all keys in this project&#10;API_KEY&#10;prod/*&#10;DB_*"></textarea>
+    </label>
     <button type="submit">Create token</button>
   </form>
+  <p class="muted">
+    Allow-list: one secret key or glob per line (<code class="k">*</code> / <code class="k">?</code>).
+    Leave empty for full project access. Scoped tokens cannot read or write other keys.
+  </p>
   <p class="warn-inline" id="token-write-warn" hidden>
     Warning: write tokens can create and update secrets via the machine API. Prefer read-only for ESO.
   </p>
@@ -537,13 +545,23 @@
   {% endif %}
   {% if tokens %}
   <table>
-    <thead><tr><th>Name</th><th>Prefix</th><th>Role</th><th>Created</th><th>Expires</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Prefix</th><th>Role</th><th>Key scope</th><th>Created</th><th>Expires</th><th></th></tr></thead>
     <tbody>
     {% for t in tokens %}
       <tr>
         <td>{{ t.name }}</td>
         <td><code>{{ t.token_prefix }}…</code></td>
         <td><span class="badge" data-variant="secondary">{{ t.role or 'read-only' }}</span></td>
+        <td class="muted col-note">
+          {% if t.scopes %}
+            {% for sc in t.scopes[:6] %}
+              <code class="k">{% if sc.secret_key %}{{ sc.secret_key }}{% else %}{{ sc.key_pattern }}{% endif %}</code>{% if not loop.last %}, {% endif %}
+            {% endfor %}
+            {% if t.scopes|length > 6 %}… +{{ t.scopes|length - 6 }}{% endif %}
+          {% else %}
+            <span class="badge" data-variant="secondary">all keys</span>
+          {% endif %}
+        </td>
         <td class="muted">{{ t.created_at }}</td>
         <td class="muted">
           {{ t.expires_at or 'never' }}
@@ -596,6 +614,10 @@
       <label>Expires (days)
         <input type="number" name="expires_days" min="1" max="{{ max_expiry_days|default(3650) }}"
                placeholder="{% if default_token_days %}{{ default_token_days }} (team default){% else %}never{% endif %}">
+      </label>
+      <label class="flex-2">Key allow-list <span class="muted">(optional)</span>
+        <textarea name="scope_keys" rows="2" class="mono-area"
+                  placeholder="Empty = all keys · or e.g. app/*"></textarea>
       </label>
       <button type="submit">Create machine account</button>
     </form>

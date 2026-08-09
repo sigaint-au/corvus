@@ -2248,6 +2248,25 @@ class TestOrgAccess(unittest.TestCase):
         ops = (Path(__file__).resolve().parent / "secret_ops.py").read_text()
         self.assertIn("secret_meta", ops)
 
+    def test_machine_token_scope_schema(self):
+        """Per-token key allow-list (exact + glob) is in schema and helpers."""
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("CREATE TABLE api.machine_token_scope", init)
+        self.assertIn("machine_token_scope", src)
+        self.assertIn("private.machine_key_allowed", init)
+        self.assertIn("private.glob_to_like", init)
+        self.assertIn("machine_key_allowed", src)
+        from routes.project_tokens import parse_token_scope_lines
+
+        pairs = parse_token_scope_lines("API_KEY\n# comment\nprod/*\nDB_?\n")
+        self.assertEqual(
+            pairs,
+            [("key", "API_KEY"), ("pattern", "prod/*"), ("pattern", "DB_?")],
+        )
+
     def test_security_hardening_policies(self):
         """H1/M1/L1/L2/L5: projects_update, owner assignment, versions, ACL team, FORCE RLS."""
         from pathlib import Path

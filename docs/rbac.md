@@ -99,8 +99,8 @@ On **custom**, each grant has a permission:
 
 **Machine tokens** (`ss_…`) and ESO use SECURITY DEFINER helpers and are **not**
 gated by per-secret human ACLs or reveal-approval (project-scoped only). Prefer a
-dedicated project (or tighter token scope) when automation must not see every
-secret in a shared project.
+dedicated project, **key allow-list** (exact keys and/or globs like `prod/*` on the
+token), or both when automation must not see every secret in a shared project.
 
 ### 2d. Reveal approval (separate from RBAC)
 

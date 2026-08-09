@@ -434,6 +434,26 @@ def register(app):
                     (str(project_id),),
                 )
                 tokens = annotate_token_expiry(cur.fetchall())
+                # Attach scope allow-list summary (empty = unrestricted)
+                tids = [str(t["id"]) for t in tokens]
+                scope_map: dict = {}
+                if tids:
+                    try:
+                        cur.execute(
+                            """
+                            SELECT token_id, secret_key, key_pattern
+                            FROM api.machine_token_scope
+                            WHERE token_id = ANY(%s::uuid[])
+                            ORDER BY secret_key NULLS LAST, key_pattern NULLS LAST
+                            """,
+                            (tids,),
+                        )
+                        for sc in cur.fetchall() or []:
+                            scope_map.setdefault(str(sc["token_id"]), []).append(sc)
+                    except Exception:
+                        scope_map = {}
+                for t in tokens:
+                    t["scopes"] = scope_map.get(str(t["id"]), [])
             elif tab == "settings":
                 cur.execute(
                     "SELECT * FROM private.project_member_rows(%s::uuid)",

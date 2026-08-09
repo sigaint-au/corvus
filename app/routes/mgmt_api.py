@@ -676,6 +676,24 @@ def register(app):
                 (pid,),
             )
             items = [_row(r) for r in (cur.fetchall() or [])]
+            tids = [it["id"] for it in items if it.get("id")]
+            scope_map: dict = {}
+            if tids:
+                try:
+                    cur.execute(
+                        """
+                        SELECT token_id, secret_key, key_pattern
+                          FROM api.machine_token_scope
+                         WHERE token_id = ANY(%s::uuid[])
+                        """,
+                        (tids,),
+                    )
+                    for sc in cur.fetchall() or []:
+                        scope_map.setdefault(str(sc["token_id"]), []).append(_row(sc))
+                except Exception:
+                    scope_map = {}
+            for it in items:
+                it["scope"] = scope_map.get(str(it.get("id")), [])
         return jsonify({"items": items})
 
     @app.post("/eso/v1/projects/<project_ref>/tokens")
@@ -705,6 +723,13 @@ def register(app):
         raw = "ss_" + secrets.token_urlsafe(32)
         thash = sha256_hex(raw)
         prefix = raw[:11]
+        # scope: list of exact keys / globs, or newline-separated string
+        scope_raw = body.get("scope") or body.get("scopes") or body.get("scope_keys") or ""
+        if isinstance(scope_raw, list):
+            scope_raw = "\n".join(str(x) for x in scope_raw)
+        from routes.project_tokens import insert_token_scopes, parse_token_scope_lines
+
+        scopes = parse_token_scope_lines(str(scope_raw))
         with db.as_user(uid) as conn, conn.cursor() as cur:
             pid = _resolve_project(cur, project_ref)
             if not pid:
@@ -724,10 +749,15 @@ def register(app):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "forbidden"}), 403
+            if scopes:
+                insert_token_scopes(cur, str(row["id"]), scopes)
             conn.commit()
         out = _row(row) or {}
         out["ok"] = True
         out["token"] = raw  # shown once
+        out["scope"] = [
+            {"secret_key": v} if k == "key" else {"key_pattern": v} for k, v in scopes
+        ]
         return jsonify(out), 201
 
     @app.delete("/eso/v1/projects/<project_ref>/tokens/<token_id>")
