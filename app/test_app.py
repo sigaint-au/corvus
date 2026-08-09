@@ -3423,9 +3423,22 @@ class TestNav(unittest.TestCase):
 
         def fetchone():
             state["n"] += 1
-            return {"id": self.tid, "name": "Ops"}
+            if state["n"] == 1:
+                return {"id": self.tid, "name": "Ops"}
+            return {"n": 1}
 
-        conn, cur = _conn(fetchone=fetchone, fetchall=[{"id": pid, "name": "api"}])
+        conn, cur = _conn(
+            fetchone=fetchone,
+            fetchall=[
+                {
+                    "id": pid,
+                    "name": "api",
+                    "description": "prod",
+                    "created_at": "now",
+                    "secret_count": 3,
+                }
+            ],
+        )
         with patch.object(db, "as_user", return_value=conn), patch.object(
             nav, "ensure_active_team", return_value=str(self.tid)
         ):
@@ -3434,17 +3447,31 @@ class TestNav(unittest.TestCase):
         self.assertIn(b"api", r.data)
 
     def test_secrets_list(self):
+        pid = uuid4()
+        sid = uuid4()
+        state = {"n": 0}
+
+        def fetchone():
+            state["n"] += 1
+            if state["n"] == 1:
+                return {"id": self.tid, "name": "Ops"}
+            return {"n": 1}
+
         conn, _ = _conn(
-            fetchone={"id": self.tid, "name": "Ops"},
+            fetchone=fetchone,
             fetchall=[
                 {
-                    "id": uuid4(),
+                    "id": sid,
                     "key": "DB_URL",
                     "note": "",
+                    "kind": "plain",
                     "updated_at": "now",
-                    "project_id": uuid4(),
+                    "expires_at": None,
+                    "acl_mode": "inherit",
+                    "project_id": pid,
                     "project_name": "api",
-                }
+                },
+                {"id": pid, "name": "api"},
             ],
         )
         with patch.object(db, "as_user", return_value=conn), patch.object(

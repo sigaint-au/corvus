@@ -1,12 +1,17 @@
-{# Extra filter kwargs (audit actor/action/dates) preserved across pages #}
+{# Extra filter kwargs preserved across pages #}
 {% set _q = {
   'project_id': pager.project_id if pager else none,
   'tab': pager.tab if pager else none,
-  'q': pager.q if pager and pager.q else none,
-  'actor': pager.actor if pager and pager.actor else none,
-  'action': pager.action if pager and pager.action else none,
-  'since': pager.since if pager and pager.since else none,
-  'until': pager.until if pager and pager.until else none,
+  'q': pager.q if pager else none,
+  'actor': pager.actor if pager else none,
+  'action': pager.action if pager else none,
+  'since': pager.since if pager else none,
+  'until': pager.until if pager else none,
+  'project': pager.project if pager else none,
+  'kind': pager.kind if pager else none,
+  'due': pager.due if pager else none,
+  'acl': pager.acl if pager else none,
+  'scope': pager.scope if pager else none,
 } %}
 {% if pager and pager.total > pager.per_page %}
 <nav class="pager hstack" aria-label="Pagination" style="gap: var(--space-4); flex-wrap: wrap; margin: 1rem 0;">
@@ -55,5 +60,5 @@
   </menu>
 </nav>
 {% elif pager and pager.total > 0 %}
-<p class="muted pager-count">Showing {{ pager.total }} entr{{ 'y' if pager.total == 1 else 'ies' }}{% if pager.q or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>
+<p class="muted pager-count">Showing {{ pager.start }}–{{ pager.end }} of {{ pager.total }}{% if pager.q or pager.project or pager.kind or pager.due or pager.acl or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>
 {% endif %}
