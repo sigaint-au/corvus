@@ -501,89 +501,73 @@
   {% endif %}
 </section>
 {% elif active_tab == 'tokens' %}
-<section>
-  <h2>Machine accounts</h2>
-  <p class="muted">For OpenShift External Secrets Operator / CI. Scoped to this project.
-    Default is <strong>read-only</strong> (fetch only). Choose <strong>write</strong> only if automation must create or update secrets.</p>
+<section class="machine-accounts">
+  <div class="section-head">
+    <div class="section-head-main">
+      <h2>Machine accounts</h2>
+    </div>
+  </div>
+  <p class="page-desc muted">
+    Project-scoped tokens for ESO and CI. Human ACLs and reveal-approval do not apply —
+    use a <strong>key allow-list</strong> when automation should only see some secrets.
+  </p>
+
   {% if can_write %}
-  <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row" id="token-form">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Name <input type="text" name="name" placeholder="openshift-prod" value="openshift"></label>
-    <label>Role
-      <select name="role" id="token-role">
-        <option value="read-only" selected>read-only</option>
-        <option value="write">write</option>
-      </select>
-    </label>
-    <label>Expires (days)
-      <input type="number" name="expires_days" min="1" max="{{ max_expiry_days|default(3650) }}"
-             placeholder="{% if default_token_days %}{{ default_token_days }} (team default){% else %}never{% endif %}">
-    </label>
-    <label class="flex-2">Key allow-list <span class="muted">(optional)</span>
-      <textarea name="scope_keys" rows="3" class="mono-area"
-                placeholder="Empty = all keys in this project&#10;API_KEY&#10;prod/*&#10;DB_*"></textarea>
-    </label>
-    <button type="submit">Create token</button>
-  </form>
-  <p class="muted">
-    Allow-list: one secret key or glob per line (<code class="k">*</code> / <code class="k">?</code>).
-    Leave empty for full project access. Scoped tokens cannot read or write other keys.
-  </p>
-  <p class="warn-inline" id="token-write-warn" hidden>
-    Warning: write tokens can create and update secrets via the machine API. Prefer read-only for ESO.
-  </p>
-  <script>
-  (function () {
-    var sel = document.getElementById('token-role');
-    var warn = document.getElementById('token-write-warn');
-    if (!sel || !warn) return;
-    function sync() { warn.hidden = sel.value !== 'write'; }
-    sel.addEventListener('change', sync);
-    sync();
-  })();
-  </script>
+  {% with form_id='token-form', default_name='openshift', compact=false %}
+    {% include "partials/token_create_form.html" %}
+  {% endwith %}
   {% endif %}
-  {% if tokens %}
-  <table>
-    <thead><tr><th>Name</th><th>Prefix</th><th>Role</th><th>Key scope</th><th>Created</th><th>Expires</th><th></th></tr></thead>
-    <tbody>
-    {% for t in tokens %}
-      <tr>
-        <td>{{ t.name }}</td>
-        <td><code>{{ t.token_prefix }}…</code></td>
-        <td><span class="badge" data-variant="secondary">{{ t.role or 'read-only' }}</span></td>
-        <td class="muted col-note">
+
+  <section class="token-list-section">
+    <h3 class="token-list-title">Active tokens</h3>
+    {% if tokens %}
+    <div class="token-cards">
+      {% for t in tokens %}
+      <article class="card token-card">
+        <header class="token-card-head">
+          <div>
+            <strong class="token-card-name">{{ t.name }}</strong>
+            <code class="k token-card-prefix">{{ t.token_prefix }}…</code>
+          </div>
+          <div class="token-card-badges">
+            <span class="badge" data-variant="secondary">{{ t.role or 'read-only' }}</span>
+            {% if t.due == 'overdue' %}<span class="badge" data-variant="danger">expired</span>
+            {% elif t.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
+          </div>
+        </header>
+        <div class="token-card-scope">
+          <span class="muted token-card-scope-label">Key access</span>
           {% if t.scopes %}
-            {% for sc in t.scopes[:6] %}
-              <code class="k">{% if sc.secret_key %}{{ sc.secret_key }}{% else %}{{ sc.key_pattern }}{% endif %}</code>{% if not loop.last %}, {% endif %}
+          <div class="token-scope-badges">
+            {% for sc in t.scopes %}
+            <span class="badge outline{% if sc.key_pattern %} token-scope-glob{% endif %}"
+                  title="{% if sc.key_pattern %}Glob pattern{% else %}Exact key{% endif %}">
+              {% if sc.secret_key %}{{ sc.secret_key }}{% else %}{{ sc.key_pattern }}{% endif %}
+            </span>
             {% endfor %}
-            {% if t.scopes|length > 6 %}… +{{ t.scopes|length - 6 }}{% endif %}
+          </div>
           {% else %}
-            <span class="badge" data-variant="secondary">all keys</span>
+          <span class="badge" data-variant="secondary">All keys in project</span>
           {% endif %}
-        </td>
-        <td class="muted">{{ t.created_at }}</td>
-        <td class="muted">
-          {{ t.expires_at or 'never' }}
-          {% if t.due == 'overdue' %}<span class="badge" data-variant="danger">expired</span>
-          {% elif t.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
-        </td>
-        <td class="acts">
+        </div>
+        <footer class="token-card-foot">
+          <span class="muted">Created {{ t.created_at }}</span>
+          <span class="muted">Expires {{ t.expires_at or 'never' }}</span>
           {% if can_write %}
           <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
                 onsubmit="return confirm('Revoke token “{{ t.name }}”?')">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="link danger">Revoke</button>
+            <button type="submit" data-variant="danger" class="ghost small">Revoke</button>
           </form>
           {% endif %}
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="empty">No machine accounts.</p>
-  {% endif %}
+        </footer>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">No machine accounts yet.</p>
+    {% endif %}
+  </section>
 </section>
 {% elif active_tab == 'integrations' %}
 <div class="stack eso-integration" id="eso-integration"
@@ -596,34 +580,9 @@
 
   {% if can_write %}
   <section class="eso-token-create">
-    <h3>Machine account for ESO</h3>
-    <p class="muted">Create a <strong>read-only</strong> token for the cluster to pull secrets.
-      Prefer read-only for ESO; use write only if automation must push secrets.</p>
-    <form method="post" action="{{ url_for('create_token', project_id=project.id) }}" class="row" id="eso-token-form">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <input type="hidden" name="return_tab" value="integrations">
-      <label>Name
-        <input type="text" name="name" value="eso" placeholder="eso" required>
-      </label>
-      <label>Role
-        <select name="role" id="eso-token-role">
-          <option value="read-only" selected>read-only</option>
-          <option value="write">write</option>
-        </select>
-      </label>
-      <label>Expires (days)
-        <input type="number" name="expires_days" min="1" max="{{ max_expiry_days|default(3650) }}"
-               placeholder="{% if default_token_days %}{{ default_token_days }} (team default){% else %}never{% endif %}">
-      </label>
-      <label class="flex-2">Key allow-list <span class="muted">(optional)</span>
-        <textarea name="scope_keys" rows="2" class="mono-area"
-                  placeholder="Empty = all keys · or e.g. app/*"></textarea>
-      </label>
-      <button type="submit">Create machine account</button>
-    </form>
-    <p class="warn-inline" id="eso-token-write-warn" hidden>
-      Warning: write tokens can create and update secrets via the machine API. Prefer read-only for ESO.
-    </p>
+    {% with form_id='eso-token-form', default_name='eso', return_tab='integrations', compact=true %}
+      {% include "partials/token_create_form.html" %}
+    {% endwith %}
   </section>
   {% else %}
   <p class="muted">You need write access to create a machine account. Paste an existing token below to generate manifests.</p>
@@ -765,13 +724,6 @@
       tokenEl.type = show ? 'text' : 'password';
       tokenToggle.textContent = show ? 'Hide' : 'Show';
     });
-  }
-  var roleSel = document.getElementById('eso-token-role');
-  var roleWarn = document.getElementById('eso-token-write-warn');
-  if (roleSel && roleWarn) {
-    function syncRole() { roleWarn.hidden = roleSel.value !== 'write'; }
-    roleSel.addEventListener('change', syncRole);
-    syncRole();
   }
   buildYaml();
 })();

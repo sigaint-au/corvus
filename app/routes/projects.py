@@ -339,6 +339,7 @@ def register(app):
         secret_rows = []
         audit_rows = []
         tokens = []
+        project_secret_keys = []
         project_members = []
         project_group_roles = []
         team_groups = []
@@ -423,37 +424,52 @@ def register(app):
                     since=audit_since,
                     until=audit_until,
                 )
-            elif tab == "tokens":
-                cur.execute(
-                    """
-                    SELECT id, name, token_prefix, role, created_at, expires_at
-                    FROM api.machine_tokens
-                    WHERE project_id = %s
-                    ORDER BY created_at DESC
-                    """,
-                    (str(project_id),),
-                )
-                tokens = annotate_token_expiry(cur.fetchall())
-                # Attach scope allow-list summary (empty = unrestricted)
-                tids = [str(t["id"]) for t in tokens]
-                scope_map: dict = {}
-                if tids:
-                    try:
-                        cur.execute(
-                            """
-                            SELECT token_id, secret_key, key_pattern
-                            FROM api.machine_token_scope
-                            WHERE token_id = ANY(%s::uuid[])
-                            ORDER BY secret_key NULLS LAST, key_pattern NULLS LAST
-                            """,
-                            (tids,),
-                        )
-                        for sc in cur.fetchall() or []:
-                            scope_map.setdefault(str(sc["token_id"]), []).append(sc)
-                    except Exception:
-                        scope_map = {}
-                for t in tokens:
-                    t["scopes"] = scope_map.get(str(t["id"]), [])
+            elif tab in ("tokens", "integrations"):
+                if tab == "tokens":
+                    cur.execute(
+                        """
+                        SELECT id, name, token_prefix, role, created_at, expires_at
+                        FROM api.machine_tokens
+                        WHERE project_id = %s
+                        ORDER BY created_at DESC
+                        """,
+                        (str(project_id),),
+                    )
+                    tokens = annotate_token_expiry(cur.fetchall())
+                    # Attach scope allow-list summary (empty = unrestricted)
+                    tids = [str(t["id"]) for t in tokens]
+                    scope_map: dict = {}
+                    if tids:
+                        try:
+                            cur.execute(
+                                """
+                                SELECT token_id, secret_key, key_pattern
+                                FROM api.machine_token_scope
+                                WHERE token_id = ANY(%s::uuid[])
+                                ORDER BY secret_key NULLS LAST, key_pattern NULLS LAST
+                                """,
+                                (tids,),
+                            )
+                            for sc in cur.fetchall() or []:
+                                scope_map.setdefault(str(sc["token_id"]), []).append(sc)
+                        except Exception:
+                            scope_map = {}
+                    for t in tokens:
+                        t["scopes"] = scope_map.get(str(t["id"]), [])
+                # Suggest existing keys for the allow-list chip input
+                try:
+                    cur.execute(
+                        """
+                        SELECT key FROM api.secrets
+                        WHERE project_id = %s AND deleted_at IS NULL
+                        ORDER BY key
+                        LIMIT 200
+                        """,
+                        (str(project_id),),
+                    )
+                    project_secret_keys = [r["key"] for r in (cur.fetchall() or [])]
+                except Exception:
+                    project_secret_keys = []
             elif tab == "settings":
                 cur.execute(
                     "SELECT * FROM private.project_member_rows(%s::uuid)",
@@ -514,6 +530,7 @@ def register(app):
             project_id=project_id,
             secrets=secret_rows,
             tokens=tokens,
+            project_secret_keys=project_secret_keys,
             audit_log=audit_rows,
             access_requests=access_requests,
             access_pending_count=access_pending_count,
