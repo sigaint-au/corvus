@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ group.name }} — {{ team.name }} — {{ app_name }}{% endblock %}
+{% block body %}
+<p class="breadcrumb">
+  <a href="{{ url_for('teams') }}">Teams</a>
+  <span class="breadcrumb-sep">/</span>
+  <a href="{{ url_for('team_detail', team_id=team.id) }}">{{ team.name }}</a>
+  <span class="breadcrumb-sep">/</span>
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Groups</a>
+  <span class="breadcrumb-sep">/</span>
+  {{ group.name }}
+</p>
+<div class="page-head">
+  <div class="section-head-main">
+    <h1>{{ group.name }}</h1>
+    <span class="role-badge">{{ group.source }}</span>
+    {% if group.team_role %}<span class="role-badge">{{ group.team_role }}</span>{% endif %}
+  </div>
+  <div class="section-tools">
+    <a class="btn-toolbar" href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Back</a>
+  </div>
+</div>
+<p class="page-desc muted">Your team role: <span class="role-badge">{{ my_role }}</span></p>
+
+{% if is_admin %}
+<section>
+  <h2>Settings</h2>
+  <form method="post" action="{{ url_for('update_team_group', team_id=team.id, group_id=group.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Name <input type="text" name="name" required value="{{ group.name }}"></label>
+    <label>Team role
+      <select name="team_role">
+        <option value="">— none —</option>
+        {% for r in team_roles|default(['admin','member','viewer']) %}
+        <option value="{{ r }}" {% if group.team_role == r %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if group.source != 'manual' %}
+    <label>External key
+      <input type="text" name="external_key" value="{{ group.external_key or '' }}">
+    </label>
+    {% endif %}
+    <button type="submit">Save</button>
+  </form>
+</section>
+{% endif %}
+
+<section>
+  <div class="section-head">
+    <h2>Members</h2>
+    <form method="get" action="{{ url_for('team_group_detail', team_id=team.id, group_id=group.id) }}"
+          class="toolbar" role="search">
+      <label class="search-field">
+        <span class="visually-hidden">Search members</span>
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search…" autocomplete="off" aria-label="Search members">
+      </label>
+      <button type="submit">Search</button>
+      {% if search_q %}
+      <a class="btn-clear" href="{{ url_for('team_group_detail', team_id=team.id, group_id=group.id) }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('add_group_member', team_id=team.id, group_id=group.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Add member
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  {% endif %}
+  {% if group_members %}
+  <table>
+    <thead><tr><th>User</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+    {% for m in group_members %}
+      <tr>
+        <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
+        <td><span class="role-badge">{{ m.source }}</span></td>
+        <td class="acts">
+          {% if is_admin %}
+          <form method="post"
+                action="{{ url_for('remove_group_member', team_id=team.id, group_id=group.id, user_id=m.user_id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove {{ m.email }} from this group?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">{% if search_q %}No members match “{{ search_q }}”.{% else %}No members in this group yet.{% endif %}</p>
+  {% endif %}
+</section>
+
+{% if is_admin %}
+<section>
+  <h2>Danger zone</h2>
+  <p class="muted">Delete this group and all its memberships and grants. Irreversible.</p>
+  <form method="post" action="{{ url_for('delete_team_group', team_id=team.id, group_id=group.id) }}"
+        onsubmit="return confirm('Delete group “{{ group.name }}”?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <button type="submit" class="danger">Delete group</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

@@ -115,7 +115,7 @@ def register(app):
             tab = "projects"
         q = (request.args.get("q") or "").strip()
         members, projects, ldap_maps, oidc_maps = [], [], [], []
-        groups, group_members, selected_group = [], [], None
+        groups = []
         invites, join_requests, org_events = [], [], []
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
@@ -181,20 +181,22 @@ def register(app):
                     groups = cur.fetchall() or []
                 except Exception:
                     groups = []
+                if q:
+                    ql = q.lower()
+                    groups = [
+                        g
+                        for g in groups
+                        if ql in (g.get("name") or "").lower()
+                        or ql in (g.get("external_key") or "").lower()
+                        or ql in (g.get("source") or "").lower()
+                        or ql in (g.get("team_role") or "").lower()
+                    ]
+                # Legacy ?group_id= → dedicated group page
                 gid = (request.args.get("group_id") or "").strip()
                 if gid:
-                    selected_group = next(
-                        (g for g in groups if str(g["id"]) == gid), None
+                    return redirect(
+                        url_for("team_group_detail", team_id=team_id, group_id=gid)
                     )
-                    if selected_group:
-                        try:
-                            cur.execute(
-                                "SELECT * FROM private.group_member_rows(%s::uuid)",
-                                (gid,),
-                            )
-                            group_members = cur.fetchall() or []
-                        except Exception:
-                            group_members = []
             elif tab == "activity":
                 try:
                     org_events = audit.list_org_for_team(cur, team_id)
@@ -243,8 +245,6 @@ def register(app):
             members=members,
             projects=projects,
             groups=groups,
-            group_members=group_members,
-            selected_group=selected_group,
             my_role=my_role,
             ldap_maps=ldap_maps,
             oidc_maps=oidc_maps,
@@ -1068,6 +1068,63 @@ def register(app):
 
     # ── Groups (team-scoped RBAC principals) ─────────────────────────
 
+    def _group_detail_url(team_id, group_id, **extra):
+        return url_for("team_group_detail", team_id=team_id, group_id=group_id, **extra)
+
+    @app.get("/teams/<uuid:team_id>/groups/<uuid:group_id>")
+    @authz.login_required
+    def team_group_detail(team_id, group_id):
+        """Group settings and membership (dedicated page with member search)."""
+        session["team_id"] = str(team_id)
+        q = (request.args.get("q") or "").strip()
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
+            team = cur.fetchone()
+            if not team:
+                return "Not found", 404
+            cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+            my_role = (cur.fetchone() or {}).get("r")
+            is_admin = my_role in ("owner", "admin")
+            cur.execute(
+                """
+                SELECT id, name, source, external_key, team_role, created_at
+                FROM api.groups
+                WHERE id = %s AND team_id = %s
+                """,
+                (str(group_id), str(team_id)),
+            )
+            group = cur.fetchone()
+            if not group:
+                flash("Group not found", "error")
+                return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
+            try:
+                cur.execute(
+                    "SELECT * FROM private.group_member_rows(%s::uuid)",
+                    (str(group_id),),
+                )
+                members = cur.fetchall() or []
+            except Exception:
+                members = []
+            if q:
+                ql = q.lower()
+                members = [
+                    m
+                    for m in members
+                    if ql in (m.get("email") or "").lower()
+                    or ql in (m.get("name") or "").lower()
+                    or ql in (m.get("source") or "").lower()
+                ]
+        return render_template(
+            "team_group.html",
+            team=team,
+            group=group,
+            group_members=members,
+            search_q=q,
+            my_role=my_role,
+            is_admin=is_admin,
+            team_roles=config.GROUP_TEAM_ROLES,
+        )
+
     @app.post("/teams/<uuid:team_id>/groups")
     @authz.login_required
     def create_team_group(team_id):
@@ -1107,14 +1164,7 @@ def register(app):
                 )
                 conn.commit()
                 flash(f"Group “{name}” created", "ok")
-                return redirect(
-                    url_for(
-                        "team_detail",
-                        team_id=team_id,
-                        tab="groups",
-                        group_id=gid,
-                    )
-                )
+                return redirect(_group_detail_url(team_id, gid))
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
@@ -1131,9 +1181,7 @@ def register(app):
         external_key = (request.form.get("external_key") or "").strip() or None
         if not name:
             flash("Group name required", "error")
-            return redirect(
-                url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
-            )
+            return redirect(_group_detail_url(team_id, group_id))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
                 cur.execute(
@@ -1165,9 +1213,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(
-            url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
-        )
+        return redirect(_group_detail_url(team_id, group_id))
 
     @app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>/delete")
     @authz.login_required
@@ -1204,9 +1250,7 @@ def register(app):
         email = (request.form.get("email") or "").strip().lower()
         if not email:
             flash("Email required", "error")
-            return redirect(
-                url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
-            )
+            return redirect(_group_detail_url(team_id, group_id))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT id, source FROM api.groups WHERE id = %s AND team_id = %s",
@@ -1220,11 +1264,7 @@ def register(app):
             u = cur.fetchone()
             if not u or not u.get("id"):
                 flash("User not found — they must register or sign in first", "error")
-                return redirect(
-                    url_for(
-                        "team_detail", team_id=team_id, tab="groups", group_id=group_id
-                    )
-                )
+                return redirect(_group_detail_url(team_id, group_id))
             try:
                 cur.execute(
                     """
@@ -1246,9 +1286,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(
-            url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
-        )
+        return redirect(_group_detail_url(team_id, group_id))
 
     @app.post(
         "/teams/<uuid:team_id>/groups/<uuid:group_id>/members/<uuid:user_id>/remove"
@@ -1279,6 +1317,4 @@ def register(app):
             else:
                 flash("Member not found or not permitted", "error")
                 conn.rollback()
-        return redirect(
-            url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
-        )
+        return redirect(_group_detail_url(team_id, group_id))
