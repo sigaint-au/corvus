@@ -1563,11 +1563,7 @@ def ensure_schema():
         SET row_security = off AS $$
           SELECT CASE
             WHEN sid IS NULL THEN false
-            WHEN NOT EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = sid AND s.deleted_at IS NULL
-                AND api.can_read_project(s.project_id)
-            ) THEN false
+            WHEN NOT api.can_access_secret(sid, 'reveal') THEN false
             WHEN api.is_global_admin() THEN true
             WHEN EXISTS (
               SELECT 1 FROM api.secrets s

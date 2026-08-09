@@ -559,7 +559,24 @@ def register(app):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "not found"}), 404
-            # PAT human path: honor reveal-approval policy (machine tokens exempt)
+            # PAT human path: per-secret ACL then reveal-approval (machine tokens exempt)
+            cur.execute(
+                "SELECT api.can_access_secret(%s, 'reveal') AS ok",
+                (str(row["id"]),),
+            )
+            if not (cur.fetchone() or {}).get("ok"):
+                return (
+                    jsonify(
+                        {
+                            "error": "forbidden",
+                            "message": (
+                                "You do not have permission to reveal this secret"
+                            ),
+                            "key": row["key"],
+                        }
+                    ),
+                    403,
+                )
             cur.execute(
                 "SELECT api.can_reveal_secret(%s) AS ok", (str(row["id"]),)
             )

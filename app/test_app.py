@@ -2239,15 +2239,70 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("CREATE TABLE api.secret_acl", init)
         self.assertIn("api.can_access_secret", init)
         self.assertIn("api.can_access_secret_row", init)
+        self.assertIn("api._perm_rank", init)
         # RLS must use row form so INSERT … RETURNING can see the new row
         self.assertIn(
             "can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)",
             init,
         )
+        # Reveal path must honor ACL before approval grants
+        rev = init[init.index("FUNCTION api.can_reveal_secret") :]
+        rev = rev[: rev.index("$$;") + 3]
+        self.assertIn("can_access_secret(sid, 'reveal')", rev)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("can_access_secret", src)
         self.assertIn("can_access_secret_row", src)
         self.assertIn("secret_acl", src)
+        self.assertIn("NOT api.can_access_secret(sid, 'reveal')", src)
+
+    def test_can_access_secret_row_modes_in_sql(self):
+        """ACL mode branches exist for inherit/writers/admins/owners/custom."""
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        start = init.index("FUNCTION api.can_access_secret_row")
+        body = init[start : start + 2500]
+        for mode in ("inherit", "writers", "admins", "owners", "custom"):
+            self.assertIn(mode, body, msg=f"mode {mode} missing from can_access_secret_row")
+        for need in ("'read'", "'reveal'", "'write'"):
+            self.assertIn(need, body)
+        # custom checks user or group membership
+        self.assertIn("group_members", body)
+        self.assertIn("_perm_rank", body)
+
+    def test_export_filters_reveal_permission(self):
+        """Plain export SQL must filter by can_access_secret reveal + can_reveal."""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent / "routes" / "project_io.py").read_text()
+        self.assertIn("can_access_secret(id, 'reveal')", src)
+        self.assertIn("can_reveal_secret(id)", src)
+        # bulk export path
+        bulk = src[src.index("def bulk_export") :]
+        self.assertIn("can_access_secret(id, 'reveal')", bulk)
+
+    def test_acl_management_routes_exist(self):
+        """Secret ACL mode/grant routes registered and gated to admins."""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent / "routes" / "secrets.py").read_text()
+        self.assertIn("def update_secret_acl_mode", src)
+        self.assertIn("def add_secret_acl_grant", src)
+        self.assertIn("def delete_secret_acl_grant", src)
+        self.assertIn("can_admin_project", src)
+        self.assertIn("tab=\"access\"", src)
+
+    def test_eso_pat_checks_acl_before_reveal(self):
+        """ESO/PAT get-secret must check can_access_secret reveal before approval."""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent / "routes" / "eso.py").read_text()
+        # Order: ACL reveal, then can_reveal_secret
+        i_acl = src.index("can_access_secret(%s, 'reveal')")
+        i_rev = src.index("can_reveal_secret(%s)")
+        self.assertLess(i_acl, i_rev)
+        self.assertIn('"error": "forbidden"', src)
+        self.assertIn('"error": "approval_required"', src)
 
     def test_org_groups_rbac_schema(self):
         """Groups tables, group-aware RBAC helpers, secret ACL group grants."""

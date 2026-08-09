@@ -157,6 +157,7 @@ SECRET_ACL_MODE_LABELS = {
     "inherit": "Everyone with project access",
     "writers": "Writers and above",
     "admins": "Project admins and team owners/admins",
+    # Mode truly restricts to team role owner (global admin still always allowed)
     "owners": "Team owners only",
     "custom": "Custom user or group list",
 }
