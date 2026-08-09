@@ -1,138 +1,106 @@
 # Sigaint Secret Server
 
-A small **team secrets store** for people and platforms: team, project,
-key/value secrets with Postgres RLS enforcement, a browser UI, OpenShift
-External Secrets Operator (ESO) webhooks, and PostgREST for API clients.
-Values are encrypted at rest with `MASTER_KEY`.
+A self-hosted **team secrets store** for people and platforms: team → project →
+key/value secrets, enforced with **Postgres Row-Level Security (RLS)**. Ships a
+browser UI, an OpenShift External Secrets Operator (ESO) webhook API, a CLI, and
+PostgREST for API clients. Secret values are encrypted at rest with `MASTER_KEY`.
 
-This repository is a mirror of [https://git.sigaint.au/Sigaint/secretserver](https://git.sigaint.au/Sigaint/secretserver).
+This repository is a mirror of https://git.sigaint.au/Sigaint/secretserver
 
-## Quick start
+---
+
+## Quick start (local)
 
 ```bash
 export GLOBAL_ADMIN_EMAIL=you@example.com
 ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
-# UI: http://localhost:8080; register as you@example.com
+# UI: http://localhost:8080  → register as you@example.com (becomes global admin)
+# PostgREST: http://localhost:3000
 ```
 
-See [docs/deploy.md](docs/deploy.md) for production setup (strong secrets,
-OIDC/LDAP, audit retention).
+For production setup (strong secrets, OIDC/LDAP, audit retention) see
+[docs/admin/deploy.md](docs/admin/deploy.md).
 
-## Tests
+---
 
-Unit tests live under **`tests/`** (not shipped in the container image).
-They use **pytest** with a mocked DB — Postgres is not required.
+## Documentation index
 
-```bash
-# From repo root
-pip install -r app/requirements.txt -r requirements-dev.txt
-pytest
-# Or: tox -e py
-```
+Documentation is organised by audience.
 
-Layout:
-
-```
-tests/
-  conftest.py          # env + fixtures
-  helpers.py           # mock_conn, REPO_ROOT / APP_ROOT
-  test_auth.py         # login, register, CSRF, sessions
-  test_secrets.py      # secret CRUD / reveal
-  test_eso.py          # /eso/v1 machine + PAT API
-  test_paging.py       # pagination + machine token scopes
-  …
-app/                   # Flask app (flat modules; Docker WORKDIR)
-  app.py               # WSGI entry (gunicorn app:app)
-  routes/
-  templates/
-```
-
-## Documentation
+### Users
 
 | Doc | Contents |
 |-----|----------|
-| **[docs/rbac.md](docs/rbac.md)** | **Org RBAC** — teams, groups, project roles, secret Permissions/ACL, metadata, recipes |
-| **[docs/api.md](docs/api.md)** | API reference — `/eso/v1` secrets (list/get/CRUD), metadata, ACLs, ESO, PAT, PostgREST |
-| **[docs/deploy.md](docs/deploy.md)** | Deploy, env vars, bootstrap, OIDC/LDAP, audit purge |
-| **[docs/authentication.md](docs/authentication.md)** | Session, PAT, machine, JWT, OIDC, LDAP + curl examples |
-| **[docs/building.md](docs/building.md)** | Build & push the app container image |
-| **[docs/openshift-eso.yaml](docs/openshift-eso.yaml)** | Sample SecretStore + ExternalSecret |
-| **[docs/openshift-purge-audit-cronjob.yaml](docs/openshift-purge-audit-cronjob.yaml)** | Daily audit retention CronJob |
-| **[SECURITY.md](SECURITY.md)** | Vulnerability disclosure |
-| **[CONTRIBUTING.md](CONTRIBUTING.md)** | Dev setup, tests, PRs |
-| **[CHANGELOG.md](CHANGELOG.md)** | Notable changes |
+| [docs/user/guide.md](docs/user/guide.md) | Using the UI: teams, projects, secrets, reveal, access requests, metadata, import/export |
+| [docs/user/cli.md](docs/user/cli.md) | CLI install + usage (get / apply / reveal / approve / deny) |
 
-**CLI:** sibling repo [secretserver-cli](https://git.sigaint.au/Sigaint/secretserver-cli)
-(install + full examples in its README).
+### Administrators
 
-### Manage secrets from the CLI
+| Doc | Contents |
+|-----|----------|
+| [docs/admin/deploy.md](docs/admin/deploy.md) | Deploy, first-run bootstrap, OpenShift |
+| [docs/admin/configuration.md](docs/admin/configuration.md) | All environment variables and server settings |
+| [docs/admin/rbac.md](docs/admin/rbac.md) | Roles, groups, project/secret permissions, setup checklist |
+| [docs/admin/authentication.md](docs/admin/authentication.md) | Session, PAT, JWT, machine token, OIDC, LDAP, SMTP, password reset |
+| [docs/admin/machine-tokens.md](docs/admin/machine-tokens.md) | Machine accounts, key allow-lists, ESO integration |
+| [docs/admin/audit.md](docs/admin/audit.md) | Audit logs, access review, export, retention |
+| [docs/admin/backup.md](docs/admin/backup.md) | Backup and restore |
 
-Unified **`/eso/v1`** API accepts **machine tokens** (`ss_…`) or **PATs**
-(`pat_…`). Full details:
-[docs/api.md — Managing secrets](docs/api.md#managing-secrets-via-the-unified-api-esov1).
+### Developers
 
-```bash
-# Official CLI (sibling secretserver-cli/)
-secretserver login --url http://localhost:8080 --token ss_… --project <uuid>
-# or: --token pat_… --project ios-app
-secretserver get secrets
-secretserver get secrets -l api          # filter key, note, or custom metadata
-secretserver get secret API_KEY -o value
-secretserver get secret API_KEY -o json  # includes metadata, last_accessed_*
+| Doc | Contents |
+|-----|----------|
+| [docs/dev/architecture.md](docs/dev/architecture.md) | Architecture, components, request flow |
+| [docs/dev/database.md](docs/dev/database.md) | Schema, RLS policies, SECURITY DEFINER functions |
+| [docs/dev/api.md](docs/dev/api.md) | API reference: `/eso/v1`, PostgREST, app JSON |
+| [docs/dev/building.md](docs/dev/building.md) | Build & push container images |
+| [docs/dev/testing.md](docs/dev/testing.md) | Running tests and lint |
+| [docs/dev/contributing.md](docs/dev/contributing.md) | Contribution guide |
 
-# curl
-export SS_URL=http://localhost:8080 SS_TOKEN=ss_… SS_PROJECT=<project-uuid>
-AUTH=(-H "Authorization: Bearer $SS_TOKEN")
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1"
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1&q=owner"
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
-```
+---
 
-## Features
+## Feature summary
 
 | Feature | Description |
 |---------|-------------|
-| Team / project / secret store | Organise secrets as **team / project / key/value**; optional project **description** |
-| Org groups RBAC | Team-scoped groups (manual or LDAP/OIDC-mapped) at **team**, **project**, and **secret** level |
-| Per-secret ACLs | Modes inherit / writers / admins / owners / custom (user or group grants) on the **Permissions** tab |
-| Secret metadata | System: created, updated, last accessed / by; custom searchable key/values on the **Metadata** tab |
-| Structured secret kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
+| Team / project / secret store | `team → project → key/value`; optional project description |
+| Org groups RBAC | Team-scoped groups (manual or LDAP/OIDC-mapped) at team, project, and secret level |
+| Per-secret ACLs | Modes: `inherit` / `writers` / `admins` / `owners` / `custom` (user or group grants) |
+| Secret metadata | System (created, updated, last accessed) + custom searchable key/values |
+| Structured kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
 | Browser UI | Bulk actions, trash, version history, search (incl. metadata), pins, mobile nav |
-| Postgres RLS enforcement | Access control at the database, not just the app |
-| Unified secret API (`/eso/v1`) | `ss_…` or `pat_…`: list, get, create, update, soft-delete (plaintext) |
+| Postgres RLS | Access control enforced at the database, not just the app |
+| Unified secret API | `/eso/v1` with `ss_…` (machine) or `pat_…` (PAT): list, get, create, update, soft-delete |
 | PostgREST API | SQL-style API with JWT auth for metadata / org clients |
-| ESO integration | Same machine API powers OpenShift External Secrets Operator webhooks |
-| Personal access tokens | `pat_…` for `/eso/v1` secrets (RLS) and `/api/token` → PostgREST JWT |
+| ESO integration | Machine API powers OpenShift External Secrets Operator webhooks |
+| Personal access tokens | `pat_…` for `/eso/v1` and `/api/token` → PostgREST JWT |
 | TOTP 2FA | Per-user 2FA with single-use recovery codes |
 | LDAP & OIDC / SSO | Directory groups → team maps, first-class groups, global-admin maps |
 | SMTP | Password-reset emails and login alerts |
 | Auditing | Secret & org audit logs, access review, export, retention purge |
-| Reveal access approval | Project default + per-secret override; admin approve/deny with time-limited grants (machine/ESO exempt) |
+| Reveal access approval | Project default + per-secret override; time-limited grants (machine/ESO exempt) |
 | Secret expiry | Optional per-secret expiry with overdue/soon dashboard |
-| Import / export | `.env`, JSON, CSV bulk import and export (plain export respects reveal ACL) |
-| Classification banner | Optional per-server / per-team banner (e.g. OFFICIAL) |
+| Import / export | `.env`, JSON, CSV bulk import and export |
+| Classification banner | Optional per-server / per-team banner |
 | Server-side sessions | Multi-device sign-out and per-session revocation |
 | Login lockout | 5 failed attempts lock out for 5 minutes |
 
-## Screenshots
+---
 
-![Login with classification banner](docs/images/login-classification-banner.png)
+## Tests
 
-![Secrets dashboard](docs/images/secrets-dashboard.png)
+Unit tests live under `tests/` (not shipped in the container image). They use
+**pytest** with a mocked DB — Postgres is not required.
 
-![Secret revealed inline](docs/images/secret-inline-show.png)
+```bash
+pip install -r app/requirements.txt -r requirements-dev.txt
+pytest
+# or: tox -e py
+```
 
-![Certificate secret view](docs/images/secret-show-cert.png)
+See [docs/dev/testing.md](docs/dev/testing.md).
 
-![Projects list](<docs/images/projects list.png>)
-
-![Search](docs/images/search.png)
-
-![Profile / security](docs/images/profile.png)
-
-![Server settings](docs/images/settings.png)
-
-![Auditing](docs/images/audit.png)
+---
 
 ## License
 

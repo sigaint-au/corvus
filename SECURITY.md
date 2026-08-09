@@ -51,6 +51,6 @@ yours, and do not degrade production systems.
 
 ## Hardening tips for operators
 
-See [docs/deploy.md](docs/deploy.md): strong `JWT_SECRET` / `MASTER_KEY` /
+See [docs/admin/deploy.md](docs/admin/deploy.md): strong `JWT_SECRET` / `MASTER_KEY` /
 `SECRET_KEY`, disable `ALLOW_INSECURE_DEFAULTS` in production, TLS termination,
 audit retention, and bootstrap admin controls.

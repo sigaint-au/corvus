@@ -1,13 +1,13 @@
 # Authentication & Token Flows
 
-This document explains **every way a caller can authenticate** to Sigaint Secret
-Server, the exact step-by-step flow for each, and concrete `curl` examples.
+Every way a caller can authenticate, the exact flow for each, and concrete
+`curl` examples.
 
-There are four credential types. Everything ultimately maps to one of two
-enforcement planes:
+There are four credential types. Everything maps to one of two enforcement
+planes:
 
-| Credential | Prefix / form | Where it is used | Enforced by |
-|------------|---------------|------------------|-------------|
+| Credential | Prefix / form | Where used | Enforced by |
+|------------|---------------|------------|-------------|
 | Browser session | cookie (`session`) | UI (HTML), `GET /api/token` | Flask session + server-side session registry |
 | Personal Access Token (PAT) | `pat_…` | `/api/token` → JWT; **and** `/eso/v1/…` plaintext | Flask PAT table; user RLS on secrets |
 | Short-lived JWT | `eyJ…` (HS256) | PostgREST `:3000` | Postgres RLS (`request.jwt.claims`) |
@@ -15,15 +15,15 @@ enforcement planes:
 
 > **Plaintext** secret values are only returned by the browser UI and the
 > `/eso/v1` routes (after decryption with `MASTER_KEY`), for **machine tokens**
-> or **PATs**. PostgREST returns `value_enc` (Fernet ciphertext), never plaintext.
+> or **PATs**. PostgREST returns `value_enc` (Fernet ciphertext), never
+> plaintext.
 
 ---
 
 ## 1. Browser session flow
 
-The browser flow is the only one that uses a cookie. It is a **two-step**
-process when 2FA is enabled, and can be forced through TOTP enrollment for
-global admins.
+The browser flow is the only one that uses a cookie. It is **two-step** when
+2FA is enabled, and can be forced through TOTP enrollment for global admins.
 
 ### 1a. Password (local) or LDAP login
 
@@ -32,18 +32,18 @@ POST /login
   form: email, password
 ```
 
-1. The app checks the login lockout counter (`private.login_failures`).
-   5 failed attempts → 5 minute lockout.
-2. It tries local password verification (`private.verify_user`).
-3. If that fails and LDAP is enabled, it tries LDAP bind + group sync.
-4. On success it checks whether the account needs a 2FA step:
+1. Check the login lockout counter (`private.login_failures`). 5 failed
+   attempts → 5 minute lockout.
+2. Try local password verification (`private.verify_user`).
+3. If that fails and LDAP is enabled, try LDAP bind + group sync.
+4. On success check whether the account needs a 2FA step:
    - `verify` → redirect to `/login/2fa` (step 1b)
    - `enroll` (global admin + enforcement on) → redirect to `/totp/setup`
-   - otherwise → full session is established.
+   - otherwise → full session established.
 
 A full session sets `user_id`, `email`, `name`, `is_global_admin`, a `jwt`
-(for PostgREST), and a server-side session id `sid`. The cookie is
-`HttpOnly`, `SameSite=Lax`, and `Secure` when `COOKIE_SECURE=1`.
+(for PostgREST), and a server-side session id `sid`. The cookie is `HttpOnly`,
+`SameSite=Lax`, and `Secure` when `COOKIE_SECURE=1`.
 
 ### 1b. Two-factor (TOTP) challenge
 
@@ -65,44 +65,37 @@ GET  /profile/2fa/recovery-codes  → shows 10 recovery codes once
 ```
 
 Until enrollment completes, `validate_registered_session` blocks all other
-routes (`_TOTP_SETUP_OK` allow-list).
+routes.
 
 ### 1d. Using the session
 
-Once logged in, the session cookie is sufficient for:
-
-- All HTML routes.
-- `GET /api/token` **without** an `Authorization` header → returns a JWT for
-  the logged-in user.
+The session cookie is sufficient for all HTML routes and for `GET /api/token`
+**without** an `Authorization` header:
 
 ```bash
-# With a browser session cookie:
 curl -s -b cookies.txt -H "Accept: application/json" \
   http://localhost:8080/api/token
 ```
 
 ### 1e. Logout
 
-`POST /logout` revokes the server-side session (`private.user_sessions`) and
-clears the cookie. Sessions are also revocable individually or "all others"
-from **My profile → Security**.
+`POST /logout` revokes the server-side session and clears the cookie. Sessions
+are also revocable individually or "all others" from **My profile → Security**.
 
 ---
 
 ## 2. Personal Access Token (PAT) flow
 
-PATs are for **scripts** that need to talk to PostgREST without a browser.
+PATs are for scripts that talk to PostgREST without a browser.
 
 ### Create
 
-Created in the UI: **My profile → Security → Personal access tokens**.
-Format: `pat_` + URL-safe secret. Shown **once**. Max 50 per user, optional
-expiry (1–3650 days).
+**My profile → Security → Personal access tokens**. Format: `pat_` + URL-safe
+secret. Shown **once**. Max 50 per user, optional expiry (1–3650 days).
 
 ### Exchange for a JWT
 
-PATs are **never** sent to PostgREST directly. You exchange them at
-`GET /api/token`:
+PATs are **never** sent to PostgREST directly. Exchange them at `GET /api/token`:
 
 ```bash
 JWT=$(curl -s \
@@ -136,10 +129,9 @@ curl -s -H "Authorization: Bearer $JWT" \
 
 ## 3. Machine token flow (ESO / CI / CLI)
 
-Machine tokens (`ss_…`) are **project-scoped** and authenticate the
-`/eso/v1` routes. **PATs** (`pat_…`) also authenticate `/eso/v1` under user RLS
-(project UUID or unique name). Either is suitable for CLI/CI with **plaintext**
-values (list, get, create, update, delete).
+Machine tokens (`ss_…`) are **project-scoped** and authenticate `/eso/v1`.
+**PATs** (`pat_…`) also authenticate `/eso/v1` under user RLS (project UUID or
+unique name).
 
 Create a token on a project under **Integrations** (or **Tokens**). Roles:
 
@@ -158,7 +150,7 @@ export SS_PROJECT="<PROJECT_ID>"
 AUTH=(-H "Authorization: Bearer $SS_TOKEN")
 ```
 
-### Fetch a single secret (ESO webhook / CLI get)
+### Fetch a single secret
 
 ```bash
 curl -s "${AUTH[@]}" \
@@ -183,8 +175,7 @@ curl -s "${AUTH[@]}" \
 ```
 
 ESO continues to use `jsonPath: $.value` (extra fields are additive). A
-successful **PAT** get updates `last_accessed_*`. Custom `metadata` is set in
-the UI **Metadata** tab; see [api.md](./api.md) and [rbac.md](./rbac.md).
+successful **PAT** get updates `last_accessed_*`.
 
 **403 on get (PAT):** `{"error":"approval_required",…}` if reveal approval is
 required; `{"error":"forbidden"}` if per-secret ACL denies reveal. Machine
@@ -214,37 +205,7 @@ curl -s "${AUTH[@]}" \
 #   &q=platform-team
 ```
 
-```json
-{
-  "items": [
-    {
-      "id": "…",
-      "key": "API_KEY",
-      "note": "prod edge",
-      "kind": "plain",
-      "expires_at": null,
-      "created_at": "…",
-      "updated_at": "…",
-      "last_accessed_at": "…",
-      "last_accessed_by": "",
-      "metadata": { "owner": "platform-team" }
-    }
-  ]
-}
-```
-
-**Official CLI** (same endpoints; see sibling `secretserver-cli` README):
-
-```bash
-secretserver get secrets
-secretserver get secrets -l platform-team
-secretserver get secret API_KEY -o value
-secretserver get secret API_KEY -o json
-```
-
 ### Create or replace (write role)
-
-**POST** with `key` in the body, or **PUT** with `key` in the path:
 
 ```bash
 # POST upsert
@@ -264,8 +225,7 @@ Optional body fields: `note`, `kind` (`plain`|`database`|`certificate`|`ssh`|`kv
 ### Partial update (write role)
 
 Secret must already exist. Omitted fields keep current values; omit `value` to
-change only note/kind/expiry without rotating ciphertext. Custom label fields
-(`metadata` map) are edited in the UI **Metadata** tab, not via this body.
+change only note/kind/expiry without rotating ciphertext.
 
 ```bash
 curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" \
@@ -274,8 +234,6 @@ curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" \
 ```
 
 ### Soft-delete (write role)
-
-Moves the secret to trash (restorable in the UI). Audited as `deleted`.
 
 ```bash
 curl -s -X DELETE "${AUTH[@]}" \
@@ -295,41 +253,36 @@ curl -s -X DELETE "${AUTH[@]}" \
 | `403` | Read-only token used for a write |
 | `404` | Key not found (get / patch / delete) |
 
-Full request/response field tables and CLI cookbook:
-[api.md — Managing secrets via the unified API](./api.md#managing-secrets-via-the-unified-api-esov1).
-
 ---
 
 ## 4. JWT / PostgREST flow
 
-The JWT is the bridge between the app and PostgREST. It is minted by
-`GET /api/token` from either a session or a PAT, signed with `JWT_SECRET`
-(HS256), and carries `sub` (user id), `role: authenticated`, and a 24h `exp`.
+The JWT is the bridge between the app and PostgREST. Minted by `GET /api/token`
+from a session or PAT, signed with `JWT_SECRET` (HS256), carrying `sub`
+(user id), `role: authenticated`, and a 24h `exp`.
 
-PostgREST maps the JWT `role` to the DB role `authenticated` and reads the
-`sub` claim from `request.jwt.claims` for RLS. **RLS is the access-control
-plane** — a valid JWT with no membership sees empty sets, not other teams'
-rows.
+PostgREST maps the JWT `role` to the DB role `authenticated` and reads the `sub`
+claim from `request.jwt.claims` for RLS. **RLS is the access-control plane** —
+a valid JWT with no membership sees empty sets, not other teams' rows.
 
 ```bash
 JWT=$(curl -s -H "Authorization: Bearer pat_XXXX..." \
   -H "Accept: application/json" \
   http://localhost:8080/api/token | jq -r .access_token)
 
-# List live secrets in a project
 curl -s -H "Authorization: Bearer $JWT" \
   "http://localhost:3000/secrets?project_id=eq.<PID>&deleted_at=is.null&select=id,key,note,kind,expires_at"
 ```
 
-> The UI can also show a ready JWT under **My profile → Security → API access
-> → Show JWT**.
+The UI can also show a ready JWT under **My profile → Security → API access →
+Show JWT**.
 
 ---
 
 ## 5. OIDC / SSO flow
 
-OIDC is an **authorization-code** flow. Configure it under
-**Administration → Server settings → OIDC / SSO**.
+OIDC is an **authorization-code** flow. Configure under **Administration →
+Server settings → OIDC / SSO**.
 
 ```
 1. User clicks "Sign in with SSO"  →  GET /login/oidc
@@ -342,15 +295,15 @@ OIDC is an **authorization-code** flow. Configure it under
    (asymmetric RS/ES/PS only, checks nonce, issuer, audience, exp).
 5. If email_verified is required (default), the claim must be true.
 6. User is upserted by email (auth_source=oidc); group→role maps apply.
-7. Then the normal 2FA / session logic runs (_post_password_login).
+7. Then the normal 2FA / session logic runs.
 ```
 
 Key security properties:
 
 - `state` prevents CSRF on the callback; `nonce` binds the ID token to the
   login attempt.
-- ID token signature algorithms are restricted to asymmetric (RS/ES/PS).
-- Discovery documents are cached 1 hour and cleared when settings are saved.
+- ID token signature algorithms restricted to asymmetric (RS/ES/PS).
+- Discovery documents cached 1 hour and cleared when settings are saved.
 - Local password login still works for break-glass accounts.
 
 ### OIDC group → role mapping
@@ -361,11 +314,12 @@ Key security properties:
   direct `team_members` row. Manual memberships are never overwritten.
 - **Team → Groups** can create a first-class group with `source=oidc` and an
   `external_key` matching the claim value; on login, matching users are synced
-  into `group_members`. That group can hold a **team role**, a **project role**
-  (project Settings → Group roles), or a **secret ACL** grant (custom mode).
-- Groups come from the configured groups claim (default `groups`) plus
-  `realm_access.roles` when present. Maps apply on each SSO login; manual
-  memberships are not removed.
+  into `group_members`. That group can hold a **team role**, a **project role**,
+  or a **secret ACL** grant.
+
+Groups come from the configured groups claim (default `groups`) plus
+`realm_access.roles` when present. Maps apply on each SSO login; manual
+memberships are not removed.
 
 ---
 
@@ -383,17 +337,15 @@ POST /login  (email, password)
   → normal 2FA / session logic
 ```
 
-- LDAP over cleartext is rejected unless StartTLS is enabled
-  (`ldap_tls_required_ok`).
+- LDAP over cleartext is rejected unless StartTLS is enabled.
 - **Team → Settings → LDAP group membership** maps a group to a direct
   `team_members` role.
 - **Team → Groups** with `source=ldap` + `external_key` syncs membership into
-  `group_members` (same team / project / secret grant model as OIDC).
+  `group_members`.
 - **Server settings → LDAP → LDAP group → roles** maps a group to
   `global_admin`.
 
-For team / project / secret RBAC with groups end-to-end, see
-**[rbac.md](./rbac.md)**.
+For team / project / secret RBAC with groups end-to-end, see [rbac.md](rbac.md).
 
 ---
 
@@ -414,8 +366,8 @@ POST /reset-password/<token>  form: password, password_confirm
   → revoke ALL sessions for that user
 ```
 
-Reset tokens are stored as SHA-256 hashes. Global admins can also issue a
-reset for any local user from **Administration → Users**.
+Reset tokens are stored as SHA-256 hashes. Global admins can also issue a reset
+for any local user from **Administration → Users**.
 
 ---
 
@@ -432,10 +384,9 @@ reset for any local user from **Administration → Users**.
 
 ### Security notes
 
-- PATs and machine tokens are stored as **unsalted SHA-256** hashes. This is
-  acceptable for high-entropy random tokens (they are not brute-forceable from
-  a DB leak), but see the recommendations in the review if you want HMAC.
-- TOTP recovery codes are **HMAC-SHA256** with `SECRET_KEY` (not plain SHA).
+- PATs and machine tokens are stored as **unsalted SHA-256** hashes —
+  acceptable for high-entropy random tokens (not brute-forceable from a DB leak).
+- TOTP recovery codes are **HMAC-SHA256** with `SECRET_KEY`.
 - Secret values are **Fernet-encrypted** with `MASTER_KEY` at rest; only the
   app and ESO routes decrypt them.
 - PostgREST never sees plaintext — only `value_enc`.
@@ -444,6 +395,6 @@ reset for any local user from **Administration → Users**.
 
 ## Related docs
 
-- Full HTTP / ESO / PostgREST reference: [api.md](./api.md)
-- Deploy, env vars, bootstrap, OIDC/LDAP config: [deploy.md](./deploy.md)
-- ESO manifests: [openshift-eso.yaml](./openshift-eso.yaml)
+- Full HTTP / ESO / PostgREST reference: [api.md](../dev/api.md)
+- Deploy, env vars, bootstrap, OIDC/LDAP config: [deploy.md](deploy.md)
+- Machine accounts & ESO: [machine-tokens.md](machine-tokens.md)
