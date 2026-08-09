@@ -173,12 +173,22 @@ curl -s "${AUTH[@]}" \
   "note": "",
   "kind": "plain",
   "expires_at": null,
+  "acl_mode": "inherit",
   "created_at": "…",
-  "updated_at": "…"
+  "updated_at": "…",
+  "last_accessed_at": "…",
+  "last_accessed_by": "alice@example.com",
+  "metadata": { "owner": "platform-team", "env": "prod" }
 }
 ```
 
-ESO continues to use `jsonPath: $.value` (extra fields are additive).
+ESO continues to use `jsonPath: $.value` (extra fields are additive). A
+successful **PAT** get updates `last_accessed_*`. Custom `metadata` is set in
+the UI **Metadata** tab; see [api.md](./api.md) and [rbac.md](./rbac.md).
+
+**403 on get (PAT):** `{"error":"approval_required",…}` if reveal approval is
+required; `{"error":"forbidden"}` if per-secret ACL denies reveal. Machine
+tokens (`ss_…`) skip human ACL and approval.
 
 ### Fetch all secrets (bulk value map)
 
@@ -191,12 +201,17 @@ curl -s "${AUTH[@]}" \
 {"secrets": {"DATABASE_URL": "...", "API_KEY": "..."}}
 ```
 
+PAT bulk list with values only includes secrets the caller may reveal (ACL +
+approval). Machine tokens return all live keys in the project.
+
 ### List metadata only (CLI — no plaintext)
 
 ```bash
 curl -s "${AUTH[@]}" \
   "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1"
-# optional filter: &q=api
+# filter key, note, or custom metadata key/value:
+#   &q=api
+#   &q=platform-team
 ```
 
 ```json
@@ -205,14 +220,26 @@ curl -s "${AUTH[@]}" \
     {
       "id": "…",
       "key": "API_KEY",
-      "note": "",
+      "note": "prod edge",
       "kind": "plain",
       "expires_at": null,
       "created_at": "…",
-      "updated_at": "…"
+      "updated_at": "…",
+      "last_accessed_at": "…",
+      "last_accessed_by": "",
+      "metadata": { "owner": "platform-team" }
     }
   ]
 }
+```
+
+**Official CLI** (same endpoints; see sibling `secretserver-cli` README):
+
+```bash
+secretserver get secrets
+secretserver get secrets -l platform-team
+secretserver get secret API_KEY -o value
+secretserver get secret API_KEY -o json
 ```
 
 ### Create or replace (write role)
@@ -237,7 +264,8 @@ Optional body fields: `note`, `kind` (`plain`|`database`|`certificate`|`ssh`|`kv
 ### Partial update (write role)
 
 Secret must already exist. Omitted fields keep current values; omit `value` to
-change only metadata without rotating ciphertext.
+change only note/kind/expiry without rotating ciphertext. Custom label fields
+(`metadata` map) are edited in the UI **Metadata** tab, not via this body.
 
 ```bash
 curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" \
@@ -268,7 +296,7 @@ curl -s -X DELETE "${AUTH[@]}" \
 | `404` | Key not found (get / patch / delete) |
 
 Full request/response field tables and CLI cookbook:
-[api.md — Managing secrets via the machine API](./api.md#managing-secrets-via-the-machine-api).
+[api.md — Managing secrets via the unified API](./api.md#managing-secrets-via-the-unified-api-esov1).
 
 ---
 

@@ -151,10 +151,14 @@ AUTH=(-H "Authorization: Bearer $SS_TOKEN")
 
 # Official CLI
 secretserver login --url "$SS_URL" --token "$SS_TOKEN" --project "$SS_PROJECT"
-secretserver list
+secretserver get secrets
+secretserver get secrets -l api          # key, note, or custom metadata
+secretserver get secret DATABASE_URL -o value
+secretserver get secret DATABASE_URL -o json
 
 # List keys (curl; no values)
 curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1"
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1&q=api"
 
 # Get one secret
 curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/DATABASE_URL"
@@ -167,7 +171,7 @@ curl -s -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"value":"new-value","note":"optional","expires_days":90}' \
   "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 
-# Patch metadata only (write role)
+# Patch note / expiry only (write role; custom labels are UI Metadata tab)
 curl -s -X PATCH "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"note":"rotated in CI"}' \
   "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
@@ -178,7 +182,7 @@ curl -s -X DELETE "${AUTH[@]}" \
 ```
 
 Full field tables, errors, and CLI cookbook:
-[api.md — Managing secrets via the machine API](./api.md#managing-secrets-via-the-machine-api).
+[api.md — Managing secrets via the unified API](./api.md#managing-secrets-via-the-unified-api-esov1).
 
 ---
 

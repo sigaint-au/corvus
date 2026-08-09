@@ -531,6 +531,25 @@ curl -s -X DELETE -H "$AUTH" \
 
 ### CLI cookbook (copy-paste)
 
+**Official CLI** (`secretserver-cli` — preferred for humans and scripts):
+
+```bash
+export SS_URL="https://secrets.example.com"
+export SS_TOKEN="ss_…"          # or pat_…
+export SS_PROJECT="<project-uuid-or-name>"
+
+secretserver get secrets                         # metadata table (no values)
+secretserver get secrets -l platform-team        # q= key/note/custom meta
+secretserver get secret API_KEY -o value         # scripts
+secretserver get secret API_KEY -o json          # + metadata, last_accessed_*
+secretserver get secret prod/db/password -o value  # hierarchical keys OK
+printf '%s' "$NEW" | secretserver apply secret API_KEY --from-file=-
+secretserver apply secret API_KEY --from-env=NEW_API_KEY --note 'ci rotate'
+secretserver delete secret API_KEY
+```
+
+**curl** (same `/eso/v1` surface):
+
 ```bash
 export SS_URL="https://secrets.example.com"
 export SS_TOKEN="ss_…"
@@ -538,10 +557,20 @@ export SS_PROJECT="<project-uuid>"
 AUTH=(-H "Authorization: Bearer $SS_TOKEN")
 
 # 1) List keys (no values)
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1" | jq '.items[] | {key, note, kind, expires_at}'
+curl -s "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1" \
+  | jq '.items[] | {key, note, kind, metadata, last_accessed_at}'
 
-# 2) Get one value
-curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq -r .value
+# 1b) Filter by key / note / custom metadata
+curl -s "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1&q=platform-team" | jq .
+
+# 2) Get one value (hierarchical key example)
+curl -s "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/prod%2Fdb%2Fpassword" | jq -r .value
+# or path-style when the server accepts unescaped slashes:
+curl -s "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq -r .value
 
 # 3) Create or replace
 curl -s -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
@@ -699,10 +728,14 @@ Default compose port: **3000**. Prefer the `postgrest` URL returned by
 | `/team_oidc_maps` | OIDC group → team role | Team admin+ |
 | `/team_invites` | Invite metadata | Token hashes only |
 | `/team_join_requests` | Join request workflow | status: pending, approved, rejected |
-| `/projects` | Projects under teams | |
-| `/project_members` | Project-scoped roles | `role`: admin, write, read |
-| `/secrets` | Metadata + `value_enc` | Soft-delete via `deleted_at`; unique live `(project_id, key)`; `acl_mode` |
-| `/secret_acl` | Per-secret user grants | Used when `acl_mode = custom` |
+| `/projects` | Projects under teams | Optional `description` |
+| `/project_members` | Project-scoped user roles | `role`: admin, write, read |
+| `/groups` | Team-scoped groups | `source`: manual, ldap, oidc; optional `team_role` (not owner); `external_key` |
+| `/group_members` | Group membership | `source`: manual, ldap, oidc |
+| `/project_group_roles` | Group → project role | Least-privilege via directory groups |
+| `/secrets` | Row metadata + `value_enc` | Soft-delete via `deleted_at`; unique live `(project_id, key)`; `acl_mode`; `last_accessed_*` |
+| `/secret_meta` | Custom secret labels | Key/value per secret; searchable in UI/API `q=` |
+| `/secret_acl` | Per-secret grants | `user_id` **or** `group_id` when `acl_mode = custom` |
 | `/secret_versions` | Prior ciphertexts | Filled on value change |
 | `/secret_audit` | Secret actions | created, updated, revealed, deleted, restored, purged, machine_upsert, exported, access_requested, access_approved, access_denied |
 | `/secret_access_requests` | Reveal approval workflow | pending / approved / denied grants |
@@ -712,11 +745,22 @@ Default compose port: **3000**. Prefer the `postgrest` URL returned by
 | `/machine_tokens` | Machine token **metadata** | Hashes only — raw `ss_…` never returned |
 | `/user_directory` | User list view | Not a public directory via normal JWT policies |
 
+Plaintext custom fields and last-access timestamps are also on the unified
+`/eso/v1` list/get responses (preferred for CLI). Full RBAC:
+**[rbac.md](./rbac.md)**.
+
 ### Example: list live secret metadata for a project
 
 ```bash
 curl -s -H "Authorization: Bearer $JWT" \
-  "http://localhost:3000/secrets?project_id=eq.$SS_PROJECT&deleted_at=is.null&select=id,key,note,kind,expires_at,updated_at"
+  "http://localhost:3000/secrets?project_id=eq.$SS_PROJECT&deleted_at=is.null&select=id,key,note,kind,expires_at,updated_at,last_accessed_at,acl_mode"
+```
+
+### Example: custom metadata for a secret
+
+```bash
+curl -s -H "Authorization: Bearer $JWT" \
+  "http://localhost:3000/secret_meta?secret_id=eq.$SECRET_ID&select=key,value"
 ```
 
 ### Example: list projects
@@ -768,13 +812,67 @@ Full flows: [authentication.md](./authentication.md).
 
 ## Management API (PAT)
 
-In addition to secret CRUD, PAT-authenticated routes under `/eso/v1` cover
-teams, projects, members, trash, machine tokens, project audit, and global
-admin lists (`/eso/v1/admin/users`, `/eso/v1/admin/audit`). Server settings
-are not exposed. Used by `secretserver-cli` on branch `feature/cli-full-mgmt`.
+PAT-only routes under `/eso/v1` for org automation. **Machine tokens
+(`ss_…`) cannot call these.** Server settings (SMTP, LDAP, OIDC, banners)
+are **not** exposed. Used by **secretserver-cli** on `main`.
+
+Auth: `Authorization: Bearer pat_…`. Team/project refs: UUID or unique name.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/eso/v1/teams` | List teams (`?q=` filter) |
+| `POST` | `/eso/v1/teams` | Create team `{"name":"…"}` |
+| `GET` | `/eso/v1/teams/{ref}` | Team detail + members/projects |
+| `DELETE` | `/eso/v1/teams/{ref}` | Delete team (owner / policy) |
+| `GET` | `/eso/v1/teams/{ref}/members` | Team members |
+| `POST` | `/eso/v1/teams/{ref}/members` | Add member `{"email","role"}` |
+| `DELETE` | `/eso/v1/teams/{ref}/members/{member}` | Remove member |
+| `POST` | `/eso/v1/teams/{ref}/transfer` | Transfer ownership `{"email"}` |
+| `POST` | `/eso/v1/teams/{ref}/projects` | Create project `{"name",…}` |
+| `GET` | `/eso/v1/projects` | List projects (also usable for secrets context) |
+| `GET` | `/eso/v1/projects/{ref}` | Project detail |
+| `DELETE` | `/eso/v1/projects/{ref}` | Delete project |
+| `GET` | `/eso/v1/projects/{ref}/members` | Project members |
+| `POST` | `/eso/v1/projects/{ref}/members` | Add project member |
+| `DELETE` | `/eso/v1/projects/{ref}/members/{member}` | Remove project member |
+| `GET` | `/eso/v1/projects/{ref}/tokens` | Machine token metadata |
+| `POST` | `/eso/v1/projects/{ref}/tokens` | Create token (raw `ss_…` once) |
+| `DELETE` | `/eso/v1/projects/{ref}/tokens/{id}` | Revoke token |
+| `GET` | `/eso/v1/projects/{ref}/trash` | Soft-deleted secrets |
+| `POST` | `/eso/v1/projects/{ref}/trash/{id}/restore` | Restore |
+| `DELETE` | `/eso/v1/projects/{ref}/trash/{id}` | Purge permanently |
+| `GET` | `/eso/v1/projects/{ref}/secrets/{key}/history` | Version history (no plaintext) |
+| `GET` | `/eso/v1/projects/{ref}/audit` | Project secret audit |
+| `GET` | `/eso/v1/admin/users` | Global admin: user list (`?q=`) |
+| `GET` | `/eso/v1/admin/audit` | Global admin: org / secret / access audit |
+
+**Groups, secret ACLs, and custom metadata** are managed in the **browser UI**
+today (Team → Groups, Secret → Permissions / Metadata). They appear on secret
+list/get JSON and in PostgREST where RLS allows.
+
+### Management CLI examples
+
+```bash
+# PAT required
+secretserver get teams
+secretserver create team Platform
+secretserver create project ios-app --team Platform
+secretserver create member bob@example.com --team Platform --role member
+secretserver create member dave@example.com --role write   # current project
+secretserver get tokens
+secretserver create token ci --role write                  # prints ss_… once
+secretserver get trash
+secretserver restore trash <secret-uuid>
+secretserver get history API_KEY
+secretserver get users -l alice                            # global admin
+secretserver get audit --source org                        # global admin
+```
+
+Full CLI guide: sibling repo **secretserver-cli** README.
 
 ## Related docs
 
 - Authentication flows & token lifecycle: [authentication.md](./authentication.md)
+- Org RBAC, groups, Permissions/Metadata UI: [rbac.md](./rbac.md)
 - Deploy, env, OIDC, audit purge: [deploy.md](./deploy.md)
 - ESO manifests: [openshift-eso.yaml](./openshift-eso.yaml)
