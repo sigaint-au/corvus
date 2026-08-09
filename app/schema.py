@@ -1903,11 +1903,35 @@ def ensure_schema():
             CHECK (source IN ('manual', 'ldap', 'oidc')),
           external_key text,
           team_role text CHECK (
-            team_role IS NULL OR team_role IN ('owner', 'admin', 'member', 'viewer')
+            team_role IS NULL OR team_role IN ('admin', 'member', 'viewer')
           ),
           created_at timestamptz NOT NULL DEFAULT now(),
           UNIQUE (team_id, name)
         )
+        """,
+        # Existing DBs: drop owner from group team_role (demote to admin first)
+        """
+        DO $$
+        DECLARE r record;
+        BEGIN
+          UPDATE api.groups SET team_role = 'admin' WHERE team_role = 'owner';
+          FOR r IN
+            SELECT c.conname
+            FROM pg_constraint c
+            JOIN pg_class t ON c.conrelid = t.oid
+            JOIN pg_namespace n ON t.relnamespace = n.oid
+            WHERE n.nspname = 'api' AND t.relname = 'groups'
+              AND c.contype = 'c'
+              AND pg_get_constraintdef(c.oid) ILIKE '%team_role%'
+          LOOP
+            EXECUTE format('ALTER TABLE api.groups DROP CONSTRAINT %I', r.conname);
+          END LOOP;
+          ALTER TABLE api.groups
+            ADD CONSTRAINT groups_team_role_check CHECK (
+              team_role IS NULL OR team_role IN ('admin', 'member', 'viewer')
+            );
+        EXCEPTION WHEN others THEN NULL;
+        END $$
         """,
         """
         CREATE UNIQUE INDEX IF NOT EXISTS groups_external_key_uidx

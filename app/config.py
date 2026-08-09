@@ -126,6 +126,8 @@ DEFAULT_SETTINGS = {
     "oidc_require_email_verified": "true",
 }
 TEAM_ROLES = ("owner", "admin", "member", "viewer")
+# Groups may inherit a team role, but never owner (avoids accidental owner escalation)
+GROUP_TEAM_ROLES = ("admin", "member", "viewer")
 ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}
 # Invite / join-request roles (cannot self-invite as owner)
 INVITE_ROLES = ("admin", "member", "viewer")

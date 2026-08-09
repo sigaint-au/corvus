@@ -252,7 +252,7 @@ def register(app):
             join_requests=join_requests,
             org_events=org_events,
             invite_roles=config.INVITE_ROLES,
-            team_roles=config.TEAM_ROLES,
+            team_roles=config.GROUP_TEAM_ROLES,
             new_invite_url=session.pop("new_invite_url", None),
             ldap_enabled=settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled")),
             oidc_enabled=settings_svc.truthy(
@@ -1078,7 +1078,7 @@ def register(app):
             source = "manual"
         external_key = (request.form.get("external_key") or "").strip() or None
         team_role = (request.form.get("team_role") or "").strip() or None
-        if team_role and team_role not in config.TEAM_ROLES:
+        if team_role and team_role not in config.GROUP_TEAM_ROLES:
             team_role = None
         if source == "manual":
             external_key = None
@@ -1126,7 +1126,7 @@ def register(app):
         """Update group name, team role, or external mapping."""
         name = (request.form.get("name") or "").strip()
         team_role = (request.form.get("team_role") or "").strip() or None
-        if team_role and team_role not in config.TEAM_ROLES:
+        if team_role and team_role not in config.GROUP_TEAM_ROLES:
             team_role = None
         external_key = (request.form.get("external_key") or "").strip() or None
         if not name:

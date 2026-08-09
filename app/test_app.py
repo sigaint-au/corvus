@@ -2304,6 +2304,103 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn('"error": "forbidden"', src)
         self.assertIn('"error": "approval_required"', src)
 
+    def test_eso_pat_bulk_export_filters_reveal_acl(self):
+        """PAT bulk list-with-values must filter by can_access_secret(reveal)."""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent / "routes" / "eso.py").read_text()
+        # Bulk values path (not meta=1) for PAT/as_user
+        start = src.index("def eso_list_secrets")
+        body = src[start : start + 8000]
+        self.assertIn("cli/values", body)
+        # The non-meta PAT SELECT must include reveal ACL filter
+        self.assertIn("can_access_secret(id, 'reveal')", body)
+        self.assertIn("can_reveal_secret(id)", body)
+        # Ensure the bulk values query is not the unfiltered form
+        self.assertNotRegex(
+            body,
+            r"SELECT key, value_enc FROM api\.secrets\s+"
+            r"WHERE project_id = %s AND deleted_at IS NULL\s*\"\"\"",
+        )
+
+    def test_group_team_role_cannot_be_owner(self):
+        """Groups must not grant team owner (admin max)."""
+        self.assertNotIn("owner", config.GROUP_TEAM_ROLES)
+        self.assertIn("admin", config.GROUP_TEAM_ROLES)
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        # groups.team_role check excludes owner
+        self.assertIn("team_role IN ('admin', 'member', 'viewer')", init)
+        self.assertNotIn(
+            "team_role IN ('owner', 'admin', 'member', 'viewer')",
+            init[init.index("CREATE TABLE api.groups") : init.index("CREATE TABLE api.group_members")],
+        )
+
+    def test_can_access_secret_row_behavioral_matrix(self):
+        """Expected outcomes for can_access_secret_row (mirrors SQL CASE).
+
+        Pure-Python stand-in of the SECURITY DEFINER helper so we can assert
+        mode × need without a live Postgres. Keep in sync with init.sql.
+        """
+        perm_rank = {"read": 1, "reveal": 2, "write": 3}
+
+        def row_access(
+            *,
+            mode,
+            need,
+            deleted=False,
+            can_read=True,
+            can_write=False,
+            can_admin=False,
+            is_global=False,
+            team_role=None,
+            grants=None,
+        ):
+            if deleted or not need or need not in perm_rank:
+                return False
+            if not can_read and not is_global:
+                return False
+            if is_global or can_admin:
+                return True
+            mode = mode or "inherit"
+            if mode == "inherit":
+                return can_write if need == "write" else True
+            if mode == "writers":
+                return can_write
+            if mode == "admins":
+                return False  # only admin/global above
+            if mode == "owners":
+                return team_role == "owner"
+            if mode == "custom":
+                grants = grants or []
+                need_r = perm_rank[need]
+                return any(perm_rank.get(g, 0) >= need_r for g in grants)
+            return False
+
+        # inherit
+        self.assertTrue(row_access(mode="inherit", need="read", can_read=True))
+        self.assertTrue(row_access(mode="inherit", need="reveal", can_read=True))
+        self.assertFalse(row_access(mode="inherit", need="write", can_read=True, can_write=False))
+        self.assertTrue(row_access(mode="inherit", need="write", can_read=True, can_write=True))
+        # writers
+        self.assertFalse(row_access(mode="writers", need="read", can_read=True, can_write=False))
+        self.assertTrue(row_access(mode="writers", need="read", can_read=True, can_write=True))
+        # admins (non-admin always false)
+        self.assertFalse(row_access(mode="admins", need="reveal", can_read=True, can_write=True))
+        self.assertTrue(row_access(mode="admins", need="reveal", can_admin=True))
+        # owners
+        self.assertFalse(row_access(mode="owners", need="read", can_read=True, team_role="admin"))
+        self.assertTrue(row_access(mode="owners", need="read", can_read=True, team_role="owner"))
+        # custom grants
+        self.assertFalse(row_access(mode="custom", need="reveal", can_read=True, grants=["read"]))
+        self.assertTrue(row_access(mode="custom", need="reveal", can_read=True, grants=["reveal"]))
+        self.assertTrue(row_access(mode="custom", need="read", can_read=True, grants=["write"]))
+        self.assertFalse(row_access(mode="custom", need="write", can_read=True, grants=["reveal"]))
+        # deleted / no project read
+        self.assertFalse(row_access(mode="inherit", need="read", deleted=True))
+        self.assertFalse(row_access(mode="inherit", need="read", can_read=False))
+
     def test_org_groups_rbac_schema(self):
         """Groups tables, group-aware RBAC helpers, secret ACL group grants."""
         from pathlib import Path

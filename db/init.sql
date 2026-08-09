@@ -190,8 +190,9 @@ CREATE TABLE api.groups (
   -- When source is ldap/oidc, directory group token (DN/CN/claim) for membership sync
   external_key text,
   -- If set, group members receive this team role (max with direct team_members)
+  -- No 'owner': groups must not create team owners (break-glass stays direct members)
   team_role text CHECK (
-    team_role IS NULL OR team_role IN ('owner', 'admin', 'member', 'viewer')
+    team_role IS NULL OR team_role IN ('admin', 'member', 'viewer')
   ),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, name)

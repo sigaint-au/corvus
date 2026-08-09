@@ -966,10 +966,13 @@ def register(app):
                 _audit(cur, project_id=pid, action="exported", secret_key=detail)
                 conn.commit()
                 return jsonify({"items": [_meta_item(r) for r in rows]})
+            # PAT bulk values: only secrets the caller may reveal (ACL + approval)
             cur.execute(
                 """
                 SELECT key, value_enc FROM api.secrets
                  WHERE project_id = %s AND deleted_at IS NULL
+                   AND api.can_access_secret(id, 'reveal')
+                   AND api.can_reveal_secret(id)
                 """,
                 (pid,),
             )

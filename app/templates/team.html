@@ -236,7 +236,7 @@
     <label>Team role
       <select name="team_role">
         <option value="">— none —</option>
-        {% for r in team_roles|default(['owner','admin','member','viewer']) %}
+        {% for r in team_roles|default(['admin','member','viewer']) %}
         <option value="{{ r }}" {% if r == 'member' %}selected{% endif %}>{{ r }}</option>
         {% endfor %}
       </select>
@@ -282,7 +282,7 @@
     <label>Team role
       <select name="team_role">
         <option value="">— none —</option>
-        {% for r in team_roles|default(['owner','admin','member','viewer']) %}
+        {% for r in team_roles|default(['admin','member','viewer']) %}
         <option value="{{ r }}" {% if selected_group.team_role == r %}selected{% endif %}>{{ r }}</option>
         {% endfor %}
       </select>

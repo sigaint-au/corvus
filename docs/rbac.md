@@ -168,7 +168,7 @@ server.
 |------|--------------------|
 | Group only used for **project** or **secret** grants | Leave team role empty (**— none —**) |
 | Group should see the team and inherit default project access | Set e.g. `viewer` or `member` |
-| Group should administer the team | Set `admin` (use carefully) |
+| Group should administer the team | Set `admin` (use carefully; groups cannot be `owner`) |
 
 A user who is only in a group **without** a team role is **not** a team member
 until they also have a project group role or direct membership somewhere that
