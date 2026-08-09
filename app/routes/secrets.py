@@ -9,6 +9,7 @@ import authz
 import config
 import crypto
 import db
+import nav
 import paging
 import pins
 from secret_kinds import (
@@ -196,7 +197,7 @@ def register(app):
         Example:
             GET /secrets?q=password
         """
-        tid = session.get("team_id")
+        tid = nav.ensure_active_team(session["user_id"])
         q = (request.args.get("q") or "").strip()
         team, secrets = None, []
         if tid:
@@ -245,7 +246,7 @@ def register(app):
         Example:
             GET /trash?q=old-key
         """
-        tid = session.get("team_id")
+        tid = nav.ensure_active_team(session["user_id"])
         team, items = None, []
         q = (request.args.get("q") or "").strip()
         if tid:

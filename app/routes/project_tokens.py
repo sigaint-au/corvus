@@ -9,6 +9,7 @@ from flask import flash, redirect, render_template, request, session, url_for
 import authz
 import config
 import db
+import nav
 from crypto import sha256_hex
 from secret_kinds import annotate_token_expiry
 
@@ -39,7 +40,7 @@ def register(app):
         Example:
             GET /machines
         """
-        tid = session.get("team_id")
+        tid = nav.ensure_active_team(session["user_id"])
         team, tokens = None, []
         if tid:
             with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:

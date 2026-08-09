@@ -8,6 +8,7 @@ import audit
 import authz
 import config
 import db
+import nav
 import paging
 from secret_kinds import annotate_token_expiry, expires_status, parse_secret_pairs, secret_due_status
 from secret_ops import _load_secrets_page
@@ -131,7 +132,7 @@ def register(app):
         Example:
             GET /projects
         """
-        tid = session.get("team_id")
+        tid = nav.ensure_active_team(session["user_id"])
         team, projects = None, []
         if tid:
             with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:

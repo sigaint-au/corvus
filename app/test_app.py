@@ -21,6 +21,7 @@ import crypto  # noqa: E402
 import db  # noqa: E402
 import ldap_auth  # noqa: E402
 import lockout  # noqa: E402
+import nav  # noqa: E402
 import paging  # noqa: E402
 import pats  # noqa: E402
 import schema as schema_mod  # noqa: E402
@@ -3347,6 +3348,45 @@ class TestNav(unittest.TestCase):
         with self.client.session_transaction() as s:
             self.assertEqual(s["team_id"], str(self.tid))
 
+    def test_select_team_leaves_other_team_project_secrets(self):
+        """Switching team from a project secrets URL must not stay on that project."""
+        other_pid = uuid4()
+        with patch.object(nav, "_project_team_id", return_value=str(uuid4())):
+            r = self.client.post(
+                "/select-team",
+                data={
+                    "team_id": str(self.tid),
+                    "next": f"/projects/{other_pid}?tab=secrets",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(
+            r.location.endswith("/secrets") or "/secrets" in r.location,
+            r.location,
+        )
+        self.assertNotIn(str(other_pid), r.location)
+
+    def test_redirect_after_team_switch_helper(self):
+        pid = "c29f6ab5-6ec7-4484-beb5-8b0741b54713"
+        with store.app.test_request_context("/"):
+            with patch.object(nav, "_project_team_id", return_value="other"):
+                self.assertEqual(
+                    nav.redirect_after_team_switch(
+                        f"/projects/{pid}?tab=secrets", "new"
+                    ),
+                    "/secrets",
+                )
+                self.assertEqual(
+                    nav.redirect_after_team_switch(
+                        f"/projects/{pid}?tab=settings", "new"
+                    ),
+                    "/projects",
+                )
+            self.assertEqual(
+                nav.redirect_after_team_switch("/secrets", "new"), "/secrets"
+            )
+
     def test_projects_list(self):
         pid = uuid4()
         state = {"n": 0}
@@ -3356,7 +3396,9 @@ class TestNav(unittest.TestCase):
             return {"id": self.tid, "name": "Ops"}
 
         conn, cur = _conn(fetchone=fetchone, fetchall=[{"id": pid, "name": "api"}])
-        with patch.object(db, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            nav, "ensure_active_team", return_value=str(self.tid)
+        ):
             r = self.client.get("/projects")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"api", r.data)
@@ -3375,7 +3417,9 @@ class TestNav(unittest.TestCase):
                 }
             ],
         )
-        with patch.object(db, "as_user", return_value=conn):
+        with patch.object(db, "as_user", return_value=conn), patch.object(
+            nav, "ensure_active_team", return_value=str(self.tid)
+        ):
             r = self.client.get("/secrets")
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"DB_URL", r.data)

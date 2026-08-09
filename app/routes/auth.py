@@ -13,6 +13,7 @@ import db
 import ldap_auth
 import lockout
 import mailer
+import nav
 import oidc_auth
 import passwords
 import pats
@@ -262,7 +263,9 @@ def register(app):
         tid = (request.form.get("team_id") or "").strip()
         session["team_id"] = tid or None
         nxt = request.form.get("next") or request.referrer or url_for("projects_list")
-        nxt = authz.safe_redirect_target(nxt, url_for("projects_list"))
+        # Leave project URLs that belong to another team (e.g. secrets tab
+        # stayed on the old project and looked like a no-op).
+        nxt = nav.redirect_after_team_switch(nxt, tid or None)
         return redirect(nxt)
 
 

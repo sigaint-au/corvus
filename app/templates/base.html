@@ -2113,7 +2113,8 @@
     </form>
     <form class="side-team" method="post" action="{{ url_for('select_team') }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <input type="hidden" name="next" value="{{ request.path }}">
+      {# Include query (e.g. ?tab=secrets) so team switch can land on the right list #}
+      <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
       <label for="side-team-select">Team</label>
       <select id="side-team-select" name="team_id" onchange="this.form.submit()"
               aria-label="Team">

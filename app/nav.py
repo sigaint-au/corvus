@@ -1,5 +1,8 @@
 """Sidebar navigation context and team selection helpers."""
-from flask import session
+import re
+from urllib.parse import parse_qs, urlsplit
+
+from flask import session, url_for
 
 import authz
 from config import (
@@ -79,6 +82,114 @@ def active_team_id(teams):
         return tid
     session.pop("team_id", None)
     return None
+
+
+def ensure_active_team(user_id: str | None = None) -> str | None:
+    """Return the active team id, ensuring ``session["team_id"]`` is set.
+
+    List views must call this (not bare ``session.get("team_id")``): the
+    sidebar context processor runs *after* the view, so the first visit
+    otherwise shows an empty list while the switcher already looks selected.
+
+    Args:
+        user_id: User UUID; defaults to ``session["user_id"]``.
+
+    Returns:
+        Team UUID string, or None if the user has no teams.
+    """
+    uid = user_id or session.get("user_id")
+    if not uid:
+        return None
+    try:
+        teams = nav_teams(uid)
+    except Exception:
+        teams = []
+    return active_team_id(teams)
+
+
+_PROJECT_PATH_RE = re.compile(
+    r"^/projects/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?$"
+)
+_TEAM_PATH_RE = re.compile(
+    r"^/teams/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?$"
+)
+
+
+def _project_team_id(project_id: str) -> str | None:
+    """Return team_id for a project (admin connection; no RLS)."""
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT team_id FROM api.projects WHERE id = %s::uuid",
+                (project_id,),
+            )
+            row = cur.fetchone() or {}
+            tid = row.get("team_id")
+            return str(tid) if tid else None
+    except Exception:
+        return None
+
+
+def redirect_after_team_switch(nxt: str | None, team_id: str | None) -> str:
+    """Pick a safe redirect after the sidebar team switcher changes team.
+
+    Team-scoped lists (``/secrets``, ``/projects``, …) stay put so content
+    reloads for the new team. Project- or team-bound URLs that belong to a
+    *different* team are rewritten so the user is not left staring at the
+    previous team's project (which looked like "switch does nothing").
+
+    Args:
+        nxt: Form ``next`` or referrer path (may include query string).
+        team_id: Newly selected team UUID, or None.
+
+    Returns:
+        Relative URL path (+ optional query) to redirect to.
+    """
+    fallback = url_for("projects_list")
+    nxt = authz.safe_redirect_target(nxt, fallback)
+    if not team_id:
+        return nxt
+
+    parts = urlsplit(nxt)
+    path = parts.path or ""
+    qs = parts.query or ""
+
+    # Team-scoped index pages: keep (session team drives content).
+    if path in ("/secrets", "/trash", "/machines", "/projects") or path.startswith(
+        "/search"
+    ):
+        return nxt
+
+    m = _PROJECT_PATH_RE.match(path)
+    if m:
+        pid = m.group(1)
+        rest = m.group(2) or ""
+        pteam = _project_team_id(pid)
+        if pteam and pteam == str(team_id):
+            return nxt
+        # Wrong team — land on a list that respects the new session team.
+        tab = (parse_qs(qs).get("tab") or [""])[0].strip().lower()
+        secrets_like = (
+            rest.startswith("/secrets")
+            or tab in ("", "secrets")
+            or "secret" in rest
+        )
+        if secrets_like:
+            return url_for("secrets_list")
+        if tab == "tokens" or "token" in rest:
+            return url_for("machines_list")
+        return url_for("projects_list")
+
+    m = _TEAM_PATH_RE.match(path)
+    if m:
+        path_tid = m.group(1)
+        if path_tid.lower() != str(team_id).lower():
+            return url_for("team_detail", team_id=team_id)
+        return nxt
+
+    return nxt
 
 
 def inject_nav():
