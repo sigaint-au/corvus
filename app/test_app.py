@@ -2241,6 +2241,9 @@ class TestOrgAccess(unittest.TestCase):
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("secret_meta", src)
         self.assertIn("touch_secret_access", src)
+        # Full secret page + inline /reveal both stamp last_accessed_*
+        routes = (Path(__file__).resolve().parent / "routes" / "secrets.py").read_text()
+        self.assertGreaterEqual(routes.count("touch_secret_access"), 2)
         ops = (Path(__file__).resolve().parent / "secret_ops.py").read_text()
         self.assertIn("secret_meta", ops)
 

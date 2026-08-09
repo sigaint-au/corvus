@@ -851,13 +851,15 @@ def register(app):
                 try:
                     with db.connect_admin() as aconn, aconn.cursor() as acur:
                         acur.execute(
-                            "SELECT email FROM private.users WHERE id = %s",
+                            "SELECT email FROM private.users WHERE id = %s::uuid",
                             (str(row["last_accessed_by"]),),
                         )
                         u = acur.fetchone() or {}
-                        row["last_accessed_by_email"] = u.get("email") or ""
+                        row["last_accessed_by_email"] = (
+                            (u.get("email") if u else None) or ""
+                        )
                 except Exception:
-                    pass
+                    row["last_accessed_by_email"] = ""
             value_enc = row["value_enc"]
             is_version = False
             if version_id:
@@ -1066,6 +1068,14 @@ def register(app):
 
             try:
                 pins.touch_recent(cur, session["user_id"], secret_id)
+            except Exception:
+                pass
+            # Same as inline /reveal: stamp last_accessed_* for Metadata tab
+            try:
+                cur.execute(
+                    "SELECT private.touch_secret_access(%s::uuid)",
+                    (str(secret_id),),
+                )
             except Exception:
                 pass
             audit.log_secret(
