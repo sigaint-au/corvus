@@ -34,7 +34,7 @@
   <a href="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}"
      class="tab {% if active_tab == 'tokens' %}active{% endif %}"
      role="tab"
-     aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine tokens</a>
+     aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine accounts</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
      class="tab {% if active_tab == 'import' %}active{% endif %}"
      role="tab"
@@ -186,21 +186,23 @@
     </label>
     <label>Access
       <select name="acl_mode" title="Who may see this secret">
-        <option value="inherit" selected>Project access</option>
-        <option value="writers">Writers+</option>
-        <option value="admins">Admins+</option>
-        <option value="owners">Team owners only</option>
-        <option value="custom">Custom list</option>
+        {% for m in acl_modes|default(['inherit']) %}
+        <option value="{{ m }}" {% if m == 'inherit' %}selected{% endif %}>
+          {{ acl_mode_labels.get(m, m) if acl_mode_labels is defined else m }}
+        </option>
+        {% endfor %}
       </select>
     </label>
     <label>Approval
       <select name="requires_approval" title="Override project default for reveal approval">
-        <option value="inherit" selected>Default (project)</option>
+        <option value="inherit" selected>
+          Project default{% if require_reveal_approval %} (require){% else %} (open){% endif %}
+        </option>
         <option value="require">Require approval</option>
         <option value="exempt">No approval</option>
       </select>
     </label>
-    <button type="submit">Save</button>
+    <button type="submit">Create</button>
   </form>
   <script>
   (function () {
@@ -452,7 +454,7 @@
       <input type="date" name="until" value="{{ audit_until or '' }}">
     </label>
     <div class="audit-filter-actions">
-      <button type="submit">Filter</button>
+      <button type="submit">Apply</button>
       {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
       <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}">Clear</a>
       {% endif %}

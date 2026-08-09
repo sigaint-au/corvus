@@ -7,11 +7,11 @@
   {% if state == 'pending' %}
   <form method="dialog">
     <header>
-      <h3>Access requested</h3>
+      <h3>Request submitted</h3>
       <p>Waiting for approval to reveal <code>{{ secret_key }}</code>.</p>
     </header>
     <footer>
-      <button value="cancel" class="outline">Close</button>
+      <button value="ok">Done</button>
     </footer>
   </form>
   {% else %}

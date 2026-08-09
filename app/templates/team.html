@@ -78,7 +78,7 @@
           <form method="post"
                 action="{{ url_for('delete_project_from_team', team_id=team.id, project_id=p.id) }}"
                 class="inline"
-                onsubmit="return confirm('Delete project “{{ p.name }}” and all its secrets? This cannot be undone.')">
+                onsubmit="return confirm('Delete project “{{ p.name }}” and all its data? This cannot be undone.')">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Delete</button>
           </form>

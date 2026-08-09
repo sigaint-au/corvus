@@ -364,6 +364,8 @@ def register(app):
             )
             if project
             else False,
+            acl_modes=config.SECRET_ACL_MODES,
+            acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
         )
 
 

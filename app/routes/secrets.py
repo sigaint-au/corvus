@@ -1275,6 +1275,7 @@ def register(app):
             can_write=can_write,
             secrets_pager=secrets_pager,
             search_q=q,
+            acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
         )
 
 
@@ -2011,20 +2012,27 @@ def register(app):
                 return redirect(
                     url_for("project_detail", project_id=project_id, tab="secrets")
                 )
+        def _new_ctx(**extra):
+            ctx = {
+                "project": project,
+                "kind": "plain",
+                "key": "",
+                "note": "",
+                "expires_at": "",
+                "kv_pairs": [("", "")],
+                "secret_kinds": config.SECRET_KINDS,
+                "acl_mode": "inherit",
+                "acl_modes": config.SECRET_ACL_MODES,
+                "acl_mode_labels": config.SECRET_ACL_MODE_LABELS,
+                "require_reveal_approval": bool(
+                    project.get("require_reveal_approval")
+                ),
+            }
+            ctx.update(extra)
+            return ctx
+
         if request.method == "GET":
-            return render_template(
-                "secret_new.html",
-                project=project,
-                kind="plain",
-                key="",
-                note="",
-                expires_at="",
-                kv_pairs=[("", "")],
-                secret_kinds=config.SECRET_KINDS,
-                acl_mode="inherit",
-                acl_modes=config.SECRET_ACL_MODES,
-                acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
-            )
+            return render_template("secret_new.html", **_new_ctx())
         kind = normalize_kind(request.form.get("kind"))
         key = (request.form.get("key") or "").strip()
         note = (request.form.get("note") or "").strip()
@@ -2034,13 +2042,14 @@ def register(app):
             flash("Key and value are required", "error")
             return render_template(
                 "secret_new.html",
-                project=project,
-                kind=kind,
-                key=key,
-                note=note,
-                expires_at=request.form.get("expires_at") or "",
-                kv_pairs=kv_pairs or [("", "")],
-                secret_kinds=config.SECRET_KINDS,
+                **_new_ctx(
+                    kind=kind,
+                    key=key,
+                    note=note,
+                    expires_at=request.form.get("expires_at") or "",
+                    kv_pairs=kv_pairs or [("", "")],
+                    acl_mode=_parse_acl_mode(request.form),
+                ),
             ), 400
         try:
             expires_at = _parse_expires_at(request.form)
@@ -2048,13 +2057,14 @@ def register(app):
             flash(str(e), "error")
             return render_template(
                 "secret_new.html",
-                project=project,
-                kind=kind,
-                key=key,
-                note=note,
-                expires_at=request.form.get("expires_at") or "",
-                kv_pairs=kv_pairs or [("", "")],
-                secret_kinds=config.SECRET_KINDS,
+                **_new_ctx(
+                    kind=kind,
+                    key=key,
+                    note=note,
+                    expires_at=request.form.get("expires_at") or "",
+                    kv_pairs=kv_pairs or [("", "")],
+                    acl_mode=_parse_acl_mode(request.form),
+                ),
             ), 400
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
@@ -2091,13 +2101,14 @@ def register(app):
                 flash(str(e), "error")
                 return render_template(
                     "secret_new.html",
-                    project=project,
-                    kind=kind,
-                    key=key,
-                    note=note,
-                    expires_at=request.form.get("expires_at") or "",
-                    kv_pairs=kv_pairs or [("", "")],
-                    secret_kinds=config.SECRET_KINDS,
+                    **_new_ctx(
+                        kind=kind,
+                        key=key,
+                        note=note,
+                        expires_at=request.form.get("expires_at") or "",
+                        kv_pairs=kv_pairs or [("", "")],
+                        acl_mode=_parse_acl_mode(request.form),
+                    ),
                 ), 400
         return redirect(
             url_for("project_detail", project_id=project_id, tab="secrets")

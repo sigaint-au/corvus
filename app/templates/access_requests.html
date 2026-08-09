@@ -2,7 +2,10 @@
 {% block title %}Access requests — {{ app_name }}{% endblock %}
 {% block body %}
 <h1>Access requests</h1>
-<p class="page-desc muted">Pending reveal approvals for projects you administer.</p>
+<p class="page-desc muted">
+  Pending reveal approvals for projects you administer.
+  Showing pending requests only — open a project’s <strong>Access</strong> tab for full history.
+</p>
 
 {% if requests %}
 <div class="access-requests-wrap">
