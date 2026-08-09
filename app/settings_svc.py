@@ -199,7 +199,7 @@ def branding() -> dict:
         >>> "app_name" in b and "brand_name" in b
         True
     """
-    from config import APP_NAME, DEFAULT_SETTINGS
+    from config import APP_NAME
 
     s = get_settings()
     name = (s.get("brand_name") or DEFAULT_SETTINGS.get("brand_name") or "Sigaint").strip()

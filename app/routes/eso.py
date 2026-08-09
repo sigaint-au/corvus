@@ -294,7 +294,7 @@ def _require_machine_write(cur, project_id, thash) -> tuple[str | None, tuple | 
         ``(None, (jsonify(...), status))`` error response when not.
 
     Example:
-        >>> role, err = _require_machine_write(cur, pid, thash)
+        >>> _, err = _require_machine_write(cur, pid, thash)
         >>> if err:
         ...     return err
     """
@@ -1092,7 +1092,7 @@ def register(app):
                 pid = _resolve_project_ref(cur, project_ref, kind=kind, thash=thash)
                 if not pid:
                     return jsonify({"error": "unauthorized"}), 401
-                role, err = _require_machine_write(cur, pid, thash)
+                _, err = _require_machine_write(cur, pid, thash)
                 if err:
                     return err
                 cur.execute(
@@ -1245,7 +1245,7 @@ def register(app):
                 pid = _resolve_project_ref(cur, project_ref, kind=kind, thash=thash)
                 if not pid:
                     return jsonify({"error": "unauthorized"}), 401
-                role, err = _require_machine_write(cur, pid, thash)
+                _, err = _require_machine_write(cur, pid, thash)
                 if err:
                     return err
                 cur.execute(
@@ -1436,7 +1436,7 @@ def register(app):
                 pid = _resolve_project_ref(cur, project_ref, kind=kind, thash=thash)
                 if not pid:
                     return jsonify({"error": "unauthorized"}), 401
-                role, err = _require_machine_write(cur, pid, thash)
+                _, err = _require_machine_write(cur, pid, thash)
                 if err:
                     return err
                 cur.execute(

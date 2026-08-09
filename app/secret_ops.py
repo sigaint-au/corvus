@@ -272,8 +272,8 @@ def _parse_expires_at(form, *, allow_clear: bool = True):
         return None
     try:
         expires_at = datetime.fromisoformat(raw)
-    except ValueError:
-        raise ValueError("expires_at must be YYYY-MM-DD or ISO datetime")
+    except ValueError as exc:
+        raise ValueError("expires_at must be YYYY-MM-DD or ISO datetime") from exc
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     cap = datetime.now(timezone.utc) + timedelta(days=config.MAX_EXPIRY_DAYS)

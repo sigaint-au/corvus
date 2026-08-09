@@ -9,17 +9,14 @@ import io
 import logging
 import re
 import secrets
-from datetime import datetime, timezone
-
 import pyotp
 import qrcode
 import qrcode.image.svg
 
 from config import APP_NAME, SECRET_KEY
-from settings_svc import branding
 from crypto import decrypt, encrypt
 import db
-from settings_svc import get_settings, truthy
+from settings_svc import branding, get_settings, truthy
 
 log = logging.getLogger(__name__)
 

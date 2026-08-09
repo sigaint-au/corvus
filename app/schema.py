@@ -2995,4 +2995,3 @@ def _backfill_secret_kinds(cur) -> None:
             updated += 1
     if updated:
         log.info("backfilled kind/note for %s secret row(s)", updated)
-

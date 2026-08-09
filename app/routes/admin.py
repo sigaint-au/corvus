@@ -638,7 +638,7 @@ def register(app):
                 login_alerts = "true" if request.form.get("smtp_login_alerts") else "false"
                 try:
                     port = int(port_raw)
-                    if not (1 <= port <= 65535):
+                    if port < 1 or port > 65535:
                         raise ValueError("port out of range")
                 except ValueError:
                     flash("SMTP port must be a number between 1 and 65535", "error")
@@ -921,4 +921,3 @@ def register(app):
             server_url=server_url,
             oidc_redirect_uri=oidc_redirect_uri,
         )
-

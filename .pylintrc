@@ -1,8 +1,8 @@
 [MAIN]
 jobs = 0
 py-version = 3.12
-ignore = test_app.py
-ignore-paths = app/test_app.py
+ignore-paths =
+    tests
 
 [MESSAGES CONTROL]
 # Pragmatic for a small Flask app: silence noise, keep real bugs.
@@ -31,6 +31,11 @@ disable =
     R1721,  # unnecessary-comprehension
     W1309,  # f-string-without-interpolation
     W1514,  # unspecified-encoding
+    C0413,  # wrong-import-position (env bootstrap / lazy deps)
+    W0603,  # global-statement (app factory flags)
+    R0402,  # consider-using-from-import
+    C0412,  # ungrouped-imports
+    E1101,  # no-member (psycopg cursor/dynamic mocks)
 
 [FORMAT]
 max-line-length = 100
@@ -43,6 +48,7 @@ max-statements = 100
 
 [REPORTS]
 score = yes
+fail-under = 9.5
 output-format = colorized
 
 [TYPECHECK]

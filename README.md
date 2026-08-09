@@ -58,6 +58,9 @@ app/                   # Flask app (flat modules; Docker WORKDIR)
 | **[docs/building.md](docs/building.md)** | Build & push the app container image |
 | **[docs/openshift-eso.yaml](docs/openshift-eso.yaml)** | Sample SecretStore + ExternalSecret |
 | **[docs/openshift-purge-audit-cronjob.yaml](docs/openshift-purge-audit-cronjob.yaml)** | Daily audit retention CronJob |
+| **[SECURITY.md](SECURITY.md)** | Vulnerability disclosure |
+| **[CONTRIBUTING.md](CONTRIBUTING.md)** | Dev setup, tests, PRs |
+| **[CHANGELOG.md](CHANGELOG.md)** | Notable changes |
 
 **CLI:** sibling repo [secretserver-cli](https://git.sigaint.au/Sigaint/secretserver-cli)
 (install + full examples in its README).
@@ -113,7 +116,7 @@ curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 
 ## Screenshots
 
-![Login with classification banner](docs/images/login-classiification-banner.png)
+![Login with classification banner](docs/images/login-classification-banner.png)
 
 ![Secrets dashboard](docs/images/secrets-dashboard.png)
 

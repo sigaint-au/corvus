@@ -2,7 +2,7 @@
 
 import logging
 
-from flask import flash, make_response, redirect, render_template, request, session, url_for
+from flask import flash, redirect, render_template, request, session, url_for
 
 import audit
 import authz

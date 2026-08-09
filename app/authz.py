@@ -89,8 +89,6 @@ def validate_registered_session():
         >>> # Register as a before_request handler
         >>> app.before_request(validate_registered_session)
     """
-    from flask import current_app
-
     if current_app.config.get("TESTING"):
         return None
 

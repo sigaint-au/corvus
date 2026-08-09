@@ -1,0 +1,39 @@
+# Gitea Actions (same steps as .github/workflows/ci.yml)
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: tox py + lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            app/requirements.txt
+            requirements-dev.txt
+
+      - name: Install tox
+        run: pip install "tox>=4.25,<5"
+
+      - name: Unit tests
+        run: tox -e py
+
+      - name: Pylint
+        run: tox -e lint
