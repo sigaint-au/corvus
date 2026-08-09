@@ -20,15 +20,31 @@ OIDC/LDAP, audit retention).
 
 ## Tests
 
-Unit tests use **pytest** (DB is mocked; Postgres is not required):
+Unit tests live under **`tests/`** (not shipped in the container image).
+They use **pytest** with a mocked DB — Postgres is not required.
 
 ```bash
-# One-shot (from repo root)
+# From repo root
 pip install -r app/requirements.txt -r requirements-dev.txt
 pytest
+# Or: tox -e py
+```
 
-# Or via tox (preferred; creates an isolated env)
-tox -e py
+Layout:
+
+```
+tests/
+  conftest.py          # env + fixtures
+  helpers.py           # mock_conn, REPO_ROOT / APP_ROOT
+  test_auth.py         # login, register, CSRF, sessions
+  test_secrets.py      # secret CRUD / reveal
+  test_eso.py          # /eso/v1 machine + PAT API
+  test_paging.py       # pagination + machine token scopes
+  …
+app/                   # Flask app (flat modules; Docker WORKDIR)
+  app.py               # WSGI entry (gunicorn app:app)
+  routes/
+  templates/
 ```
 
 ## Documentation

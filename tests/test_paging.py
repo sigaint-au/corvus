@@ -1,4 +1,4 @@
-"""Pytest coverage for team secrets / projects pagination and token scopes."""
+"""Pagination, team secrets filters, and machine token scope helpers."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -12,7 +12,6 @@ import nav
 import paging
 from routes.project_tokens import insert_token_scopes, parse_token_scope_lines
 from secret_ops import _load_team_secrets_page
-
 
 def test_page_window_basic():
     w = paging.page_window(100, 2, per_page=25)
@@ -216,9 +215,9 @@ def test_secret_kinds_config():
 
 def test_machine_key_allowed_empty_scope_is_full_access():
     """Schema: no scope rows ⇒ machine_key_allowed allows any key (when auth ok)."""
-    from pathlib import Path
+    from tests.helpers import REPO_ROOT
 
-    init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+    init = (REPO_ROOT / "db" / "init.sql").read_text()
     start = init.index("CREATE OR REPLACE FUNCTION private.machine_key_allowed")
     end = init.index("$$;", start) + 3
     body = init[start:end]
@@ -230,9 +229,9 @@ def test_machine_key_allowed_empty_scope_is_full_access():
 
 
 def test_force_rls_on_core_tables():
-    from pathlib import Path
+    from tests.helpers import REPO_ROOT
 
-    init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+    init = (REPO_ROOT / "db" / "init.sql").read_text()
     for table in (
         "api.teams",
         "api.projects",

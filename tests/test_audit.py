@@ -1,0 +1,81 @@
+"""Unit tests (pytest). Mock DB — no Postgres required."""
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+from pathlib import Path
+
+import pytest
+
+import app as store
+import audit
+import config
+import schema as schema_mod
+
+from tests.helpers import REPO_ROOT
+
+store.app.config["TESTING"] = True
+
+class TestAudit:
+
+    def test_describe_event_readable(self):
+        s = audit.describe_event({'actor_email': 'a@b.c', 'action': 'revealed', 'secret_key': 'API_KEY'})
+        assert 'a@b.c' in s
+        assert 'revealed' in s
+        assert 'API_KEY' in s
+
+    def test_format_time_ago(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        assert audit.format_time_ago(None) == '—'
+        assert audit.format_time_ago(now - timedelta(seconds=10)) == 'just now'
+        assert audit.format_time_ago(now - timedelta(minutes=5)) == '5 minutes ago'
+        assert audit.format_time_ago(now - timedelta(hours=3)) == '3 hours ago'
+        assert audit.format_time_ago(now - timedelta(days=4)) == '4 days ago'
+        abs_s = audit.format_when(now - timedelta(hours=1))
+        assert 'UTC' in abs_s
+
+    def test_global_search_requires_login(self):
+        r = store.app.test_client().get('/search?q=x')
+        assert r.status_code == 302
+
+    def test_filter_clause_actor_action_dates(self):
+        sql, params = audit._filter_clause(actor='bob', action='revealed', since='2026-01-01', until='2026-01-02')
+        assert 'actor_email' in sql
+        assert 'action' in sql
+        assert 'created_at' in sql
+        assert params[0] == '%bob%'
+        assert params[1] == 'revealed'
+
+    def test_invalid_action_raises(self):
+        cur = MagicMock()
+        with store.app.test_request_context('/'):
+            with pytest.raises(ValueError):
+                audit.log_secret(cur, project_id=uuid4(), action='nope')
+
+    def test_log_secret_calls_audit_secret_fn(self):
+        cur = MagicMock()
+        pid, sid = (uuid4(), uuid4())
+        with store.app.test_request_context('/'):
+            from flask import session
+            session['user_id'] = str(uuid4())
+            session['email'] = 'a@b.c'
+            audit.log_secret(cur, project_id=pid, secret_id=sid, secret_key='K', action='revealed')
+        assert cur.execute.call_count == 1
+        sql, params = (cur.execute.call_args.args[0], cur.execute.call_args.args[1])
+        assert 'private.audit_secret' in sql
+        assert 'NULL::uuid' in sql
+        assert 'INSERT INTO api.secret_audit' not in sql
+        assert params[-1] == 'a@b.c'
+
+    def test_schema_revokes_secret_audit_insert(self):
+        from pathlib import Path
+        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        assert 'REVOKE INSERT ON api.secret_audit FROM authenticated' in init
+        assert 'CREATE OR REPLACE FUNCTION private.audit_secret' in init
+        assert 'Never trust caller-supplied p_user_id' in init
+        src = Path(schema_mod.__file__).read_text()
+        assert 'REVOKE INSERT ON api.secret_audit FROM authenticated' in src
+        assert 'private.audit_secret' in src
+        assert 'Never trust caller-supplied p_user_id' in src
+

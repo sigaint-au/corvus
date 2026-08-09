@@ -1,0 +1,331 @@
+"""Unit tests (pytest). Mock DB — no Postgres required."""
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+
+import pytest
+
+import app as store
+import authz
+import config
+import crypto
+import db
+
+from tests.helpers import mock_conn as _conn
+
+store.app.config["TESTING"] = True
+
+class TestSecrets:
+
+    def setup_method(self, method=None):
+        store.app.config['TESTING'] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        self.pid = uuid4()
+        with self.client.session_transaction() as s:
+            s['user_id'] = self.uid
+            s['email'] = 'u@ex.com'
+
+    def _project_conn(self, tab='secrets', can_write=True, can_admin=None, team_role='owner', secrets=None, tokens=None, audit_log=None, access_requests=None, total=None, pending_count=0):
+        """as_user used by project_detail (tab-scoped queries)."""
+        project = {'id': self.pid, 'name': 'prod', 'team_name': 'Ops', 'team_id': uuid4()}
+        if can_admin is None:
+            can_admin = team_role in ('owner', 'admin')
+        rows = secrets or [] if tab == 'secrets' else audit_log or [] if tab == 'audit' else tokens or []
+        if total is None:
+            total = len(rows)
+        fo = [project, {'w': can_write}, {'a': can_admin}, {'r': team_role}]
+        if tab in ('secrets', 'audit'):
+            fo.append({'n': total})
+        if tab == 'secrets':
+            fo.append({'a': can_admin})
+        fo.append({'n': pending_count})
+        if tab == 'settings':
+            fa = [[]]
+        elif tab == 'secrets':
+            fa = [rows, [], [], []]
+        elif tab == 'access':
+            fa = [access_requests or []]
+        else:
+            fa = [rows] if tab in ('audit', 'tokens') else []
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        cur.fetchall.side_effect = fa if fa else [[]]
+        return conn
+
+    def test_project_detail(self):
+        with patch.object(db, 'as_user', return_value=self._project_conn()):
+            r = self.client.get(f'/projects/{self.pid}')
+        assert r.status_code == 200
+        assert b'prod' in r.data
+        assert b'Secrets' in r.data
+        assert b'>Access<' in r.data
+        assert b'Audit log' in r.data
+
+    def test_project_access_tab(self):
+        reqs = [{'id': uuid4(), 'secret_id': uuid4(), 'secret_key': 'API_KEY', 'user_id': self.uid, 'email': 'u@ex.com', 'name': 'User', 'status': 'pending', 'reason': 'debug prod', 'created_at': '2026-01-01', 'resolved_at': None, 'approved_until': None, 'resolver_email': ''}]
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='access', access_requests=reqs, pending_count=1)):
+            r = self.client.get(f'/projects/{self.pid}?tab=access')
+        assert r.status_code == 200
+        assert b'API_KEY' in r.data
+        assert b'pending' in r.data
+        assert b'debug prod' in r.data
+        assert b'Approve' in r.data
+        assert b'Deny' in r.data
+        assert b'>Access<' in r.data
+
+    def test_project_audit_tab(self):
+        audit_rows = [{'id': uuid4(), 'secret_id': uuid4(), 'secret_key': 'API_KEY', 'action': 'revealed', 'created_at': '2026-01-01', 'actor_email': 'u@ex.com', 'user_id': self.uid, 'actor_name': 'User'}]
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='audit', audit_log=audit_rows)):
+            r = self.client.get(f'/projects/{self.pid}?tab=audit')
+        assert r.status_code == 200
+        assert b'API_KEY' in r.data
+        assert b'revealed' in r.data
+        assert b'u@ex.com' in r.data
+
+    def test_project_404(self):
+        conn, _ = _conn(fetchone=None)
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/projects/{uuid4()}')
+        assert r.status_code == 404
+
+    def test_delete_project_route_owner_ok(self):
+        tid = uuid4()
+        conn, cur = _conn(fetchone={'team_id': tid, 'r': 'owner'})
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(f'/projects/{self.pid}/delete', follow_redirects=False)
+        assert r.status_code == 302
+        assert str(tid) in r.location
+        conn.commit.assert_called()
+
+    def test_delete_project_route_viewer_denied(self):
+        tid = uuid4()
+        conn, _ = _conn(fetchone={'team_id': tid, 'r': 'viewer'})
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(f'/projects/{self.pid}/delete', follow_redirects=False)
+        assert r.status_code == 302
+        assert str(self.pid) in r.location
+        conn.commit.assert_not_called()
+
+    def test_project_settings_tab_shows_members_and_delete_for_owner(self):
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='owner')):
+            r = self.client.get(f'/projects/{self.pid}?tab=settings')
+        assert r.status_code == 200
+        assert b'Members' in r.data
+        assert b'Danger zone' in r.data
+        assert b'Delete project' in r.data
+        assert b'Settings' in r.data
+        assert b'Project settings' not in r.data
+
+    def test_project_settings_hidden_for_writer_without_admin(self):
+        """Project write without admin cannot manage members; Settings tab hidden."""
+        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='member', can_write=True, can_admin=False)):
+            r = self.client.get(f'/projects/{self.pid}')
+        assert r.status_code == 200
+        assert b'?tab=settings' not in r.data
+        assert b'Delete project' not in r.data
+
+    def test_project_settings_tab_hidden_for_viewer(self):
+        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='viewer', can_write=False, can_admin=False)):
+            r = self.client.get(f'/projects/{self.pid}')
+        assert r.status_code == 200
+        assert b'?tab=settings' not in r.data
+        assert b'Delete project' not in r.data
+
+    def test_project_admin_settings_members_without_delete(self):
+        """Project admin can manage members; team member cannot delete project."""
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='member', can_write=True, can_admin=True)):
+            r = self.client.get(f'/projects/{self.pid}?tab=settings')
+        assert r.status_code == 200
+        assert b'Members' in r.data
+        assert b'Delete project' not in r.data
+
+    def test_project_secrets_tab_no_danger_zone(self):
+        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='owner')):
+            r = self.client.get(f'/projects/{self.pid}?tab=secrets')
+        assert r.status_code == 200
+        assert b'Settings' in r.data
+        assert b'Danger zone' not in r.data
+
+    def test_create_secret(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [None, {'id': sid}]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(f'/projects/{self.pid}/secrets', data={'key': 'API_KEY', 'value': 'sekrit', 'note': ''}, follow_redirects=False)
+        assert r.status_code == 302
+        assert str(self.pid) in r.location
+        assert conn.cursor.called
+
+    def test_create_secret_missing_key(self):
+        r = self.client.post(f'/projects/{self.pid}/secrets', data={'key': '', 'value': 'x'}, follow_redirects=False)
+        assert r.status_code == 302
+
+    def test_delete_secret(self):
+        sid = uuid4()
+        conn, cur = _conn(fetchone={'id': sid, 'key': 'API_KEY'})
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(f'/projects/{self.pid}/secrets/{sid}/delete', follow_redirects=False)
+        assert r.status_code == 302
+        conn.commit.assert_called()
+
+    def test_delete_secret_read_only_no_op(self):
+        """Read (SELECT) ok but write (UPDATE) blocked — must flash, not silent success."""
+        sid = uuid4()
+        conn, cur = _conn(fetchone={'id': sid, 'key': 'API_KEY'})
+        cur.rowcount = 0
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(f'/projects/{self.pid}/secrets/{sid}/delete', follow_redirects=False)
+        assert r.status_code == 302
+        conn.commit.assert_not_called()
+        conn.rollback.assert_called()
+        with self.client.session_transaction() as s:
+            flashes = s.get('_flashes') or []
+        assert any(('permission' in msg.lower() for _cat, msg in flashes))
+
+    def test_reveal_secret(self):
+        sid = uuid4()
+        enc = crypto.encrypt('super-secret')
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'expires_at': None}, {'ok': True}, {'a': True}, {'w': True}]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
+        assert r.status_code == 200
+        assert b'super-secret' in r.data
+        assert b'Save' in r.data
+        assert b'/value' in r.data
+        assert b'Copy' in r.data
+        assert b'Open full view' in r.data
+        assert b'>Hide</a>' in r.data
+        assert b'/hide' in r.data
+        assert b'name="expires_at"' not in r.data
+
+    def test_reveal_secret_requires_access_request(self):
+        sid = uuid4()
+        enc = crypto.encrypt('super-secret')
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'expires_at': None}, {'ok': True}, {'a': False}, {'r': True}, None]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
+        assert r.status_code == 200
+        assert b'super-secret' not in r.data
+        assert b'Approval required' in r.data
+        assert b'Request access' in r.data
+        assert b'<dialog' in r.data
+
+    def test_reveal_open_secret_no_approval(self):
+        """Project default off + no override → instant reveal for readers."""
+        sid = uuid4()
+        enc = crypto.encrypt('open-secret')
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'FEATURE_FLAG', 'value_enc': enc, 'expires_at': None}, {'ok': True}, {'a': False}, {'r': False}, {'w': False}]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
+        assert r.status_code == 200
+        assert b'open-secret' in r.data
+
+    def test_reveal_secret_with_approved_grant(self):
+        sid = uuid4()
+        enc = crypto.encrypt('granted-secret')
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'expires_at': None}, {'ok': True}, {'a': False}, {'r': True}, {'id': uuid4(), 'status': 'approved', 'approved_until': '2099-01-01', 'created_at': '2026-01-01', 'reason': ''}, {'w': False}]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
+        assert r.status_code == 200
+        assert b'granted-secret' in r.data
+
+    def test_request_secret_access(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        created = {'id': uuid4(), 'status': 'pending', 'created_at': '2026-01-01', 'reason': 'need it'}
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY'}, {'a': False}, {'r': True}, None, created]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(f'/projects/{self.pid}/secrets/{sid}/access-request', data={'reason': 'need it', 'dialog': '1'}, headers={'HX-Request': 'true'})
+        assert r.status_code == 200
+        assert b'Request submitted' in r.data
+        assert b'Waiting' in r.data
+        conn.commit.assert_called()
+        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        assert 'secret_access_requests' in sql
+        audit_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        assert 'access_requested' in audit_args
+
+    def test_approve_secret_access(self):
+        rid, sid = (uuid4(), uuid4())
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'a': True}, {'id': rid, 'secret_id': sid, 'user_id': self.uid, 'status': 'pending', 'secret_key': 'API_KEY'}]
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(f'/projects/{self.pid}/access-requests/{rid}/approve', data={'minutes': '15'}, follow_redirects=False)
+        assert r.status_code == 302
+        assert 'tab=access' in r.location
+        conn.commit.assert_called()
+        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        assert 'approved' in all_args
+        assert 'access_approved' in all_args
+
+    def test_deny_secret_access(self):
+        rid, sid = (uuid4(), uuid4())
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'a': True}, {'id': rid, 'secret_id': sid, 'status': 'pending', 'secret_key': 'API_KEY'}]
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(f'/projects/{self.pid}/access-requests/{rid}/deny', follow_redirects=False)
+        assert r.status_code == 302
+        assert 'tab=access' in r.location
+        conn.commit.assert_called()
+        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        assert 'denied' in all_args
+        assert 'access_denied' in all_args
+
+    def test_hide_secret(self):
+        sid = uuid4()
+        with self.client.session_transaction() as s:
+            s['user_id'] = str(uuid4())
+        r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/hide', headers={'HX-Request': 'true'})
+        assert r.status_code == 200
+        assert b'*******' in r.data
+        assert b'>Reveal</a>' in r.data
+        assert b'/reveal' in r.data
+
+    def test_update_secret_value(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'w': True}, {'id': sid, 'key': 'API_KEY'}]
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(f'/projects/{self.pid}/secrets/{sid}/value', data={'value': 'new-secret', 'expires_at': '2030-01-15'}, headers={'HX-Request': 'true'})
+        assert r.status_code == 200
+        assert b'new-secret' not in r.data
+        assert b'*******' in r.data
+        assert b'Updated' in r.data
+        assert b'>Reveal</a>' in r.data
+        conn.commit.assert_called()
+        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        assert 'expires_at' in sql
+
+    def test_reveal_missing(self):
+        conn, _ = _conn(fetchone=None)
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/projects/{self.pid}/secrets/{uuid4()}/reveal')
+        assert r.status_code == 404
+
+    def test_users_suggest_requires_login(self):
+        c = store.app.test_client()
+        r = c.get('/api/users/suggest?q=ab')
+        assert r.status_code == 302
+        assert '/login' in r.location
+
+    def test_users_suggest_ok(self):
+        with self.client.session_transaction() as s:
+            s['user_id'] = str(uuid4())
+        conn, _ = _conn(fetchall=[{'email': 'alice@ex.com', 'name': 'Alice'}])
+        with patch.object(db, 'connect_admin', return_value=conn), patch.object(authz, 'is_global_admin', return_value=True):
+            r = self.client.get('/api/users/suggest?q=ali')
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data[0]['email'] == 'alice@ex.com'
+
