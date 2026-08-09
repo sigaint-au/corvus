@@ -93,6 +93,46 @@ SECRETS = [
     ("Mobile", "android-app", "SENTRY_DSN", "https://mock@sentry.example/android", "Sentry", "plain"),
 ]
 
+# Team groups: (team_name, group_name, source, external_key, team_role, members emails)
+GROUPS = [
+    (
+        "Platform",
+        "platform-ops",
+        "manual",
+        None,
+        "member",
+        ["bob@example.com", "carol@example.com"],
+    ),
+    (
+        "Platform",
+        "ldap-platform-admins",
+        "ldap",
+        "cn=platform-admins,ou=groups,dc=example,dc=com",
+        "admin",
+        [],  # membership comes from directory sync
+    ),
+    (
+        "Payments",
+        "payments-readers",
+        "manual",
+        None,
+        "viewer",
+        ["dave@example.com"],
+    ),
+]
+
+# Project group roles: (team, project, group_name, role)
+PROJECT_GROUP_ROLES = [
+    ("Platform", "demo-api", "platform-ops", "write"),
+    ("Payments", "billing-api", "payments-readers", "read"),
+]
+
+# Custom secret ACL: (team, project, secret_key, user_email|None, group_name|None, perm)
+SECRET_ACL_GRANTS = [
+    ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", "alice@example.com", None, "reveal"),
+    ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", None, "platform-ops", "read"),
+]
+
 
 def main() -> None:
     with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:
@@ -202,6 +242,7 @@ def main() -> None:
             print(f"proj  {team_name}/{proj_name:16}  {pid}")
 
         # Secrets (encrypted with app MASTER_KEY)
+        secret_ids: dict[tuple[str, str, str], str] = {}
         for team_name, proj_name, key, value, note, kind in SECRETS:
             pid = project_ids[(team_name, proj_name)]
             enc = crypto.encrypt(value)
@@ -219,13 +260,112 @@ def main() -> None:
                 """,
                 (pid, key, enc, note, kind),
             )
-            sid = cur.fetchone()["id"]
+            sid = str(cur.fetchone()["id"])
+            secret_ids[(team_name, proj_name, key)] = sid
             print(f"sec   {team_name}/{proj_name}/{key}  {sid}")
+
+        # Groups + members
+        group_ids: dict[tuple[str, str], str] = {}
+        for team_name, gname, source, ext_key, team_role, members in GROUPS:
+            tid = team_ids[team_name]
+            cur.execute(
+                """
+                SELECT id FROM api.groups
+                WHERE team_id = %s::uuid AND name = %s
+                """,
+                (tid, gname),
+            )
+            row = cur.fetchone()
+            if row:
+                gid = str(row["id"])
+                cur.execute(
+                    """
+                    UPDATE api.groups
+                       SET source = %s, external_key = %s, team_role = %s
+                     WHERE id = %s::uuid
+                    """,
+                    (source, ext_key, team_role, gid),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO api.groups
+                      (team_id, name, source, external_key, team_role)
+                    VALUES (%s::uuid, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (tid, gname, source, ext_key, team_role),
+                )
+                gid = str(cur.fetchone()["id"])
+            group_ids[(team_name, gname)] = gid
+            for email in members:
+                cur.execute(
+                    """
+                    INSERT INTO api.group_members (group_id, user_id, source)
+                    VALUES (%s::uuid, %s::uuid, 'manual')
+                    ON CONFLICT (group_id, user_id) DO UPDATE SET source = 'manual'
+                    """,
+                    (gid, uids[email]),
+                )
+            print(f"group {team_name}/{gname:24}  {gid}  role={team_role}")
+
+        # Project group roles
+        for team_name, proj_name, gname, role in PROJECT_GROUP_ROLES:
+            pid = project_ids[(team_name, proj_name)]
+            gid = group_ids[(team_name, gname)]
+            cur.execute(
+                """
+                INSERT INTO api.project_group_roles (project_id, group_id, role)
+                VALUES (%s::uuid, %s::uuid, %s)
+                ON CONFLICT (project_id, group_id) DO UPDATE SET role = EXCLUDED.role
+                """,
+                (pid, gid, role),
+            )
+            print(f"pgr   {team_name}/{proj_name}/{gname} → {role}")
+
+        # Custom secret ACL grants
+        for team_name, proj_name, key, user_email, gname, perm in SECRET_ACL_GRANTS:
+            sid = secret_ids[(team_name, proj_name, key)]
+            cur.execute(
+                """
+                UPDATE api.secrets SET acl_mode = 'custom'
+                WHERE id = %s::uuid
+                """,
+                (sid,),
+            )
+            if user_email:
+                cur.execute(
+                    "DELETE FROM api.secret_acl WHERE secret_id = %s::uuid AND user_id = %s::uuid",
+                    (sid, uids[user_email]),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO api.secret_acl (secret_id, user_id, permission)
+                    VALUES (%s::uuid, %s::uuid, %s)
+                    """,
+                    (sid, uids[user_email], perm),
+                )
+                print(f"acl   {key} user={user_email} {perm}")
+            if gname:
+                gid = group_ids[(team_name, gname)]
+                cur.execute(
+                    "DELETE FROM api.secret_acl WHERE secret_id = %s::uuid AND group_id = %s::uuid",
+                    (sid, gid),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO api.secret_acl (secret_id, group_id, permission)
+                    VALUES (%s::uuid, %s::uuid, %s)
+                    """,
+                    (sid, gid, perm),
+                )
+                print(f"acl   {key} group={gname} {perm}")
 
     print()
     print("All accounts password:", PASSWORD)
     print("Log in at http://127.0.0.1:8080  e.g. admin@example.com / password")
     print("CLI needs a project UUID (above) + machine token ss_… from UI Integrations.")
+    print("Groups: team Groups tab; project group roles on project Settings.")
 
 
 if __name__ == "__main__":

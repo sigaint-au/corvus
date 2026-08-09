@@ -23,6 +23,10 @@
      class="tab {% if active_tab == 'secrets' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'secrets' else 'false' }}">Secrets</a>
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}"
+     class="tab {% if active_tab == 'access' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}">Access{% if access_pending_count %}<span class="tab-badge" title="{{ access_pending_count }} pending">{{ access_pending_count }}</span>{% endif %}</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
      class="tab {% if active_tab == 'audit' %}active{% endif %}"
      role="tab"
@@ -30,7 +34,7 @@
   <a href="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}"
      class="tab {% if active_tab == 'tokens' %}active{% endif %}"
      role="tab"
-     aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine tokens</a>
+     aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine accounts</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
      class="tab {% if active_tab == 'import' %}active{% endif %}"
      role="tab"
@@ -180,7 +184,25 @@
     <label>Expires
       <input type="date" name="expires_at" id="secret-expires">
     </label>
-    <button type="submit">Save</button>
+    <label>Access
+      <select name="acl_mode" title="Who may see this secret">
+        {% for m in acl_modes|default(['inherit']) %}
+        <option value="{{ m }}" {% if m == 'inherit' %}selected{% endif %}>
+          {{ acl_mode_labels.get(m, m) if acl_mode_labels is defined else m }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Approval
+      <select name="requires_approval" title="Override project default for reveal approval">
+        <option value="inherit" selected>
+          Project default{% if require_reveal_approval %} (require){% else %} (open){% endif %}
+        </option>
+        <option value="require">Require approval</option>
+        <option value="exempt">No approval</option>
+      </select>
+    </label>
+    <button type="submit">Create</button>
   </form>
   <script>
   (function () {
@@ -310,6 +332,97 @@
   <p class="muted">You need write access to import secrets.</p>
   {% endif %}
 </section>
+{% elif active_tab == 'access' %}
+<section>
+  <div class="section-head">
+    <h2>Access</h2>
+  </div>
+  <p class="muted">Pending and recent reveal-approval requests for this project.</p>
+  {% if access_requests %}
+  <div class="access-requests-wrap">
+  <table class="access-requests-table">
+    <thead>
+      <tr>
+        <th>Secret</th>
+        <th>Requester</th>
+        <th>Status</th>
+        <th>Reason</th>
+        <th>Requested</th>
+        {% if can_admin %}<th>Actions</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in access_requests %}
+      <tr>
+        <td>
+          {% if r.secret_id and r.secret_key %}
+          <a href="{{ url_for('secret_view', project_id=project.id, secret_id=r.secret_id) }}">
+            <code class="k">{{ r.secret_key }}</code>
+          </a>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {{ r.name or r.email }}
+          {% if r.name %}<span class="muted">{{ r.email }}</span>{% endif %}
+        </td>
+        <td>
+          <span class="role-badge access-status-{{ r.status }}">{{ r.status }}</span>
+          {% if r.status == 'approved' and r.approved_until %}
+          <span class="muted" title="{{ r.approved_until|time_when }}">{{ r.approved_until|expires }}</span>
+          {% elif r.status == 'denied' and r.resolver_email %}
+          <span class="muted">by {{ r.resolver_email }}</span>
+          {% endif %}
+        </td>
+        <td class="muted col-note">{{ r.reason or '—' }}</td>
+        <td class="muted">{{ r.created_at }}</td>
+        {% if can_admin %}
+        <td class="acts access-acts">
+          {% if r.status == 'pending' %}
+          <div class="access-acts-stack">
+            <form method="post"
+                  id="approve-{{ r.id }}"
+                  action="{{ url_for('approve_secret_access', project_id=project.id, req_id=r.id) }}"
+                  class="access-approve-form">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <label class="visually-hidden" for="grant-minutes-{{ r.id }}">Grant duration</label>
+              <select name="minutes" id="grant-minutes-{{ r.id }}" class="bulk-action" aria-label="Grant duration">
+                {% for m in grant_choices %}
+                <option value="{{ m }}" {% if m == grant_minutes %}selected{% endif %}>
+                  {% if m < 60 %}{{ m }} min{% elif m == 60 %}1 hour{% elif m == 1440 %}1 day{% else %}{{ m // 60 }} hours{% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </form>
+            <div class="access-acts-btns">
+              <button type="submit" form="approve-{{ r.id }}" class="link">Approve</button>
+              <form method="post"
+                    action="{{ url_for('deny_secret_access', project_id=project.id, req_id=r.id) }}"
+                    class="inline">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button type="submit" class="link danger">Deny</button>
+              </form>
+            </div>
+          </div>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    {% if can_admin %}
+    No access requests yet. Users with read access will appear here when they request to reveal a secret.
+    {% else %}
+    You have no access requests. Click Reveal on a secret to request approval.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
 {% elif active_tab == 'audit' %}
 <section>
   <div class="section-head">
@@ -341,7 +454,7 @@
       <input type="date" name="until" value="{{ audit_until or '' }}">
     </label>
     <div class="audit-filter-actions">
-      <button type="submit">Filter</button>
+      <button type="submit">Apply</button>
       {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
       <a class="btn-clear" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}">Clear</a>
       {% endif %}
@@ -637,6 +750,22 @@
 {% elif active_tab == 'settings' and can_settings %}
 {% if can_admin %}
 <section>
+  <h2>Reveal approval</h2>
+  <p class="muted">
+    Project default for whether revealing secrets requires admin approval.
+    Individual secrets can override this (require or exempt).
+  </p>
+  <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="checkbox-label">
+      <input type="checkbox" name="require_reveal_approval" value="1"
+             {% if require_reveal_approval %}checked{% endif %}>
+      Require approval to reveal secrets (default for this project)
+    </label>
+    <button type="submit">Save</button>
+  </form>
+</section>
+<section>
   <h2>Members</h2>
   <p class="muted">
     Optional project-level roles for this project only.
@@ -683,6 +812,63 @@
   </table>
   {% else %}
   <p class="empty">No project-level members. Team members still have access via their team role.</p>
+  {% endif %}
+</section>
+<section>
+  <h2>Group roles</h2>
+  <p class="muted">
+    Grant a <strong>team group</strong> a project role. Group members get that access
+    (highest of user and group grants wins).
+    Create or edit groups under the team:
+    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='groups') }}">{{ project.team_name }} → Groups</a>.
+  </p>
+  {% if team_groups %}
+  <form method="post" action="{{ url_for('add_project_group_role', project_id=project.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Group
+      <select name="group_id" required>
+        {% for g in team_groups %}
+        <option value="{{ g.id }}">{{ g.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Role
+      <select name="role">
+        {% for r in project_roles %}
+        <option value="{{ r }}" {% if r == 'read' %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  {% else %}
+  <p class="empty">
+    No team groups yet —
+    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='groups') }}">create one on {{ project.team_name }} → Groups</a>.
+  </p>
+  {% endif %}
+  {% if project_group_roles %}
+  <table>
+    <thead><tr><th>Group</th><th>Role</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+    {% for g in project_group_roles %}
+      <tr>
+        <td>{{ g.group_name }}</td>
+        <td><span class="role-badge">{{ g.role }}</span></td>
+        <td class="muted">{{ g.source }}</td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('remove_project_group_role', project_id=project.id, group_id=g.group_id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove group role for {{ g.group_name }}?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
   {% endif %}
 </section>
 {% endif %}

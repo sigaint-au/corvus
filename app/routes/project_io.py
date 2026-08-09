@@ -128,14 +128,28 @@ def register(app):
             cur.execute("SELECT api.can_read_project(%s) AS r", (str(project_id),))
             if not (cur.fetchone() or {}).get("r"):
                 return "Not found", 404
-            cur.execute(
-                """
-                SELECT key, value_enc, note FROM api.secrets
-                WHERE project_id = %s AND deleted_at IS NULL
-                ORDER BY key
-                """,
-                (str(project_id),),
-            )
+            # Only secrets the caller may reveal (ACL + soft-deleted excluded by RLS read)
+            if mode == "plain":
+                cur.execute(
+                    """
+                    SELECT key, value_enc, note FROM api.secrets
+                    WHERE project_id = %s AND deleted_at IS NULL
+                      AND api.can_access_secret(id, 'reveal')
+                      AND api.can_reveal_secret(id)
+                    ORDER BY key
+                    """,
+                    (str(project_id),),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT key, value_enc, note FROM api.secrets
+                    WHERE project_id = %s AND deleted_at IS NULL
+                      AND api.can_access_secret(id, 'read')
+                    ORDER BY key
+                    """,
+                    (str(project_id),),
+                )
             rows = cur.fetchall()
             # Bulk exfil must leave an audit trail (especially plaintext)
             audit.log_secret(
@@ -418,11 +432,23 @@ def register(app):
                 SELECT key, value_enc FROM api.secrets
                 WHERE project_id = %s AND deleted_at IS NULL
                   AND id = ANY(%s::uuid[])
+                  AND api.can_access_secret(id, 'reveal')
+                  AND api.can_reveal_secret(id)
                 ORDER BY key
                 """,
                 (str(project_id), ids),
             )
             rows = cur.fetchall() or []
+            if not rows:
+                flash(
+                    "No selected secrets could be exported "
+                    "(missing reveal permission or approval)",
+                    "error",
+                )
+                return redirect(
+                    url_for("project_detail", project_id=project_id, tab="secrets")
+                )
+            skipped = len(ids) - len(rows)
             audit.log_secret(
                 cur,
                 project_id=project_id,
@@ -430,6 +456,12 @@ def register(app):
                 secret_key=f"bulk/{fmt} n={len(rows)}",
             )
             conn.commit()
+            if skipped > 0:
+                flash(
+                    f"Exported {len(rows)} secret(s); "
+                    f"skipped {skipped} without reveal permission",
+                    "ok",
+                )
         pairs = [(r["key"], crypto.decrypt(r["value_enc"])) for r in rows]
         if fmt == "json":
             body = json.dumps({k: v for k, v in pairs}, indent=2)

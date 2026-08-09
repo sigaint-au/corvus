@@ -46,31 +46,17 @@ def register(app):
         q = (request.args.get("q") or "").strip()
         like = f"%{q}%" if q else None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            if session.get("is_global_admin"):
-                sql = """
-                    SELECT t.*,
-                      COALESCE(tm.role, 'owner') AS role,
-                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                    FROM api.teams t
-                    LEFT JOIN api.team_members tm
-                      ON tm.team_id = t.id AND tm.user_id = %s
-                """
-                params = [session["user_id"]]
-                if like:
-                    sql += " WHERE t.name ILIKE %s"
-                    params.append(like)
-            else:
-                sql = """
-                    SELECT t.*, tm.role,
-                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                    FROM api.teams t
-                    JOIN api.team_members tm ON tm.team_id = t.id
-                    WHERE tm.user_id = %s
-                """
-                params = [session["user_id"]]
-                if like:
-                    sql += " AND t.name ILIKE %s"
-                    params.append(like)
+            # RLS filters via is_team_member (direct + group team_role)
+            sql = """
+                SELECT t.*,
+                  api.team_role(t.id) AS role,
+                  (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
+                FROM api.teams t
+            """
+            params: list = []
+            if like:
+                sql += " WHERE t.name ILIKE %s"
+                params.append(like)
             cur.execute(sql + " ORDER BY t.name", params)
             rows = cur.fetchall()
         return render_template(
@@ -125,24 +111,19 @@ def register(app):
         """
         session["team_id"] = str(team_id)
         tab = (request.args.get("tab") or "projects").strip().lower()
-        if tab not in ("projects", "members", "activity", "settings"):
+        if tab not in ("projects", "members", "groups", "activity", "settings"):
             tab = "projects"
         q = (request.args.get("q") or "").strip()
         members, projects, ldap_maps, oidc_maps = [], [], [], []
+        groups, group_members, selected_group = [], [], None
         invites, join_requests, org_events = [], [], []
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
             team = cur.fetchone()
             if not team:
                 return "Not found", 404
-            cur.execute(
-                "SELECT role FROM api.team_members WHERE team_id = %s AND user_id = %s",
-                (str(team_id), session["user_id"]),
-            )
-            my = cur.fetchone()
-            my_role = my["role"] if my else None
-            if session.get("is_global_admin") and not my_role:
-                my_role = "owner"
+            cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+            my_role = (cur.fetchone() or {}).get("r")
             is_admin = my_role in ("owner", "admin")
             if tab == "settings" and not is_admin:
                 tab = "projects"
@@ -191,6 +172,29 @@ def register(app):
                         (str(team_id),),
                     )
                     join_requests = cur.fetchall() or []
+            elif tab == "groups":
+                try:
+                    cur.execute(
+                        "SELECT * FROM private.team_group_rows(%s::uuid)",
+                        (str(team_id),),
+                    )
+                    groups = cur.fetchall() or []
+                except Exception:
+                    groups = []
+                gid = (request.args.get("group_id") or "").strip()
+                if gid:
+                    selected_group = next(
+                        (g for g in groups if str(g["id"]) == gid), None
+                    )
+                    if selected_group:
+                        try:
+                            cur.execute(
+                                "SELECT * FROM private.group_member_rows(%s::uuid)",
+                                (gid,),
+                            )
+                            group_members = cur.fetchall() or []
+                        except Exception:
+                            group_members = []
             elif tab == "activity":
                 try:
                     org_events = audit.list_org_for_team(cur, team_id)
@@ -238,6 +242,9 @@ def register(app):
             search_q=q,
             members=members,
             projects=projects,
+            groups=groups,
+            group_members=group_members,
+            selected_group=selected_group,
             my_role=my_role,
             ldap_maps=ldap_maps,
             oidc_maps=oidc_maps,
@@ -245,6 +252,7 @@ def register(app):
             join_requests=join_requests,
             org_events=org_events,
             invite_roles=config.INVITE_ROLES,
+            team_roles=config.GROUP_TEAM_ROLES,
             new_invite_url=session.pop("new_invite_url", None),
             ldap_enabled=settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled")),
             oidc_enabled=settings_svc.truthy(
@@ -1057,3 +1065,220 @@ def register(app):
                 conn.commit()
                 flash("Project deleted", "ok")
         return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
+
+    # ── Groups (team-scoped RBAC principals) ─────────────────────────
+
+    @app.post("/teams/<uuid:team_id>/groups")
+    @authz.login_required
+    def create_team_group(team_id):
+        """Create a team-scoped group (manual or LDAP/OIDC-mapped)."""
+        name = (request.form.get("name") or "").strip()
+        source = (request.form.get("source") or "manual").strip().lower()
+        if source not in ("manual", "ldap", "oidc"):
+            source = "manual"
+        external_key = (request.form.get("external_key") or "").strip() or None
+        team_role = (request.form.get("team_role") or "").strip() or None
+        if team_role and team_role not in config.GROUP_TEAM_ROLES:
+            team_role = None
+        if source == "manual":
+            external_key = None
+        elif not external_key:
+            flash("External group key required for LDAP/OIDC groups", "error")
+            return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
+        if not name:
+            flash("Group name required", "error")
+            return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO api.groups (team_id, name, source, external_key, team_role)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (str(team_id), name, source, external_key, team_role),
+                )
+                gid = cur.fetchone()["id"]
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action="group_add",
+                    detail=f"{name} ({source})",
+                )
+                conn.commit()
+                flash(f"Group “{name}” created", "ok")
+                return redirect(
+                    url_for(
+                        "team_detail",
+                        team_id=team_id,
+                        tab="groups",
+                        group_id=gid,
+                    )
+                )
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
+
+    @app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>")
+    @authz.login_required
+    def update_team_group(team_id, group_id):
+        """Update group name, team role, or external mapping."""
+        name = (request.form.get("name") or "").strip()
+        team_role = (request.form.get("team_role") or "").strip() or None
+        if team_role and team_role not in config.GROUP_TEAM_ROLES:
+            team_role = None
+        external_key = (request.form.get("external_key") or "").strip() or None
+        if not name:
+            flash("Group name required", "error")
+            return redirect(
+                url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
+            )
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(
+                    """
+                    UPDATE api.groups
+                    SET name = %s, team_role = %s,
+                        external_key = CASE
+                          WHEN source = 'manual' THEN NULL
+                          ELSE COALESCE(%s, external_key)
+                        END
+                    WHERE id = %s AND team_id = %s
+                    RETURNING name
+                    """,
+                    (name, team_role, external_key, str(group_id), str(team_id)),
+                )
+                row = cur.fetchone()
+                if not row:
+                    flash("Group not found or not permitted", "error")
+                    conn.rollback()
+                else:
+                    audit.log_org(
+                        cur,
+                        team_id=team_id,
+                        action="group_update",
+                        detail=name,
+                    )
+                    conn.commit()
+                    flash("Group updated", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(
+            url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
+        )
+
+    @app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>/delete")
+    @authz.login_required
+    def delete_team_group(team_id, group_id):
+        """Delete a team group and its memberships/grants."""
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM api.groups
+                WHERE id = %s AND team_id = %s
+                RETURNING name
+                """,
+                (str(group_id), str(team_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                flash("Group not found or not permitted", "error")
+                conn.rollback()
+            else:
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action="group_delete",
+                    detail=row["name"],
+                )
+                conn.commit()
+                flash(f"Group “{row['name']}” deleted", "ok")
+        return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
+
+    @app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>/members")
+    @authz.login_required
+    def add_group_member(team_id, group_id):
+        """Add a manual member to a group."""
+        email = (request.form.get("email") or "").strip().lower()
+        if not email:
+            flash("Email required", "error")
+            return redirect(
+                url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
+            )
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, source FROM api.groups WHERE id = %s AND team_id = %s",
+                (str(group_id), str(team_id)),
+            )
+            g = cur.fetchone()
+            if not g:
+                flash("Group not found", "error")
+                return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
+            cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
+            u = cur.fetchone()
+            if not u or not u.get("id"):
+                flash("User not found — they must register or sign in first", "error")
+                return redirect(
+                    url_for(
+                        "team_detail", team_id=team_id, tab="groups", group_id=group_id
+                    )
+                )
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO api.group_members (group_id, user_id, source)
+                    VALUES (%s, %s, 'manual')
+                    ON CONFLICT (group_id, user_id) DO UPDATE
+                      SET source = 'manual'
+                    """,
+                    (str(group_id), str(u["id"])),
+                )
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action="group_member_add",
+                    detail=email,
+                )
+                conn.commit()
+                flash(f"Added {email}", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(
+            url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
+        )
+
+    @app.post(
+        "/teams/<uuid:team_id>/groups/<uuid:group_id>/members/<uuid:user_id>/remove"
+    )
+    @authz.login_required
+    def remove_group_member(team_id, group_id, user_id):
+        """Remove a member from a group."""
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM api.group_members gm
+                USING api.groups g
+                WHERE gm.group_id = g.id
+                  AND g.id = %s AND g.team_id = %s
+                  AND gm.user_id = %s
+                """,
+                (str(group_id), str(team_id), str(user_id)),
+            )
+            if cur.rowcount:
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action="group_member_remove",
+                    detail=str(user_id),
+                )
+                conn.commit()
+                flash("Member removed from group", "ok")
+            else:
+                flash("Member not found or not permitted", "error")
+                conn.rollback()
+        return redirect(
+            url_for("team_detail", team_id=team_id, tab="groups", group_id=group_id)
+        )

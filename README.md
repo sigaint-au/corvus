@@ -22,6 +22,7 @@ OIDC/LDAP, audit retention).
 
 | Doc | Contents |
 |-----|----------|
+| **[docs/rbac.md](docs/rbac.md)** | **Org RBAC** — teams, groups (manual/LDAP/OIDC), project roles, secret ACLs, setup recipes |
 | **[docs/deploy.md](docs/deploy.md)** | Deploy, env vars, bootstrap, OIDC/LDAP, audit purge |
 | **[docs/authentication.md](docs/authentication.md)** | Every auth flow (session, PAT, machine, JWT, OIDC, LDAP) + curl examples |
 | **[docs/building.md](docs/building.md)** | Build & push the app container image (Docker/Podman/OpenShift) |
@@ -53,6 +54,8 @@ curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 | Feature | Description |
 |---------|-------------|
 | Team / project / secret store | Organise secrets as **team / project / key/value** |
+| Org groups RBAC | Team-scoped groups (manual or LDAP/OIDC-mapped) with roles at **team**, **project**, and **secret** level |
+| Per-secret ACLs | Restrict a secret beyond project membership (writers / admins / owners / custom user or group list) |
 | Structured secret kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
 | Browser UI | Bulk actions, trash, version history, search, pins |
 | Postgres RLS enforcement | Access control at the database, not just the app |
@@ -64,6 +67,7 @@ curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 | LDAP & OIDC / SSO | Group to team role / global-admin maps |
 | SMTP | Password-reset emails and login alerts |
 | Auditing | Secret & org audit logs, access review, export, retention purge |
+| Reveal access approval | Optional project default + per-secret override; admin approve/deny with time-limited grants (machine/ESO exempt) |
 | Secret expiry | Optional per-secret expiry with overdue/soon dashboard |
 | Import / export | `.env`, JSON, CSV bulk import and export with audit trail |
 | Classification banner | Optional per-server / per-team banner (e.g. OFFICIAL) |

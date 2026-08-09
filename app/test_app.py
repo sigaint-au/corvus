@@ -935,7 +935,7 @@ class TestAuth(unittest.TestCase):
 
         def fetchall():
             s = last_sql["s"]
-            if "from api.teams t" in s and "team_members" in s:
+            if "from api.teams t" in s:
                 return [
                     {
                         "id": tid,
@@ -1129,8 +1129,8 @@ class TestTeams(unittest.TestCase):
             # Per-query stubs (order-independent)
             if "from api.teams" in s and "where id" in s:
                 return {"id": tid, "name": "T"}
-            if "select role from api.team_members" in s:
-                return {"role": "owner"}
+            if "api.team_role" in s or "select role from api.team_members" in s:
+                return {"r": "owner", "role": "owner"}
             return None
 
         conn, cur = _conn(fetchone=fetchone, fetchall=[])
@@ -1143,6 +1143,7 @@ class TestTeams(unittest.TestCase):
         self.assertIn(b">T<", r.data)
         self.assertIn(b"?tab=projects", r.data)
         self.assertIn(b"?tab=members", r.data)
+        self.assertIn(b"?tab=groups", r.data)
         self.assertIn(b"?tab=settings", r.data)
         sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
         # Default tab loads projects, not members
@@ -1160,8 +1161,8 @@ class TestTeams(unittest.TestCase):
             s = last_sql["s"]
             if "from api.teams" in s and "where id" in s:
                 return {"id": tid, "name": "T"}
-            if "select role from api.team_members" in s:
-                return {"role": "owner"}
+            if "api.team_role" in s or "select role from api.team_members" in s:
+                return {"r": "owner", "role": "owner"}
             return None
 
         conn, cur = _conn(fetchone=fetchone, fetchall=[])
@@ -1373,7 +1374,9 @@ class TestSecrets(unittest.TestCase):
         secrets=None,
         tokens=None,
         audit_log=None,
+        access_requests=None,
         total=None,
+        pending_count=0,
     ):
         """as_user used by project_detail (tab-scoped queries)."""
         project = {
@@ -1390,10 +1393,18 @@ class TestSecrets(unittest.TestCase):
         fo = [project, {"w": can_write}, {"a": can_admin}, {"r": team_role}]
         if tab in ("secrets", "audit"):
             fo.append({"n": total})
+        if tab == "secrets":
+            # _load_secrets_page can_admin_project after list queries
+            fo.append({"a": can_admin})
+        # Pending access-request badge count (always queried)
+        fo.append({"n": pending_count})
         if tab == "settings":
             fa = [[]]  # project_member_rows
         elif tab == "secrets":
-            fa = [rows, []]  # secrets page + pin lookup
+            # secrets page, pins (if any), grants (if any), due list
+            fa = [rows, [], [], []]
+        elif tab == "access":
+            fa = [access_requests or []]
         else:
             fa = [rows] if tab in ("audit", "tokens") else []
         conn, cur = _conn()
@@ -1407,7 +1418,41 @@ class TestSecrets(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"prod", r.data)
         self.assertIn(b"Secrets", r.data)
+        self.assertIn(b">Access<", r.data)
         self.assertIn(b"Audit log", r.data)
+
+    def test_project_access_tab(self):
+        reqs = [
+            {
+                "id": uuid4(),
+                "secret_id": uuid4(),
+                "secret_key": "API_KEY",
+                "user_id": self.uid,
+                "email": "u@ex.com",
+                "name": "User",
+                "status": "pending",
+                "reason": "debug prod",
+                "created_at": "2026-01-01",
+                "resolved_at": None,
+                "approved_until": None,
+                "resolver_email": "",
+            }
+        ]
+        with patch.object(
+            db,
+            "as_user",
+            return_value=self._project_conn(
+                tab="access", access_requests=reqs, pending_count=1
+            ),
+        ):
+            r = self.client.get(f"/projects/{self.pid}?tab=access")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"API_KEY", r.data)
+        self.assertIn(b"pending", r.data)
+        self.assertIn(b"debug prod", r.data)
+        self.assertIn(b"Approve", r.data)
+        self.assertIn(b"Deny", r.data)
+        self.assertIn(b">Access<", r.data)
 
     def test_project_audit_tab(self):
         audit_rows = [
@@ -1593,7 +1638,9 @@ class TestSecrets(unittest.TestCase):
                 "value_enc": enc,
                 "expires_at": None,
             },
-            {"w": True},
+            {"ok": True},  # can_access_secret reveal
+            {"a": True},  # can_admin_project — approval not required
+            {"w": True},  # can_access_secret write
         ]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(
@@ -1610,6 +1657,174 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(b"/hide", r.data)
         # Expiry is edited on the full view, not the compact inline panel
         self.assertNotIn(b'name="expires_at"', r.data)
+
+    def test_reveal_secret_requires_access_request(self):
+        sid = uuid4()
+        enc = crypto.encrypt("super-secret")
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {
+                "id": sid,
+                "key": "API_KEY",
+                "value_enc": enc,
+                "expires_at": None,
+            },
+            {"ok": True},  # can_access_secret reveal
+            {"a": False},  # not admin
+            {"r": True},  # secret_requires_approval
+            None,  # no pending/approved grant
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/reveal",
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b"super-secret", r.data)
+        self.assertIn(b"Approval required", r.data)
+        self.assertIn(b"Request access", r.data)
+        self.assertIn(b"<dialog", r.data)
+
+    def test_reveal_open_secret_no_approval(self):
+        """Project default off + no override → instant reveal for readers."""
+        sid = uuid4()
+        enc = crypto.encrypt("open-secret")
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {
+                "id": sid,
+                "key": "FEATURE_FLAG",
+                "value_enc": enc,
+                "expires_at": None,
+            },
+            {"ok": True},  # can_access_secret reveal
+            {"a": False},
+            {"r": False},  # does not require approval
+            {"w": False},  # can_access_secret write
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/reveal",
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"open-secret", r.data)
+
+    def test_reveal_secret_with_approved_grant(self):
+        sid = uuid4()
+        enc = crypto.encrypt("granted-secret")
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {
+                "id": sid,
+                "key": "API_KEY",
+                "value_enc": enc,
+                "expires_at": None,
+            },
+            {"ok": True},  # can_access_secret reveal
+            {"a": False},
+            {"r": True},
+            {
+                "id": uuid4(),
+                "status": "approved",
+                "approved_until": "2099-01-01",
+                "created_at": "2026-01-01",
+                "reason": "",
+            },
+            {"w": False},  # can_access_secret write
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/reveal",
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"granted-secret", r.data)
+
+    def test_request_secret_access(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        created = {
+            "id": uuid4(),
+            "status": "pending",
+            "created_at": "2026-01-01",
+            "reason": "need it",
+        }
+        cur.fetchone.side_effect = [
+            {"id": sid, "key": "API_KEY"},
+            {"a": False},
+            {"r": True},  # requires approval
+            None,  # no existing grant
+            created,  # INSERT RETURNING
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/secrets/{sid}/access-request",
+                data={"reason": "need it", "dialog": "1"},
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Request submitted", r.data)
+        self.assertIn(b"Waiting", r.data)
+        conn.commit.assert_called()
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("secret_access_requests", sql)
+        audit_args = " ".join(
+            str(c.args) for c in cur.execute.call_args_list if c.args
+        )
+        self.assertIn("access_requested", audit_args)
+
+    def test_approve_secret_access(self):
+        rid, sid = uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"a": True},
+            {
+                "id": rid,
+                "secret_id": sid,
+                "user_id": self.uid,
+                "status": "pending",
+                "secret_key": "API_KEY",
+            },
+        ]
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/access-requests/{rid}/approve",
+                data={"minutes": "15"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=access", r.location)
+        conn.commit.assert_called()
+        all_args = " ".join(str(c.args) for c in cur.execute.call_args_list if c.args)
+        self.assertIn("approved", all_args)
+        self.assertIn("access_approved", all_args)
+
+    def test_deny_secret_access(self):
+        rid, sid = uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"a": True},
+            {
+                "id": rid,
+                "secret_id": sid,
+                "status": "pending",
+                "secret_key": "API_KEY",
+            },
+        ]
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/access-requests/{rid}/deny",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=access", r.location)
+        conn.commit.assert_called()
+        all_args = " ".join(str(c.args) for c in cur.execute.call_args_list if c.args)
+        self.assertIn("denied", all_args)
+        self.assertIn("access_denied", all_args)
 
     def test_hide_secret(self):
         sid = uuid4()
@@ -1983,10 +2198,21 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("private.audit_org", init)
         self.assertIn("default_token_days", init)
         self.assertIn("'exported'", init)
+        self.assertIn("CREATE TABLE api.secret_access_requests", init)
+        self.assertIn("api.can_reveal_secret", init)
+        self.assertIn("api.secret_requires_approval", init)
+        self.assertIn("require_reveal_approval", init)
+        self.assertIn("private.secret_access_request_rows", init)
+        self.assertIn("access_requested", init)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("api.team_invites", src)
         self.assertIn("private.audit_org", src)
         self.assertIn("exported", src)
+        self.assertIn("secret_access_requests", src)
+        self.assertIn("can_reveal_secret", src)
+        self.assertIn("secret_requires_approval", src)
+        self.assertIn("require_reveal_approval", src)
+        self.assertIn("access_approved", src)
 
     def test_log_org_calls_fn(self):
         cur = MagicMock()
@@ -2002,6 +2228,246 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("write", config.PROJECT_ROLES)
         self.assertIn("member", config.INVITE_ROLES)
         self.assertNotIn("owner", config.INVITE_ROLES)
+
+    def test_secret_acl_schema_and_config(self):
+        from pathlib import Path
+
+        self.assertIn("owners", config.SECRET_ACL_MODES)
+        self.assertIn("reveal", config.SECRET_ACL_PERMISSIONS)
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("acl_mode", init)
+        self.assertIn("CREATE TABLE api.secret_acl", init)
+        self.assertIn("api.can_access_secret", init)
+        self.assertIn("api.can_access_secret_row", init)
+        self.assertIn("api._perm_rank", init)
+        # RLS must use row form so INSERT … RETURNING can see the new row
+        self.assertIn(
+            "can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)",
+            init,
+        )
+        # Reveal path must honor ACL before approval grants
+        rev = init[init.index("FUNCTION api.can_reveal_secret") :]
+        rev = rev[: rev.index("$$;") + 3]
+        self.assertIn("can_access_secret(sid, 'reveal')", rev)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("can_access_secret", src)
+        self.assertIn("can_access_secret_row", src)
+        self.assertIn("secret_acl", src)
+        self.assertIn("NOT api.can_access_secret(sid, 'reveal')", src)
+
+    def test_can_access_secret_row_modes_in_sql(self):
+        """ACL mode branches exist for inherit/writers/admins/owners/custom."""
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        start = init.index("FUNCTION api.can_access_secret_row")
+        body = init[start : start + 2500]
+        for mode in ("inherit", "writers", "admins", "owners", "custom"):
+            self.assertIn(mode, body, msg=f"mode {mode} missing from can_access_secret_row")
+        for need in ("'read'", "'reveal'", "'write'"):
+            self.assertIn(need, body)
+        # custom checks user or group membership
+        self.assertIn("group_members", body)
+        self.assertIn("_perm_rank", body)
+
+    def test_export_filters_reveal_permission(self):
+        """Plain export SQL must filter by can_access_secret reveal + can_reveal."""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent / "routes" / "project_io.py").read_text()
+        self.assertIn("can_access_secret(id, 'reveal')", src)
+        self.assertIn("can_reveal_secret(id)", src)
+        # bulk export path
+        bulk = src[src.index("def bulk_export") :]
+        self.assertIn("can_access_secret(id, 'reveal')", bulk)
+
+    def test_acl_management_routes_exist(self):
+        """Secret ACL mode/grant routes registered and gated to admins."""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent / "routes" / "secrets.py").read_text()
+        self.assertIn("def update_secret_acl_mode", src)
+        self.assertIn("def add_secret_acl_grant", src)
+        self.assertIn("def delete_secret_acl_grant", src)
+        self.assertIn("can_admin_project", src)
+        self.assertIn("tab=\"access\"", src)
+
+    def test_eso_pat_checks_acl_before_reveal(self):
+        """ESO/PAT get-secret must check can_access_secret reveal before approval."""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent / "routes" / "eso.py").read_text()
+        # Order: ACL reveal, then can_reveal_secret
+        i_acl = src.index("can_access_secret(%s, 'reveal')")
+        i_rev = src.index("can_reveal_secret(%s)")
+        self.assertLess(i_acl, i_rev)
+        self.assertIn('"error": "forbidden"', src)
+        self.assertIn('"error": "approval_required"', src)
+
+    def test_eso_pat_bulk_export_filters_reveal_acl(self):
+        """PAT bulk list-with-values must filter by can_access_secret(reveal)."""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent / "routes" / "eso.py").read_text()
+        # Bulk values path (not meta=1) for PAT/as_user
+        start = src.index("def eso_list_secrets")
+        body = src[start : start + 8000]
+        self.assertIn("cli/values", body)
+        # The non-meta PAT SELECT must include reveal ACL filter
+        self.assertIn("can_access_secret(id, 'reveal')", body)
+        self.assertIn("can_reveal_secret(id)", body)
+        # Ensure the bulk values query is not the unfiltered form
+        self.assertNotRegex(
+            body,
+            r"SELECT key, value_enc FROM api\.secrets\s+"
+            r"WHERE project_id = %s AND deleted_at IS NULL\s*\"\"\"",
+        )
+
+    def test_group_team_role_cannot_be_owner(self):
+        """Groups must not grant team owner (admin max)."""
+        self.assertNotIn("owner", config.GROUP_TEAM_ROLES)
+        self.assertIn("admin", config.GROUP_TEAM_ROLES)
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        # groups.team_role check excludes owner
+        self.assertIn("team_role IN ('admin', 'member', 'viewer')", init)
+        self.assertNotIn(
+            "team_role IN ('owner', 'admin', 'member', 'viewer')",
+            init[init.index("CREATE TABLE api.groups") : init.index("CREATE TABLE api.group_members")],
+        )
+
+    def test_can_access_secret_row_behavioral_matrix(self):
+        """Expected outcomes for can_access_secret_row (mirrors SQL CASE).
+
+        Pure-Python stand-in of the SECURITY DEFINER helper so we can assert
+        mode × need without a live Postgres. Keep in sync with init.sql.
+        """
+        perm_rank = {"read": 1, "reveal": 2, "write": 3}
+
+        def row_access(
+            *,
+            mode,
+            need,
+            deleted=False,
+            can_read=True,
+            can_write=False,
+            can_admin=False,
+            is_global=False,
+            team_role=None,
+            grants=None,
+        ):
+            if deleted or not need or need not in perm_rank:
+                return False
+            if not can_read and not is_global:
+                return False
+            if is_global or can_admin:
+                return True
+            mode = mode or "inherit"
+            if mode == "inherit":
+                return can_write if need == "write" else True
+            if mode == "writers":
+                return can_write
+            if mode == "admins":
+                return False  # only admin/global above
+            if mode == "owners":
+                return team_role == "owner"
+            if mode == "custom":
+                grants = grants or []
+                need_r = perm_rank[need]
+                return any(perm_rank.get(g, 0) >= need_r for g in grants)
+            return False
+
+        # inherit
+        self.assertTrue(row_access(mode="inherit", need="read", can_read=True))
+        self.assertTrue(row_access(mode="inherit", need="reveal", can_read=True))
+        self.assertFalse(row_access(mode="inherit", need="write", can_read=True, can_write=False))
+        self.assertTrue(row_access(mode="inherit", need="write", can_read=True, can_write=True))
+        # writers
+        self.assertFalse(row_access(mode="writers", need="read", can_read=True, can_write=False))
+        self.assertTrue(row_access(mode="writers", need="read", can_read=True, can_write=True))
+        # admins (non-admin always false)
+        self.assertFalse(row_access(mode="admins", need="reveal", can_read=True, can_write=True))
+        self.assertTrue(row_access(mode="admins", need="reveal", can_admin=True))
+        # owners
+        self.assertFalse(row_access(mode="owners", need="read", can_read=True, team_role="admin"))
+        self.assertTrue(row_access(mode="owners", need="read", can_read=True, team_role="owner"))
+        # custom grants
+        self.assertFalse(row_access(mode="custom", need="reveal", can_read=True, grants=["read"]))
+        self.assertTrue(row_access(mode="custom", need="reveal", can_read=True, grants=["reveal"]))
+        self.assertTrue(row_access(mode="custom", need="read", can_read=True, grants=["write"]))
+        self.assertFalse(row_access(mode="custom", need="write", can_read=True, grants=["reveal"]))
+        # deleted / no project read
+        self.assertFalse(row_access(mode="inherit", need="read", deleted=True))
+        self.assertFalse(row_access(mode="inherit", need="read", can_read=False))
+
+    def test_org_groups_rbac_schema(self):
+        """Groups tables, group-aware RBAC helpers, secret ACL group grants."""
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("CREATE TABLE api.groups", init)
+        self.assertIn("CREATE TABLE api.group_members", init)
+        self.assertIn("CREATE TABLE api.project_group_roles", init)
+        self.assertIn("external_key", init)
+        self.assertIn("api.project_role", init)
+        self.assertIn("api._role_rank", init)
+        # secret_acl allows user OR group
+        self.assertIn("group_id", init)
+        self.assertIn("group_members gm", init)
+        # RBAC functions include group paths
+        self.assertIn("g.team_role IS NOT NULL", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("CREATE TABLE IF NOT EXISTS api.groups", src)
+        self.assertIn("project_group_roles", src)
+        self.assertIn("team_group_rows", src)
+        self.assertIn("secret_acl_principal_check", src)
+        # Routes wire groups
+        teams_src = (
+            Path(__file__).resolve().parent / "routes" / "teams.py"
+        ).read_text()
+        self.assertIn("create_team_group", teams_src)
+        self.assertIn("apply_group_membership_maps", Path(
+            Path(__file__).resolve().parent / "ldap_auth.py"
+        ).read_text())
+        seed = (
+            Path(__file__).resolve().parents[1] / "scripts" / "seed_mock.py"
+        ).read_text()
+        self.assertIn("GROUPS", seed)
+        self.assertIn("PROJECT_GROUP_ROLES", seed)
+
+    def test_dir_sync_group_membership_maps(self):
+        """Directory sync upserts/removes group_members for external_key matches."""
+        from unittest.mock import MagicMock
+        import dir_sync
+
+        uid = str(uuid4())
+        gid_match = str(uuid4())
+        gid_other = str(uuid4())
+        cur = MagicMock()
+        # SELECT mapped groups → one matching external key
+        cur.fetchall.return_value = [
+            {"id": gid_match, "external_key": "cn=ops,ou=groups"},
+            {"id": gid_other, "external_key": "cn=other,ou=groups"},
+        ]
+        # SELECT existing membership: none for insert path
+        cur.fetchone.return_value = None
+
+        dir_sync.apply_group_membership_maps(
+            cur, uid, ["cn=ops,ou=groups", "cn=unrelated"], source="ldap"
+        )
+
+        executed = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        self.assertIn("delete from api.group_members", executed)
+        self.assertIn("insert into api.group_members", executed)
+        # Insert should target matching group only (second execute after deletes/selects)
+        insert_calls = [
+            c
+            for c in cur.execute.call_args_list
+            if "INSERT INTO api.group_members" in str(c.args[0])
+        ]
+        self.assertEqual(len(insert_calls), 1)
+        self.assertEqual(insert_calls[0].args[1][0], gid_match)
 
     def test_members_tab_requires_login(self):
         r = store.app.test_client().get(f"/projects/{uuid4()}?tab=settings")
@@ -2189,9 +2655,11 @@ class TestSecretLifecycle(unittest.TestCase):
     def test_reveal_secret_version(self):
         sid, vid = uuid4(), uuid4()
         enc = crypto.encrypt("prior-secret")
-        conn, cur = _conn(
-            fetchone={"value_enc": enc, "key": "K", "secret_id": sid}
-        )
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"value_enc": enc, "key": "K", "secret_id": sid},
+            {"a": True},  # can_admin — instant reveal
+        ]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(
                 f"/projects/{self.pid}/secrets/{sid}/versions/{vid}/reveal"

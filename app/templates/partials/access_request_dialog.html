@@ -1,0 +1,45 @@
+{# Compact oat.ink <dialog> for reveal access. Must NOT sit inside another <form>.
+   Open: data-open-dialog="{{ dlg_id }}" (polyfilled) or commandfor + show-modal.
+#}
+{% set dlg_id = 'access-dlg-' ~ secret_id %}
+{% set state = state|default('need_request') %}
+<dialog id="{{ dlg_id }}" closedby="any" class="access-dlg">
+  {% if state == 'pending' %}
+  <form method="dialog">
+    <header>
+      <h3>Request submitted</h3>
+      <p>Waiting for approval to reveal <code>{{ secret_key }}</code>.</p>
+    </header>
+    <footer>
+      <button value="ok">Done</button>
+    </footer>
+  </form>
+  {% else %}
+  <form method="post"
+        action="{{ url_for('request_secret_access', project_id=project_id, secret_id=secret_id) }}"
+        hx-post="{{ url_for('request_secret_access', project_id=project_id, secret_id=secret_id) }}"
+        hx-target="#{{ dlg_id }}"
+        hx-swap="innerHTML"
+        id="{{ dlg_id }}-form">
+    <header>
+      <h3>Approval required</h3>
+      <p>Reveal <code>{{ secret_key }}</code> after an admin approves.</p>
+    </header>
+    <div>
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      {% if cell %}<input type="hidden" name="cell" value="{{ cell }}">{% endif %}
+      <input type="hidden" name="dialog" value="1">
+      <label>
+        Why do you need access?
+        <input type="text" name="reason" maxlength="500" required
+               placeholder="e.g. debugging prod auth, ticket #1234"
+               autocomplete="off">
+      </label>
+    </div>
+    <footer>
+      <button type="button" class="outline" data-close-dialog="{{ dlg_id }}">Cancel</button>
+      <button type="submit">Request access</button>
+    </footer>
+  </form>
+  {% endif %}
+</dialog>

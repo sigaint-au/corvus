@@ -40,17 +40,15 @@ def nav_teams(user_id: str):
                 """
             )
         else:
+            # RLS + is_team_member includes direct members and group-based team roles
             cur.execute(
                 """
                 SELECT t.id, t.name,
                        t.classification_enabled, t.classification_text,
                        t.classification_color, t.classification_fg
                 FROM api.teams t
-                JOIN api.team_members tm ON tm.team_id = t.id
-                WHERE tm.user_id = %s
                 ORDER BY t.name
-                """,
-                (user_id,),
+                """
             )
         return cur.fetchall()
 
@@ -115,6 +113,7 @@ def inject_nav():
         "nav_team_name": None,
         "nav_pins": [],
         "nav_recent": [],
+        "nav_access_pending": 0,
         "clipboard_clear_seconds": CLIPBOARD_CLEAR_SECONDS,
         "reveal_auto_hide_seconds": REVEAL_AUTO_HIDE_SECONDS,
         "max_expiry_days": MAX_EXPIRY_DAYS,
@@ -147,6 +146,20 @@ def inject_nav():
         except (KeyError, TypeError):
             continue
     base["nav_team_name"] = name
+    # Pending reveal access requests the user can approve (project admin / team owner)
+    try:
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT count(*) AS n
+                FROM api.secret_access_requests r
+                WHERE r.status = 'pending'
+                  AND api.can_admin_project(r.project_id)
+                """
+            )
+            base["nav_access_pending"] = int((cur.fetchone() or {}).get("n") or 0)
+    except Exception:
+        base["nav_access_pending"] = 0
     # Team-level classification: NULL enabled = use server banner; True/False = override
     if active is not None:
         try:

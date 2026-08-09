@@ -91,6 +91,28 @@ def register(app):
         )
 
 
+    @app.get("/access-requests")
+    @authz.login_required
+    def access_requests_inbox():
+        """List pending secret reveal requests the current user can approve.
+
+        Returns:
+            Rendered inbox of pending access requests across projects.
+
+        Example:
+            GET /access-requests
+        """
+        rows = []
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM private.pending_access_requests_for_admin()")
+            rows = cur.fetchall() or []
+        return render_template(
+            "access_requests.html",
+            requests=rows,
+            grant_minutes=config.REVEAL_ACCESS_GRANT_MINUTES,
+            grant_choices=config.REVEAL_ACCESS_GRANT_CHOICES,
+        )
+
     @app.get("/projects")
     @authz.login_required
     def projects_list():
@@ -120,7 +142,7 @@ def register(app):
     @app.get("/projects/<uuid:project_id>")
     @authz.login_required
     def project_detail(project_id):
-        """Show project detail for secrets, audit, tokens, import, integrations, or settings.
+        """Show project detail for secrets, audit, access, tokens, import, integrations, or settings.
 
         Args:
             project_id: UUID of the project to display.
@@ -135,6 +157,7 @@ def register(app):
         if tab not in (
             "secrets",
             "audit",
+            "access",
             "tokens",
             "import",
             "integrations",
@@ -153,6 +176,10 @@ def register(app):
         audit_rows = []
         tokens = []
         project_members = []
+        project_group_roles = []
+        team_groups = []
+        access_requests = []
+        access_pending_count = 0
         default_token_days = None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
@@ -249,6 +276,50 @@ def register(app):
                     (str(project_id),),
                 )
                 project_members = cur.fetchall()
+                try:
+                    cur.execute(
+                        "SELECT * FROM private.project_group_role_rows(%s::uuid)",
+                        (str(project_id),),
+                    )
+                    project_group_roles = cur.fetchall() or []
+                except Exception:
+                    project_group_roles = []
+                try:
+                    cur.execute(
+                        "SELECT * FROM private.team_group_rows(%s::uuid)",
+                        (str(project["team_id"]),),
+                    )
+                    team_groups = cur.fetchall() or []
+                except Exception:
+                    team_groups = []
+            elif tab == "access":
+                cur.execute(
+                    "SELECT * FROM private.secret_access_request_rows(%s::uuid)",
+                    (str(project_id),),
+                )
+                access_requests = cur.fetchall() or []
+            # Pending count for tab badge (admins see all; others their own)
+            try:
+                if can_admin:
+                    cur.execute(
+                        """
+                        SELECT count(*) AS n FROM api.secret_access_requests
+                        WHERE project_id = %s AND status = 'pending'
+                        """,
+                        (str(project_id),),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT count(*) AS n FROM api.secret_access_requests
+                        WHERE project_id = %s AND status = 'pending'
+                          AND user_id = %s
+                        """,
+                        (str(project_id), session["user_id"]),
+                    )
+                access_pending_count = int((cur.fetchone() or {}).get("n") or 0)
+            except Exception:
+                access_pending_count = 0
             # import: no extra queries
         import settings_svc
 
@@ -260,9 +331,13 @@ def register(app):
             secrets=secret_rows,
             tokens=tokens,
             audit_log=audit_rows,
+            access_requests=access_requests,
+            access_pending_count=access_pending_count,
             secrets_pager=secrets_pager,
             audit_pager=audit_pager,
             project_members=project_members,
+            project_group_roles=project_group_roles,
+            team_groups=team_groups,
             project_roles=config.PROJECT_ROLES,
             default_token_days=default_token_days,
             can_write=can_write,
@@ -282,6 +357,15 @@ def register(app):
             soon_days=14,
             public_base_url=public_base,
             max_expiry_days=config.MAX_EXPIRY_DAYS,
+            grant_minutes=config.REVEAL_ACCESS_GRANT_MINUTES,
+            grant_choices=config.REVEAL_ACCESS_GRANT_CHOICES,
+            require_reveal_approval=bool(
+                project.get("require_reveal_approval")
+            )
+            if project
+            else False,
+            acl_modes=config.SECRET_ACL_MODES,
+            acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
         )
 
 
@@ -443,4 +527,146 @@ def register(app):
                 )
                 conn.commit()
                 flash("Project member removed", "ok")
+        return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
+
+    @app.post("/projects/<uuid:project_id>/group-roles")
+    @authz.login_required
+    def add_project_group_role(project_id):
+        """Grant a team group a project role (admin only)."""
+        group_id = (request.form.get("group_id") or "").strip()
+        role = (request.form.get("role") or "read").strip()
+        if role not in config.PROJECT_ROLES:
+            role = "read"
+        if not group_id:
+            flash("Group required", "error")
+            return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not (cur.fetchone() or {}).get("a"):
+                flash("You don't have permission to do that", "error")
+                return redirect(
+                    url_for("project_detail", project_id=project_id, tab="settings")
+                )
+            cur.execute(
+                """
+                SELECT p.team_id, g.name
+                FROM api.projects p
+                JOIN api.groups g ON g.team_id = p.team_id AND g.id = %s
+                WHERE p.id = %s
+                """,
+                (group_id, str(project_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                flash("Group not found on this team", "error")
+                return redirect(
+                    url_for("project_detail", project_id=project_id, tab="settings")
+                )
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO api.project_group_roles (project_id, group_id, role)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (project_id, group_id) DO UPDATE SET role = EXCLUDED.role
+                    """,
+                    (str(project_id), group_id, role),
+                )
+                audit.log_org(
+                    cur,
+                    team_id=row["team_id"],
+                    project_id=project_id,
+                    action="project_group_role",
+                    detail=f"{row['name']} → {role}",
+                )
+                conn.commit()
+                flash(f"Group “{row['name']}” → {role}", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
+
+    @app.post("/projects/<uuid:project_id>/group-roles/<uuid:group_id>/remove")
+    @authz.login_required
+    def remove_project_group_role(project_id, group_id):
+        """Remove a group project role."""
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not (cur.fetchone() or {}).get("a"):
+                flash("You don't have permission to do that", "error")
+                return redirect(
+                    url_for("project_detail", project_id=project_id, tab="settings")
+                )
+            cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
+            proj = cur.fetchone()
+            cur.execute(
+                """
+                DELETE FROM api.project_group_roles
+                WHERE project_id = %s AND group_id = %s
+                """,
+                (str(project_id), str(group_id)),
+            )
+            if cur.rowcount:
+                audit.log_org(
+                    cur,
+                    team_id=proj["team_id"] if proj else None,
+                    project_id=project_id,
+                    action="project_group_role_remove",
+                    detail=str(group_id),
+                )
+                conn.commit()
+                flash("Group project role removed", "ok")
+            else:
+                flash("Role not found", "error")
+                conn.rollback()
+        return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
+
+    @app.post("/projects/<uuid:project_id>/settings")
+    @authz.login_required
+    def update_project_settings(project_id):
+        """Update project reveal-approval default and related settings.
+
+        Args:
+            project_id: UUID of the project.
+
+        Returns:
+            Redirect to the project settings tab.
+
+        Example:
+            POST /projects/<project_id>/settings with require_reveal_approval
+        """
+        require = (request.form.get("require_reveal_approval") or "").strip().lower()
+        require_on = require in ("1", "true", "yes", "on")
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not (cur.fetchone() or {}).get("a"):
+                flash("You don't have permission to do that", "error")
+                return redirect(
+                    url_for("project_detail", project_id=project_id, tab="settings")
+                )
+            cur.execute(
+                """
+                UPDATE api.projects
+                SET require_reveal_approval = %s
+                WHERE id = %s
+                """,
+                (require_on, str(project_id)),
+            )
+            if cur.rowcount == 0:
+                flash("Project not found or not permitted", "error")
+                conn.rollback()
+            else:
+                cur.execute(
+                    "SELECT team_id FROM api.projects WHERE id = %s",
+                    (str(project_id),),
+                )
+                proj = cur.fetchone()
+                audit.log_org(
+                    cur,
+                    team_id=proj["team_id"] if proj else None,
+                    project_id=project_id,
+                    action="project_settings",
+                    detail=f"require_reveal_approval={require_on}",
+                )
+                conn.commit()
+                flash("Project settings saved", "ok")
         return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
