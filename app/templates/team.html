@@ -245,23 +245,30 @@
   </form>
   {% endif %}
   {% if groups %}
-  <table>
+  <table class="groups-table">
     <thead><tr><th>Name</th><th>Source</th><th>External</th><th>Team role</th><th>Members</th><th></th></tr></thead>
     <tbody>
     {% for g in groups %}
-      <tr {% if selected_group and selected_group.id == g.id %}class="selected"{% endif %}>
-        <td><a href="{{ url_for('team_detail', team_id=team.id, tab='groups', group_id=g.id) }}">{{ g.name }}</a></td>
+      {% set is_sel = selected_group and selected_group.id == g.id %}
+      <tr class="{% if is_sel %}selected{% endif %}"
+          {% if is_sel %}aria-current="true"{% endif %}>
+        <td>
+          <a href="{{ url_for('team_detail', team_id=team.id, tab='groups', group_id=g.id) }}">{{ g.name }}</a>
+          {% if is_sel %}<span class="row-selected-mark">Selected</span>{% endif %}
+        </td>
         <td><span class="role-badge">{{ g.source }}</span></td>
         <td class="muted"><code class="k">{{ g.external_key or '—' }}</code></td>
         <td>{% if g.team_role %}<span class="role-badge">{{ g.team_role }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td>{{ g.member_count }}</td>
         <td class="acts">
-          {% if is_admin %}
+          {% if is_admin and not is_sel %}
           <form method="post" action="{{ url_for('delete_team_group', team_id=team.id, group_id=g.id) }}"
                 class="inline" onsubmit="return confirm('Delete group “{{ g.name }}”?')">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Delete</button>
           </form>
+          {% elif is_admin and is_sel %}
+          <a class="muted" href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Clear</a>
           {% endif %}
         </td>
       </tr>
@@ -273,8 +280,9 @@
   {% endif %}
 </section>
 {% if selected_group %}
-<section>
-  <h2>Group: {{ selected_group.name }}</h2>
+<section id="group-members-panel" class="group-members-panel">
+  <h2>Members of {{ selected_group.name }}</h2>
+  <p class="muted">Editing membership for the group highlighted above.</p>
   {% if is_admin %}
   <form method="post" action="{{ url_for('update_team_group', team_id=team.id, group_id=selected_group.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
