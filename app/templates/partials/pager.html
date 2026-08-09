@@ -13,24 +13,33 @@
   <span class="muted pager-summary" style="font-size: var(--text-7);">
     Showing {{ pager.start }}–{{ pager.end }} of {{ pager.total }}
   </span>
+  {# oat.ink pagination: menu.buttons + .button / native <button disabled> #}
   <menu class="buttons">
     <li>
       {% if pager.has_prev %}
       <a href="{{ url_for(pager.endpoint, page=pager.prev_page, **_q) }}"
          class="button outline small">&larr; Prev</a>
       {% else %}
-      <span class="button outline small" aria-disabled="true" style="opacity:.5;pointer-events:none">Prev</span>
+      <button type="button" class="outline small" disabled aria-label="Previous page (unavailable)">
+        &larr; Prev
+      </button>
       {% endif %}
     </li>
     {% for p in range(1, pager.pages + 1) %}
       {% if p == pager.page %}
-      <li><a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
-             class="button small" aria-current="page">{{ p }}</a></li>
+      <li>
+        <a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
+           class="button small" aria-current="page">{{ p }}</a>
+      </li>
       {% elif p == 1 or p == pager.pages or (p >= pager.page - 2 and p <= pager.page + 2) %}
-      <li><a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
-             class="button outline small">{{ p }}</a></li>
+      <li>
+        <a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
+           class="button outline small">{{ p }}</a>
+      </li>
       {% elif p == pager.page - 3 or p == pager.page + 3 %}
-      <li><span class="button outline small" aria-hidden="true" style="opacity:.5;pointer-events:none">…</span></li>
+      <li>
+        <button type="button" class="outline small" disabled aria-hidden="true" tabindex="-1">…</button>
+      </li>
       {% endif %}
     {% endfor %}
     <li>
@@ -38,7 +47,9 @@
       <a href="{{ url_for(pager.endpoint, page=pager.next_page, **_q) }}"
          class="button outline small">Next &rarr;</a>
       {% else %}
-      <span class="button outline small" aria-disabled="true" style="opacity:.5;pointer-events:none">Next</span>
+      <button type="button" class="outline small" disabled aria-label="Next page (unavailable)">
+        Next &rarr;
+      </button>
       {% endif %}
     </li>
   </menu>

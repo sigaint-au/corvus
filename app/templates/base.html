@@ -1163,22 +1163,17 @@
       background: transparent;
       border-bottom-color: var(--foreground);
     }
-    /* Pagination uses oat menu.buttons; keep summary spacing */
+    /* Pagination: oat menu.buttons; disabled ends use native <button disabled> */
     .pager {
       margin-top: 1rem;
       font-size: .875rem;
       color: var(--muted-foreground);
+      align-items: center;
     }
-    .pager-links .current {
-      /* legacy selector no-op kept minimal if any old markup remains */
-      background: var(--foreground);
-      color: var(--background);
-      font-weight: 600;
+    .pager menu.buttons {
+      margin: 0;
     }
-    .pager-links .disabled {
-      opacity: .4;
-      pointer-events: none;
-    }
+
     .audit-action {
       display: inline-block;
       font-size: .8rem;
