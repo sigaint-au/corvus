@@ -143,6 +143,23 @@ REVEAL_AUTO_HIDE_SECONDS = max(
 )
 # Structured secret kinds for advanced create form
 SECRET_KINDS = ("plain", "database", "certificate", "ssh", "kv")
+# Per-secret ACL modes (tighter than project membership)
+# inherit = project RBAC; writers/admins/owners = min role; custom = user allow-list
+SECRET_ACL_MODES = ("inherit", "writers", "admins", "owners", "custom")
+SECRET_ACL_MODE_LABELS = {
+    "inherit": "Everyone with project access",
+    "writers": "Writers and above",
+    "admins": "Project admins and team owners/admins",
+    "owners": "Team owners only",
+    "custom": "Custom user list",
+}
+# Permissions grantable on custom secret ACLs (ordered weakest → strongest)
+SECRET_ACL_PERMISSIONS = ("read", "reveal", "write")
+SECRET_ACL_PERM_LABELS = {
+    "read": "List / metadata",
+    "reveal": "Reveal value",
+    "write": "Edit / delete",
+}
 # Upper bounds for optional expiry (secrets, machine tokens, team defaults)
 MAX_EXPIRY_DAYS = 3650  # ~10 years
 # Request body / secret import file cap (bytes) — memory DoS guard

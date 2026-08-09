@@ -22,6 +22,7 @@ from secret_kinds import (
 )
 from secret_ops import (
     _load_secrets_page,
+    _parse_acl_mode,
     _parse_expires_at,
     _upsert_secret,
     compose_secret_value,
@@ -263,6 +264,7 @@ def register(app):
         value = request.form["value"]
         note = request.form.get("note", "").strip()
         kind = normalize_kind(request.form.get("kind"))
+        acl_mode = _parse_acl_mode(request.form)
         if not key or value is None:
             flash("Key and value required", "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
@@ -281,6 +283,8 @@ def register(app):
                     note=note,
                     expires_at=expires_at,
                     kind=kind,
+                    acl_mode=acl_mode,
+                    set_acl_mode=True,
                 )
                 if not sid:
                     flash("You don't have permission to do that", "error")
@@ -478,8 +482,17 @@ def register(app):
             row = cur.fetchone()
             if not row:
                 return "Not found", 404
-            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
-            can_write = bool(cur.fetchone()["w"])
+            cur.execute(
+                "SELECT api.can_access_secret(%s, 'reveal') AS ok",
+                (str(secret_id),),
+            )
+            if not (cur.fetchone() or {}).get("ok"):
+                return "Forbidden", 403
+            cur.execute(
+                "SELECT api.can_access_secret(%s, 'write') AS w",
+                (str(secret_id),),
+            )
+            can_write = bool((cur.fetchone() or {}).get("w"))
             try:
                 pins.touch_recent(cur, session["user_id"], secret_id)
             except Exception:
@@ -546,6 +559,9 @@ def register(app):
         can_write: bool,
         is_version: bool = False,
         status: int = 200,
+        can_admin: bool = False,
+        acl_grants=None,
+        can_reveal: bool = True,
     ):
         """Render the type-specific secret view/edit page template.
 
@@ -559,6 +575,9 @@ def register(app):
             can_write: Whether the current user may edit the secret.
             is_version: If True, render a historical version (read-only).
             status: HTTP status code to pair with the rendered body.
+            can_admin: Whether the user may manage secret ACLs.
+            acl_grants: Optional list of custom ACL grant rows.
+            can_reveal: Whether the user may see the secret value.
 
         Returns:
             tuple: ``(html_body, status)`` for the secret view page.
@@ -577,7 +596,7 @@ def register(app):
             except Exception:
                 exp_date = str(exp)[:10]
         cert_pem, cert_key = ("", "")
-        if kind == "certificate":
+        if kind == "certificate" and can_reveal:
             cert_pem, cert_key = split_cert_and_key(plaintext)
         return (
             render_template(
@@ -588,17 +607,27 @@ def register(app):
                 secret_key=row["key"],
                 note=(row.get("note") or ""),
                 kind=kind,
-                value=plaintext,
+                value=plaintext if can_reveal else "",
                 is_version=is_version,
-                kv_pairs=parse_kv_lines(plaintext) if kind == "kv" else [("", "")],
+                kv_pairs=parse_kv_lines(plaintext) if kind == "kv" and can_reveal else [("", "")],
                 pem_blocks=parse_pem_blocks(plaintext)
-                if kind in ("certificate", "ssh")
+                if kind in ("certificate", "ssh") and can_reveal
                 else [],
                 cert_pem=cert_pem,
                 cert_key=cert_key,
-                db_parts=parse_database_url(plaintext) if kind == "database" else {},
+                db_parts=parse_database_url(plaintext)
+                if kind == "database" and can_reveal
+                else {},
                 expires_at=exp_date,
                 can_write=can_write and not is_version,
+                can_reveal=can_reveal,
+                can_admin=can_admin,
+                acl_mode=(row.get("acl_mode") or "inherit"),
+                acl_grants=acl_grants or [],
+                acl_modes=config.SECRET_ACL_MODES,
+                acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
+                acl_permissions=config.SECRET_ACL_PERMISSIONS,
+                acl_perm_labels=config.SECRET_ACL_PERM_LABELS,
                 clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
             ),
             status,
@@ -631,7 +660,7 @@ def register(app):
             cur.execute(
                 """
                 SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
-                       p.name AS project_name
+                       s.acl_mode, p.name AS project_name
                 FROM api.secrets s
                 JOIN api.projects p ON p.id = s.project_id
                 WHERE s.id = %s AND s.project_id = %s AND s.deleted_at IS NULL
@@ -656,8 +685,28 @@ def register(app):
                     return "Not found", 404
                 value_enc = ver["value_enc"]
                 is_version = True
-            cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
-            can_write = bool(cur.fetchone()["w"])
+            cur.execute(
+                "SELECT api.can_access_secret(%s, 'write') AS w",
+                (str(secret_id),),
+            )
+            can_write = bool((cur.fetchone() or {}).get("w"))
+            cur.execute(
+                "SELECT api.can_access_secret(%s, 'reveal') AS r",
+                (str(secret_id),),
+            )
+            can_reveal = bool((cur.fetchone() or {}).get("r"))
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            can_admin = bool((cur.fetchone() or {}).get("a"))
+            acl_grants = []
+            if can_admin:
+                try:
+                    cur.execute(
+                        "SELECT * FROM private.secret_acl_rows(%s::uuid)",
+                        (str(secret_id),),
+                    )
+                    acl_grants = cur.fetchall() or []
+                except Exception:
+                    acl_grants = []
 
             if request.method == "POST":
                 if is_version or not can_write:
@@ -676,10 +725,15 @@ def register(app):
                 if kind == "ssh" and not value:
                     value = (request.form.get("ssh_key") or "").strip()
                 note = (request.form.get("note") or "").strip()
+                acl_mode = _parse_acl_mode(request.form)
+                # Only project admins may tighten/change ACL mode
+                if not can_admin:
+                    acl_mode = row.get("acl_mode") or "inherit"
                 row_view = dict(row)
                 row_view["note"] = note
                 row_view["kind"] = kind
                 row_view["project_name"] = row.get("project_name") or ""
+                row_view["acl_mode"] = acl_mode
                 if not value:
                     flash("Value is required", "error")
                     body, code = _render_secret_view(
@@ -689,6 +743,8 @@ def register(app):
                         plaintext=crypto.decrypt(row["value_enc"]),
                         kind=kind,
                         can_write=True,
+                        can_admin=can_admin,
+                        acl_grants=acl_grants,
                         status=400,
                     )
                     return body, code
@@ -703,13 +759,16 @@ def register(app):
                         plaintext=value,
                         kind=kind,
                         can_write=True,
+                        can_admin=can_admin,
+                        acl_grants=acl_grants,
                         status=400,
                     )
                     return body, code
                 cur.execute(
                     """
                     UPDATE api.secrets
-                    SET value_enc = %s, note = %s, expires_at = %s, kind = %s
+                    SET value_enc = %s, note = %s, expires_at = %s, kind = %s,
+                        acl_mode = %s
                     WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                     """,
                     (
@@ -717,6 +776,7 @@ def register(app):
                         note,
                         expires_at,
                         kind,
+                        acl_mode,
                         str(secret_id),
                         str(project_id),
                     ),
@@ -744,19 +804,22 @@ def register(app):
                     )
                 )
 
-            try:
-                pins.touch_recent(cur, session["user_id"], secret_id)
-            except Exception:
-                pass
-            audit.log_secret(
-                cur,
-                project_id=project_id,
-                secret_id=row["id"],
-                secret_key=row["key"],
-                action="revealed",
-            )
-            conn.commit()
-        plaintext = crypto.decrypt(value_enc)
+            if can_reveal:
+                try:
+                    pins.touch_recent(cur, session["user_id"], secret_id)
+                except Exception:
+                    pass
+                audit.log_secret(
+                    cur,
+                    project_id=project_id,
+                    secret_id=row["id"],
+                    secret_key=row["key"],
+                    action="revealed",
+                )
+                conn.commit()
+            else:
+                conn.commit()
+        plaintext = crypto.decrypt(value_enc) if can_reveal else ""
         kind = normalize_kind(row.get("kind"))
         body, code = _render_secret_view(
             project_id=project_id,
@@ -766,6 +829,9 @@ def register(app):
             kind=kind,
             can_write=can_write,
             is_version=is_version,
+            can_admin=can_admin,
+            acl_grants=acl_grants,
+            can_reveal=can_reveal,
         )
         return body, code
 
@@ -1404,10 +1470,14 @@ def register(app):
                 expires_at="",
                 kv_pairs=[("", "")],
                 secret_kinds=config.SECRET_KINDS,
+                acl_mode="inherit",
+                acl_modes=config.SECRET_ACL_MODES,
+                acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
             )
         kind = normalize_kind(request.form.get("kind"))
         key = (request.form.get("key") or "").strip()
         note = (request.form.get("note") or "").strip()
+        acl_mode = _parse_acl_mode(request.form)
         value = compose_secret_value(kind, request.form)
         kv_pairs = parse_kv_lines(value) if kind == "kv" else []
         if not key or not value:
@@ -1421,6 +1491,9 @@ def register(app):
                 expires_at=request.form.get("expires_at") or "",
                 kv_pairs=kv_pairs or [("", "")],
                 secret_kinds=config.SECRET_KINDS,
+                acl_mode=acl_mode,
+                acl_modes=config.SECRET_ACL_MODES,
+                acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
             ), 400
         try:
             expires_at = _parse_expires_at(request.form)
@@ -1435,11 +1508,22 @@ def register(app):
                 expires_at=request.form.get("expires_at") or "",
                 kv_pairs=kv_pairs or [("", "")],
                 secret_kinds=config.SECRET_KINDS,
+                acl_mode=acl_mode,
+                acl_modes=config.SECRET_ACL_MODES,
+                acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
             ), 400
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
                 sid, was_new = _upsert_secret(
-                    cur, project_id, key, value, note=note, expires_at=expires_at, kind=kind
+                    cur,
+                    project_id,
+                    key,
+                    value,
+                    note=note,
+                    expires_at=expires_at,
+                    kind=kind,
+                    acl_mode=acl_mode,
+                    set_acl_mode=True,
                 )
                 if not sid:
                     flash("You don't have permission to do that", "error")
@@ -1468,7 +1552,169 @@ def register(app):
                     expires_at=request.form.get("expires_at") or "",
                     kv_pairs=kv_pairs or [("", "")],
                     secret_kinds=config.SECRET_KINDS,
+                    acl_mode=acl_mode,
+                    acl_modes=config.SECRET_ACL_MODES,
+                    acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
                 ), 400
         return redirect(
             url_for("project_detail", project_id=project_id, tab="secrets")
+        )
+
+    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl")
+    @authz.login_required
+    def update_secret_acl_mode(project_id, secret_id):
+        """Set per-secret ACL mode (project admin only)."""
+        mode = _parse_acl_mode(request.form)
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not (cur.fetchone() or {}).get("a"):
+                flash("Only project admins can change secret access", "error")
+                return redirect(
+                    url_for("secret_view", project_id=project_id, secret_id=secret_id)
+                )
+            cur.execute(
+                """
+                UPDATE api.secrets SET acl_mode = %s
+                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                RETURNING key
+                """,
+                (mode, str(secret_id), str(project_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                flash("Secret not found or not permitted", "error")
+                conn.rollback()
+            else:
+                audit.log_secret(
+                    cur,
+                    project_id=project_id,
+                    secret_id=secret_id,
+                    secret_key=row["key"],
+                    action="updated",
+                )
+                conn.commit()
+                label = config.SECRET_ACL_MODE_LABELS.get(mode, mode)
+                flash(f"Access set to: {label}", "ok")
+        return redirect(
+            url_for("secret_view", project_id=project_id, secret_id=secret_id)
+        )
+
+    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl/grants")
+    @authz.login_required
+    def add_secret_acl_grant(project_id, secret_id):
+        """Grant a user access to a custom-ACL secret (project admin only)."""
+        email = (request.form.get("email") or "").strip().lower()
+        perm = (request.form.get("permission") or "reveal").strip().lower()
+        if perm not in config.SECRET_ACL_PERMISSIONS:
+            perm = "reveal"
+        if not email:
+            flash("Email required", "error")
+            return redirect(
+                url_for("secret_view", project_id=project_id, secret_id=secret_id)
+            )
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not (cur.fetchone() or {}).get("a"):
+                flash("Only project admins can manage secret grants", "error")
+                return redirect(
+                    url_for("secret_view", project_id=project_id, secret_id=secret_id)
+                )
+            cur.execute(
+                """
+                SELECT id, key, acl_mode FROM api.secrets
+                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                """,
+                (str(secret_id), str(project_id)),
+            )
+            sec = cur.fetchone()
+            if not sec:
+                flash("Secret not found", "error")
+                return redirect(
+                    url_for("project_detail", project_id=project_id, tab="secrets")
+                )
+            if (sec.get("acl_mode") or "inherit") != "custom":
+                flash("Switch access mode to Custom user list first", "error")
+                return redirect(
+                    url_for("secret_view", project_id=project_id, secret_id=secret_id)
+                )
+            cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
+            u = cur.fetchone()
+            if not u or not u.get("id"):
+                flash(
+                    "User not found — they must register or sign in first",
+                    "error",
+                )
+                return redirect(
+                    url_for("secret_view", project_id=project_id, secret_id=secret_id)
+                )
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO api.secret_acl (secret_id, user_id, permission, created_by)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (secret_id, user_id) DO UPDATE
+                      SET permission = EXCLUDED.permission
+                    """,
+                    (
+                        str(secret_id),
+                        str(u["id"]),
+                        perm,
+                        session["user_id"],
+                    ),
+                )
+                audit.log_secret(
+                    cur,
+                    project_id=project_id,
+                    secret_id=secret_id,
+                    secret_key=sec["key"],
+                    action="updated",
+                )
+                conn.commit()
+                flash(f"Granted {perm} to {email}", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(
+            url_for("secret_view", project_id=project_id, secret_id=secret_id)
+        )
+
+    @app.post(
+        "/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl/grants/<uuid:grant_id>/delete"
+    )
+    @authz.login_required
+    def delete_secret_acl_grant(project_id, secret_id, grant_id):
+        """Remove a custom ACL grant (project admin only)."""
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not (cur.fetchone() or {}).get("a"):
+                flash("Only project admins can manage secret grants", "error")
+                return redirect(
+                    url_for("secret_view", project_id=project_id, secret_id=secret_id)
+                )
+            cur.execute(
+                """
+                DELETE FROM api.secret_acl a
+                USING api.secrets s
+                WHERE a.id = %s AND a.secret_id = s.id
+                  AND s.id = %s AND s.project_id = %s
+                RETURNING s.key
+                """,
+                (str(grant_id), str(secret_id), str(project_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                flash("Grant not found", "error")
+                conn.rollback()
+            else:
+                audit.log_secret(
+                    cur,
+                    project_id=project_id,
+                    secret_id=secret_id,
+                    secret_key=row["key"],
+                    action="updated",
+                )
+                conn.commit()
+                flash("Grant removed", "ok")
+        return redirect(
+            url_for("secret_view", project_id=project_id, secret_id=secret_id)
         )

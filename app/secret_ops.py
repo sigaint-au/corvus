@@ -44,7 +44,7 @@ def _load_secrets_page(cur, project_id, page, q):
     )
     cur.execute(
         f"""
-        SELECT id, key, note, kind, created_at, updated_at, expires_at
+        SELECT id, key, note, kind, created_at, updated_at, expires_at, acl_mode
         FROM api.secrets
         WHERE {where}
         ORDER BY key
@@ -69,7 +69,24 @@ def _load_secrets_page(cur, project_id, page, q):
     for r in rows:
         r["due"] = secret_due_status(r)
         r["is_pinned"] = str(r["id"]) in pinned
+        mode = (r.get("acl_mode") or "inherit").strip() or "inherit"
+        r["acl_mode"] = mode
+        r["acl_restricted"] = mode != "inherit"
     return rows, pager
+
+
+def _parse_acl_mode(form_or_value) -> str:
+    """Parse secret ACL mode; default inherit."""
+    if isinstance(form_or_value, dict) or (
+        hasattr(form_or_value, "get") and not isinstance(form_or_value, (str, bytes))
+    ):
+        raw = form_or_value.get("acl_mode")
+    else:
+        raw = form_or_value
+    mode = (raw or "inherit").strip().lower()
+    if mode not in config.SECRET_ACL_MODES:
+        return "inherit"
+    return mode
 
 
 def _parse_expires_at(form, *, allow_clear: bool = True):
@@ -121,6 +138,8 @@ def _upsert_secret(
     *,
     already_enc=False,
     touch_meta=True,
+    acl_mode="inherit",
+    set_acl_mode=False,
 ):
     """Insert/update one secret; returns (id, was_new).
 
@@ -136,6 +155,8 @@ def _upsert_secret(
         touch_meta: If True, also update note and expires_at on conflict;
             if False, preserve existing note when the new note is empty and
             do not set expires_at.
+        acl_mode: Per-secret access mode (see config.SECRET_ACL_MODES).
+        set_acl_mode: When True, write acl_mode on insert/update.
 
     Returns:
         Tuple (secret_id, was_new) where was_new is True when no live row
@@ -148,6 +169,7 @@ def _upsert_secret(
     from secret_kinds import normalize_kind
 
     kind = normalize_kind(kind)
+    mode = _parse_acl_mode(acl_mode)
     enc = value_or_enc if already_enc else crypto.encrypt(str(value_or_enc))
     cur.execute(
         """
@@ -158,20 +180,37 @@ def _upsert_secret(
     )
     existing = cur.fetchone()
     if touch_meta:
-        cur.execute(
-            """
-            INSERT INTO api.secrets
-              (project_id, key, value_enc, note, expires_at, kind)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
-              SET value_enc = EXCLUDED.value_enc,
-                  note = EXCLUDED.note,
-                  expires_at = EXCLUDED.expires_at,
-                  kind = EXCLUDED.kind
-            RETURNING id
-            """,
-            (str(project_id), key, enc, note or "", expires_at, kind),
-        )
+        if set_acl_mode:
+            cur.execute(
+                """
+                INSERT INTO api.secrets
+                  (project_id, key, value_enc, note, expires_at, kind, acl_mode)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+                  SET value_enc = EXCLUDED.value_enc,
+                      note = EXCLUDED.note,
+                      expires_at = EXCLUDED.expires_at,
+                      kind = EXCLUDED.kind,
+                      acl_mode = EXCLUDED.acl_mode
+                RETURNING id
+                """,
+                (str(project_id), key, enc, note or "", expires_at, kind, mode),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO api.secrets
+                  (project_id, key, value_enc, note, expires_at, kind)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+                  SET value_enc = EXCLUDED.value_enc,
+                      note = EXCLUDED.note,
+                      expires_at = EXCLUDED.expires_at,
+                      kind = EXCLUDED.kind
+                RETURNING id
+                """,
+                (str(project_id), key, enc, note or "", expires_at, kind),
+            )
     else:
         cur.execute(
             """

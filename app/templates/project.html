@@ -180,6 +180,15 @@
     <label>Expires
       <input type="date" name="expires_at" id="secret-expires">
     </label>
+    <label>Access
+      <select name="acl_mode" title="Who may see this secret">
+        <option value="inherit" selected>Project access</option>
+        <option value="writers">Writers+</option>
+        <option value="admins">Admins+</option>
+        <option value="owners">Team owners</option>
+        <option value="custom">Custom list</option>
+      </select>
+    </label>
     <button type="submit">Save</button>
   </form>
   <script>

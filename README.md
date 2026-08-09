@@ -53,6 +53,7 @@ curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 | Feature | Description |
 |---------|-------------|
 | Team / project / secret store | Organise secrets as **team / project / key/value** |
+| Per-secret ACLs | Restrict a secret beyond project membership (writers / admins / owners / custom user list) |
 | Structured secret kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
 | Browser UI | Bulk actions, trash, version history, search, pins |
 | Postgres RLS enforcement | Access control at the database, not just the app |
