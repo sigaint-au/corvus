@@ -183,6 +183,10 @@
       transition: background .12s ease, color .12s ease;
     }
     .sidebar .side-nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 0.35rem;
       color: var(--side-muted);
       padding: .42rem .55rem .42rem .6rem;
       font-size: .875rem;
@@ -1136,12 +1140,14 @@
       font-variant-numeric: tabular-nums;
     }
     .side-nav-link .tab-badge {
-      margin-left: 0.35em;
+      margin-left: auto;
+      flex-shrink: 0;
       min-width: 1.1em;
       padding: 0.05em 0.4em;
       border-radius: 999px;
       font-size: 0.75em;
       font-weight: 600;
+      text-align: center;
       background: #fff;
       color: #000;
       border: 1px solid color-mix(in srgb, #000 18%, transparent);
