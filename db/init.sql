@@ -208,12 +208,30 @@ CREATE TABLE api.secrets (
   expires_at timestamptz,        -- hard expiry (optional)
   -- NULL = inherit project.require_reveal_approval; true/false = override
   requires_approval boolean,
+  -- Per-secret access tighter than project membership (see api.can_access_secret)
+  acl_mode text NOT NULL DEFAULT 'inherit'
+    CHECK (acl_mode IN ('inherit', 'writers', 'admins', 'owners', 'custom')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz
 );
 CREATE UNIQUE INDEX secrets_project_key_live
   ON api.secrets (project_id, key) WHERE deleted_at IS NULL;
+
+-- Explicit per-user grants when secrets.acl_mode = 'custom'
+CREATE TABLE api.secret_acl (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  -- read < reveal < write (write implies reveal + read)
+  permission text NOT NULL DEFAULT 'reveal'
+    CHECK (permission IN ('read', 'reveal', 'write')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
+  UNIQUE (secret_id, user_id)
+);
+CREATE INDEX secret_acl_user_idx ON api.secret_acl (user_id);
+
 
 -- Per-user pins (favorites) and recently accessed secrets
 CREATE TABLE api.secret_pins (
@@ -496,6 +514,7 @@ ALTER TABLE api.org_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_audit ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_acl ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_access_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
 
@@ -623,27 +642,27 @@ CREATE POLICY secret_recent_delete ON api.secret_recent FOR DELETE TO authentica
   USING (user_id = api.current_user_id());
 
 CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
-  USING (api.can_read_project(project_id));
+  USING (api.can_access_secret(id, 'read'));
 CREATE POLICY secrets_insert ON api.secrets FOR INSERT TO authenticated
   WITH CHECK (api.can_write_project(project_id));
 CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
-  USING (api.can_write_project(project_id));
+  USING (api.can_access_secret(id, 'write'));
 CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
-  USING (api.can_write_project(project_id));
+  USING (api.can_access_secret(id, 'write'));
 
 -- Versions inherit access from parent secret's project
 CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_read_project(s.project_id)
+      WHERE s.id = secret_id AND api.can_access_secret(s.id, 'read')
     )
   );
 CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT TO authenticated
   WITH CHECK (
     EXISTS (
       SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_write_project(s.project_id)
+      WHERE s.id = secret_id AND api.can_access_secret(s.id, 'write')
     )
   );
 -- No direct UPDATE/DELETE for authenticated (purge via secret CASCADE)
@@ -651,6 +670,30 @@ CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT TO authen
 CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
   USING (api.can_read_project(project_id));
 -- INSERT only via private.audit_secret (SECURITY DEFINER); no direct client insert
+
+CREATE POLICY secret_acl_select ON api.secret_acl FOR SELECT TO authenticated
+  USING (api.can_access_secret(secret_id, 'read'));
+CREATE POLICY secret_acl_insert ON api.secret_acl FOR INSERT TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+    )
+  );
+CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+    )
+  );
+CREATE POLICY secret_acl_delete ON api.secret_acl FOR DELETE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
+    )
+  );
 
 CREATE POLICY secret_access_requests_select ON api.secret_access_requests
   FOR SELECT TO authenticated

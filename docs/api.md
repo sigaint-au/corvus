@@ -242,9 +242,39 @@ omits `value`).
 | `note` | string | Non-sensitive label / description |
 | `kind` | string | `plain`, `database`, `certificate`, `ssh`, or `kv` |
 | `expires_at` | ISO-8601 or `null` | Optional hard expiry |
+| `acl_mode` | string | Per-secret ACL (see below); default `inherit` |
 | `created_at` | ISO-8601 or `null` | Row creation time |
 | `updated_at` | ISO-8601 or `null` | Last update time |
 | `ok` | boolean | Present on successful write responses |
+
+---
+
+### Per-secret ACLs
+
+Access is **project-scoped by default**. Individual secrets can be tightened
+so not every project member may list, reveal, or edit them.
+
+| `acl_mode` | Who can access (in addition to project membership) |
+|------------|-----------------------------------------------------|
+| `inherit` (default) | Project RBAC as usual (read / write) |
+| `writers` | Project writers and above |
+| `admins` | Project admins and team owners/admins |
+| `owners` | Team **owners** only |
+| `custom` | Explicit user grants in `api.secret_acl` (+ project admins always) |
+
+**Always full access:** global admins and users with `can_admin_project`.
+
+**Machine tokens / ESO** use SECURITY DEFINER helpers and are **not** gated by
+per-secret ACLs (project-scoped automation). Prefer a separate project for
+highly sensitive values if machine access must also be restricted.
+
+**Permissions on custom grants:** `read` (metadata) &lt; `reveal` (value) &lt;
+`write` (edit/delete). Higher permissions include lower ones.
+
+**UI:** set mode when creating a secret, or on the secret full view (admins).
+Custom grants: email + permission on the secret view when mode is `custom`.
+
+RLS uses `api.can_access_secret(secret_id, need)` for select/update/delete.
 
 ---
 
@@ -635,7 +665,8 @@ Default compose port: **3000**. Prefer the `postgrest` URL returned by
 | `/team_join_requests` | Join request workflow | status: pending, approved, rejected |
 | `/projects` | Projects under teams | |
 | `/project_members` | Project-scoped roles | `role`: admin, write, read |
-| `/secrets` | Metadata + `value_enc` | Soft-delete via `deleted_at`; unique live `(project_id, key)` |
+| `/secrets` | Metadata + `value_enc` | Soft-delete via `deleted_at`; unique live `(project_id, key)`; `acl_mode` |
+| `/secret_acl` | Per-secret user grants | Used when `acl_mode = custom` |
 | `/secret_versions` | Prior ciphertexts | Filled on value change |
 | `/secret_audit` | Secret actions | created, updated, revealed, deleted, restored, purged, machine_upsert, exported, access_requested, access_approved, access_denied |
 | `/secret_access_requests` | Reveal approval workflow | pending / approved / denied grants |

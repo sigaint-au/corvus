@@ -52,7 +52,7 @@ def _load_secrets_page(cur, project_id, page, q):
     cur.execute(
         f"""
         SELECT s.id, s.key, s.note, s.kind, s.created_at, s.updated_at, s.expires_at,
-               s.requires_approval,
+               s.requires_approval, s.acl_mode,
                CASE
                  WHEN s.requires_approval IS TRUE THEN true
                  WHEN s.requires_approval IS FALSE THEN false
@@ -121,6 +121,9 @@ def _load_secrets_page(cur, project_id, page, q):
         else:
             r["reveal_access"] = "locked"
             r["approved_until"] = None
+        mode = (r.get("acl_mode") or "inherit").strip() or "inherit"
+        r["acl_mode"] = mode
+        r["acl_restricted"] = mode != "inherit"
     return rows, pager
 
 
@@ -187,6 +190,21 @@ def _parse_requires_approval(form_or_value) -> bool | None:
     return None
 
 
+
+def _parse_acl_mode(form_or_value) -> str:
+    """Parse secret ACL mode; default inherit."""
+    if isinstance(form_or_value, dict) or (
+        hasattr(form_or_value, "get") and not isinstance(form_or_value, (str, bytes))
+    ):
+        raw = form_or_value.get("acl_mode")
+    else:
+        raw = form_or_value
+    mode = (raw or "inherit").strip().lower()
+    if mode not in config.SECRET_ACL_MODES:
+        return "inherit"
+    return mode
+
+
 def _upsert_secret(
     cur,
     project_id,
@@ -200,6 +218,8 @@ def _upsert_secret(
     touch_meta=True,
     requires_approval=None,
     set_requires_approval=False,
+    acl_mode="inherit",
+    set_acl_mode=False,
 ):
     """Insert/update one secret; returns (id, was_new).
 
@@ -217,6 +237,8 @@ def _upsert_secret(
             do not set expires_at.
         requires_approval: Per-secret override (None = inherit project default).
         set_requires_approval: When True, write requires_approval column.
+        acl_mode: Per-secret access mode (see config.SECRET_ACL_MODES).
+        set_acl_mode: When True, write acl_mode on insert/update.
 
     Returns:
         Tuple (secret_id, was_new) where was_new is True when no live row
@@ -229,6 +251,7 @@ def _upsert_secret(
     from secret_kinds import normalize_kind
 
     kind = normalize_kind(kind)
+    mode = _parse_acl_mode(acl_mode)
     enc = value_or_enc if already_enc else crypto.encrypt(str(value_or_enc))
     cur.execute(
         """
@@ -239,45 +262,36 @@ def _upsert_secret(
     )
     existing = cur.fetchone()
     if touch_meta:
+        cols = ["project_id", "key", "value_enc", "note", "expires_at", "kind"]
+        vals = [str(project_id), key, enc, note or "", expires_at, kind]
+        updates = [
+            "value_enc = EXCLUDED.value_enc",
+            "note = EXCLUDED.note",
+            "expires_at = EXCLUDED.expires_at",
+            "kind = EXCLUDED.kind",
+        ]
         if set_requires_approval:
-            cur.execute(
-                """
+            cols.append("requires_approval")
+            vals.append(requires_approval)
+            updates.append("requires_approval = EXCLUDED.requires_approval")
+        if set_acl_mode:
+            cols.append("acl_mode")
+            vals.append(mode)
+            updates.append("acl_mode = EXCLUDED.acl_mode")
+        placeholders = ", ".join(["%s"] * len(cols))
+        col_sql = ", ".join(cols)
+        upd_sql = ",\n                      ".join(updates)
+        cur.execute(
+            f"""
                 INSERT INTO api.secrets
-                  (project_id, key, value_enc, note, expires_at, kind, requires_approval)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                  ({col_sql})
+                VALUES ({placeholders})
                 ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
-                  SET value_enc = EXCLUDED.value_enc,
-                      note = EXCLUDED.note,
-                      expires_at = EXCLUDED.expires_at,
-                      kind = EXCLUDED.kind,
-                      requires_approval = EXCLUDED.requires_approval
+                  SET {upd_sql}
                 RETURNING id
                 """,
-                (
-                    str(project_id),
-                    key,
-                    enc,
-                    note or "",
-                    expires_at,
-                    kind,
-                    requires_approval,
-                ),
-            )
-        else:
-            cur.execute(
-                """
-                INSERT INTO api.secrets
-                  (project_id, key, value_enc, note, expires_at, kind)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
-                  SET value_enc = EXCLUDED.value_enc,
-                      note = EXCLUDED.note,
-                      expires_at = EXCLUDED.expires_at,
-                      kind = EXCLUDED.kind
-                RETURNING id
-                """,
-                (str(project_id), key, enc, note or "", expires_at, kind),
-            )
+            tuple(vals),
+        )
     else:
         cur.execute(
             """

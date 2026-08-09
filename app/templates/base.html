@@ -1531,6 +1531,20 @@
     .kind-badge.kind-certificate,
     .kind-badge.kind-ssh { color: var(--warning); }
     .kind-badge.kind-database { color: var(--foreground); }
+    .acl-badge {
+      display: inline-block;
+      margin-left: 0.35em;
+      padding: 0.1em 0.45em;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      vertical-align: middle;
+      color: var(--warning, #a65b00);
+      border: 1px solid color-mix(in srgb, var(--warning, #a65b00) 40%, transparent);
+      background: color-mix(in srgb, var(--warning, #a65b00) 10%, transparent);
+    }
+    .secret-acl-section { margin-top: 1.5rem; }
     .secret-view .kv-view-table td { vertical-align: middle; }
     .secret-view .input-with-btn { max-width: 100%; }
     .secret-view .secret-value { max-width: none; width: 100%; }

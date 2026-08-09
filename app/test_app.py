@@ -1637,8 +1637,9 @@ class TestSecrets(unittest.TestCase):
                 "value_enc": enc,
                 "expires_at": None,
             },
-            {"a": True},  # can_admin_project — instant reveal
-            {"w": True},
+            {"ok": True},  # can_access_secret reveal
+            {"a": True},  # can_admin_project — approval not required
+            {"w": True},  # can_access_secret write
         ]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(
@@ -2223,6 +2224,20 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("write", config.PROJECT_ROLES)
         self.assertIn("member", config.INVITE_ROLES)
         self.assertNotIn("owner", config.INVITE_ROLES)
+
+    def test_secret_acl_schema_and_config(self):
+        from pathlib import Path
+
+        self.assertIn("owners", config.SECRET_ACL_MODES)
+        self.assertIn("reveal", config.SECRET_ACL_PERMISSIONS)
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("acl_mode", init)
+        self.assertIn("CREATE TABLE api.secret_acl", init)
+        self.assertIn("api.can_access_secret", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("can_access_secret", src)
+        self.assertIn("secret_acl", src)
+        self.assertIn("can_access_secret(id, 'read')", src)
 
     def test_members_tab_requires_login(self):
         r = store.app.test_client().get(f"/projects/{uuid4()}?tab=settings")
