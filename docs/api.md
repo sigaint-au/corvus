@@ -242,10 +242,17 @@ omits `value`).
 | `note` | string | Non-sensitive label / description |
 | `kind` | string | `plain`, `database`, `certificate`, `ssh`, or `kv` |
 | `expires_at` | ISO-8601 or `null` | Optional hard expiry |
-| `acl_mode` | string | Per-secret ACL (see below); default `inherit` |
+| `acl_mode` | string | Per-secret ACL (see below); default `inherit` (writes may omit) |
 | `created_at` | ISO-8601 or `null` | Row creation time |
-| `updated_at` | ISO-8601 or `null` | Last update time |
+| `updated_at` | ISO-8601 or `null` | Last value/note update |
+| `last_accessed_at` | ISO-8601 or `null` | Last successful **reveal** (UI or PAT/CLI get) |
+| `last_accessed_by` | string | Email or user id of last reveal (when known) |
+| `metadata` | object | Custom key → value labels (`api.secret_meta`); searchable |
 | `ok` | boolean | Present on successful write responses |
+
+System fields (`created_at`, `updated_at`, `last_accessed_*`) are not set via
+API body. Custom `metadata` is managed in the UI **Metadata** tab (writers);
+list/get return the current map.
 
 ---
 
@@ -254,37 +261,35 @@ omits `value`).
 Access is **project-scoped by default**. Individual secrets can be tightened
 so not every project member may list, reveal, or edit them.
 
-| `acl_mode` | Who can access (in addition to project membership) |
-|------------|-----------------------------------------------------|
-| `inherit` (default) | Project RBAC as usual (read / write) |
+| `acl_mode` | Who can access (beyond project membership) |
+|------------|---------------------------------------------|
+| `inherit` (default) | Project RBAC as usual |
 | `writers` | Project writers and above |
-| `admins` | Project admins and team owners/admins |
-| `owners` | Team **owners** only |
-| `custom` | Explicit user **or group** grants in `api.secret_acl` (+ project admins always) |
+| `admins` | Project admins (+ team owners/admins always) |
+| `owners` | Team owners (+ team/project admins still have full access via admin floor) |
+| `custom` | Explicit user **or group** grants in `api.secret_acl` (+ admins always) |
 
 **Always full access:** global admins and users with `can_admin_project`.
 
 **Machine tokens / ESO** use SECURITY DEFINER helpers and are **not** gated by
-per-secret ACLs (project-scoped automation). Prefer a separate project for
-highly sensitive values if machine access must also be restricted.
+per-secret human ACLs (project-scoped automation). Prefer a separate project
+for highly sensitive values if machine access must also be restricted.
+
+**PAT bulk list with values** only includes secrets the caller may
+`can_access_secret(…, 'reveal')` and `can_reveal_secret` (approval).
 
 **Permissions on custom grants:** `read` (metadata) &lt; `reveal` (value) &lt;
 `write` (edit/delete). Higher permissions include lower ones.
 
-**UI:** set mode when creating a secret, or on the secret full view (admins).
-Custom grants: user email **or** team group + permission when mode is `custom`.
+**UI:** **Secret** tab = value/details; **Metadata** tab = system + custom
+fields; **Permissions** tab (admins) = ACL mode, reveal-approval override,
+custom grants (email or team group).
 
-**Org groups RBAC:** team-scoped `api.groups` (manual members and/or
-LDAP/OIDC `external_key`) can grant team role (`groups.team_role`), project
-role (`api.project_group_roles`), and secret ACL (`secret_acl.group_id`).
-Effective access is the max of direct user grants and group grants.
-Helpers: `api.is_team_member`, `api.team_role`, `api.project_role`,
-`api.can_read|write|admin_project`, `api.can_access_secret`.
+**Org groups RBAC:** team-scoped `api.groups` (manual and/or LDAP/OIDC
+`external_key`) — optional team role (not `owner`), project group roles, secret
+ACL group grants. Guide: **[rbac.md](./rbac.md)**.
 
-Operator guide (setup, UI steps, directory mapping, recipes):
-**[rbac.md](./rbac.md)**.
-
-RLS uses `api.can_access_secret(secret_id, need)` for select/update/delete.
+RLS uses `api.can_access_secret` / `can_access_secret_row` for select/update/delete.
 
 ---
 
@@ -319,19 +324,21 @@ Query flags (any one enables metadata mode):
 
 | Query | Effect |
 |-------|--------|
-| `meta=1` | Metadata list |
+| `meta=1` | Metadata list (no decrypt) |
 | `format=meta` | Same |
 | `include_values=0` | Same |
-| `q=<text>` | Optional filter: key or note substring (case-insensitive) |
+| `q=<text>` | Filter: key, note, **or custom metadata** key/value (case-insensitive) |
 
 ```bash
 # All keys in the project
 curl -s -H "$AUTH" \
   "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1" | jq .
 
-# Filter
+# Filter by key/note/metadata
 curl -s -H "$AUTH" \
   "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1&q=api" | jq .
+curl -s -H "$AUTH" \
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1&q=platform-team" | jq .
 ```
 
 **200**
@@ -346,7 +353,13 @@ curl -s -H "$AUTH" \
       "kind": "plain",
       "expires_at": null,
       "created_at": "2026-01-15T12:00:00+00:00",
-      "updated_at": "2026-03-01T09:30:00+00:00"
+      "updated_at": "2026-03-01T09:30:00+00:00",
+      "last_accessed_at": "2026-08-09T10:00:00+00:00",
+      "last_accessed_by": "",
+      "metadata": {
+        "owner": "platform-team",
+        "env": "prod"
+      }
     }
   ]
 }
@@ -372,12 +385,25 @@ curl -s -H "$AUTH" \
   "kind": "plain",
   "expires_at": null,
   "created_at": "2026-01-15T12:00:00+00:00",
-  "updated_at": "2026-01-15T12:00:00+00:00"
+  "updated_at": "2026-01-15T12:00:00+00:00",
+  "last_accessed_at": "2026-08-09T10:05:00+00:00",
+  "last_accessed_by": "",
+  "metadata": { "owner": "platform-team" }
 }
 ```
 
+A successful get (PAT) updates `last_accessed_at` / `last_accessed_by`.
+
 **404** `{"error":"not found"}` — token valid, key missing  
-**401** `{"error":"unauthorized"}`
+**401** `{"error":"unauthorized"}`  
+**403** PAT may return:
+
+| `error` | Meaning |
+|---------|---------|
+| `forbidden` | Per-secret ACL denies reveal |
+| `approval_required` | Reveal needs admin approval (`pending` may be true) |
+
+Machine tokens (`ss_…`) skip human ACL and reveal-approval.
 
 **ESO:** keep using `jsonPath: $.value`. Extra fields are additive and safe for
 existing webhooks.

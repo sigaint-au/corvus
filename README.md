@@ -22,13 +22,16 @@ OIDC/LDAP, audit retention).
 
 | Doc | Contents |
 |-----|----------|
-| **[docs/rbac.md](docs/rbac.md)** | **Org RBAC** — teams, groups (manual/LDAP/OIDC), project roles, secret ACLs, setup recipes |
+| **[docs/rbac.md](docs/rbac.md)** | **Org RBAC** — teams, groups, project roles, secret Permissions/ACL, metadata, recipes |
+| **[docs/api.md](docs/api.md)** | API reference — `/eso/v1` secrets (list/get/CRUD), metadata, ACLs, ESO, PAT, PostgREST |
 | **[docs/deploy.md](docs/deploy.md)** | Deploy, env vars, bootstrap, OIDC/LDAP, audit purge |
-| **[docs/authentication.md](docs/authentication.md)** | Every auth flow (session, PAT, machine, JWT, OIDC, LDAP) + curl examples |
-| **[docs/building.md](docs/building.md)** | Build & push the app container image (Docker/Podman/OpenShift) |
-| **[docs/api.md](docs/api.md)** | API reference — **manage secrets via CLI/CI** (list/get/create/update/delete), ESO, PAT, PostgREST |
+| **[docs/authentication.md](docs/authentication.md)** | Session, PAT, machine, JWT, OIDC, LDAP + curl examples |
+| **[docs/building.md](docs/building.md)** | Build & push the app container image |
 | **[docs/openshift-eso.yaml](docs/openshift-eso.yaml)** | Sample SecretStore + ExternalSecret |
 | **[docs/openshift-purge-audit-cronjob.yaml](docs/openshift-purge-audit-cronjob.yaml)** | Daily audit retention CronJob |
+
+**CLI:** sibling repo [secretserver-cli](https://git.sigaint.au/Sigaint/secretserver-cli)
+(install + full examples in its README).
 
 ### Manage secrets from the CLI
 
@@ -40,12 +43,16 @@ Unified **`/eso/v1`** API accepts **machine tokens** (`ss_…`) or **PATs**
 # Official CLI (sibling secretserver-cli/)
 secretserver login --url http://localhost:8080 --token ss_… --project <uuid>
 # or: --token pat_… --project ios-app
-secretserver list && secretserver get API_KEY
+secretserver get secrets
+secretserver get secrets -l api          # filter key, note, or custom metadata
+secretserver get secret API_KEY -o value
+secretserver get secret API_KEY -o json  # includes metadata, last_accessed_*
 
 # curl
 export SS_URL=http://localhost:8080 SS_TOKEN=ss_… SS_PROJECT=<project-uuid>
 AUTH=(-H "Authorization: Bearer $SS_TOKEN")
 curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1"
+curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets?meta=1&q=owner"
 curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 ```
 
@@ -53,23 +60,24 @@ curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 
 | Feature | Description |
 |---------|-------------|
-| Team / project / secret store | Organise secrets as **team / project / key/value** |
-| Org groups RBAC | Team-scoped groups (manual or LDAP/OIDC-mapped) with roles at **team**, **project**, and **secret** level |
-| Per-secret ACLs | Restrict a secret beyond project membership (writers / admins / owners / custom user or group list) |
+| Team / project / secret store | Organise secrets as **team / project / key/value**; optional project **description** |
+| Org groups RBAC | Team-scoped groups (manual or LDAP/OIDC-mapped) at **team**, **project**, and **secret** level |
+| Per-secret ACLs | Modes inherit / writers / admins / owners / custom (user or group grants) on the **Permissions** tab |
+| Secret metadata | System: created, updated, last accessed / by; custom searchable key/values on the **Metadata** tab |
 | Structured secret kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
-| Browser UI | Bulk actions, trash, version history, search, pins |
+| Browser UI | Bulk actions, trash, version history, search (incl. metadata), pins, mobile nav |
 | Postgres RLS enforcement | Access control at the database, not just the app |
 | Unified secret API (`/eso/v1`) | `ss_…` or `pat_…`: list, get, create, update, soft-delete (plaintext) |
 | PostgREST API | SQL-style API with JWT auth for metadata / org clients |
 | ESO integration | Same machine API powers OpenShift External Secrets Operator webhooks |
 | Personal access tokens | `pat_…` for `/eso/v1` secrets (RLS) and `/api/token` → PostgREST JWT |
 | TOTP 2FA | Per-user 2FA with single-use recovery codes |
-| LDAP & OIDC / SSO | Group to team role / global-admin maps |
+| LDAP & OIDC / SSO | Directory groups → team maps, first-class groups, global-admin maps |
 | SMTP | Password-reset emails and login alerts |
 | Auditing | Secret & org audit logs, access review, export, retention purge |
-| Reveal access approval | Optional project default + per-secret override; admin approve/deny with time-limited grants (machine/ESO exempt) |
+| Reveal access approval | Project default + per-secret override; admin approve/deny with time-limited grants (machine/ESO exempt) |
 | Secret expiry | Optional per-secret expiry with overdue/soon dashboard |
-| Import / export | `.env`, JSON, CSV bulk import and export with audit trail |
+| Import / export | `.env`, JSON, CSV bulk import and export (plain export respects reveal ACL) |
 | Classification banner | Optional per-server / per-team banner (e.g. OFFICIAL) |
 | Server-side sessions | Multi-device sign-out and per-session revocation |
 | Login lockout | 5 failed attempts lock out for 5 minutes |

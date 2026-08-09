@@ -294,8 +294,9 @@ maps), and **Team → Groups** (`source=ldap` + external key). Same
 membership-sync idea as OIDC. LDAP over cleartext is rejected unless StartTLS
 is enabled.
 
-Full organisation RBAC setup (teams, groups, project roles, secret ACLs,
-recipes): **[rbac.md](./rbac.md)**.
+Full organisation RBAC (teams, groups, project roles, secret Permissions/ACL,
+metadata, recipes): **[rbac.md](./rbac.md)**. Secret API fields and CLI/curl
+examples: **[api.md](./api.md)**.
 
 ---
 

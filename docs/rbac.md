@@ -151,16 +151,15 @@ server.
 
 ### 4a. Create a group (UI)
 
-1. Open **Team → Groups**.
+1. Open **Team → Groups** (search the list if needed).
 2. **Create group**:
    - **Name** — human label (e.g. `platform-ops`).
    - **Source** — `manual`, `ldap`, or `oidc`.
    - **External key** — required when source is `ldap` or `oidc` (directory
      group DN/CN or OIDC groups claim value).
-   - **Team role** — optional. If set, members of this group count as team
-     members with that role (max with any direct team membership).
-3. Open the group → **Add member** (email) for manual members.  
-   Directory members appear after they log in when `external_key` matches.
+   - **Team role** — optional: `admin` / `member` / `viewer` only (not owner).
+3. Click the group name → **group page** → **Add member** (email) for manual
+   members. Directory members appear after login when `external_key` matches.
 
 ### 4b. When to set a team role on the group
 
@@ -291,31 +290,45 @@ Every secret has a **Metadata** tab (all kinds):
 |-------|----------|--------|
 | Created | no | `created_at` |
 | Updated | no | `updated_at` (value changes) |
-| Last accessed | no | Updated on successful reveal |
+| Last accessed | no | Updated on successful reveal (UI or PAT get) |
 | Last accessed by | no | User who last revealed |
-| Custom fields | yes (writers) | Key/value labels; **searchable** |
+| Custom fields | yes (writers) | Key/value labels; **not** for secret values |
 
-Search in the project secrets list, team secrets list, global search, and CLI
-`get secrets -q …` matches custom metadata keys and values (not only key/note).
+**Search** (key, note, **and** custom metadata key/value):
 
-CLI: `get secret NAME` returns `metadata`, `last_accessed_at`, and related fields
-in JSON.
+- Project secrets list  
+- Team **Secrets** page  
+- Global sidebar search  
+- CLI: `secretserver get secrets -l <text>`  
+- API: `GET …/secrets?meta=1&q=<text>`
+
+**CLI / API read:** `get secret NAME -o json` includes `metadata`,
+`last_accessed_at`, `last_accessed_by`, timestamps. Custom fields are set in
+the UI Metadata tab today.
+
+---
+
+## 6c. Groups (UI)
+
+1. **Team → Groups** — list/search groups; create manual or LDAP/OIDC-mapped.  
+2. Open a group → **dedicated page** for settings + membership (member search).  
+3. **Project → Settings → Group roles** — grant a team group a project role.  
+4. **Secret → Permissions → custom** — grant a team group reveal/write, etc.
+
+Groups cannot be given team role **owner** (break-glass stays direct owners).
 
 ---
 
 ## 7. Secret ACL (UI)
 
-1. Open the secret **full view** (not only the inline reveal cell).
-2. Open the **Permissions** tab (project admins only).
-3. Set **Access mode** and **Reveal approval**, then save.
+1. Open the secret **full view** (not only the inline reveal cell).  
+2. Tabs: **Secret** (value) · **Metadata** · **Permissions** (admins).  
+3. On **Permissions**: set **Access mode** and **Reveal approval**, then save.  
 4. If mode is **custom**:
    - Grant by **email**, or  
-   - Grant by **group** (dropdown of team groups),  
-   - Choose permission: read / reveal / write.
-5. Remove grants from the same table on the Permissions tab.
-
-The **Secret** tab edits value/metadata only; ACL mode and reveal approval are
-on the Permissions tab.
+   - Grant by **team group**,  
+   - Choose permission: read / reveal / write.  
+5. Remove grants from the same table.
 
 Users must still pass project read (and any reveal-approval rules) to use the
 secret.
