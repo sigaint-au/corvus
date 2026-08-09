@@ -1478,6 +1478,10 @@ def ensure_schema():
           ADD COLUMN IF NOT EXISTS require_reveal_approval boolean NOT NULL DEFAULT false
         """,
         """
+        ALTER TABLE api.projects
+          ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT ''
+        """,
+        """
         ALTER TABLE api.secrets
           ADD COLUMN IF NOT EXISTS requires_approval boolean
         """,

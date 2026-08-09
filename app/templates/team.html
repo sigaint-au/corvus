@@ -62,16 +62,20 @@
   <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
+    <label>Description
+      <input type="text" name="description" maxlength="500" placeholder="optional purpose">
+    </label>
     <button type="submit">Create</button>
   </form>
   {% endif %}
   {% if projects %}
   <table>
-    <thead><tr><th>Name</th><th>ID</th>{% if my_role in ('owner', 'admin') %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>Name</th><th>Description</th><th>ID</th>{% if my_role in ('owner', 'admin') %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for p in projects %}
       <tr>
         <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
+        <td class="muted col-note">{{ p.description or '—' }}</td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
         {% if my_role in ('owner', 'admin') %}
         <td class="acts">

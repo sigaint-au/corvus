@@ -167,6 +167,7 @@ CREATE TABLE api.projects (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   name text NOT NULL,
+  description text NOT NULL DEFAULT '',
   -- When true, secrets inherit require-approval for reveal (unless per-secret override)
   require_reveal_approval boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),

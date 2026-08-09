@@ -636,6 +636,7 @@ def register(app):
         """
         require = (request.form.get("require_reveal_approval") or "").strip().lower()
         require_on = require in ("1", "true", "yes", "on")
+        description = (request.form.get("description") or "").strip()[:500]
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             if not (cur.fetchone() or {}).get("a"):
@@ -646,10 +647,10 @@ def register(app):
             cur.execute(
                 """
                 UPDATE api.projects
-                SET require_reveal_approval = %s
+                SET require_reveal_approval = %s, description = %s
                 WHERE id = %s
                 """,
-                (require_on, str(project_id)),
+                (require_on, description, str(project_id)),
             )
             if cur.rowcount == 0:
                 flash("Project not found or not permitted", "error")

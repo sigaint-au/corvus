@@ -9,6 +9,9 @@
   {{ project.name }}
 </p>
 <h1>{{ project.name }}</h1>
+{% if project.description %}
+<p class="page-desc">{{ project.description }}</p>
+{% endif %}
 <p class="page-desc muted">Project ID: <code class="k">{{ project.id }}</code></p>
 
 {% if new_token %}
@@ -149,6 +152,8 @@
         hx-post="{{ url_for('create_secret', project_id=project.id) }}"
         hx-target="#secrets-list"
         hx-swap="innerHTML"
+        hx-indicator="#secrets-list"
+        hx-disabled-elt="find button[type=submit]"
         class="row secret-create" id="secret-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     {# Preserve list filters across HTMX create round-trips #}
@@ -271,7 +276,7 @@
   })();
   </script>
   {% endif %}
-  <div id="secrets-list">
+  <div id="secrets-list" class="secrets-list">
     {% include "partials/secrets.html" %}
   </div>
 </section>
@@ -750,13 +755,14 @@
 {% elif active_tab == 'settings' and can_settings %}
 {% if can_admin %}
 <section>
-  <h2>Reveal approval</h2>
-  <p class="muted">
-    Project default for whether revealing secrets requires admin approval.
-    Individual secrets can override this (require or exempt).
-  </p>
+  <h2>General</h2>
   <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="full-width">Description
+      <input type="text" name="description" maxlength="500"
+             value="{{ project.description or '' }}"
+             placeholder="Short purpose for this project">
+    </label>
     <label class="checkbox-label">
       <input type="checkbox" name="require_reveal_approval" value="1"
              {% if require_reveal_approval %}checked{% endif %}>
@@ -764,6 +770,10 @@
     </label>
     <button type="submit">Save</button>
   </form>
+  <p class="muted">
+    Reveal approval is the project default; individual secrets can override it
+    (require or exempt) on their Permissions tab.
+  </p>
 </section>
 <section>
   <h2>Members</h2>

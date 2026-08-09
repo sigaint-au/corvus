@@ -976,11 +976,15 @@ def register(app):
             POST /teams/<team_id>/projects with form field name=My Project
         """
         name = request.form["name"].strip()
+        description = (request.form.get("description") or "").strip()[:500]
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
                 cur.execute(
-                    "INSERT INTO api.projects (team_id, name) VALUES (%s, %s) RETURNING id",
-                    (str(team_id), name),
+                    """
+                    INSERT INTO api.projects (team_id, name, description)
+                    VALUES (%s, %s, %s) RETURNING id
+                    """,
+                    (str(team_id), name, description),
                 )
                 row = cur.fetchone()
                 if not row:
