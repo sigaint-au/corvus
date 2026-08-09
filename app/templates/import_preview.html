@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Import preview — {{ project.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<p class="breadcrumb">
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">{{ project.name }}</a>
-  <span class="breadcrumb-sep">/</span>
-  Import preview
-</p>
+<nav aria-label="Breadcrumb">
+  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
+    <li><a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}" class="unstyled">{{ project.name }}</a></li>
+    <li aria-hidden="true">/</li>
+    <li aria-current="page"><strong>Import preview</strong></li>
+  </ol>
+</nav>
 <h1>Import preview</h1>
 <p class="page-desc muted">
   Project <strong>{{ project.name }}</strong>:
@@ -43,9 +45,9 @@
         </td>
         <td>
           {% if item.action == 'update' %}
-          <span class="kind-badge">update</span>
+          <span class="badge outline">update</span>
           {% else %}
-          <span class="kind-badge kind-kv">create</span>
+          <span class="badge outline kind-badge kind-kv">create</span>
           {% endif %}
         </td>
         <td>
@@ -72,7 +74,7 @@
 
   <p class="form-actions">
     <button type="submit">Commit import</button>
-    <a class="btn-secondary" href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">Cancel</a>
+    <a class="button outline" href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">Cancel</a>
   </p>
 </form>
 {% endblock %}

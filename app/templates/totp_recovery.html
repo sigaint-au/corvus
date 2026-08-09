@@ -2,7 +2,7 @@
 {% block title %}Recovery codes — {{ app_name }}{% endblock %}
 {% block body %}
 <h1>Recovery codes</h1>
-<p class="flash error">
+<p role="alert" data-variant="error">
   Save these codes now. Each can be used once if you lose access to your authenticator.
   They will not be shown again.
 </p>
@@ -13,6 +13,6 @@
 </ul>
 <p class="muted">Store them offline (password manager, printed copy).</p>
 <p class="form-actions">
-  <a class="btn-secondary" href="{{ url_for('profile', tab='security') }}">Done — I saved them</a>
+  <a class="button outline" href="{{ url_for('profile', tab='security') }}">Done — I saved them</a>
 </p>
 {% endblock %}

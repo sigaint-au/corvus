@@ -43,13 +43,13 @@
       <dt>Sign-in</dt>
       <dd>
         {% if user.auth_source == 'ldap' %}
-        <span class="role-badge">LDAP</span> Directory
+        <span class="badge" data-variant="secondary">LDAP</span> Directory
         {% elif user.auth_source == 'oidc' %}
-        <span class="role-badge">OIDC</span> Single sign-on
+        <span class="badge" data-variant="secondary">OIDC</span> Single sign-on
         {% elif user.auth_source == 'local' or not user.auth_source %}
-        <span class="role-badge">Local</span> Database (password)
+        <span class="badge" data-variant="secondary">Local</span> Database (password)
         {% else %}
-        <span class="role-badge">{{ user.auth_source }}</span>
+        <span class="badge" data-variant="secondary">{{ user.auth_source }}</span>
         {% endif %}
       </dd>
     </div>
@@ -57,7 +57,7 @@
       <dt>Role</dt>
       <dd>
         {% if user.is_global_admin %}
-        <span class="role-badge">Global admin</span>
+        <span class="badge" data-variant="secondary">Global admin</span>
         {% else %}
         User
         {% endif %}
@@ -205,7 +205,7 @@
   <h2>Two-factor authentication</h2>
   {% if totp_enabled %}
   <p>
-    <span class="role-badge">Enabled</span>
+    <span class="badge" data-variant="secondary">Enabled</span>
     {% if user.totp_enabled_at %}
     <span class="muted">since {{ user.totp_enabled_at }}</span>
     {% endif %}
@@ -228,7 +228,7 @@
       <input type="text" name="code" required autocomplete="one-time-code"
              placeholder="123456 or xxxx-xxxx">
     </label>
-    <p class="form-actions"><button type="submit" class="danger">Disable 2FA</button></p>
+    <p class="form-actions"><button type="submit" data-variant="danger">Disable 2FA</button></p>
   </form>
   {% endif %}
   {% else %}
@@ -236,7 +236,7 @@
     Authenticator app at sign-in.
     {% if totp_enforced_for_user %}<strong>Required for global admins.</strong>{% endif %}
   </p>
-  <p class="form-actions"><a class="btn-secondary" href="{{ url_for('totp_setup') }}">Set up 2FA</a></p>
+  <p class="form-actions"><a class="button outline" href="{{ url_for('totp_setup') }}">Set up 2FA</a></p>
   {% endif %}
 </section>
 
@@ -299,7 +299,7 @@
             {{ (s.user_agent or 'Unknown client')[:72] }}{% if s.user_agent and s.user_agent|length > 72 %}…{% endif %}
           </span>
           {% if current_sid and s.id|string == current_sid|string %}
-          <span class="role-badge">This device</span>
+          <span class="badge" data-variant="secondary">This device</span>
           {% endif %}
         </td>
         <td class="muted">{{ s.ip or '—' }}</td>
@@ -344,7 +344,7 @@
     {% for t in teams %}
       <tr>
         <td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td>
-        <td><span class="role-badge">{{ t.role }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ t.role }}</span></td>
         <td class="muted">{{ t.source or 'manual' }}</td>
         <td>{{ t.project_count }}</td>
       </tr>
@@ -372,7 +372,7 @@
     {% for r in pending_joins %}
       <tr>
         <td>{{ r.team_name }}</td>
-        <td><span class="role-badge">{{ r.role }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ r.role }}</span></td>
         <td class="muted">{{ r.created_at }}</td>
       </tr>
     {% endfor %}
@@ -404,11 +404,11 @@
         <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}">{{ p.team_name }}</a></td>
         <td>
           {% if p.project_role %}
-          <span class="role-badge" title="Project-level role">{{ p.project_role }}</span>
+          <span class="badge" data-variant="secondary" title="Project-level role">{{ p.project_role }}</span>
           {% elif p.team_role %}
-          <span class="role-badge" title="Via team membership">team {{ p.team_role }}</span>
+          <span class="badge" data-variant="secondary" title="Via team membership">team {{ p.team_role }}</span>
           {% elif user.is_global_admin %}
-          <span class="role-badge">global admin</span>
+          <span class="badge" data-variant="secondary">global admin</span>
           {% else %}
           <span class="muted">—</span>
           {% endif %}

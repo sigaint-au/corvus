@@ -9,33 +9,39 @@
   'until': pager.until if pager and pager.until else none,
 } %}
 {% if pager and pager.total > pager.per_page %}
-<nav class="pager" aria-label="Pagination">
-  <span class="pager-summary">
+<nav class="pager hstack" aria-label="Pagination" style="gap: var(--space-4); flex-wrap: wrap; margin: 1rem 0;">
+  <span class="muted pager-summary" style="font-size: var(--text-7);">
     Showing {{ pager.start }}–{{ pager.end }} of {{ pager.total }}
   </span>
-  <div class="pager-links">
-    {% if pager.has_prev %}
-    <a href="{{ url_for(pager.endpoint, page=pager.prev_page, **_q) }}">Prev</a>
-    {% else %}
-    <span class="disabled">Prev</span>
-    {% endif %}
-
+  <menu class="buttons">
+    <li>
+      {% if pager.has_prev %}
+      <a href="{{ url_for(pager.endpoint, page=pager.prev_page, **_q) }}"
+         class="button outline small">&larr; Prev</a>
+      {% else %}
+      <span class="button outline small" aria-disabled="true" style="opacity:.5;pointer-events:none">Prev</span>
+      {% endif %}
+    </li>
     {% for p in range(1, pager.pages + 1) %}
       {% if p == pager.page %}
-      <span class="current" aria-current="page">{{ p }}</span>
+      <li><a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
+             class="button small" aria-current="page">{{ p }}</a></li>
       {% elif p == 1 or p == pager.pages or (p >= pager.page - 2 and p <= pager.page + 2) %}
-      <a href="{{ url_for(pager.endpoint, page=p, **_q) }}">{{ p }}</a>
+      <li><a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
+             class="button outline small">{{ p }}</a></li>
       {% elif p == pager.page - 3 or p == pager.page + 3 %}
-      <span class="disabled">…</span>
+      <li><span class="button outline small" aria-hidden="true" style="opacity:.5;pointer-events:none">…</span></li>
       {% endif %}
     {% endfor %}
-
-    {% if pager.has_next %}
-    <a href="{{ url_for(pager.endpoint, page=pager.next_page, **_q) }}">Next</a>
-    {% else %}
-    <span class="disabled">Next</span>
-    {% endif %}
-  </div>
+    <li>
+      {% if pager.has_next %}
+      <a href="{{ url_for(pager.endpoint, page=pager.next_page, **_q) }}"
+         class="button outline small">Next &rarr;</a>
+      {% else %}
+      <span class="button outline small" aria-disabled="true" style="opacity:.5;pointer-events:none">Next</span>
+      {% endif %}
+    </li>
+  </menu>
 </nav>
 {% elif pager and pager.total > 0 %}
 <p class="muted pager-count">Showing {{ pager.total }} entr{{ 'y' if pager.total == 1 else 'ies' }}{% if pager.q or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>

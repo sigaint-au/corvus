@@ -17,7 +17,7 @@
         hx-swap="innerHTML">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div class="reveal-head">
-      <span class="kind-badge kind-{{ kind }}">{{ kind }}</span>
+      <span class="badge outline kind-badge kind-{{ kind }}">{{ kind }}</span>
       <span class="reveal-actions">
         <a href="#" class="link copy-btn" role="button"
            data-copy-target="{{ val_id }}"
@@ -45,7 +45,7 @@
 
   {% else %}
   <div class="reveal-head">
-    <span class="kind-badge kind-{{ kind }}">{{ kind }}</span>
+    <span class="badge outline kind-badge kind-{{ kind }}">{{ kind }}</span>
     <span class="reveal-actions">
       <a href="#" class="link copy-btn" role="button"
          data-copy-target="{{ val_id }}"

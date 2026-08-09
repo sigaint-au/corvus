@@ -1,26 +1,28 @@
 {% extends "base.html" %}
 {% block title %}{{ group.name }} — {{ team.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<p class="breadcrumb">
-  <a href="{{ url_for('teams') }}">Teams</a>
-  <span class="breadcrumb-sep">/</span>
-  <a href="{{ url_for('team_detail', team_id=team.id) }}">{{ team.name }}</a>
-  <span class="breadcrumb-sep">/</span>
-  <a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Groups</a>
-  <span class="breadcrumb-sep">/</span>
-  {{ group.name }}
-</p>
+<nav aria-label="Breadcrumb">
+  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
+    <li><a href="{{ url_for('teams') }}" class="unstyled">Teams</a></li>
+    <li aria-hidden="true">/</li>
+    <li><a href="{{ url_for('team_detail', team_id=team.id) }}" class="unstyled">{{ team.name }}</a></li>
+    <li aria-hidden="true">/</li>
+    <li><a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}" class="unstyled">Groups</a></li>
+    <li aria-hidden="true">/</li>
+    <li aria-current="page"><strong>{{ group.name }}</strong></li>
+  </ol>
+</nav>
 <div class="page-head">
   <div class="section-head-main">
     <h1>{{ group.name }}</h1>
-    <span class="role-badge">{{ group.source }}</span>
-    {% if group.team_role %}<span class="role-badge">{{ group.team_role }}</span>{% endif %}
+    <span class="badge" data-variant="secondary">{{ group.source }}</span>
+    {% if group.team_role %}<span class="badge" data-variant="secondary">{{ group.team_role }}</span>{% endif %}
   </div>
   <div class="section-tools">
-    <a class="btn-toolbar" href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Back</a>
+    <a class="button outline small" href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Back</a>
   </div>
 </div>
-<p class="page-desc muted">Your team role: <span class="role-badge">{{ my_role }}</span></p>
+<p class="page-desc muted">Your team role: <span class="badge" data-variant="secondary">{{ my_role }}</span></p>
 
 {% if is_admin %}
 <section>
@@ -59,7 +61,7 @@
       </label>
       <button type="submit">Search</button>
       {% if search_q %}
-      <a class="btn-clear" href="{{ url_for('team_group_detail', team_id=team.id, group_id=group.id) }}">Clear</a>
+      <a class="button ghost small" href="{{ url_for('team_group_detail', team_id=team.id, group_id=group.id) }}">Clear</a>
       {% endif %}
     </form>
   </div>
@@ -80,7 +82,7 @@
     {% for m in group_members %}
       <tr>
         <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
-        <td><span class="role-badge">{{ m.source }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ m.source }}</span></td>
         <td class="acts">
           {% if is_admin %}
           <form method="post"
@@ -108,7 +110,7 @@
   <form method="post" action="{{ url_for('delete_team_group', team_id=team.id, group_id=group.id) }}"
         onsubmit="return confirm('Delete group “{{ group.name }}”?')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <button type="submit" class="danger">Delete group</button>
+    <button type="submit" data-variant="danger">Delete group</button>
   </form>
 </section>
 {% endif %}

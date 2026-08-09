@@ -261,27 +261,27 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
           {{ u.name or '—' }}
           <span class="muted">{{ u.email }}</span>
           {% if u.id|string == session.user_id %}
-          <span class="role-badge">you</span>
+          <span class="badge" data-variant="secondary">you</span>
           {% endif %}
         </td>
         <td class="muted">{{ u.auth_source or 'local' }}</td>
         <td>
           {% if u.is_global_admin %}
-          <span class="role-badge">Global admin</span>
+          <span class="badge" data-variant="secondary">Global admin</span>
           {% else %}
           <span class="muted">User</span>
           {% endif %}
         </td>
         <td>
           {% if u.totp_enabled_at %}
-          <span class="role-badge">On</span>
+          <span class="badge" data-variant="secondary">On</span>
           {% else %}
           <span class="muted">Off</span>
           {% endif %}
         </td>
         <td>
           {% if u.disabled_at %}
-          <span class="role-badge" title="{{ u.disabled_at }}">Disabled</span>
+          <span class="badge" data-variant="secondary" title="{{ u.disabled_at }}">Disabled</span>
           {% else %}
           <span class="muted">Active</span>
           {% endif %}
@@ -485,7 +485,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     {% for m in ldap_role_maps %}
       <tr>
         <td><code class="k">{{ m.ldap_group }}</code></td>
-        <td><span class="role-badge">{{ m.role }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
         <td class="acts">
           <form method="post" class="inline"
                 onsubmit="return confirm('Remove this mapping?')">
@@ -610,7 +610,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     {% for m in oidc_role_maps %}
       <tr>
         <td><code class="k">{{ m.oidc_group }}</code></td>
-        <td><span class="role-badge">{{ m.role }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
         <td class="acts">
           <form method="post" class="inline"
                 onsubmit="return confirm('Remove this mapping?')">
