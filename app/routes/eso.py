@@ -116,7 +116,18 @@ def _meta_item(row: dict, *, value: str | None = None) -> dict:
         "expires_at": _iso(row.get("expires_at")),
         "created_at": _iso(row.get("created_at")),
         "updated_at": _iso(row.get("updated_at")),
+        "last_accessed_at": _iso(row.get("last_accessed_at")),
+        "last_accessed_by": row.get("last_accessed_by_email")
+        or row.get("last_accessed_by")
+        or "",
     }
+    meta = row.get("metadata")
+    if meta is None and row.get("meta") is not None:
+        meta = row.get("meta")
+    if isinstance(meta, dict):
+        out["metadata"] = meta
+    elif meta is not None:
+        out["metadata"] = meta
     if value is not None:
         out["value"] = value
     return out
@@ -550,7 +561,8 @@ def register(app):
                 return jsonify({"error": "not found"}), 404
             cur.execute(
                 """
-                SELECT id, key, value_enc, note, kind, expires_at, created_at, updated_at
+                SELECT id, key, value_enc, note, kind, expires_at,
+                       created_at, updated_at, last_accessed_at
                   FROM api.secrets
                  WHERE project_id = %s AND key = %s AND deleted_at IS NULL
                 """,
@@ -559,6 +571,7 @@ def register(app):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "not found"}), 404
+            row = dict(row)
             # PAT human path: per-secret ACL then reveal-approval (machine tokens exempt)
             cur.execute(
                 "SELECT api.can_access_secret(%s, 'reveal') AS ok",
@@ -606,6 +619,23 @@ def register(app):
                     ),
                     403,
                 )
+            try:
+                cur.execute(
+                    "SELECT * FROM private.secret_meta_rows(%s::uuid)",
+                    (str(row["id"]),),
+                )
+                row["metadata"] = {
+                    m["key"]: m["value"] for m in (cur.fetchall() or [])
+                }
+            except Exception:
+                row["metadata"] = {}
+            try:
+                cur.execute(
+                    "SELECT private.touch_secret_access(%s::uuid)",
+                    (str(row["id"]),),
+                )
+            except Exception:
+                pass
             value = crypto.decrypt(row["value_enc"])
             _audit(
                 cur,
@@ -944,28 +974,58 @@ def register(app):
             if not pid:
                 return jsonify({"error": "not found"}), 404
             if meta:
-                where = "project_id = %s AND deleted_at IS NULL"
+                where = "s.project_id = %s AND s.deleted_at IS NULL"
                 params: list = [pid]
                 if q:
-                    where += " AND (key ILIKE %s OR note ILIKE %s)"
                     like = f"%{q}%"
-                    params.extend([like, like])
+                    where += """
+                      AND (
+                        s.key ILIKE %s OR s.note ILIKE %s
+                        OR EXISTS (
+                          SELECT 1 FROM api.secret_meta m
+                          WHERE m.secret_id = s.id
+                            AND (m.key ILIKE %s OR m.value ILIKE %s)
+                        )
+                      )
+                    """
+                    params.extend([like, like, like, like])
                 cur.execute(
                     f"""
-                    SELECT id, key, note, kind, expires_at, created_at, updated_at
-                      FROM api.secrets
+                    SELECT s.id, s.key, s.note, s.kind, s.expires_at,
+                           s.created_at, s.updated_at, s.last_accessed_at,
+                           COALESCE(
+                             (
+                               SELECT jsonb_object_agg(m.key, m.value)
+                               FROM api.secret_meta m
+                               WHERE m.secret_id = s.id
+                             ),
+                             '{{}}'::jsonb
+                           ) AS metadata
+                      FROM api.secrets s
                      WHERE {where}
-                     ORDER BY key
+                     ORDER BY s.key
                     """,
                     params,
                 )
                 rows = cur.fetchall() or []
+                items = []
+                for r in rows:
+                    r = dict(r)
+                    md = r.get("metadata")
+                    if isinstance(md, str):
+                        import json as _json
+
+                        try:
+                            r["metadata"] = _json.loads(md)
+                        except Exception:
+                            r["metadata"] = {}
+                    items.append(_meta_item(r))
                 detail = f"cli/meta n={len(rows)}"
                 if q:
                     detail += f" q={q[:80]}"
                 _audit(cur, project_id=pid, action="exported", secret_key=detail)
                 conn.commit()
-                return jsonify({"items": [_meta_item(r) for r in rows]})
+                return jsonify({"items": items})
             # PAT bulk values: only secrets the caller may reveal (ACL + approval)
             cur.execute(
                 """

@@ -2229,6 +2229,21 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("member", config.INVITE_ROLES)
         self.assertNotIn("owner", config.INVITE_ROLES)
 
+    def test_secret_meta_schema(self):
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("CREATE TABLE api.secret_meta", init)
+        self.assertIn("last_accessed_at", init)
+        self.assertIn("last_accessed_by", init)
+        self.assertIn("private.secret_meta_rows", init)
+        self.assertIn("private.touch_secret_access", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("secret_meta", src)
+        self.assertIn("touch_secret_access", src)
+        ops = (Path(__file__).resolve().parent / "secret_ops.py").read_text()
+        self.assertIn("secret_meta", ops)
+
     def test_secret_acl_schema_and_config(self):
         from pathlib import Path
 

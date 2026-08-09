@@ -75,11 +75,18 @@ def register(app):
                     JOIN api.projects p ON p.id = s.project_id
                     JOIN api.teams t ON t.id = p.team_id
                     WHERE s.deleted_at IS NULL
-                      AND (s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s)
+                      AND (
+                        s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s
+                        OR EXISTS (
+                          SELECT 1 FROM api.secret_meta m
+                          WHERE m.secret_id = s.id
+                            AND (m.key ILIKE %s OR m.value ILIKE %s)
+                        )
+                      )
                     ORDER BY t.name, p.name, s.key
                     LIMIT 50
                     """,
-                    (like, like, like),
+                    (like, like, like, like, like),
                 )
                 secrets = cur.fetchall()
         return render_template(

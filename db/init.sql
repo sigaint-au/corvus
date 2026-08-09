@@ -252,10 +252,25 @@ CREATE TABLE api.secrets (
     CHECK (acl_mode IN ('inherit', 'writers', 'admins', 'owners', 'custom')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  deleted_at timestamptz
+  deleted_at timestamptz,
+  -- Set on successful reveal (system fields; not user-editable)
+  last_accessed_at timestamptz,
+  last_accessed_by uuid REFERENCES private.users(id) ON DELETE SET NULL
 );
 CREATE UNIQUE INDEX secrets_project_key_live
   ON api.secrets (project_id, key) WHERE deleted_at IS NULL;
+
+-- User-defined custom metadata (searchable plaintext labels — not secret values)
+CREATE TABLE api.secret_meta (
+  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+  key text NOT NULL
+    CHECK (key ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'),
+  value text NOT NULL DEFAULT '',
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (secret_id, key)
+);
+CREATE INDEX secret_meta_key_idx ON api.secret_meta (key);
+CREATE INDEX secret_meta_value_idx ON api.secret_meta (value);
 
 -- Explicit per-user or per-group grants when secrets.acl_mode = 'custom'
 CREATE TABLE api.secret_acl (
@@ -657,6 +672,7 @@ ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_acl ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.secret_meta ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_access_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
 
@@ -791,6 +807,15 @@ CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
   USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at));
 CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
   USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at));
+
+CREATE POLICY secret_meta_select ON api.secret_meta FOR SELECT TO authenticated
+  USING (api.can_access_secret(secret_id, 'read'));
+CREATE POLICY secret_meta_insert ON api.secret_meta FOR INSERT TO authenticated
+  WITH CHECK (api.can_access_secret(secret_id, 'write'));
+CREATE POLICY secret_meta_update ON api.secret_meta FOR UPDATE TO authenticated
+  USING (api.can_access_secret(secret_id, 'write'));
+CREATE POLICY secret_meta_delete ON api.secret_meta FOR DELETE TO authenticated
+  USING (api.can_access_secret(secret_id, 'write'));
 
 -- Versions inherit access from parent secret's project
 CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authenticated
@@ -1254,6 +1279,39 @@ SET row_security = off AS $$
   ORDER BY COALESCE(u.email, g.name);
 $$;
 
+-- Custom metadata rows for a secret
+CREATE OR REPLACE FUNCTION private.secret_meta_rows(p_secret uuid)
+RETURNS TABLE (key text, value text, updated_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT m.key, m.value, m.updated_at
+  FROM api.secret_meta m
+  JOIN api.secrets s ON s.id = m.secret_id
+  WHERE m.secret_id = p_secret
+    AND api.can_access_secret(p_secret, 'read')
+  ORDER BY m.key;
+$$;
+
+-- Record last reveal access (does not change updated_at of secret value)
+CREATE OR REPLACE FUNCTION private.touch_secret_access(p_secret uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+BEGIN
+  IF p_secret IS NULL OR api.current_user_id() IS NULL THEN
+    RETURN;
+  END IF;
+  IF NOT api.can_access_secret(p_secret, 'reveal') THEN
+    RETURN;
+  END IF;
+  UPDATE api.secrets
+     SET last_accessed_at = now(),
+         last_accessed_by = api.current_user_id()
+   WHERE id = p_secret AND deleted_at IS NULL;
+END;
+$$;
+
 -- Org / membership audit insert (JWT actor only)
 CREATE OR REPLACE FUNCTION private.audit_org(
   p_team uuid,
@@ -1536,6 +1594,8 @@ GRANT EXECUTE ON FUNCTION private.team_group_rows TO authenticator, authenticate
 GRANT EXECUTE ON FUNCTION private.group_member_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.project_group_role_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.secret_acl_rows TO authenticator, authenticated;
+GRANT EXECUTE ON FUNCTION private.secret_meta_rows TO authenticator, authenticated;
+GRANT EXECUTE ON FUNCTION private.touch_secret_access TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.audit_org TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.lookup_invite TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.audit_secret TO authenticator, authenticated;

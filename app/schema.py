@@ -1485,6 +1485,88 @@ def ensure_schema():
         ALTER TABLE api.secrets
           ADD COLUMN IF NOT EXISTS requires_approval boolean
         """,
+        """
+        ALTER TABLE api.secrets
+          ADD COLUMN IF NOT EXISTS last_accessed_at timestamptz
+        """,
+        """
+        ALTER TABLE api.secrets
+          ADD COLUMN IF NOT EXISTS last_accessed_by uuid
+            REFERENCES private.users(id) ON DELETE SET NULL
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS api.secret_meta (
+          secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+          key text NOT NULL
+            CHECK (key ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'),
+          value text NOT NULL DEFAULT '',
+          updated_at timestamptz NOT NULL DEFAULT now(),
+          PRIMARY KEY (secret_id, key)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS secret_meta_key_idx ON api.secret_meta (key)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS secret_meta_value_idx ON api.secret_meta (value)
+        """,
+        "ALTER TABLE api.secret_meta ENABLE ROW LEVEL SECURITY",
+        "DROP POLICY IF EXISTS secret_meta_select ON api.secret_meta",
+        """
+        CREATE POLICY secret_meta_select ON api.secret_meta FOR SELECT TO authenticated
+          USING (api.can_access_secret(secret_id, 'read'))
+        """,
+        "DROP POLICY IF EXISTS secret_meta_insert ON api.secret_meta",
+        """
+        CREATE POLICY secret_meta_insert ON api.secret_meta FOR INSERT TO authenticated
+          WITH CHECK (api.can_access_secret(secret_id, 'write'))
+        """,
+        "DROP POLICY IF EXISTS secret_meta_update ON api.secret_meta",
+        """
+        CREATE POLICY secret_meta_update ON api.secret_meta FOR UPDATE TO authenticated
+          USING (api.can_access_secret(secret_id, 'write'))
+        """,
+        "DROP POLICY IF EXISTS secret_meta_delete ON api.secret_meta",
+        """
+        CREATE POLICY secret_meta_delete ON api.secret_meta FOR DELETE TO authenticated
+          USING (api.can_access_secret(secret_id, 'write'))
+        """,
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON api.secret_meta TO authenticated",
+        "GRANT ALL ON api.secret_meta TO authenticator",
+        """
+        CREATE OR REPLACE FUNCTION private.secret_meta_rows(p_secret uuid)
+        RETURNS TABLE (key text, value text, updated_at timestamptz)
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT m.key, m.value, m.updated_at
+          FROM api.secret_meta m
+          WHERE m.secret_id = p_secret
+            AND api.can_access_secret(p_secret, 'read')
+          ORDER BY m.key;
+        $$
+        """,
+        """
+        CREATE OR REPLACE FUNCTION private.touch_secret_access(p_secret uuid)
+        RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+        BEGIN
+          IF p_secret IS NULL OR api.current_user_id() IS NULL THEN
+            RETURN;
+          END IF;
+          IF NOT api.can_access_secret(p_secret, 'reveal') THEN
+            RETURN;
+          END IF;
+          UPDATE api.secrets
+             SET last_accessed_at = now(),
+                 last_accessed_by = api.current_user_id()
+           WHERE id = p_secret AND deleted_at IS NULL;
+        END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.secret_meta_rows TO authenticator, authenticated",
+        "GRANT EXECUTE ON FUNCTION private.touch_secret_access TO authenticator, authenticated",
         # Reveal access approval: non-admins request; project admin / team owner approve
         """
         CREATE TABLE IF NOT EXISTS api.secret_access_requests (

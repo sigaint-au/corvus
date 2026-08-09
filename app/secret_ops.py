@@ -27,13 +27,25 @@ def _load_secrets_page(cur, project_id, page, q):
         >>> # rows, pager = _load_secrets_page(cur, project_id, 1, "")
         >>> # isinstance(rows, list) and "limit" in pager
     """
-    where = "project_id = %s AND deleted_at IS NULL"
+    where = "s.project_id = %s AND s.deleted_at IS NULL"
     params = [str(project_id)]
     if q:
-        where += " AND (key ILIKE %s OR note ILIKE %s)"
         like = f"%{q}%"
-        params.extend([like, like])
-    cur.execute(f"SELECT count(*) AS n FROM api.secrets WHERE {where}", params)
+        where += """
+          AND (
+            s.key ILIKE %s OR s.note ILIKE %s
+            OR EXISTS (
+              SELECT 1 FROM api.secret_meta m
+              WHERE m.secret_id = s.id
+                AND (m.key ILIKE %s OR m.value ILIKE %s)
+            )
+          )
+        """
+        params.extend([like, like, like, like])
+    cur.execute(
+        f"SELECT count(*) AS n FROM api.secrets s WHERE {where}",
+        params,
+    )
     total = int((cur.fetchone() or {}).get("n") or 0)
     pager = paging.page_window(total, page)
     pager.update(
@@ -42,17 +54,11 @@ def _load_secrets_page(cur, project_id, page, q):
         tab="secrets",
         q=q,
     )
-    # Qualify column names for the joined SELECT
-    where_s = (
-        where.replace("project_id", "s.project_id")
-        .replace("deleted_at", "s.deleted_at")
-        .replace("key ILIKE", "s.key ILIKE")
-        .replace("note ILIKE", "s.note ILIKE")
-    )
     cur.execute(
         f"""
         SELECT s.id, s.key, s.note, s.kind, s.created_at, s.updated_at, s.expires_at,
                s.requires_approval, s.acl_mode,
+               s.last_accessed_at,
                CASE
                  WHEN s.requires_approval IS TRUE THEN true
                  WHEN s.requires_approval IS FALSE THEN false
@@ -60,7 +66,7 @@ def _load_secrets_page(cur, project_id, page, q):
                END AS needs_approval
         FROM api.secrets s
         JOIN api.projects p ON p.id = s.project_id
-        WHERE {where_s}
+        WHERE {where}
         ORDER BY s.key
         LIMIT %s OFFSET %s
         """,

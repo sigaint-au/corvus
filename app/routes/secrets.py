@@ -214,8 +214,17 @@ def register(app):
                     params = [tid]
                     if q:
                         like = f"%{q}%"
-                        sql += " AND (s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s)"
-                        params.extend([like, like, like])
+                        sql += """
+                          AND (
+                            s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s
+                            OR EXISTS (
+                              SELECT 1 FROM api.secret_meta m
+                              WHERE m.secret_id = s.id
+                                AND (m.key ILIKE %s OR m.value ILIKE %s)
+                            )
+                          )
+                        """
+                        params.extend([like, like, like, like, like])
                     cur.execute(sql + " ORDER BY p.name, s.key", params)
                     secrets = cur.fetchall()
         return render_template("secrets.html", team=team, secrets=secrets, search_q=q)
@@ -651,6 +660,13 @@ def register(app):
                 pins.touch_recent(cur, session["user_id"], secret_id)
             except Exception:
                 pass
+            try:
+                cur.execute(
+                    "SELECT private.touch_secret_access(%s::uuid)",
+                    (str(secret_id),),
+                )
+            except Exception:
+                pass
             is_fav = False
             try:
                 is_fav = pins.is_pinned(cur, session["user_id"], secret_id)
@@ -721,6 +737,7 @@ def register(app):
         access_blocked: bool = False,
         access_state=None,
         access_request=None,
+        custom_meta=None,
     ):
         """Render the type-specific secret view/edit page template."""
         exp = row.get("expires_at")
@@ -735,9 +752,11 @@ def register(app):
             cert_pem, cert_key = split_cert_and_key(plaintext)
         acl_mode = (row.get("acl_mode") or "inherit").strip() or "inherit"
         tab = (active_tab or "secret").strip().lower()
-        if tab not in ("secret", "access"):
+        if tab not in ("secret", "meta", "access"):
             tab = "secret"
-        if not can_admin or is_version:
+        if is_version:
+            tab = "secret"
+        if tab == "access" and not can_admin:
             tab = "secret"
         return (
             render_template(
@@ -775,6 +794,11 @@ def register(app):
                 requires_approval=row.get("requires_approval"),
                 require_reveal_approval=row.get("require_reveal_approval"),
                 clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
+                created_at=row.get("created_at"),
+                updated_at=row.get("updated_at"),
+                last_accessed_at=row.get("last_accessed_at"),
+                last_accessed_by_email=row.get("last_accessed_by_email") or "",
+                custom_meta=custom_meta or [],
             ),
             status,
         )
@@ -803,14 +827,15 @@ def register(app):
         """
         version_id = (request.args.get("version_id") or "").strip() or None
         active_tab = (request.args.get("tab") or "secret").strip().lower()
-        if active_tab not in ("secret", "access"):
+        if active_tab not in ("secret", "meta", "access"):
             active_tab = "secret"
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
-                       s.requires_approval, s.acl_mode, p.name AS project_name,
-                       p.require_reveal_approval
+                       s.requires_approval, s.acl_mode, s.created_at, s.updated_at,
+                       s.last_accessed_at, s.last_accessed_by,
+                       p.name AS project_name, p.require_reveal_approval
                 FROM api.secrets s
                 JOIN api.projects p ON p.id = s.project_id
                 WHERE s.id = %s AND s.project_id = %s AND s.deleted_at IS NULL
@@ -820,6 +845,19 @@ def register(app):
             row = cur.fetchone()
             if not row:
                 return "Not found", 404
+            row = dict(row)
+            row["last_accessed_by_email"] = ""
+            if row.get("last_accessed_by"):
+                try:
+                    with db.connect_admin() as aconn, aconn.cursor() as acur:
+                        acur.execute(
+                            "SELECT email FROM private.users WHERE id = %s",
+                            (str(row["last_accessed_by"]),),
+                        )
+                        u = acur.fetchone() or {}
+                        row["last_accessed_by_email"] = u.get("email") or ""
+                except Exception:
+                    pass
             value_enc = row["value_enc"]
             is_version = False
             if version_id:
@@ -851,6 +889,15 @@ def register(app):
             can_reveal = can_reveal_acl and access_state == "allowed"
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             can_admin = bool((cur.fetchone() or {}).get("a"))
+            custom_meta = []
+            try:
+                cur.execute(
+                    "SELECT * FROM private.secret_meta_rows(%s::uuid)",
+                    (str(secret_id),),
+                )
+                custom_meta = cur.fetchall() or []
+            except Exception:
+                custom_meta = []
             acl_grants = []
             team_groups = []
             if can_admin:
@@ -971,8 +1018,10 @@ def register(app):
                     )
                 )
 
-            # Access tab (admins): mode + grants only — never decrypt or audit reveal
-            if can_admin and active_tab == "access" and not is_version:
+            # Meta / Access tabs: never decrypt or audit reveal
+            if active_tab in ("meta", "access") and not is_version:
+                if active_tab == "access" and not can_admin:
+                    active_tab = "meta"
                 body, code = _render_secret_view(
                     project_id=project_id,
                     secret_id=secret_id,
@@ -981,54 +1030,39 @@ def register(app):
                     kind=normalize_kind(row.get("kind")),
                     can_write=can_write,
                     is_version=False,
-                    can_admin=True,
+                    can_admin=can_admin,
                     acl_grants=acl_grants,
                     can_reveal=can_reveal,
                     team_groups=team_groups,
-                    active_tab="access",
+                    active_tab=active_tab,
                     access_blocked=not can_reveal,
                     access_state=access_state,
                     access_request=access_row,
+                    custom_meta=custom_meta,
                 )
                 return body, code
 
             if not can_reveal:
                 # Metadata only — do not decrypt or audit a reveal
-                return (
-                    render_template(
-                        "secret_view.html",
-                        project_id=project_id,
-                        project_name=row.get("project_name") or "",
-                        secret_id=secret_id,
-                        secret_key=row["key"],
-                        note=(row.get("note") or ""),
-                        kind=normalize_kind(row.get("kind")),
-                        value="",
-                        is_version=is_version,
-                        access_blocked=True,
-                        access_state=access_state,
-                        access_request=access_row,
-                        kv_pairs=[("", "")],
-                        pem_blocks=[],
-                        cert_pem="",
-                        cert_key="",
-                        db_parts={},
-                        expires_at="",
-                        can_write=False,
-                        can_admin=can_admin,
-                        can_reveal=False,
-                        acl_mode=(row.get("acl_mode") or "inherit"),
-                        acl_modes=config.SECRET_ACL_MODES,
-                        acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
-                        acl_permissions=config.SECRET_ACL_PERMISSIONS,
-                        acl_perm_labels=config.SECRET_ACL_PERM_LABELS,
-                        acl_grants=acl_grants if can_admin else [],
-                        team_groups=team_groups if can_admin else [],
-                        active_tab="secret",
-                        clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
-                    ),
-                    200,
+                body, code = _render_secret_view(
+                    project_id=project_id,
+                    secret_id=secret_id,
+                    row=row,
+                    plaintext="",
+                    kind=normalize_kind(row.get("kind")),
+                    can_write=False,
+                    is_version=is_version,
+                    can_admin=can_admin,
+                    acl_grants=acl_grants if can_admin else [],
+                    can_reveal=False,
+                    team_groups=team_groups if can_admin else [],
+                    active_tab="meta" if active_tab == "meta" else "secret",
+                    access_blocked=True,
+                    access_state=access_state,
+                    access_request=access_row,
+                    custom_meta=custom_meta,
                 )
+                return body, code
 
             try:
                 pins.touch_recent(cur, session["user_id"], secret_id)
@@ -1057,8 +1091,113 @@ def register(app):
             can_reveal=can_reveal,
             team_groups=team_groups,
             active_tab=active_tab,
+            custom_meta=custom_meta,
         )
         return body, code
+
+    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/meta")
+    @authz.login_required
+    def upsert_secret_meta(project_id, secret_id):
+        """Add or update a custom metadata field (writers)."""
+        key = (request.form.get("key") or "").strip()
+        value = (request.form.get("value") or "").strip()
+        meta_url = url_for(
+            "secret_view", project_id=project_id, secret_id=secret_id, tab="meta"
+        )
+        import re
+
+        if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", key or ""):
+            flash(
+                "Metadata key must start with a letter/digit and use only "
+                "A–Z, a–z, 0–9, ., _, - (max 64)",
+                "error",
+            )
+            return redirect(meta_url)
+        if len(value) > 2000:
+            value = value[:2000]
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT api.can_access_secret(%s, 'write') AS w",
+                (str(secret_id),),
+            )
+            if not (cur.fetchone() or {}).get("w"):
+                flash("You don't have permission to do that", "error")
+                return redirect(meta_url)
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO api.secret_meta (secret_id, key, value, updated_at)
+                    VALUES (%s, %s, %s, now())
+                    ON CONFLICT (secret_id, key) DO UPDATE
+                      SET value = EXCLUDED.value, updated_at = now()
+                    """,
+                    (str(secret_id), key, value),
+                )
+                cur.execute(
+                    """
+                    SELECT key FROM api.secrets
+                    WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                    """,
+                    (str(secret_id), str(project_id)),
+                )
+                sec = cur.fetchone()
+                if sec:
+                    audit.log_secret(
+                        cur,
+                        project_id=project_id,
+                        secret_id=secret_id,
+                        secret_key=sec["key"],
+                        action="updated",
+                    )
+                conn.commit()
+                flash(f"Metadata “{key}” saved", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(meta_url)
+
+    @app.post(
+        "/projects/<uuid:project_id>/secrets/<uuid:secret_id>/meta/<path:meta_key>/delete"
+    )
+    @authz.login_required
+    def delete_secret_meta(project_id, secret_id, meta_key):
+        """Remove a custom metadata field."""
+        meta_url = url_for(
+            "secret_view", project_id=project_id, secret_id=secret_id, tab="meta"
+        )
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT api.can_access_secret(%s, 'write') AS w",
+                (str(secret_id),),
+            )
+            if not (cur.fetchone() or {}).get("w"):
+                flash("You don't have permission to do that", "error")
+                return redirect(meta_url)
+            cur.execute(
+                """
+                DELETE FROM api.secret_meta m
+                USING api.secrets s
+                WHERE m.secret_id = s.id AND s.id = %s AND s.project_id = %s
+                  AND m.key = %s
+                RETURNING s.key
+                """,
+                (str(secret_id), str(project_id), meta_key),
+            )
+            row = cur.fetchone()
+            if not row:
+                flash("Field not found or not permitted", "error")
+                conn.rollback()
+            else:
+                audit.log_secret(
+                    cur,
+                    project_id=project_id,
+                    secret_id=secret_id,
+                    secret_key=row["key"],
+                    action="updated",
+                )
+                conn.commit()
+                flash(f"Metadata “{meta_key}” removed", "ok")
+        return redirect(meta_url)
 
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/hide")
     @authz.login_required

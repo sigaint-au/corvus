@@ -283,6 +283,26 @@ Details: [deploy.md §9b](./deploy.md#9b-ldap).
 
 ---
 
+## 6b. Secret metadata
+
+Every secret has a **Metadata** tab (all kinds):
+
+| Field | Editable | Notes |
+|-------|----------|--------|
+| Created | no | `created_at` |
+| Updated | no | `updated_at` (value changes) |
+| Last accessed | no | Updated on successful reveal |
+| Last accessed by | no | User who last revealed |
+| Custom fields | yes (writers) | Key/value labels; **searchable** |
+
+Search in the project secrets list, team secrets list, global search, and CLI
+`get secrets -q …` matches custom metadata keys and values (not only key/note).
+
+CLI: `get secret NAME` returns `metadata`, `last_accessed_at`, and related fields
+in JSON.
+
+---
+
 ## 7. Secret ACL (UI)
 
 1. Open the secret **full view** (not only the inline reveal cell).
