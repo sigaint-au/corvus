@@ -8,6 +8,12 @@ tagged releases.
 
 ## [Unreleased]
 
+### Changed
+
+- Regenerated `docs/postgrest-openapi.json` from live PostgREST (authenticated
+  role): groups, secret ACL/meta/access requests, machine token scope,
+  project description / ACL / last_accessed columns, new `api.can_*` RPCs
+
 ### Added
 
 - Pytest suite under `tests/` (domain modules) run via `tox -e py`
