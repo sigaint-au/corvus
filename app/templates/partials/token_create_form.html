@@ -5,16 +5,12 @@
 {% set return_tab = return_tab|default(none) %}
 {% set compact = compact|default(false) %}
 <article class="card token-create-card" id="{{ form_id }}-card">
+  {% if compact %}
   <header>
-    <h3>{% if compact %}Machine account for ESO{% else %}New machine account{% endif %}</h3>
-    <p class="muted">
-      {% if compact %}
-      Create a <strong>read-only</strong> token for the cluster to pull secrets.
-      {% else %}
-      CI / ESO tokens for this project. Prefer <strong>read-only</strong> unless automation must write secrets.
-      {% endif %}
-    </p>
+    <h3>Machine account for ESO</h3>
+    <p class="muted">Create a <strong>read-only</strong> token for the cluster to pull secrets.</p>
   </header>
+  {% endif %}
   <form method="post"
         action="{{ url_for('create_token', project_id=project.id) }}"
         class="token-create-form"

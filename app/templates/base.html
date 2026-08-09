@@ -2075,9 +2075,14 @@
       .main { padding: 1rem 1rem 2.5rem; }
     }
     /* ── Machine account create + scope chips ── */
+    .machine-accounts .token-create-card,
+    .eso-token-create .token-create-card {
+      margin: 0 0 1.5rem;
+      max-width: none;
+      width: 100%;
+    }
     .token-create-card {
       margin: 0 0 1.5rem;
-      max-width: 44rem;
     }
     .token-create-card > header h3 {
       margin: 0 0 .25rem;
@@ -2087,8 +2092,11 @@
     .token-create-form { display: flex; flex-direction: column; gap: 1rem; }
     .token-create-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: .75rem 1rem;
+    }
+    @media (max-width: 720px) {
+      .token-create-grid { grid-template-columns: 1fr; }
     }
     .token-create-grid label { margin: 0; }
     .token-scope-panel {

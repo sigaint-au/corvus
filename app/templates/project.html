@@ -518,52 +518,63 @@
   {% endwith %}
   {% endif %}
 
-  <section class="token-list-section">
+  <section class="token-list-section list-panel">
     <h3 class="token-list-title">Active tokens</h3>
     {% if tokens %}
-    <div class="token-cards">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Prefix</th>
+          <th>Role</th>
+          <th>Key scope</th>
+          <th>Created</th>
+          <th>Expires</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
       {% for t in tokens %}
-      <article class="card token-card">
-        <header class="token-card-head">
-          <div>
-            <strong class="token-card-name">{{ t.name }}</strong>
-            <code class="k token-card-prefix">{{ t.token_prefix }}…</code>
-          </div>
-          <div class="token-card-badges">
-            <span class="badge" data-variant="secondary">{{ t.role or 'read-only' }}</span>
+        <tr>
+          <td>{{ t.name }}</td>
+          <td><code class="k">{{ t.token_prefix }}…</code></td>
+          <td><span class="badge" data-variant="secondary">{{ t.role or 'read-only' }}</span></td>
+          <td class="col-note">
+            {% if t.scopes %}
+            <div class="token-scope-badges">
+              {% for sc in t.scopes[:8] %}
+              <span class="badge outline{% if sc.key_pattern %} token-scope-glob{% endif %}"
+                    title="{% if sc.key_pattern %}Glob pattern{% else %}Exact key{% endif %}">
+                {% if sc.secret_key %}{{ sc.secret_key }}{% else %}{{ sc.key_pattern }}{% endif %}
+              </span>
+              {% endfor %}
+              {% if t.scopes|length > 8 %}
+              <span class="muted">+{{ t.scopes|length - 8 }}</span>
+              {% endif %}
+            </div>
+            {% else %}
+            <span class="badge" data-variant="secondary">all keys</span>
+            {% endif %}
+          </td>
+          <td class="muted">{{ t.created_at }}</td>
+          <td class="muted">
+            {{ t.expires_at or 'never' }}
             {% if t.due == 'overdue' %}<span class="badge" data-variant="danger">expired</span>
             {% elif t.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
-          </div>
-        </header>
-        <div class="token-card-scope">
-          <span class="muted token-card-scope-label">Key access</span>
-          {% if t.scopes %}
-          <div class="token-scope-badges">
-            {% for sc in t.scopes %}
-            <span class="badge outline{% if sc.key_pattern %} token-scope-glob{% endif %}"
-                  title="{% if sc.key_pattern %}Glob pattern{% else %}Exact key{% endif %}">
-              {% if sc.secret_key %}{{ sc.secret_key }}{% else %}{{ sc.key_pattern }}{% endif %}
-            </span>
-            {% endfor %}
-          </div>
-          {% else %}
-          <span class="badge" data-variant="secondary">All keys in project</span>
-          {% endif %}
-        </div>
-        <footer class="token-card-foot">
-          <span class="muted">Created {{ t.created_at }}</span>
-          <span class="muted">Expires {{ t.expires_at or 'never' }}</span>
-          {% if can_write %}
-          <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
-                onsubmit="return confirm('Revoke token “{{ t.name }}”?')">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" data-variant="danger" class="ghost small">Revoke</button>
-          </form>
-          {% endif %}
-        </footer>
-      </article>
+          </td>
+          <td class="acts">
+            {% if can_write %}
+            <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
+                  onsubmit="return confirm('Revoke token “{{ t.name }}”?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Revoke</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
       {% endfor %}
-    </div>
+      </tbody>
+    </table>
     {% else %}
     <p class="empty">No machine accounts yet.</p>
     {% endif %}
