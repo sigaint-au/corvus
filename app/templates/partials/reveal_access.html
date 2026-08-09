@@ -1,0 +1,35 @@
+{# Shown when reveal is blocked pending admin approval. #}
+<div class="reveal-access"
+     data-secret-id="{{ secret_id }}">
+  {% if state == 'pending' %}
+  <p class="reveal-access-msg">
+    <strong>Access requested</strong> — waiting for a project admin or team owner to approve
+    reveal of <code class="k">{{ secret_key }}</code>.
+  </p>
+  <p class="muted reveal-access-hint">
+    Track status on the
+    <a href="{{ url_for('project_detail', project_id=project_id, tab='access') }}">Access requests</a>
+    tab.
+  </p>
+  {% else %}
+  <p class="reveal-access-msg">
+    <strong>Approval required</strong> to reveal
+    <code class="k">{{ secret_key }}</code>.
+  </p>
+  <form method="post"
+        action="{{ url_for('request_secret_access', project_id=project_id, secret_id=secret_id) }}"
+        class="reveal-access-form"
+        hx-post="{{ url_for('request_secret_access', project_id=project_id, secret_id=secret_id) }}"
+        hx-target="closest .reveal-access"
+        hx-swap="outerHTML">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    {% if cell %}<input type="hidden" name="cell" value="{{ cell }}">{% endif %}
+    <label class="reveal-access-reason">
+      <span class="visually-hidden">Reason (optional)</span>
+      <input type="text" name="reason" maxlength="500"
+             placeholder="Reason (optional)" autocomplete="off">
+    </label>
+    <button type="submit" class="btn-toolbar">Request access</button>
+  </form>
+  {% endif %}
+</div>

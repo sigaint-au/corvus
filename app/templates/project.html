@@ -23,6 +23,10 @@
      class="tab {% if active_tab == 'secrets' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'secrets' else 'false' }}">Secrets</a>
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}"
+     class="tab {% if active_tab == 'access' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}">Access{% if access_pending_count %}<span class="tab-badge" title="{{ access_pending_count }} pending">{{ access_pending_count }}</span>{% endif %}</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
      class="tab {% if active_tab == 'audit' %}active{% endif %}"
      role="tab"
@@ -180,6 +184,13 @@
     <label>Expires
       <input type="date" name="expires_at" id="secret-expires">
     </label>
+    <label>Approval
+      <select name="requires_approval" title="Override project default for reveal approval">
+        <option value="inherit" selected>Default (project)</option>
+        <option value="require">Require approval</option>
+        <option value="exempt">No approval</option>
+      </select>
+    </label>
     <button type="submit">Save</button>
   </form>
   <script>
@@ -308,6 +319,97 @@
   </form>
   {% else %}
   <p class="muted">You need write access to import secrets.</p>
+  {% endif %}
+</section>
+{% elif active_tab == 'access' %}
+<section>
+  <div class="section-head">
+    <h2>Access</h2>
+  </div>
+  <p class="muted">Pending and recent reveal-approval requests for this project.</p>
+  {% if access_requests %}
+  <div class="access-requests-wrap">
+  <table class="access-requests-table">
+    <thead>
+      <tr>
+        <th>Secret</th>
+        <th>Requester</th>
+        <th>Status</th>
+        <th>Reason</th>
+        <th>Requested</th>
+        {% if can_admin %}<th>Actions</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in access_requests %}
+      <tr>
+        <td>
+          {% if r.secret_id and r.secret_key %}
+          <a href="{{ url_for('secret_view', project_id=project.id, secret_id=r.secret_id) }}">
+            <code class="k">{{ r.secret_key }}</code>
+          </a>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {{ r.name or r.email }}
+          {% if r.name %}<span class="muted">{{ r.email }}</span>{% endif %}
+        </td>
+        <td>
+          <span class="role-badge access-status-{{ r.status }}">{{ r.status }}</span>
+          {% if r.status == 'approved' and r.approved_until %}
+          <span class="muted" title="{{ r.approved_until|time_when }}">{{ r.approved_until|expires }}</span>
+          {% elif r.status == 'denied' and r.resolver_email %}
+          <span class="muted">by {{ r.resolver_email }}</span>
+          {% endif %}
+        </td>
+        <td class="muted col-note">{{ r.reason or '—' }}</td>
+        <td class="muted">{{ r.created_at }}</td>
+        {% if can_admin %}
+        <td class="acts access-acts">
+          {% if r.status == 'pending' %}
+          <div class="access-acts-stack">
+            <form method="post"
+                  id="approve-{{ r.id }}"
+                  action="{{ url_for('approve_secret_access', project_id=project.id, req_id=r.id) }}"
+                  class="access-approve-form">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <label class="visually-hidden" for="grant-minutes-{{ r.id }}">Grant duration</label>
+              <select name="minutes" id="grant-minutes-{{ r.id }}" class="bulk-action" aria-label="Grant duration">
+                {% for m in grant_choices %}
+                <option value="{{ m }}" {% if m == grant_minutes %}selected{% endif %}>
+                  {% if m < 60 %}{{ m }} min{% elif m == 60 %}1 hour{% elif m == 1440 %}1 day{% else %}{{ m // 60 }} hours{% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </form>
+            <div class="access-acts-btns">
+              <button type="submit" form="approve-{{ r.id }}" class="link">Approve</button>
+              <form method="post"
+                    action="{{ url_for('deny_secret_access', project_id=project.id, req_id=r.id) }}"
+                    class="inline">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button type="submit" class="link danger">Deny</button>
+              </form>
+            </div>
+          </div>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    {% if can_admin %}
+    No access requests yet. Users with read access will appear here when they request to reveal a secret.
+    {% else %}
+    You have no access requests. Click Reveal on a secret to request approval.
+    {% endif %}
+  </p>
   {% endif %}
 </section>
 {% elif active_tab == 'audit' %}
@@ -636,6 +738,22 @@
 </script>
 {% elif active_tab == 'settings' and can_settings %}
 {% if can_admin %}
+<section>
+  <h2>Reveal approval</h2>
+  <p class="muted">
+    Project default for whether revealing secrets requires admin approval.
+    Individual secrets can override this (require or exempt).
+  </p>
+  <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="checkbox-label">
+      <input type="checkbox" name="require_reveal_approval" value="1"
+             {% if require_reveal_approval %}checked{% endif %}>
+      Require approval to reveal secrets (default for this project)
+    </label>
+    <button type="submit">Save</button>
+  </form>
+</section>
 <section>
   <h2>Members</h2>
   <p class="muted">

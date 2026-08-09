@@ -14,6 +14,9 @@ ACTIONS = (
     "purged",
     "machine_upsert",
     "exported",
+    "access_requested",
+    "access_approved",
+    "access_denied",
 )
 
 # Common org_audit.action values (free text; these are conventions)
@@ -44,6 +47,9 @@ _ACTION_VERB = {
     "purged": "permanently deleted",
     "machine_upsert": "upserted via machine token",
     "exported": "exported secrets",
+    "access_requested": "requested access to",
+    "access_approved": "approved access to",
+    "access_denied": "denied access to",
 }
 
 
@@ -852,8 +858,11 @@ def format_expires(dt, *, prefix: bool = True) -> str:
     abs_when = d.strftime("%d %b %Y")
     if sec < 0:
         past = -sec
-        if past < 3600:
-            rel = "under an hour ago"
+        if past < 60:
+            rel = "just now"
+        elif past < 3600:
+            n = max(1, past // 60)
+            rel = f"{n} minute{'s' if n != 1 else ''} ago"
         elif past < 86400:
             n = max(1, past // 3600)
             rel = f"{n} hour{'s' if n != 1 else ''} ago"
@@ -864,8 +873,11 @@ def format_expires(dt, *, prefix: bool = True) -> str:
             return f"expired {abs_when}" if prefix else abs_when
         body = f"{rel} ({abs_when})"
         return f"expired {body}" if prefix else f"expired {body}"
-    if sec < 3600:
-        rel = "in under an hour"
+    if sec < 60:
+        rel = "in under a minute"
+    elif sec < 3600:
+        n = max(1, sec // 60)
+        rel = f"in {n} minute{'s' if n != 1 else ''}"
     elif sec < 86400:
         n = max(1, sec // 3600)
         rel = f"in {n} hour{'s' if n != 1 else ''}"

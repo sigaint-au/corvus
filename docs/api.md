@@ -502,7 +502,59 @@ curl -s -X DELETE "${AUTH[@]}" \
 | **401** | `{"error":"unauthorized"}` | Missing/invalid/wrong-project/expired token |
 | **403** | `{"error":"token is read-only"}` | Mutate with a read-only machine token |
 | **403** | `{"error":"forbidden"}` | Write path denied by DB helper |
+| **403** | `{"error":"approval_required",…}` | PAT reveal blocked until access is approved (see below) |
 | **404** | `{"error":"not found"}` | Get/PATCH/DELETE on missing key |
+
+### Reveal access approval (PAT)
+
+Projects can require admin approval before a **user** (PAT / browser) may
+reveal a secret. Machine tokens (`ss_…`) and ESO pulls are **exempt**.
+
+| Level | Field | Meaning |
+|-------|--------|---------|
+| Project default | `projects.require_reveal_approval` (default `false`) | Inherit when secret has no override |
+| Per-secret | `secrets.requires_approval` (`NULL` / `true` / `false`) | `NULL` = inherit; force require or exempt |
+
+**Who can reveal without a grant:** global admin, team owner/admin, project
+admin (`api.can_admin_project`). Everyone else needs an **approved** request
+with `approved_until > now()`.
+
+**PAT endpoints** (same project path prefix as secrets):
+
+| Method | Path | Who | Purpose |
+|--------|------|-----|---------|
+| `POST` | `…/secrets/{key}/access-request` | any reader | Request access; body optional `{"reason":"…"}` |
+| `GET` | `…/access-requests` | admin: all; others: own | List requests (`?status=pending`) |
+| `POST` | `…/access-requests/{id}/approve` | project admin / team owner | Approve; body optional `{"minutes":15}` |
+| `POST` | `…/access-requests/{id}/deny` | project admin / team owner | Deny |
+
+```bash
+# Request access (PAT)
+curl -s -X POST "${AUTH[@]}" -H "Content-Type: application/json" \
+  -d '{"reason":"debugging prod auth #1234"}' \
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY/access-request" | jq .
+
+# List pending (admin)
+curl -s "${AUTH[@]}" \
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/access-requests?status=pending" | jq .
+
+# Approve for 15 minutes
+curl -s -X POST "${AUTH[@]}" -H "Content-Type: application/json" \
+  -d '{"minutes":15}' \
+  "$SS_URL/eso/v1/projects/$SS_PROJECT/access-requests/<id>/approve" | jq .
+```
+
+Default grant duration is **15 minutes** (`REVEAL_ACCESS_GRANT_MINUTES`).
+Allowed choices: 15, 60, 240, 1440 minutes.
+
+**CLI (sibling `secretserver-cli`):**
+
+```bash
+secretserver reveal secret API_KEY --reason "debugging #1234"
+secretserver get requests
+secretserver approve <request-id> --minutes 15
+secretserver get secret API_KEY -o value
+```
 
 ### Audit actions written by the machine API
 
@@ -516,6 +568,7 @@ Every successful secret-touching machine/CLI call writes a row to
 | `GET …/secrets?meta=1` | `exported` | `secret_key` = `machine/meta n=N` (+ optional `q=…`) |
 | `POST` / `PUT` / `PATCH` | `machine_upsert` | Create or update |
 | `DELETE …/secrets/{key}` | `deleted` | Soft-delete (trash) |
+| Access request / approve / deny (UI or PAT) | `access_requested`, `access_approved`, `access_denied` | Human reveal-approval workflow |
 
 **Actor:** `user_id` is null (no JWT on machine connections). `actor_email` is
 `machine:<token-name>:<token_prefix>` when the token can be resolved (e.g.
@@ -584,7 +637,8 @@ Default compose port: **3000**. Prefer the `postgrest` URL returned by
 | `/project_members` | Project-scoped roles | `role`: admin, write, read |
 | `/secrets` | Metadata + `value_enc` | Soft-delete via `deleted_at`; unique live `(project_id, key)` |
 | `/secret_versions` | Prior ciphertexts | Filled on value change |
-| `/secret_audit` | Secret actions | created, updated, revealed, deleted, restored, purged, machine_upsert, exported |
+| `/secret_audit` | Secret actions | created, updated, revealed, deleted, restored, purged, machine_upsert, exported, access_requested, access_approved, access_denied |
+| `/secret_access_requests` | Reveal approval workflow | pending / approved / denied grants |
 | `/org_audit` | Org / membership actions | |
 | `/secret_pins` | Per-user pins | |
 | `/secret_recent` | Per-user recent access | |

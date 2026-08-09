@@ -141,6 +141,13 @@ CLIPBOARD_CLEAR_SECONDS = max(
 REVEAL_AUTO_HIDE_SECONDS = max(
     0, int(os.environ.get("REVEAL_AUTO_HIDE_SECONDS", "30") or "30")
 )
+# How long an approved reveal grant lasts (minutes). Used when a secret
+# effectively requires approval (project default and/or per-secret override).
+REVEAL_ACCESS_GRANT_MINUTES = max(
+    1, int(os.environ.get("REVEAL_ACCESS_GRANT_MINUTES", "15") or "15")
+)
+# Allowed grant durations when approving a reveal access request (minutes)
+REVEAL_ACCESS_GRANT_CHOICES = (15, 60, 240, 1440)  # 15m, 1h, 4h, 1d
 # Structured secret kinds for advanced create form
 SECRET_KINDS = ("plain", "database", "certificate", "ssh", "kv")
 # Upper bounds for optional expiry (secrets, machine tokens, team defaults)

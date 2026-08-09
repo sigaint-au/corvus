@@ -1044,6 +1044,112 @@
       text-decoration: none;
       background: transparent;
     }
+    .tabs .tab .tab-badge {
+      display: inline-block;
+      margin-left: 0.35em;
+      min-width: 1.1em;
+      padding: 0.05em 0.4em;
+      border-radius: 999px;
+      font-size: 0.75em;
+      font-weight: 600;
+      line-height: 1.3;
+      vertical-align: middle;
+      background: var(--accent, #3b82f6);
+      color: #fff;
+    }
+    .reveal-access {
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--border, #333);
+      border-radius: 6px;
+      background: var(--surface-2, transparent);
+      max-width: 36rem;
+    }
+    .reveal-access-msg { margin: 0 0 0.5rem; }
+    .reveal-access-hint { margin: 0; font-size: 0.9em; }
+    .reveal-access-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0;
+    }
+    .reveal-access-reason { flex: 1; min-width: 10rem; margin: 0; }
+    .reveal-access-reason input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .access-requests-wrap {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .access-requests-table {
+      width: 100%;
+      min-width: 0;
+    }
+    .access-requests-table th,
+    .access-requests-table td {
+      vertical-align: top;
+    }
+    .access-requests-table td.acts.access-acts {
+      white-space: normal;
+      min-width: 9.5rem;
+      max-width: 12rem;
+      width: 1%;
+    }
+    .access-acts-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.4rem;
+      min-width: 8.5rem;
+    }
+    .access-approve-form {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.35rem;
+      margin: 0;
+    }
+    .access-approve-form select {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    .access-acts-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 0.75rem;
+      align-items: center;
+    }
+    .access-status-pending { color: var(--warning, #ca8a04); }
+    .access-status-approved { color: var(--ok, #16a34a); }
+    .access-status-denied { color: var(--danger, #dc2626); }
+    .lock-badge { margin-left: 0.25em; font-size: 0.9em; opacity: 0.9; }
+    .lock-badge.lock-granted { opacity: 0.75; }
+    .reveal-toggle.reveal-locked { color: var(--warning, #ca8a04); }
+    .reveal-toggle.reveal-granted .grant-countdown {
+      font-size: 0.85em;
+      opacity: 0.8;
+      font-variant-numeric: tabular-nums;
+    }
+    .side-nav-link .tab-badge {
+      margin-left: 0.35em;
+      min-width: 1.1em;
+      padding: 0.05em 0.4em;
+      border-radius: 999px;
+      font-size: 0.75em;
+      font-weight: 600;
+      background: var(--accent, #3b82f6);
+      color: #fff;
+    }
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0;
+    }
     .tabs .tab.active {
       color: var(--foreground);
       background: transparent;
@@ -1622,112 +1728,62 @@
       opacity: .45;
       cursor: not-allowed;
     }
-    .menu {
-      position: relative;
-      display: inline-flex;
-      vertical-align: middle;
-    }
-    .menu-toggle {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      user-select: none;
-      font: inherit;
-      padding: .4rem .7rem;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--background);
-      color: var(--foreground);
-    }
-    .menu-kebab .menu-toggle {
-      width: 2rem;
-      height: 2rem;
-      padding: 0;
-      border: none;
-      background: transparent;
+    /* Secret list: locked mask button (opens oat dialog) */
+    button.secret-masked {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .9em;
+      letter-spacing: .08em;
       color: var(--muted-foreground);
-      border-radius: 6px;
-      transition: background .12s ease, color .12s ease;
+      padding: .3rem .45rem;
     }
-    .menu-toggle-icon {
-      display: block;
-      opacity: .85;
-    }
-    .menu-kebab .menu-toggle:hover,
-    .menu-kebab .menu-toggle:focus-visible {
-      background: var(--muted);
-      color: var(--foreground);
-      outline: none;
-    }
-    .menu-kebab.is-open .menu-toggle {
-      background: var(--muted);
-      color: var(--foreground);
-    }
-    .menu-panel {
-      display: none;
-      position: absolute;
-      right: 0;
-      top: calc(100% + .3rem);
-      z-index: 50;
-      min-width: 11.5rem;
-      padding: .55rem;
-      background: var(--card);
-      color: var(--card-foreground);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      box-shadow:
-        0 1px 2px color-mix(in srgb, #000 6%, transparent),
-        0 8px 24px color-mix(in srgb, #000 12%, transparent);
-      flex-direction: column;
-      gap: .2rem;
-    }
-    .menu.is-open > .menu-panel {
-      display: flex;
-    }
-    .menu-panel a,
-    .menu-panel button.link {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      padding: .7rem .9rem;
-      border-radius: 6px;
-      color: var(--foreground);
-      text-decoration: none;
-      font-size: .875rem;
-      font-weight: 500;
-      line-height: 1.35;
-      white-space: nowrap;
-      background: transparent;
-      border: none;
-      text-align: left;
+    /* Compact access-request dialog — fit without internal scroll */
+    dialog.access-dlg {
+      max-width: min(24rem, calc(100vw - 2rem));
       width: 100%;
-      box-sizing: border-box;
-      font-family: inherit;
-      cursor: pointer;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-large, 0.75rem);
+      background: var(--card, var(--background));
+      color: var(--card-foreground, var(--foreground));
+      box-shadow: var(--shadow-large, 0 8px 24px rgb(0 0 0 / .15));
+    }
+    dialog.access-dlg > form {
+      display: flex;
+      flex-direction: column;
       margin: 0;
     }
-    .menu-panel a:hover,
-    .menu-panel a:focus-visible,
-    .menu-panel button.link:hover,
-    .menu-panel button.link:focus-visible {
-      background: var(--muted);
-      text-decoration: none;
-      outline: none;
+    dialog.access-dlg > form > header {
+      padding: 1rem 1.15rem 0.5rem;
     }
-    .menu-panel a.danger {
-      color: var(--danger);
+    dialog.access-dlg > form > header h3 {
+      margin: 0 0 0.25rem;
+      font-size: 1.05rem;
     }
-    .menu-panel a.danger:hover,
-    .menu-panel a.danger:focus-visible {
-      background: color-mix(in srgb, var(--danger) 10%, var(--background));
+    dialog.access-dlg > form > header p {
+      margin: 0;
+      font-size: 0.875rem;
+      color: var(--muted-foreground);
     }
-    .menu-sep {
-      height: 1px;
-      margin: .4rem .55rem;
-      background: var(--border);
-      border: none;
-      flex: 0 0 auto;
+    dialog.access-dlg > form > div {
+      padding: 0.5rem 1.15rem 0.25rem;
+      overflow: visible;
+      max-height: none;
+    }
+    dialog.access-dlg > form > footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      padding: 0.75rem 1.15rem 1rem;
+      margin: 0;
+    }
+    dialog.access-dlg label {
+      display: block;
+      margin: 0;
+    }
+    /* Acts column: oat dropdown kebab */
+    td.acts-menu ot-dropdown {
+      display: inline-flex;
+      vertical-align: middle;
     }
     td.acts-menu {
       width: 2.75rem;
@@ -2152,6 +2208,7 @@
       'delete_project_from_team', 'profile'
     ) %}
     {% set admin_eps = (
+      'access_requests_inbox',
       'admin_audit', 'admin_audit_access_export', 'admin_audit_export',
       'server_settings'
     ) %}
@@ -2182,17 +2239,19 @@
              href="{{ url_for('profile') }}">My profile</a>
         </div>
       </details>
-      {% if is_global_admin %}
       <details class="side-group" data-side-group="administration"{% if admin_open %} open{% endif %}>
         <summary>Administration</summary>
         <div class="side-group-body">
+          <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}"
+             href="{{ url_for('access_requests_inbox') }}">Access requests{% if nav_access_pending %}<span class="tab-badge" title="{{ nav_access_pending }} pending">{{ nav_access_pending }}</span>{% endif %}</a>
+          {% if is_global_admin %}
           <a class="side-nav-link {% if ep in ('admin_audit', 'admin_audit_access_export', 'admin_audit_export') %}active{% endif %}"
              href="{{ url_for('admin_audit') }}">Auditing</a>
           <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}"
              href="{{ url_for('server_settings') }}">Server settings</a>
+          {% endif %}
         </div>
       </details>
-      {% endif %}
     </nav>
     {% include "partials/side_pins.html" %}
     {% if nav_recent %}
@@ -2412,6 +2471,46 @@
         done();
       }
     });
+    /* Grant window countdown on Reveal controls */
+    function formatGrantRemain(ms) {
+      if (ms <= 0) return 'expired';
+      var s = Math.floor(ms / 1000);
+      var m = Math.floor(s / 60);
+      s = s % 60;
+      if (m >= 60) {
+        var h = Math.floor(m / 60);
+        m = m % 60;
+        return h + 'h ' + m + 'm';
+      }
+      return m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+    }
+    function tickGrantCountdowns(root) {
+      root = root || document;
+      var nodes = root.querySelectorAll
+        ? root.querySelectorAll('[data-grant-until]')
+        : [];
+      nodes.forEach(function (el) {
+        var until = el.getAttribute('data-grant-until');
+        if (!until) return;
+        var t = Date.parse(until);
+        if (isNaN(t)) return;
+        var label = formatGrantRemain(t - Date.now());
+        if (el.classList && el.classList.contains('grant-countdown')) {
+          el.textContent = '(' + label + ')';
+        } else {
+          var span = el.querySelector('.grant-countdown');
+          if (span) span.textContent = '(' + label + ')';
+        }
+      });
+    }
+    setInterval(function () { tickGrantCountdowns(document); }, 1000);
+    document.addEventListener('DOMContentLoaded', function () {
+      tickGrantCountdowns(document);
+    });
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      tickGrantCountdowns(e.target || document);
+    });
+
     /* Auto-hide revealed secrets after N seconds */
     var hideTimers = {};
     function scheduleAutoHide(wrap) {
@@ -2459,43 +2558,74 @@
         if (w) scheduleAutoHide(w);
       }
     });
-    /* Kebab / dropdown menus (button + panel; reliable inside tables/forms) */
-    function closeAllMenus(except) {
-      document.querySelectorAll('[data-menu].is-open').forEach(function (m) {
-        if (except && m === except) return;
-        m.classList.remove('is-open');
-        var t = m.querySelector('.menu-toggle');
-        if (t) t.setAttribute('aria-expanded', 'false');
-      });
+    /* Dialog open/close + menu navigation (commandfor is not widely available) */
+    function oatOpenDialog(dlg) {
+      if (!dlg) return;
+      if (typeof dlg.showModal === 'function') {
+        if (!dlg.open) dlg.showModal();
+      } else {
+        dlg.setAttribute('open', '');
+      }
+      var focusEl = dlg.querySelector('input:not([type=hidden]), button:not([data-close-dialog])');
+      if (focusEl && focusEl.focus) setTimeout(function () { focusEl.focus(); }, 20);
     }
+    function oatCloseDialog(dlg) {
+      if (!dlg) return;
+      if (typeof dlg.close === 'function') dlg.close();
+      else dlg.removeAttribute('open');
+    }
+    window.oatOpenDialog = oatOpenDialog;
+    window.oatCloseDialog = oatCloseDialog;
     document.addEventListener('click', function (e) {
-      var toggle = e.target.closest && e.target.closest('.menu-toggle');
-      if (toggle) {
+      var openBtn = e.target.closest && e.target.closest('[data-open-dialog]');
+      if (openBtn) {
         e.preventDefault();
-        e.stopPropagation();
-        var menu = toggle.closest('[data-menu]');
-        if (!menu) return;
-        var willOpen = !menu.classList.contains('is-open');
-        closeAllMenus(willOpen ? menu : null);
-        menu.classList.toggle('is-open', willOpen);
-        toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        var id = openBtn.getAttribute('data-open-dialog');
+        var dlg = id ? document.getElementById(id) : null;
+        if (dlg) oatOpenDialog(dlg);
         return;
       }
-      /* Choosing an item closes the menu (Reveal/Hide/History/Delete) */
-      var item = e.target.closest && e.target.closest('[data-menu] .menu-panel a, [data-menu] .menu-panel button');
-      if (item) {
-        var parent = item.closest('[data-menu]');
-        if (parent) {
-          /* allow htmx to run; close after click */
-          setTimeout(function () { closeAllMenus(); }, 0);
+      var closeBtn = e.target.closest && e.target.closest('[data-close-dialog]');
+      if (closeBtn) {
+        e.preventDefault();
+        var cid = closeBtn.getAttribute('data-close-dialog');
+        var cdlg = cid ? document.getElementById(cid) : closeBtn.closest('dialog');
+        if (cdlg) oatCloseDialog(cdlg);
+        return;
+      }
+      /* commandfor polyfill (oat docs) for browsers without Invoker Commands */
+      var cmdBtn = e.target.closest && e.target.closest('[commandfor][command]');
+      if (cmdBtn) {
+        var tid = cmdBtn.getAttribute('commandfor');
+        var cmd = cmdBtn.getAttribute('command');
+        var tel = tid ? document.getElementById(tid) : null;
+        if (!tel) return;
+        if (cmd === 'show-modal') {
+          e.preventDefault();
+          oatOpenDialog(tel);
+        } else if (cmd === 'close') {
+          e.preventDefault();
+          oatCloseDialog(tel);
         }
         return;
       }
-      if (e.target.closest && e.target.closest('[data-menu]')) return;
-      closeAllMenus();
+      /* History (and other data-nav) from ot-dropdown menus */
+      var navBtn = e.target.closest && e.target.closest('[data-nav]');
+      if (navBtn) {
+        e.preventDefault();
+        var href = navBtn.getAttribute('data-nav');
+        if (href) window.location.href = href;
+        return;
+      }
     });
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeAllMenus();
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      var t = e.target;
+      if (!t) return;
+      /* After access-request POST into a dialog, keep it open */
+      if (t.matches && t.matches('dialog') && t.open === false) oatOpenDialog(t);
+      if (t.id && String(t.id).indexOf('access-dlg-') === 0) {
+        if (!t.open) oatOpenDialog(t);
+      }
     });
     /* Bulk multi-select toolbar (secrets list) */
     (function () {

@@ -91,6 +91,28 @@ def register(app):
         )
 
 
+    @app.get("/access-requests")
+    @authz.login_required
+    def access_requests_inbox():
+        """List pending secret reveal requests the current user can approve.
+
+        Returns:
+            Rendered inbox of pending access requests across projects.
+
+        Example:
+            GET /access-requests
+        """
+        rows = []
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM private.pending_access_requests_for_admin()")
+            rows = cur.fetchall() or []
+        return render_template(
+            "access_requests.html",
+            requests=rows,
+            grant_minutes=config.REVEAL_ACCESS_GRANT_MINUTES,
+            grant_choices=config.REVEAL_ACCESS_GRANT_CHOICES,
+        )
+
     @app.get("/projects")
     @authz.login_required
     def projects_list():
@@ -120,7 +142,7 @@ def register(app):
     @app.get("/projects/<uuid:project_id>")
     @authz.login_required
     def project_detail(project_id):
-        """Show project detail for secrets, audit, tokens, import, integrations, or settings.
+        """Show project detail for secrets, audit, access, tokens, import, integrations, or settings.
 
         Args:
             project_id: UUID of the project to display.
@@ -135,6 +157,7 @@ def register(app):
         if tab not in (
             "secrets",
             "audit",
+            "access",
             "tokens",
             "import",
             "integrations",
@@ -153,6 +176,8 @@ def register(app):
         audit_rows = []
         tokens = []
         project_members = []
+        access_requests = []
+        access_pending_count = 0
         default_token_days = None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
@@ -249,6 +274,34 @@ def register(app):
                     (str(project_id),),
                 )
                 project_members = cur.fetchall()
+            elif tab == "access":
+                cur.execute(
+                    "SELECT * FROM private.secret_access_request_rows(%s::uuid)",
+                    (str(project_id),),
+                )
+                access_requests = cur.fetchall() or []
+            # Pending count for tab badge (admins see all; others their own)
+            try:
+                if can_admin:
+                    cur.execute(
+                        """
+                        SELECT count(*) AS n FROM api.secret_access_requests
+                        WHERE project_id = %s AND status = 'pending'
+                        """,
+                        (str(project_id),),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT count(*) AS n FROM api.secret_access_requests
+                        WHERE project_id = %s AND status = 'pending'
+                          AND user_id = %s
+                        """,
+                        (str(project_id), session["user_id"]),
+                    )
+                access_pending_count = int((cur.fetchone() or {}).get("n") or 0)
+            except Exception:
+                access_pending_count = 0
             # import: no extra queries
         import settings_svc
 
@@ -260,6 +313,8 @@ def register(app):
             secrets=secret_rows,
             tokens=tokens,
             audit_log=audit_rows,
+            access_requests=access_requests,
+            access_pending_count=access_pending_count,
             secrets_pager=secrets_pager,
             audit_pager=audit_pager,
             project_members=project_members,
@@ -282,6 +337,13 @@ def register(app):
             soon_days=14,
             public_base_url=public_base,
             max_expiry_days=config.MAX_EXPIRY_DAYS,
+            grant_minutes=config.REVEAL_ACCESS_GRANT_MINUTES,
+            grant_choices=config.REVEAL_ACCESS_GRANT_CHOICES,
+            require_reveal_approval=bool(
+                project.get("require_reveal_approval")
+            )
+            if project
+            else False,
         )
 
 
@@ -443,4 +505,55 @@ def register(app):
                 )
                 conn.commit()
                 flash("Project member removed", "ok")
+        return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
+
+    @app.post("/projects/<uuid:project_id>/settings")
+    @authz.login_required
+    def update_project_settings(project_id):
+        """Update project reveal-approval default and related settings.
+
+        Args:
+            project_id: UUID of the project.
+
+        Returns:
+            Redirect to the project settings tab.
+
+        Example:
+            POST /projects/<project_id>/settings with require_reveal_approval
+        """
+        require = (request.form.get("require_reveal_approval") or "").strip().lower()
+        require_on = require in ("1", "true", "yes", "on")
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not (cur.fetchone() or {}).get("a"):
+                flash("You don't have permission to do that", "error")
+                return redirect(
+                    url_for("project_detail", project_id=project_id, tab="settings")
+                )
+            cur.execute(
+                """
+                UPDATE api.projects
+                SET require_reveal_approval = %s
+                WHERE id = %s
+                """,
+                (require_on, str(project_id)),
+            )
+            if cur.rowcount == 0:
+                flash("Project not found or not permitted", "error")
+                conn.rollback()
+            else:
+                cur.execute(
+                    "SELECT team_id FROM api.projects WHERE id = %s",
+                    (str(project_id),),
+                )
+                proj = cur.fetchone()
+                audit.log_org(
+                    cur,
+                    team_id=proj["team_id"] if proj else None,
+                    project_id=project_id,
+                    action="project_settings",
+                    detail=f"require_reveal_approval={require_on}",
+                )
+                conn.commit()
+                flash("Project settings saved", "ok")
         return redirect(url_for("project_detail", project_id=project_id, tab="settings"))

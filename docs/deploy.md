@@ -122,6 +122,7 @@ Then, in order:
 | `COOKIE_SECURE` | `0` | `1` = Secure session cookie + HSTS |
 | `CLIPBOARD_CLEAR_SECONDS` | `30` | UI clipboard auto-clear; `0` disables |
 | `REVEAL_AUTO_HIDE_SECONDS` | `30` | Auto-hide revealed values; `0` disables |
+| `REVEAL_ACCESS_GRANT_MINUTES` | `15` | Default duration of an approved reveal grant (minutes) |
 | `MAX_CONTENT_LENGTH` | `1 MiB` | Request/import size cap (memory DoS guard) |
 
 > `DATABASE_ADMIN_URL` is **required** — the app uses it for idempotent schema

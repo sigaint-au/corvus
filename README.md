@@ -64,6 +64,7 @@ curl -s "${AUTH[@]}" "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY"
 | LDAP & OIDC / SSO | Group to team role / global-admin maps |
 | SMTP | Password-reset emails and login alerts |
 | Auditing | Secret & org audit logs, access review, export, retention purge |
+| Reveal access approval | Optional project default + per-secret override; admin approve/deny with time-limited grants (machine/ESO exempt) |
 | Secret expiry | Optional per-secret expiry with overdue/soon dashboard |
 | Import / export | `.env`, JSON, CSV bulk import and export with audit trail |
 | Classification banner | Optional per-server / per-team banner (e.g. OFFICIAL) |

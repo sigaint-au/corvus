@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Access requests — {{ app_name }}{% endblock %}
+{% block body %}
+<h1>Access requests</h1>
+<p class="page-desc muted">Pending reveal approvals for projects you administer.</p>
+
+{% if requests %}
+<div class="access-requests-wrap">
+<table class="access-requests-table">
+  <thead>
+    <tr>
+      <th>Project</th>
+      <th>Secret</th>
+      <th>Requester</th>
+      <th>Reason</th>
+      <th>Requested</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in requests %}
+    <tr>
+      <td>
+        <a href="{{ url_for('project_detail', project_id=r.project_id, tab='access') }}">
+          {{ r.project_name }}
+        </a>
+      </td>
+      <td>
+        {% if r.secret_key %}
+        <code class="k">{{ r.secret_key }}</code>
+        {% else %}
+        <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td>
+        {{ r.name or r.email }}
+        {% if r.name %}<span class="muted">{{ r.email }}</span>{% endif %}
+      </td>
+      <td class="muted col-note">{{ r.reason or '—' }}</td>
+      <td class="muted">{{ r.created_at }}</td>
+      <td class="acts access-acts">
+        <div class="access-acts-stack">
+          <form method="post"
+                id="approve-{{ r.id }}"
+                action="{{ url_for('approve_secret_access', project_id=r.project_id, req_id=r.id) }}"
+                class="access-approve-form">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <label class="visually-hidden" for="grant-minutes-{{ r.id }}">Grant duration</label>
+            <select name="minutes" id="grant-minutes-{{ r.id }}" class="bulk-action" aria-label="Grant duration">
+              {% for m in grant_choices %}
+              <option value="{{ m }}" {% if m == grant_minutes %}selected{% endif %}>
+                {% if m < 60 %}{{ m }} min{% elif m == 60 %}1 hour{% elif m == 1440 %}1 day{% else %}{{ m // 60 }} hours{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </form>
+          <div class="access-acts-btns">
+            <button type="submit" form="approve-{{ r.id }}" class="link">Approve</button>
+            <form method="post"
+                  action="{{ url_for('deny_secret_access', project_id=r.project_id, req_id=r.id) }}"
+                  class="inline">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Deny</button>
+            </form>
+          </div>
+        </div>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty">No pending access requests.</p>
+{% endif %}
+{% endblock %}

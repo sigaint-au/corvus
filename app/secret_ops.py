@@ -42,12 +42,26 @@ def _load_secrets_page(cur, project_id, page, q):
         tab="secrets",
         q=q,
     )
+    # Qualify column names for the joined SELECT
+    where_s = (
+        where.replace("project_id", "s.project_id")
+        .replace("deleted_at", "s.deleted_at")
+        .replace("key ILIKE", "s.key ILIKE")
+        .replace("note ILIKE", "s.note ILIKE")
+    )
     cur.execute(
         f"""
-        SELECT id, key, note, kind, created_at, updated_at, expires_at
-        FROM api.secrets
-        WHERE {where}
-        ORDER BY key
+        SELECT s.id, s.key, s.note, s.kind, s.created_at, s.updated_at, s.expires_at,
+               s.requires_approval,
+               CASE
+                 WHEN s.requires_approval IS TRUE THEN true
+                 WHEN s.requires_approval IS FALSE THEN false
+                 ELSE COALESCE(p.require_reveal_approval, false)
+               END AS needs_approval
+        FROM api.secrets s
+        JOIN api.projects p ON p.id = s.project_id
+        WHERE {where_s}
+        ORDER BY s.key
         LIMIT %s OFFSET %s
         """,
         (*params, pager["limit"], pager["offset"]),
@@ -56,6 +70,7 @@ def _load_secrets_page(cur, project_id, page, q):
     # Mark favorites for this page (single query)
     ids = [str(r["id"]) for r in rows]
     pinned = set()
+    grants = {}  # secret_id -> {status, approved_until}
     if ids:
         cur.execute(
             """
@@ -66,9 +81,46 @@ def _load_secrets_page(cur, project_id, page, q):
             (ids,),
         )
         pinned = {str(x["secret_id"]) for x in (cur.fetchall() or [])}
+        cur.execute(
+            """
+            SELECT DISTINCT ON (secret_id)
+                   secret_id, status, approved_until
+            FROM api.secret_access_requests
+            WHERE user_id = api.current_user_id()
+              AND secret_id = ANY(%s::uuid[])
+              AND (
+                status = 'pending'
+                OR (status = 'approved' AND approved_until IS NOT NULL
+                    AND approved_until > now())
+              )
+            ORDER BY secret_id,
+              CASE status WHEN 'approved' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+              created_at DESC
+            """,
+            (ids,),
+        )
+        for g in cur.fetchall() or []:
+            grants[str(g["secret_id"])] = g
+    cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+    is_admin = bool((cur.fetchone() or {}).get("a"))
     for r in rows:
         r["due"] = secret_due_status(r)
         r["is_pinned"] = str(r["id"]) in pinned
+        needs = bool(r.get("needs_approval"))
+        r["needs_approval"] = needs
+        grant = grants.get(str(r["id"]))
+        if is_admin or not needs:
+            r["reveal_access"] = "allowed"
+            r["approved_until"] = None
+        elif grant and grant["status"] == "approved":
+            r["reveal_access"] = "granted"
+            r["approved_until"] = grant.get("approved_until")
+        elif grant and grant["status"] == "pending":
+            r["reveal_access"] = "pending"
+            r["approved_until"] = None
+        else:
+            r["reveal_access"] = "locked"
+            r["approved_until"] = None
     return rows, pager
 
 
@@ -110,6 +162,31 @@ def _parse_expires_at(form, *, allow_clear: bool = True):
     return expires_at
 
 
+def _parse_requires_approval(form_or_value) -> bool | None:
+    """Parse tri-state requires_approval: None=inherit, True, False.
+
+    Accepts a form mapping (``requires_approval`` field) or a raw string/bool.
+    """
+    if isinstance(form_or_value, dict) or (
+        hasattr(form_or_value, "get") and not isinstance(form_or_value, (str, bytes))
+    ):
+        raw = form_or_value.get("requires_approval")
+    else:
+        raw = form_or_value
+    if raw is True or raw is False:
+        return raw
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if s in ("", "inherit", "default", "null"):
+        return None
+    if s in ("1", "true", "yes", "on", "require", "required"):
+        return True
+    if s in ("0", "false", "no", "off", "exempt"):
+        return False
+    return None
+
+
 def _upsert_secret(
     cur,
     project_id,
@@ -121,6 +198,8 @@ def _upsert_secret(
     *,
     already_enc=False,
     touch_meta=True,
+    requires_approval=None,
+    set_requires_approval=False,
 ):
     """Insert/update one secret; returns (id, was_new).
 
@@ -136,6 +215,8 @@ def _upsert_secret(
         touch_meta: If True, also update note and expires_at on conflict;
             if False, preserve existing note when the new note is empty and
             do not set expires_at.
+        requires_approval: Per-secret override (None = inherit project default).
+        set_requires_approval: When True, write requires_approval column.
 
     Returns:
         Tuple (secret_id, was_new) where was_new is True when no live row
@@ -158,20 +239,45 @@ def _upsert_secret(
     )
     existing = cur.fetchone()
     if touch_meta:
-        cur.execute(
-            """
-            INSERT INTO api.secrets
-              (project_id, key, value_enc, note, expires_at, kind)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
-              SET value_enc = EXCLUDED.value_enc,
-                  note = EXCLUDED.note,
-                  expires_at = EXCLUDED.expires_at,
-                  kind = EXCLUDED.kind
-            RETURNING id
-            """,
-            (str(project_id), key, enc, note or "", expires_at, kind),
-        )
+        if set_requires_approval:
+            cur.execute(
+                """
+                INSERT INTO api.secrets
+                  (project_id, key, value_enc, note, expires_at, kind, requires_approval)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+                  SET value_enc = EXCLUDED.value_enc,
+                      note = EXCLUDED.note,
+                      expires_at = EXCLUDED.expires_at,
+                      kind = EXCLUDED.kind,
+                      requires_approval = EXCLUDED.requires_approval
+                RETURNING id
+                """,
+                (
+                    str(project_id),
+                    key,
+                    enc,
+                    note or "",
+                    expires_at,
+                    kind,
+                    requires_approval,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO api.secrets
+                  (project_id, key, value_enc, note, expires_at, kind)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+                  SET value_enc = EXCLUDED.value_enc,
+                      note = EXCLUDED.note,
+                      expires_at = EXCLUDED.expires_at,
+                      kind = EXCLUDED.kind
+                RETURNING id
+                """,
+                (str(project_id), key, enc, note or "", expires_at, kind),
+            )
     else:
         cur.execute(
             """

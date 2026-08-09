@@ -1373,7 +1373,9 @@ class TestSecrets(unittest.TestCase):
         secrets=None,
         tokens=None,
         audit_log=None,
+        access_requests=None,
         total=None,
+        pending_count=0,
     ):
         """as_user used by project_detail (tab-scoped queries)."""
         project = {
@@ -1390,10 +1392,18 @@ class TestSecrets(unittest.TestCase):
         fo = [project, {"w": can_write}, {"a": can_admin}, {"r": team_role}]
         if tab in ("secrets", "audit"):
             fo.append({"n": total})
+        if tab == "secrets":
+            # _load_secrets_page can_admin_project after list queries
+            fo.append({"a": can_admin})
+        # Pending access-request badge count (always queried)
+        fo.append({"n": pending_count})
         if tab == "settings":
             fa = [[]]  # project_member_rows
         elif tab == "secrets":
-            fa = [rows, []]  # secrets page + pin lookup
+            # secrets page, pins (if any), grants (if any), due list
+            fa = [rows, [], [], []]
+        elif tab == "access":
+            fa = [access_requests or []]
         else:
             fa = [rows] if tab in ("audit", "tokens") else []
         conn, cur = _conn()
@@ -1407,7 +1417,41 @@ class TestSecrets(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"prod", r.data)
         self.assertIn(b"Secrets", r.data)
+        self.assertIn(b">Access<", r.data)
         self.assertIn(b"Audit log", r.data)
+
+    def test_project_access_tab(self):
+        reqs = [
+            {
+                "id": uuid4(),
+                "secret_id": uuid4(),
+                "secret_key": "API_KEY",
+                "user_id": self.uid,
+                "email": "u@ex.com",
+                "name": "User",
+                "status": "pending",
+                "reason": "debug prod",
+                "created_at": "2026-01-01",
+                "resolved_at": None,
+                "approved_until": None,
+                "resolver_email": "",
+            }
+        ]
+        with patch.object(
+            db,
+            "as_user",
+            return_value=self._project_conn(
+                tab="access", access_requests=reqs, pending_count=1
+            ),
+        ):
+            r = self.client.get(f"/projects/{self.pid}?tab=access")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"API_KEY", r.data)
+        self.assertIn(b"pending", r.data)
+        self.assertIn(b"debug prod", r.data)
+        self.assertIn(b"Approve", r.data)
+        self.assertIn(b"Deny", r.data)
+        self.assertIn(b">Access<", r.data)
 
     def test_project_audit_tab(self):
         audit_rows = [
@@ -1593,6 +1637,7 @@ class TestSecrets(unittest.TestCase):
                 "value_enc": enc,
                 "expires_at": None,
             },
+            {"a": True},  # can_admin_project — instant reveal
             {"w": True},
         ]
         with patch.object(db, "as_user", return_value=conn):
@@ -1610,6 +1655,171 @@ class TestSecrets(unittest.TestCase):
         self.assertIn(b"/hide", r.data)
         # Expiry is edited on the full view, not the compact inline panel
         self.assertNotIn(b'name="expires_at"', r.data)
+
+    def test_reveal_secret_requires_access_request(self):
+        sid = uuid4()
+        enc = crypto.encrypt("super-secret")
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {
+                "id": sid,
+                "key": "API_KEY",
+                "value_enc": enc,
+                "expires_at": None,
+            },
+            {"a": False},  # not admin
+            {"r": True},  # secret_requires_approval
+            None,  # no pending/approved grant
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/reveal",
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b"super-secret", r.data)
+        self.assertIn(b"Approval required", r.data)
+        self.assertIn(b"Request access", r.data)
+        self.assertIn(b"<dialog", r.data)
+
+    def test_reveal_open_secret_no_approval(self):
+        """Project default off + no override → instant reveal for readers."""
+        sid = uuid4()
+        enc = crypto.encrypt("open-secret")
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {
+                "id": sid,
+                "key": "FEATURE_FLAG",
+                "value_enc": enc,
+                "expires_at": None,
+            },
+            {"a": False},
+            {"r": False},  # does not require approval
+            {"w": False},
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/reveal",
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"open-secret", r.data)
+
+    def test_reveal_secret_with_approved_grant(self):
+        sid = uuid4()
+        enc = crypto.encrypt("granted-secret")
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {
+                "id": sid,
+                "key": "API_KEY",
+                "value_enc": enc,
+                "expires_at": None,
+            },
+            {"a": False},
+            {"r": True},
+            {
+                "id": uuid4(),
+                "status": "approved",
+                "approved_until": "2099-01-01",
+                "created_at": "2026-01-01",
+                "reason": "",
+            },
+            {"w": False},
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.get(
+                f"/projects/{self.pid}/secrets/{sid}/reveal",
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"granted-secret", r.data)
+
+    def test_request_secret_access(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        created = {
+            "id": uuid4(),
+            "status": "pending",
+            "created_at": "2026-01-01",
+            "reason": "need it",
+        }
+        cur.fetchone.side_effect = [
+            {"id": sid, "key": "API_KEY"},
+            {"a": False},
+            {"r": True},  # requires approval
+            None,  # no existing grant
+            created,  # INSERT RETURNING
+        ]
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/secrets/{sid}/access-request",
+                data={"reason": "need it", "dialog": "1"},
+                headers={"HX-Request": "true"},
+            )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"Request submitted", r.data)
+        self.assertIn(b"Waiting", r.data)
+        conn.commit.assert_called()
+        sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
+        self.assertIn("secret_access_requests", sql)
+        audit_args = " ".join(
+            str(c.args) for c in cur.execute.call_args_list if c.args
+        )
+        self.assertIn("access_requested", audit_args)
+
+    def test_approve_secret_access(self):
+        rid, sid = uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"a": True},
+            {
+                "id": rid,
+                "secret_id": sid,
+                "user_id": self.uid,
+                "status": "pending",
+                "secret_key": "API_KEY",
+            },
+        ]
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/access-requests/{rid}/approve",
+                data={"minutes": "15"},
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=access", r.location)
+        conn.commit.assert_called()
+        all_args = " ".join(str(c.args) for c in cur.execute.call_args_list if c.args)
+        self.assertIn("approved", all_args)
+        self.assertIn("access_approved", all_args)
+
+    def test_deny_secret_access(self):
+        rid, sid = uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"a": True},
+            {
+                "id": rid,
+                "secret_id": sid,
+                "status": "pending",
+                "secret_key": "API_KEY",
+            },
+        ]
+        cur.rowcount = 1
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/projects/{self.pid}/access-requests/{rid}/deny",
+                follow_redirects=False,
+            )
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("tab=access", r.location)
+        conn.commit.assert_called()
+        all_args = " ".join(str(c.args) for c in cur.execute.call_args_list if c.args)
+        self.assertIn("denied", all_args)
+        self.assertIn("access_denied", all_args)
 
     def test_hide_secret(self):
         sid = uuid4()
@@ -1983,10 +2193,21 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("private.audit_org", init)
         self.assertIn("default_token_days", init)
         self.assertIn("'exported'", init)
+        self.assertIn("CREATE TABLE api.secret_access_requests", init)
+        self.assertIn("api.can_reveal_secret", init)
+        self.assertIn("api.secret_requires_approval", init)
+        self.assertIn("require_reveal_approval", init)
+        self.assertIn("private.secret_access_request_rows", init)
+        self.assertIn("access_requested", init)
         src = Path(schema_mod.__file__).read_text()
         self.assertIn("api.team_invites", src)
         self.assertIn("private.audit_org", src)
         self.assertIn("exported", src)
+        self.assertIn("secret_access_requests", src)
+        self.assertIn("can_reveal_secret", src)
+        self.assertIn("secret_requires_approval", src)
+        self.assertIn("require_reveal_approval", src)
+        self.assertIn("access_approved", src)
 
     def test_log_org_calls_fn(self):
         cur = MagicMock()
@@ -2189,9 +2410,11 @@ class TestSecretLifecycle(unittest.TestCase):
     def test_reveal_secret_version(self):
         sid, vid = uuid4(), uuid4()
         enc = crypto.encrypt("prior-secret")
-        conn, cur = _conn(
-            fetchone={"value_enc": enc, "key": "K", "secret_id": sid}
-        )
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {"value_enc": enc, "key": "K", "secret_id": sid},
+            {"a": True},  # can_admin — instant reveal
+        ]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(
                 f"/projects/{self.pid}/secrets/{sid}/versions/{vid}/reveal"

@@ -701,7 +701,8 @@ def ensure_schema():
             ADD CONSTRAINT secret_audit_action_check
             CHECK (action IN (
               'created', 'updated', 'revealed', 'deleted', 'restored', 'purged',
-              'machine_upsert', 'exported'
+              'machine_upsert', 'exported',
+              'access_requested', 'access_approved', 'access_denied'
             ));
         EXCEPTION WHEN others THEN NULL;
         END $$
@@ -735,7 +736,8 @@ def ensure_schema():
         BEGIN
           IF p_action NOT IN (
             'created', 'updated', 'revealed', 'deleted', 'restored', 'purged',
-            'machine_upsert', 'exported'
+            'machine_upsert', 'exported',
+            'access_requested', 'access_approved', 'access_denied'
           ) THEN
             RAISE EXCEPTION 'invalid audit action: %', p_action;
           END IF;
@@ -1470,6 +1472,190 @@ def ensure_schema():
           ON private.totp_recovery_codes (user_id)
           WHERE used_at IS NULL
         """,
+        # Project default + per-secret override for reveal approval
+        """
+        ALTER TABLE api.projects
+          ADD COLUMN IF NOT EXISTS require_reveal_approval boolean NOT NULL DEFAULT false
+        """,
+        """
+        ALTER TABLE api.secrets
+          ADD COLUMN IF NOT EXISTS requires_approval boolean
+        """,
+        # Reveal access approval: non-admins request; project admin / team owner approve
+        """
+        CREATE TABLE IF NOT EXISTS api.secret_access_requests (
+          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
+          secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
+          user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+          status text NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending', 'approved', 'denied')),
+          reason text NOT NULL DEFAULT '',
+          created_at timestamptz NOT NULL DEFAULT now(),
+          resolved_at timestamptz,
+          resolved_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
+          approved_until timestamptz
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS secret_access_requests_pending_uidx
+          ON api.secret_access_requests (secret_id, user_id)
+          WHERE status = 'pending'
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS secret_access_requests_project_status_idx
+          ON api.secret_access_requests (project_id, status, created_at DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS secret_access_requests_grant_idx
+          ON api.secret_access_requests (secret_id, user_id, approved_until)
+          WHERE status = 'approved'
+        """,
+        "ALTER TABLE api.secret_access_requests ENABLE ROW LEVEL SECURITY",
+        "DROP POLICY IF EXISTS secret_access_requests_select ON api.secret_access_requests",
+        """
+        CREATE POLICY secret_access_requests_select ON api.secret_access_requests
+          FOR SELECT TO authenticated
+          USING (
+            api.can_admin_project(project_id)
+            OR user_id = api.current_user_id()
+          )
+        """,
+        "DROP POLICY IF EXISTS secret_access_requests_insert ON api.secret_access_requests",
+        """
+        CREATE POLICY secret_access_requests_insert ON api.secret_access_requests
+          FOR INSERT TO authenticated
+          WITH CHECK (
+            user_id = api.current_user_id()
+            AND api.can_read_project(project_id)
+          )
+        """,
+        "DROP POLICY IF EXISTS secret_access_requests_update ON api.secret_access_requests",
+        """
+        CREATE POLICY secret_access_requests_update ON api.secret_access_requests
+          FOR UPDATE TO authenticated
+          USING (api.can_admin_project(project_id))
+        """,
+        "GRANT SELECT, INSERT, UPDATE ON api.secret_access_requests TO authenticated",
+        "GRANT ALL ON api.secret_access_requests TO authenticator",
+        """
+        -- Effective policy: secret.requires_approval overrides project default;
+        -- NULL inherits project.require_reveal_approval (default false).
+        CREATE OR REPLACE FUNCTION api.secret_requires_approval(sid uuid) RETURNS boolean
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT CASE
+            WHEN s.requires_approval IS TRUE THEN true
+            WHEN s.requires_approval IS FALSE THEN false
+            ELSE COALESCE(p.require_reveal_approval, false)
+          END
+          FROM api.secrets s
+          JOIN api.projects p ON p.id = s.project_id
+          WHERE s.id = sid AND s.deleted_at IS NULL;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION api.secret_requires_approval TO authenticated, anon",
+        """
+        CREATE OR REPLACE FUNCTION api.can_reveal_secret(sid uuid) RETURNS boolean
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT CASE
+            WHEN sid IS NULL THEN false
+            WHEN NOT EXISTS (
+              SELECT 1 FROM api.secrets s
+              WHERE s.id = sid AND s.deleted_at IS NULL
+                AND api.can_read_project(s.project_id)
+            ) THEN false
+            WHEN api.is_global_admin() THEN true
+            WHEN EXISTS (
+              SELECT 1 FROM api.secrets s
+              WHERE s.id = sid AND api.can_admin_project(s.project_id)
+            ) THEN true
+            WHEN NOT COALESCE(api.secret_requires_approval(sid), false) THEN true
+            WHEN EXISTS (
+              SELECT 1 FROM api.secret_access_requests r
+              WHERE r.secret_id = sid
+                AND r.user_id = api.current_user_id()
+                AND r.status = 'approved'
+                AND r.approved_until IS NOT NULL
+                AND r.approved_until > now()
+            ) THEN true
+            ELSE false
+          END;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION api.can_reveal_secret TO authenticated, anon",
+        """
+        CREATE OR REPLACE FUNCTION private.secret_access_request_rows(p_project uuid)
+        RETURNS TABLE (
+          id uuid,
+          secret_id uuid,
+          secret_key text,
+          user_id uuid,
+          email text,
+          name text,
+          status text,
+          reason text,
+          created_at timestamptz,
+          resolved_at timestamptz,
+          approved_until timestamptz,
+          resolver_email text
+        )
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT r.id, r.secret_id, COALESCE(s.key, ''), r.user_id,
+                 u.email, u.name, r.status, r.reason, r.created_at,
+                 r.resolved_at, r.approved_until,
+                 COALESCE(ru.email, '')
+          FROM api.secret_access_requests r
+          JOIN private.users u ON u.id = r.user_id
+          LEFT JOIN api.secrets s ON s.id = r.secret_id
+          LEFT JOIN private.users ru ON ru.id = r.resolved_by
+          WHERE r.project_id = p_project
+            AND (
+              api.can_admin_project(p_project)
+              OR r.user_id = api.current_user_id()
+            )
+          ORDER BY
+            CASE r.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+            r.created_at DESC
+          LIMIT 200;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.secret_access_request_rows TO authenticator, authenticated",
+        """
+        CREATE OR REPLACE FUNCTION private.pending_access_requests_for_admin()
+        RETURNS TABLE (
+          id uuid,
+          project_id uuid,
+          project_name text,
+          secret_id uuid,
+          secret_key text,
+          user_id uuid,
+          email text,
+          name text,
+          reason text,
+          created_at timestamptz
+        )
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = api, private
+        SET row_security = off AS $$
+          SELECT r.id, r.project_id, p.name, r.secret_id, COALESCE(s.key, ''),
+                 r.user_id, u.email, u.name, r.reason, r.created_at
+          FROM api.secret_access_requests r
+          JOIN api.projects p ON p.id = r.project_id
+          JOIN private.users u ON u.id = r.user_id
+          LEFT JOIN api.secrets s ON s.id = r.secret_id
+          WHERE r.status = 'pending'
+            AND api.can_admin_project(r.project_id)
+          ORDER BY r.created_at ASC
+          LIMIT 100;
+        $$
+        """,
+        "GRANT EXECUTE ON FUNCTION private.pending_access_requests_for_admin TO authenticator, authenticated",
     ]
     try:
         with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:
