@@ -2154,63 +2154,15 @@
       margin: 0 0 .75rem;
       font-size: 1rem;
     }
-    .token-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
-      gap: .85rem;
-    }
-    .token-card {
-      display: flex;
-      flex-direction: column;
-      gap: .75rem;
-      margin: 0;
-      padding: .9rem 1rem;
-    }
-    .token-card-head {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: .5rem;
-    }
-    .token-card-name { display: block; font-size: .95rem; }
-    .token-card-prefix {
-      display: block;
-      margin-top: .15rem;
-      font-size: .8rem;
-      opacity: .85;
-    }
-    .token-card-badges {
-      display: flex;
-      flex-wrap: wrap;
-      gap: .3rem;
-    }
-    .token-card-scope-label {
-      display: block;
-      font-size: .75rem;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      margin-bottom: .35rem;
-    }
     .token-scope-badges {
       display: flex;
       flex-wrap: wrap;
       gap: .3rem;
+      align-items: center;
     }
     .token-scope-badges .token-scope-glob {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
-    .token-card-foot {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: .5rem .85rem;
-      margin-top: auto;
-      padding-top: .35rem;
-      border-top: 1px solid var(--border);
-      font-size: .8rem;
-    }
-    .token-card-foot form { margin-left: auto; }
   </style>
 </head>
 <body class="{% if session.get('user_id') %}app{% else %}auth{% endif %}">

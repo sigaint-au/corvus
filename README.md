@@ -18,6 +18,19 @@ ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
 See [docs/deploy.md](docs/deploy.md) for production setup (strong secrets,
 OIDC/LDAP, audit retention).
 
+## Tests
+
+Unit tests use **pytest** (DB is mocked; Postgres is not required):
+
+```bash
+# One-shot (from repo root)
+pip install -r app/requirements.txt -r requirements-dev.txt
+pytest
+
+# Or via tox (preferred; creates an isolated env)
+tox -e py
+```
+
 ## Documentation
 
 | Doc | Contents |
