@@ -545,7 +545,12 @@ def sync_oidc_user(email: str, name: str, groups: list | None = None) -> dict:
         >>> # user = sync_oidc_user("a@b.com", "Ada", ["admins"])
         >>> # user["email"] == "a@b.com"
     """
-    from dir_sync import apply_global_admin_maps, apply_team_membership_maps, fetch_user_row
+    from dir_sync import (
+        apply_global_admin_maps,
+        apply_group_membership_maps,
+        apply_team_membership_maps,
+        fetch_user_row,
+    )
 
     groups = list(groups or [])
     with db.connect_admin() as conn, conn.cursor() as cur:
@@ -557,6 +562,7 @@ def sync_oidc_user(email: str, name: str, groups: list | None = None) -> dict:
         apply_team_membership_maps(
             cur, uid, groups, cur.fetchall() or [], group_key="oidc_group", source="oidc"
         )
+        apply_group_membership_maps(cur, uid, groups, source="oidc")
         user = fetch_user_row(cur, uid)
         if not user:
             raise RuntimeError("OIDC user upsert failed")

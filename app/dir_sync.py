@@ -120,6 +120,85 @@ def apply_team_membership_maps(
             )
 
 
+def apply_group_membership_maps(
+    cur,
+    uid,
+    groups,
+    *,
+    source: str,
+) -> None:
+    """Sync ``api.group_members`` for groups mapped to directory tokens.
+
+    Matches ``api.groups`` rows with ``source`` ldap|oidc and non-null
+    ``external_key`` against the user's directory groups. Directory-sourced
+    memberships are added/removed; ``source='manual'`` rows are never removed.
+
+    Args:
+        cur: Open admin DB cursor.
+        uid: User UUID being synced.
+        groups: Iterable of group tokens from LDAP/OIDC for this user.
+        source: ``"ldap"`` or ``"oidc"`` (must match ``api.groups.source``).
+
+    Returns:
+        None.
+    """
+    from ldap_auth import group_matches
+
+    cur.execute(
+        """
+        SELECT id, external_key FROM api.groups
+        WHERE source = %s AND external_key IS NOT NULL AND btrim(external_key) <> ''
+        """,
+        (source,),
+    )
+    mapped = cur.fetchall() or []
+    desired_ids: list[str] = []
+    for row in mapped:
+        if group_matches(row["external_key"], groups):
+            desired_ids.append(str(row["id"]))
+
+    # Drop stale directory memberships for this source
+    cur.execute(
+        """
+        DELETE FROM api.group_members gm
+        USING api.groups g
+        WHERE gm.group_id = g.id
+          AND gm.user_id = %s
+          AND gm.source = %s
+          AND g.source = %s
+          AND NOT (gm.group_id = ANY(%s::uuid[]))
+        """,
+        (str(uid), source, source, desired_ids or []),
+    )
+    for gid in desired_ids:
+        cur.execute(
+            """
+            SELECT source FROM api.group_members
+            WHERE group_id = %s AND user_id = %s
+            """,
+            (gid, str(uid)),
+        )
+        existing = cur.fetchone()
+        if existing and existing.get("source") == "manual":
+            continue
+        if existing:
+            cur.execute(
+                """
+                UPDATE api.group_members SET source = %s
+                WHERE group_id = %s AND user_id = %s
+                """,
+                (source, gid, str(uid)),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO api.group_members (group_id, user_id, source)
+                VALUES (%s, %s, %s)
+                """,
+                (gid, str(uid), source),
+            )
+
+
 def fetch_user_row(cur, uid) -> dict:
     """Load a user row after directory sync for session/login fields.
 

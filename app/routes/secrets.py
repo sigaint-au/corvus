@@ -716,29 +716,9 @@ def register(app):
         can_admin: bool = False,
         acl_grants=None,
         can_reveal: bool = True,
+        team_groups=None,
     ):
-        """Render the type-specific secret view/edit page template.
-
-        Args:
-            project_id: UUID of the project that owns the secret.
-            secret_id: UUID of the secret being viewed.
-            row: Mapping with secret metadata (key, note, expires_at,
-                project_name, etc.).
-            plaintext: Decrypted secret value.
-            kind: Normalized secret kind (e.g. ``"kv"``, ``"certificate"``).
-            can_write: Whether the current user may edit the secret.
-            is_version: If True, render a historical version (read-only).
-            status: HTTP status code to pair with the rendered body.
-
-        Returns:
-            tuple: ``(html_body, status)`` for the secret view page.
-
-        Example:
-            >>> body, code = _render_secret_view(
-            ...     project_id=pid, secret_id=sid, row=row,
-            ...     plaintext=text, kind="kv", can_write=True,
-            ... )
-        """
+        """Render the type-specific secret view/edit page template."""
         exp = row.get("expires_at")
         exp_date = ""
         if exp is not None:
@@ -749,6 +729,7 @@ def register(app):
         cert_pem, cert_key = ("", "")
         if kind == "certificate":
             cert_pem, cert_key = split_cert_and_key(plaintext)
+        acl_mode = (row.get("acl_mode") or "inherit").strip() or "inherit"
         return (
             render_template(
                 "secret_view.html",
@@ -769,6 +750,15 @@ def register(app):
                 db_parts=parse_database_url(plaintext) if kind == "database" else {},
                 expires_at=exp_date,
                 can_write=can_write and not is_version,
+                can_admin=can_admin,
+                can_reveal=can_reveal,
+                acl_mode=acl_mode,
+                acl_modes=config.SECRET_ACL_MODES,
+                acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
+                acl_permissions=config.SECRET_ACL_PERMISSIONS,
+                acl_perm_labels=config.SECRET_ACL_PERM_LABELS,
+                acl_grants=acl_grants or [],
+                team_groups=team_groups or [],
                 requires_approval=row.get("requires_approval"),
                 require_reveal_approval=row.get("require_reveal_approval"),
                 clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
@@ -846,6 +836,7 @@ def register(app):
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             can_admin = bool((cur.fetchone() or {}).get("a"))
             acl_grants = []
+            team_groups = []
             if can_admin:
                 try:
                     cur.execute(
@@ -855,6 +846,20 @@ def register(app):
                     acl_grants = cur.fetchall() or []
                 except Exception:
                     acl_grants = []
+                try:
+                    cur.execute(
+                        """
+                        SELECT g.id, g.name
+                        FROM api.groups g
+                        JOIN api.projects p ON p.team_id = g.team_id
+                        WHERE p.id = %s
+                        ORDER BY g.name
+                        """,
+                        (str(project_id),),
+                    )
+                    team_groups = cur.fetchall() or []
+                except Exception:
+                    team_groups = []
 
             if request.method == "POST":
                 if is_version or not can_write:
@@ -1003,6 +1008,7 @@ def register(app):
             can_admin=can_admin,
             acl_grants=acl_grants,
             can_reveal=can_reveal,
+            team_groups=team_groups,
         )
         return body, code
 
@@ -2091,13 +2097,14 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl/grants")
     @authz.login_required
     def add_secret_acl_grant(project_id, secret_id):
-        """Grant a user access to a custom-ACL secret (project admin only)."""
+        """Grant a user or group access to a custom-ACL secret (project admin only)."""
         email = (request.form.get("email") or "").strip().lower()
+        group_id = (request.form.get("group_id") or "").strip()
         perm = (request.form.get("permission") or "reveal").strip().lower()
         if perm not in config.SECRET_ACL_PERMISSIONS:
             perm = "reveal"
-        if not email:
-            flash("Email required", "error")
+        if not email and not group_id:
+            flash("Email or group required", "error")
             return redirect(
                 url_for("secret_view", project_id=project_id, secret_id=secret_id)
             )
@@ -2110,8 +2117,10 @@ def register(app):
                 )
             cur.execute(
                 """
-                SELECT id, key, acl_mode FROM api.secrets
-                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
+                SELECT s.id, s.key, s.acl_mode, p.team_id
+                FROM api.secrets s
+                JOIN api.projects p ON p.id = s.project_id
+                WHERE s.id = %s AND s.project_id = %s AND s.deleted_at IS NULL
                 """,
                 (str(secret_id), str(project_id)),
             )
@@ -2122,35 +2131,77 @@ def register(app):
                     url_for("project_detail", project_id=project_id, tab="secrets")
                 )
             if (sec.get("acl_mode") or "inherit") != "custom":
-                flash("Switch access mode to Custom user list first", "error")
-                return redirect(
-                    url_for("secret_view", project_id=project_id, secret_id=secret_id)
-                )
-            cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
-            u = cur.fetchone()
-            if not u or not u.get("id"):
-                flash(
-                    "User not found — they must register or sign in first",
-                    "error",
-                )
+                flash("Switch access mode to Custom list first", "error")
                 return redirect(
                     url_for("secret_view", project_id=project_id, secret_id=secret_id)
                 )
             try:
-                cur.execute(
-                    """
-                    INSERT INTO api.secret_acl (secret_id, user_id, permission, created_by)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (secret_id, user_id) DO UPDATE
-                      SET permission = EXCLUDED.permission
-                    """,
-                    (
-                        str(secret_id),
-                        str(u["id"]),
-                        perm,
-                        session["user_id"],
-                    ),
-                )
+                if group_id:
+                    cur.execute(
+                        """
+                        SELECT id, name FROM api.groups
+                        WHERE id = %s AND team_id = %s
+                        """,
+                        (group_id, str(sec["team_id"])),
+                    )
+                    g = cur.fetchone()
+                    if not g:
+                        flash("Group not found on this team", "error")
+                        return redirect(
+                            url_for(
+                                "secret_view",
+                                project_id=project_id,
+                                secret_id=secret_id,
+                            )
+                        )
+                    # Upsert group grant (partial unique index)
+                    cur.execute(
+                        """
+                        DELETE FROM api.secret_acl
+                        WHERE secret_id = %s AND group_id = %s
+                        """,
+                        (str(secret_id), group_id),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO api.secret_acl
+                          (secret_id, group_id, permission, created_by)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (str(secret_id), group_id, perm, session["user_id"]),
+                    )
+                    who = f"group {g['name']}"
+                else:
+                    cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
+                    u = cur.fetchone()
+                    if not u or not u.get("id"):
+                        flash(
+                            "User not found — they must register or sign in first",
+                            "error",
+                        )
+                        return redirect(
+                            url_for(
+                                "secret_view",
+                                project_id=project_id,
+                                secret_id=secret_id,
+                            )
+                        )
+                    cur.execute(
+                        """
+                        DELETE FROM api.secret_acl
+                        WHERE secret_id = %s AND user_id = %s
+                        """,
+                        (str(secret_id), str(u["id"])),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO api.secret_acl
+                          (secret_id, user_id, permission, created_by)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (str(secret_id), str(u["id"]), perm, session["user_id"]),
+                    )
+                    who = email
                 audit.log_secret(
                     cur,
                     project_id=project_id,
@@ -2159,7 +2210,7 @@ def register(app):
                     action="updated",
                 )
                 conn.commit()
-                flash(f"Granted {perm} to {email}", "ok")
+                flash(f"Granted {perm} to {who}", "ok")
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")

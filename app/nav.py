@@ -40,17 +40,15 @@ def nav_teams(user_id: str):
                 """
             )
         else:
+            # RLS + is_team_member includes direct members and group-based team roles
             cur.execute(
                 """
                 SELECT t.id, t.name,
                        t.classification_enabled, t.classification_text,
                        t.classification_color, t.classification_fg
                 FROM api.teams t
-                JOIN api.team_members tm ON tm.team_id = t.id
-                WHERE tm.user_id = %s
                 ORDER BY t.name
-                """,
-                (user_id,),
+                """
             )
         return cur.fetchall()
 

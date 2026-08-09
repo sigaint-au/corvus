@@ -814,6 +814,58 @@
   <p class="empty">No project-level members. Team members still have access via their team role.</p>
   {% endif %}
 </section>
+<section>
+  <h2>Group roles</h2>
+  <p class="muted">
+    Grant a <strong>team group</strong> a project role. Group members get that access
+    (highest of user and group grants wins). Create groups on the team Groups tab.
+  </p>
+  {% if team_groups %}
+  <form method="post" action="{{ url_for('add_project_group_role', project_id=project.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Group
+      <select name="group_id" required>
+        {% for g in team_groups %}
+        <option value="{{ g.id }}">{{ g.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Role
+      <select name="role">
+        {% for r in project_roles %}
+        <option value="{{ r }}" {% if r == 'read' %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  {% else %}
+  <p class="empty">No team groups yet — create one on the team Groups tab first.</p>
+  {% endif %}
+  {% if project_group_roles %}
+  <table>
+    <thead><tr><th>Group</th><th>Role</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+    {% for g in project_group_roles %}
+      <tr>
+        <td>{{ g.group_name }}</td>
+        <td><span class="role-badge">{{ g.role }}</span></td>
+        <td class="muted">{{ g.source }}</td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('remove_project_group_role', project_id=project.id, group_id=g.group_id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove group role for {{ g.group_name }}?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
 {% endif %}
 {% if can_delete %}
 <section>

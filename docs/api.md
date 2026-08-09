@@ -260,7 +260,7 @@ so not every project member may list, reveal, or edit them.
 | `writers` | Project writers and above |
 | `admins` | Project admins and team owners/admins |
 | `owners` | Team **owners** only |
-| `custom` | Explicit user grants in `api.secret_acl` (+ project admins always) |
+| `custom` | Explicit user **or group** grants in `api.secret_acl` (+ project admins always) |
 
 **Always full access:** global admins and users with `can_admin_project`.
 
@@ -272,7 +272,14 @@ highly sensitive values if machine access must also be restricted.
 `write` (edit/delete). Higher permissions include lower ones.
 
 **UI:** set mode when creating a secret, or on the secret full view (admins).
-Custom grants: email + permission on the secret view when mode is `custom`.
+Custom grants: user email **or** team group + permission when mode is `custom`.
+
+**Org groups RBAC:** team-scoped `api.groups` (manual members and/or
+LDAP/OIDC `external_key`) can grant team role (`groups.team_role`), project
+role (`api.project_group_roles`), and secret ACL (`secret_acl.group_id`).
+Effective access is the max of direct user grants and group grants.
+Helpers: `api.is_team_member`, `api.team_role`, `api.project_role`,
+`api.can_read|write|admin_project`, `api.can_access_secret`.
 
 RLS uses `api.can_access_secret(secret_id, need)` for select/update/delete.
 

@@ -935,7 +935,7 @@ class TestAuth(unittest.TestCase):
 
         def fetchall():
             s = last_sql["s"]
-            if "from api.teams t" in s and "team_members" in s:
+            if "from api.teams t" in s:
                 return [
                     {
                         "id": tid,
@@ -1129,8 +1129,8 @@ class TestTeams(unittest.TestCase):
             # Per-query stubs (order-independent)
             if "from api.teams" in s and "where id" in s:
                 return {"id": tid, "name": "T"}
-            if "select role from api.team_members" in s:
-                return {"role": "owner"}
+            if "api.team_role" in s or "select role from api.team_members" in s:
+                return {"r": "owner", "role": "owner"}
             return None
 
         conn, cur = _conn(fetchone=fetchone, fetchall=[])
@@ -1143,6 +1143,7 @@ class TestTeams(unittest.TestCase):
         self.assertIn(b">T<", r.data)
         self.assertIn(b"?tab=projects", r.data)
         self.assertIn(b"?tab=members", r.data)
+        self.assertIn(b"?tab=groups", r.data)
         self.assertIn(b"?tab=settings", r.data)
         sql = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
         # Default tab loads projects, not members
@@ -1160,8 +1161,8 @@ class TestTeams(unittest.TestCase):
             s = last_sql["s"]
             if "from api.teams" in s and "where id" in s:
                 return {"id": tid, "name": "T"}
-            if "select role from api.team_members" in s:
-                return {"role": "owner"}
+            if "api.team_role" in s or "select role from api.team_members" in s:
+                return {"r": "owner", "role": "owner"}
             return None
 
         conn, cur = _conn(fetchone=fetchone, fetchall=[])
@@ -1668,6 +1669,7 @@ class TestSecrets(unittest.TestCase):
                 "value_enc": enc,
                 "expires_at": None,
             },
+            {"ok": True},  # can_access_secret reveal
             {"a": False},  # not admin
             {"r": True},  # secret_requires_approval
             None,  # no pending/approved grant
@@ -1695,9 +1697,10 @@ class TestSecrets(unittest.TestCase):
                 "value_enc": enc,
                 "expires_at": None,
             },
+            {"ok": True},  # can_access_secret reveal
             {"a": False},
             {"r": False},  # does not require approval
-            {"w": False},
+            {"w": False},  # can_access_secret write
         ]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(
@@ -1718,6 +1721,7 @@ class TestSecrets(unittest.TestCase):
                 "value_enc": enc,
                 "expires_at": None,
             },
+            {"ok": True},  # can_access_secret reveal
             {"a": False},
             {"r": True},
             {
@@ -1727,7 +1731,7 @@ class TestSecrets(unittest.TestCase):
                 "created_at": "2026-01-01",
                 "reason": "",
             },
-            {"w": False},
+            {"w": False},  # can_access_secret write
         ]
         with patch.object(db, "as_user", return_value=conn):
             r = self.client.get(
@@ -2238,6 +2242,74 @@ class TestOrgAccess(unittest.TestCase):
         self.assertIn("can_access_secret", src)
         self.assertIn("secret_acl", src)
         self.assertIn("can_access_secret(id, 'read')", src)
+
+    def test_org_groups_rbac_schema(self):
+        """Groups tables, group-aware RBAC helpers, secret ACL group grants."""
+        from pathlib import Path
+
+        init = (Path(__file__).resolve().parents[1] / "db" / "init.sql").read_text()
+        self.assertIn("CREATE TABLE api.groups", init)
+        self.assertIn("CREATE TABLE api.group_members", init)
+        self.assertIn("CREATE TABLE api.project_group_roles", init)
+        self.assertIn("external_key", init)
+        self.assertIn("api.project_role", init)
+        self.assertIn("api._role_rank", init)
+        # secret_acl allows user OR group
+        self.assertIn("group_id", init)
+        self.assertIn("group_members gm", init)
+        # RBAC functions include group paths
+        self.assertIn("g.team_role IS NOT NULL", init)
+        src = Path(schema_mod.__file__).read_text()
+        self.assertIn("CREATE TABLE IF NOT EXISTS api.groups", src)
+        self.assertIn("project_group_roles", src)
+        self.assertIn("team_group_rows", src)
+        self.assertIn("secret_acl_principal_check", src)
+        # Routes wire groups
+        teams_src = (
+            Path(__file__).resolve().parent / "routes" / "teams.py"
+        ).read_text()
+        self.assertIn("create_team_group", teams_src)
+        self.assertIn("apply_group_membership_maps", Path(
+            Path(__file__).resolve().parent / "ldap_auth.py"
+        ).read_text())
+        seed = (
+            Path(__file__).resolve().parents[1] / "scripts" / "seed_mock.py"
+        ).read_text()
+        self.assertIn("GROUPS", seed)
+        self.assertIn("PROJECT_GROUP_ROLES", seed)
+
+    def test_dir_sync_group_membership_maps(self):
+        """Directory sync upserts/removes group_members for external_key matches."""
+        from unittest.mock import MagicMock
+        import dir_sync
+
+        uid = str(uuid4())
+        gid_match = str(uuid4())
+        gid_other = str(uuid4())
+        cur = MagicMock()
+        # SELECT mapped groups → one matching external key
+        cur.fetchall.return_value = [
+            {"id": gid_match, "external_key": "cn=ops,ou=groups"},
+            {"id": gid_other, "external_key": "cn=other,ou=groups"},
+        ]
+        # SELECT existing membership: none for insert path
+        cur.fetchone.return_value = None
+
+        dir_sync.apply_group_membership_maps(
+            cur, uid, ["cn=ops,ou=groups", "cn=unrelated"], source="ldap"
+        )
+
+        executed = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        self.assertIn("delete from api.group_members", executed)
+        self.assertIn("insert into api.group_members", executed)
+        # Insert should target matching group only (second execute after deletes/selects)
+        insert_calls = [
+            c
+            for c in cur.execute.call_args_list
+            if "INSERT INTO api.group_members" in str(c.args[0])
+        ]
+        self.assertEqual(len(insert_calls), 1)
+        self.assertEqual(insert_calls[0].args[1][0], gid_match)
 
     def test_members_tab_requires_login(self):
         r = store.app.test_client().get(f"/projects/{uuid4()}?tab=settings")

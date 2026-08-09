@@ -329,7 +329,12 @@ Key security properties:
 
 - **Server settings → OIDC / SSO → OIDC group → roles** maps a group to
   `global_admin`.
-- **Team → Settings → OIDC group membership** maps a group to a team role.
+- **Team → Settings → OIDC group membership** maps a directory group to a
+  direct `team_members` row. Manual memberships are never overwritten.
+- **Team → Groups** can create a first-class group with `source=oidc` and an
+  `external_key` matching the claim value; on login, matching users are synced
+  into `group_members`. That group can hold a **team role**, a **project role**
+  (project Settings → Group roles), or a **secret ACL** grant (custom mode).
 - Groups come from the configured groups claim (default `groups`) plus
   `realm_access.roles` when present. Maps apply on each SSO login; manual
   memberships are not removed.
@@ -346,12 +351,16 @@ POST /login  (email, password)
   → LDAP bind with the supplied credentials
   → on success: sync/upsert user (auth_source=ldap), read groups
   → apply LDAP group → team role / global-admin maps
+  → sync first-class group memberships (external_key)
   → normal 2FA / session logic
 ```
 
 - LDAP over cleartext is rejected unless StartTLS is enabled
   (`ldap_tls_required_ok`).
-- **Team → Settings → LDAP group membership** maps a group to a team role.
+- **Team → Settings → LDAP group membership** maps a group to a direct
+  `team_members` role.
+- **Team → Groups** with `source=ldap` + `external_key` syncs membership into
+  `group_members` (same team / project / secret grant model as OIDC).
 - **Server settings → LDAP → LDAP group → roles** maps a group to
   `global_admin`.
 

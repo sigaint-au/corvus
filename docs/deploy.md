@@ -275,20 +275,24 @@ password login still works for break-glass accounts.
 **Group → role maps:**
 
 - **Server settings → OIDC / SSO → OIDC group → roles** — map a group to `global_admin`
-- **Team → Settings → OIDC group membership** — map a group to a team role
+- **Team → Settings → OIDC group membership** — map a group to a direct team role
+- **Team → Groups** — first-class groups (`source=oidc`, `external_key` = claim
+  value) sync members on login; assign a team role on the group, project roles
+  under **Project → Settings → Group roles**, or secret ACL grants in custom mode
 
 Groups come from the configured groups claim (default `groups`) plus
 `realm_access.roles` when present. Maps apply on each SSO login; manual team
-memberships are not removed. ID token signatures are restricted to asymmetric
-algorithms (RS/ES/PS). Discovery documents are cached 1 hour (cleared when
-OIDC settings are saved).
+and group memberships are not removed. ID token signatures are restricted to
+asymmetric algorithms (RS/ES/PS). Discovery documents are cached 1 hour
+(cleared when OIDC settings are saved).
 
 ### 9b. LDAP
 
-Optional bind login and group → team role maps under
-**Administration → Server settings → LDAP** and **Team → Settings**. Same
-membership-sync idea as OIDC team maps. LDAP over cleartext is rejected unless
-StartTLS is enabled.
+Optional bind login and group → team / first-class group membership sync under
+**Administration → Server settings → LDAP**, **Team → Settings** (direct
+maps), and **Team → Groups** (`source=ldap` + external key). Same
+membership-sync idea as OIDC. LDAP over cleartext is rejected unless StartTLS
+is enabled.
 
 ---
 

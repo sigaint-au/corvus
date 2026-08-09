@@ -25,6 +25,10 @@
      class="tab {% if active_tab == 'members' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'members' else 'false' }}">Members</a>
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}"
+     class="tab {% if active_tab == 'groups' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'groups' else 'false' }}">Groups</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='activity') }}"
      class="tab {% if active_tab == 'activity' %}active{% endif %}"
      role="tab"
@@ -205,6 +209,125 @@
   </table>
   {% else %}
   <p class="empty">No pending join requests.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% elif active_tab == 'groups' %}
+<section>
+  <h2>Groups</h2>
+  <p class="muted">
+    Groups are RBAC principals for this team. Grant a <strong>team role</strong> so members
+    inherit team access, bind groups on project settings, or grant them on custom secret ACLs.
+    Map <strong>LDAP/OIDC</strong> groups via an external key (membership syncs on login).
+  </p>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('create_team_group', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Name <input type="text" name="name" required placeholder="e.g. platform-ops"></label>
+    <label>Source
+      <select name="source">
+        <option value="manual">manual</option>
+        <option value="ldap">ldap</option>
+        <option value="oidc">oidc</option>
+      </select>
+    </label>
+    <label>External key <input type="text" name="external_key" placeholder="LDAP DN / OIDC claim"></label>
+    <label>Team role
+      <select name="team_role">
+        <option value="">— none —</option>
+        {% for r in team_roles|default(['owner','admin','member','viewer']) %}
+        <option value="{{ r }}" {% if r == 'member' %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Create group</button>
+  </form>
+  {% endif %}
+  {% if groups %}
+  <table>
+    <thead><tr><th>Name</th><th>Source</th><th>External</th><th>Team role</th><th>Members</th><th></th></tr></thead>
+    <tbody>
+    {% for g in groups %}
+      <tr {% if selected_group and selected_group.id == g.id %}class="selected"{% endif %}>
+        <td><a href="{{ url_for('team_detail', team_id=team.id, tab='groups', group_id=g.id) }}">{{ g.name }}</a></td>
+        <td><span class="role-badge">{{ g.source }}</span></td>
+        <td class="muted"><code class="k">{{ g.external_key or '—' }}</code></td>
+        <td>{% if g.team_role %}<span class="role-badge">{{ g.team_role }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{{ g.member_count }}</td>
+        <td class="acts">
+          {% if is_admin %}
+          <form method="post" action="{{ url_for('delete_team_group', team_id=team.id, group_id=g.id) }}"
+                class="inline" onsubmit="return confirm('Delete group “{{ g.name }}”?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No groups yet.</p>
+  {% endif %}
+</section>
+{% if selected_group %}
+<section>
+  <h2>Group: {{ selected_group.name }}</h2>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('update_team_group', team_id=team.id, group_id=selected_group.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Name <input type="text" name="name" required value="{{ selected_group.name }}"></label>
+    <label>Team role
+      <select name="team_role">
+        <option value="">— none —</option>
+        {% for r in team_roles|default(['owner','admin','member','viewer']) %}
+        <option value="{{ r }}" {% if selected_group.team_role == r %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if selected_group.source != 'manual' %}
+    <label>External key
+      <input type="text" name="external_key" value="{{ selected_group.external_key or '' }}">
+    </label>
+    {% endif %}
+    <button type="submit">Save</button>
+  </form>
+  <form method="post" action="{{ url_for('add_group_member', team_id=team.id, group_id=selected_group.id) }}" class="row mt-1">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Add member
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  {% endif %}
+  {% if group_members %}
+  <table>
+    <thead><tr><th>User</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+    {% for m in group_members %}
+      <tr>
+        <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
+        <td><span class="role-badge">{{ m.source }}</span></td>
+        <td class="acts">
+          {% if is_admin %}
+          <form method="post"
+                action="{{ url_for('remove_group_member', team_id=team.id, group_id=selected_group.id, user_id=m.user_id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove {{ m.email }} from this group?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No members in this group yet.</p>
   {% endif %}
 </section>
 {% endif %}

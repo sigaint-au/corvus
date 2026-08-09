@@ -362,7 +362,12 @@ def sync_ldap_user(email: str, name: str, groups: list) -> dict:
         >>> # user = sync_ldap_user("a@b.com", "Ada", ["CN=Admins,DC=ex"])
         >>> # user["email"] == "a@b.com"
     """
-    from dir_sync import apply_global_admin_maps, apply_team_membership_maps, fetch_user_row
+    from dir_sync import (
+        apply_global_admin_maps,
+        apply_group_membership_maps,
+        apply_team_membership_maps,
+        fetch_user_row,
+    )
 
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute("SELECT private.upsert_ldap_user(%s, %s) AS id", (email, name or ""))
@@ -373,4 +378,5 @@ def sync_ldap_user(email: str, name: str, groups: list) -> dict:
         apply_team_membership_maps(
             cur, uid, groups, cur.fetchall() or [], group_key="ldap_group", source="ldap"
         )
+        apply_group_membership_maps(cur, uid, groups, source="ldap")
         return fetch_user_row(cur, uid)
