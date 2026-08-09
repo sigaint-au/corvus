@@ -894,8 +894,8 @@ def register(app):
                 if kind == "ssh" and not value:
                     value = (request.form.get("ssh_key") or "").strip()
                 note = (request.form.get("note") or "").strip()
-                req_appr = _parse_requires_approval(request.form)
-                # ACL mode is managed on the Access tab only — never reset on value save
+                # ACL + reveal approval live on the Access tab — preserve on value save
+                req_appr = row.get("requires_approval")
                 acl_mode = (row.get("acl_mode") or "inherit").strip() or "inherit"
                 row_view = dict(row)
                 row_view["note"] = note
@@ -913,6 +913,8 @@ def register(app):
                         kind=kind,
                         can_write=True,
                         status=400,
+                        can_admin=can_admin,
+                        active_tab="secret",
                     )
                     return body, code
                 try:
@@ -927,13 +929,14 @@ def register(app):
                         kind=kind,
                         can_write=True,
                         status=400,
+                        can_admin=can_admin,
+                        active_tab="secret",
                     )
                     return body, code
                 cur.execute(
                     """
                     UPDATE api.secrets
-                    SET value_enc = %s, note = %s, expires_at = %s, kind = %s,
-                        requires_approval = %s, acl_mode = %s
+                    SET value_enc = %s, note = %s, expires_at = %s, kind = %s
                     WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                     """,
                     (
@@ -941,8 +944,6 @@ def register(app):
                         note,
                         expires_at,
                         kind,
-                        req_appr,
-                        acl_mode,
                         str(secret_id),
                         str(project_id),
                     ),
@@ -2105,22 +2106,28 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl")
     @authz.login_required
     def update_secret_acl_mode(project_id, secret_id):
-        """Set per-secret ACL mode (project admin only)."""
+        """Set per-secret ACL mode and reveal-approval override (project admin only)."""
         mode = _parse_acl_mode(request.form)
+        req_appr = _parse_requires_approval(request.form)
+        access_url = url_for(
+            "secret_view",
+            project_id=project_id,
+            secret_id=secret_id,
+            tab="access",
+        )
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             if not (cur.fetchone() or {}).get("a"):
                 flash("Only project admins can change secret access", "error")
-                return redirect(
-                    url_for("secret_view", project_id=project_id, secret_id=secret_id)
-                )
+                return redirect(access_url)
             cur.execute(
                 """
-                UPDATE api.secrets SET acl_mode = %s
+                UPDATE api.secrets
+                SET acl_mode = %s, requires_approval = %s
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 RETURNING key
                 """,
-                (mode, str(secret_id), str(project_id)),
+                (mode, req_appr, str(secret_id), str(project_id)),
             )
             row = cur.fetchone()
             if not row:
@@ -2136,15 +2143,8 @@ def register(app):
                 )
                 conn.commit()
                 label = config.SECRET_ACL_MODE_LABELS.get(mode, mode)
-                flash(f"Access set to: {label}", "ok")
-        return redirect(
-            url_for(
-                "secret_view",
-                project_id=project_id,
-                secret_id=secret_id,
-                tab="access",
-            )
-        )
+                flash(f"Access settings saved ({label})", "ok")
+        return redirect(access_url)
 
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl/grants")
     @authz.login_required

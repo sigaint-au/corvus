@@ -287,14 +287,15 @@ Details: [deploy.md §9b](./deploy.md#9b-ldap).
 
 1. Open the secret **full view** (not only the inline reveal cell).
 2. Open the **Access** tab (project admins only).
-3. Set **Access mode** and save.
+3. Set **Access mode** and **Reveal approval**, then save.
 4. If mode is **custom**:
    - Grant by **email**, or  
    - Grant by **group** (dropdown of team groups),  
    - Choose permission: read / reveal / write.
 5. Remove grants from the same table on the Access tab.
 
-The **Secret** tab edits value/metadata only; it does not change ACL mode.
+The **Secret** tab edits value/metadata only; ACL mode and reveal approval are
+on the Access tab.
 
 Users must still pass project read (and any reveal-approval rules) to use the
 secret.
