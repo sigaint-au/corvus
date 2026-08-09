@@ -818,7 +818,9 @@
   <h2>Group roles</h2>
   <p class="muted">
     Grant a <strong>team group</strong> a project role. Group members get that access
-    (highest of user and group grants wins). Create groups on the team Groups tab.
+    (highest of user and group grants wins).
+    Create or edit groups under the team:
+    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='groups') }}">{{ project.team_name }} → Groups</a>.
   </p>
   {% if team_groups %}
   <form method="post" action="{{ url_for('add_project_group_role', project_id=project.id) }}" class="row">
@@ -840,7 +842,10 @@
     <button type="submit">Add</button>
   </form>
   {% else %}
-  <p class="empty">No team groups yet — create one on the team Groups tab first.</p>
+  <p class="empty">
+    No team groups yet —
+    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='groups') }}">create one on {{ project.team_name }} → Groups</a>.
+  </p>
   {% endif %}
   {% if project_group_roles %}
   <table>
