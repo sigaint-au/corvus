@@ -1836,29 +1836,43 @@ def ensure_schema():
             )
           )
         """,
+        # Drop before recreate when return type changes (user-only → user/group)
+        "DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid)",
         """
         CREATE OR REPLACE FUNCTION private.secret_acl_rows(p_secret uuid)
         RETURNS TABLE (
           id uuid,
           user_id uuid,
+          group_id uuid,
           email text,
           name text,
+          group_name text,
           permission text,
           created_at timestamptz
         )
         LANGUAGE sql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
-          SELECT a.id, a.user_id, u.email, u.name, a.permission, a.created_at
+          SELECT a.id, a.user_id, a.group_id,
+                 COALESCE(u.email, ''),
+                 COALESCE(u.name, ''),
+                 COALESCE(g.name, ''),
+                 a.permission, a.created_at
           FROM api.secret_acl a
-          JOIN private.users u ON u.id = a.user_id
           JOIN api.secrets s ON s.id = a.secret_id
+          LEFT JOIN private.users u ON u.id = a.user_id
+          LEFT JOIN api.groups g ON g.id = a.group_id
           WHERE a.secret_id = p_secret
             AND (
               api.can_admin_project(s.project_id)
               OR a.user_id = api.current_user_id()
+              OR EXISTS (
+                SELECT 1 FROM api.group_members gm
+                WHERE gm.group_id = a.group_id
+                  AND gm.user_id = api.current_user_id()
+              )
             )
-          ORDER BY u.email;
+          ORDER BY COALESCE(u.email, g.name);
         $$
         """,
         "GRANT EXECUTE ON FUNCTION private.secret_acl_rows TO authenticator, authenticated",
