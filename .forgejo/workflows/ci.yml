@@ -1,4 +1,4 @@
-# Gitea Actions (same steps as .github/workflows/ci.yml)
+# Forgejo Actions (same steps as .github/workflows/ci.yml)
 name: CI
 
 on:

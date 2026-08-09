@@ -11,7 +11,7 @@ tagged releases.
 ### Added
 
 - Pytest suite under `tests/` (domain modules) run via `tox -e py`
-- CI workflows (Gitea/GitHub Actions): unit tests + pylint
+- CI workflows (Forgejo/GitHub Actions): unit tests + pylint
 - `SECURITY.md`, `CONTRIBUTING.md`, and this changelog
 - Machine token key allow-list (exact keys + `*` / `?` globs)
 - Team secrets / projects list pagination and filters

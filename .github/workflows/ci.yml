@@ -1,4 +1,4 @@
-# Gitea Actions / GitHub Actions compatible CI
+# Forgejo Actions / GitHub Actions compatible CI
 name: CI
 
 on:
