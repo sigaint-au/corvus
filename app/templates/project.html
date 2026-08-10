@@ -765,11 +765,12 @@
 <section>
   <h2>Members</h2>
   <p class="muted">
-    Optional project-level roles for this project only.
-    Roles: <strong>read</strong> (view), <strong>write</strong> (edit secrets),
-    <strong>admin</strong> (write + manage members).
-    Project roles can <strong>elevate</strong> team members/viewers; they
-    <strong>cannot demote</strong> team owners or team admins.
+    Project-level access for people on this project only.
+    Creates a <strong>role binding</strong> (<code>project-read</code> /
+    <code>project-write</code> / <code>project-admin</code>).
+    Prefer team membership for broad access.
+    Advanced (groups, service accounts, extra roles):
+    <a href="{{ url_for('rbac_bindings', scope='project', scope_id=project.id) }}">Role bindings</a>.
   </p>
   <form method="post" action="{{ url_for('add_project_member', project_id=project.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -814,9 +815,9 @@
 <section>
   <h2>Group roles</h2>
   <p class="muted">
-    Grant a <strong>team group</strong> a project role. Group members get that access
-    (highest of user and group grants wins).
-    Create or edit groups under the team:
+    Bind a <strong>team group</strong> to a project role (same as a Group subject
+    on Role bindings). Members of the group inherit the grant.
+    Manage groups under
     <a href="{{ url_for('team_detail', team_id=project.team_id, tab='groups') }}">{{ project.team_name }} → Groups</a>.
   </p>
   {% if team_groups %}

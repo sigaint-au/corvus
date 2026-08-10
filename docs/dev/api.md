@@ -233,15 +233,13 @@ keys (Flask `<path:key>`), e.g. `db/password`.
 System fields are not set via API body. Custom `metadata` is managed in the UI
 **Metadata** tab (writers).
 
-### Per-secret ACLs
+### Per-secret access modes
 
-| `acl_mode` | Who can access (beyond project membership) |
-|------------|---------------------------------------------|
-| `inherit` (default) | Project RBAC as usual |
-| `writers` | Project writers and above |
-| `admins` | Project admins (+ team owners/admins always) |
-| `owners` | Team owners (+ team/project admins still full access) |
-| `custom` | Explicit user **or** group grants in `api.secret_acl` (+ admins always) |
+| `acl_mode` | Who can access |
+|------------|----------------|
+| `inherit` (default) | Project/team RBAC via scope chain; secret-scope bindings add grants |
+| `custom` (restricted) | Only secret-scope `rbac.bindings` (+ project admins) |
+| `writers` / `admins` / `owners` | Legacy values; treated like inherit under k8s RBAC |
 
 **Always full access:** global admins and users with `can_admin_project`.
 
@@ -645,7 +643,7 @@ Use the JWT from `/api/token`. Default compose port: **3000**.
 | `/project_group_roles` | Group → project role | |
 | `/secrets` | Row metadata + `value_enc` | Soft-delete via `deleted_at`; `acl_mode` |
 | `/secret_meta` | Custom secret labels | Searchable in UI/API `q=` |
-| `/secret_acl` | Per-secret grants | `user_id` **or** `group_id` when `acl_mode=custom` |
+| (removed) `/secret_acl` | — | Use secret-scope `rbac.bindings` / Permissions UI |
 | `/secret_versions` | Prior ciphertexts | Filled on value change |
 | `/secret_audit` | Secret actions | Append-only |
 | `/secret_access_requests` | Reveal approval workflow | pending/approved/denied |

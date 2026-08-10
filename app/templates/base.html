@@ -2265,14 +2265,13 @@
         <div class="side-group-body">
           <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}"
              href="{{ url_for('access_requests_inbox') }}">Requests{% if nav_access_pending %}<span class="tab-badge" title="{{ nav_access_pending }} pending">{{ nav_access_pending }}</span>{% endif %}</a>
-          {% if is_global_admin %}
+          {# Team admins manage bindings for their scopes; Roles catalogue for all admins #}
           <a class="side-nav-link {% if ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}active{% endif %}"
-             href="{{ url_for('rbac_bindings') }}">Role bindings</a>
+             href="{{ url_for('rbac_bindings', scope='team') }}">Role bindings</a>
           <a class="side-nav-link {% if ep in ('rbac_roles', 'rbac_roles_create', 'rbac_roles_delete') %}active{% endif %}"
              href="{{ url_for('rbac_roles') }}">Roles</a>
           <a class="side-nav-link {% if ep == 'rbac_access_review' %}active{% endif %}"
              href="{{ url_for('rbac_access_review') }}">Review</a>
-          {% endif %}
         </div>
       </details>
       {% if is_global_admin %}

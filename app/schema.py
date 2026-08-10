@@ -1760,21 +1760,9 @@ def ensure_schema():
         EXCEPTION WHEN others THEN NULL;
         END $$
         """,
-        """
-        CREATE TABLE IF NOT EXISTS api.secret_acl (
-          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-          secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
-          user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
-          permission text NOT NULL DEFAULT 'reveal'
-            CHECK (permission IN ('read', 'reveal', 'write')),
-          created_at timestamptz NOT NULL DEFAULT now(),
-          created_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
-          UNIQUE (secret_id, user_id)
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS secret_acl_user_idx ON api.secret_acl (user_id)
-        """,
+        # Legacy api.secret_acl removed — use secret-scope rbac.bindings
+        "DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid)",
+        "DROP TABLE IF EXISTS api.secret_acl CASCADE",
         """
         CREATE OR REPLACE FUNCTION api._perm_rank(p text) RETURNS int
         LANGUAGE sql IMMUTABLE AS $$
@@ -1815,17 +1803,7 @@ def ensure_schema():
             WHEN mode = 'owners' THEN (
               api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
             )
-            WHEN mode = 'custom' THEN EXISTS (
-              SELECT 1 FROM api.secret_acl a
-              WHERE a.secret_id = sid
-                AND api._perm_rank(a.permission) >= api._perm_rank(need)
-                AND (
-                  a.user_id = api.current_user_id()
-                  OR EXISTS (
-                    SELECT 1 FROM api.group_members gm
-                    WHERE gm.group_id = a.group_id
-                      AND gm.user_id = api.current_user_id()
-                  )
+            WHEN mode = 'custom' THEN false
                 )
             )
             ELSE false
@@ -1853,76 +1831,6 @@ def ensure_schema():
         "GRANT EXECUTE ON FUNCTION api._perm_rank TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon",
-        "ALTER TABLE api.secret_acl ENABLE ROW LEVEL SECURITY",
-        "DROP POLICY IF EXISTS secret_acl_select ON api.secret_acl",
-        """
-        CREATE POLICY secret_acl_select ON api.secret_acl FOR SELECT TO authenticated
-          USING (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = secret_id
-                AND api.can_access_secret_row(
-                  s.id, s.project_id, s.acl_mode, 'read', s.deleted_at
-                )
-            )
-          )
-        """,
-        "DROP POLICY IF EXISTS secret_acl_insert ON api.secret_acl",
-        """
-        CREATE POLICY secret_acl_insert ON api.secret_acl FOR INSERT TO authenticated
-          WITH CHECK (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              JOIN api.projects p ON p.id = s.project_id
-              WHERE s.id = secret_id
-                AND api.can_admin_project(s.project_id)
-                AND (
-                  group_id IS NULL
-                  OR EXISTS (
-                    SELECT 1 FROM api.groups g
-                    WHERE g.id = group_id AND g.team_id = p.team_id
-                  )
-                )
-            )
-          )
-        """,
-        "DROP POLICY IF EXISTS secret_acl_update ON api.secret_acl",
-        """
-        CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
-          USING (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
-            )
-          )
-          WITH CHECK (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              JOIN api.projects p ON p.id = s.project_id
-              WHERE s.id = secret_id
-                AND api.can_admin_project(s.project_id)
-                AND (
-                  group_id IS NULL
-                  OR EXISTS (
-                    SELECT 1 FROM api.groups g
-                    WHERE g.id = group_id AND g.team_id = p.team_id
-                  )
-                )
-            )
-          )
-        """,
-        "DROP POLICY IF EXISTS secret_acl_delete ON api.secret_acl",
-        """
-        CREATE POLICY secret_acl_delete ON api.secret_acl FOR DELETE TO authenticated
-          USING (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
-            )
-          )
-        """,
-        "GRANT SELECT, INSERT, UPDATE, DELETE ON api.secret_acl TO authenticated",
-        "GRANT ALL ON api.secret_acl TO authenticator",
         # Secrets RLS: row-based ACL (safe for INSERT … RETURNING)
         "DROP POLICY IF EXISTS secrets_select ON api.secrets",
         """
@@ -1963,44 +1871,6 @@ def ensure_schema():
         "REVOKE INSERT ON api.secret_versions FROM authenticated",
         # Drop before recreate when return type changes (user-only → user/group)
         "DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid)",
-        """
-        CREATE OR REPLACE FUNCTION private.secret_acl_rows(p_secret uuid)
-        RETURNS TABLE (
-          id uuid,
-          user_id uuid,
-          group_id uuid,
-          email text,
-          name text,
-          group_name text,
-          permission text,
-          created_at timestamptz
-        )
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT a.id, a.user_id, a.group_id,
-                 COALESCE(u.email, ''),
-                 COALESCE(u.name, ''),
-                 COALESCE(g.name, ''),
-                 a.permission, a.created_at
-          FROM api.secret_acl a
-          JOIN api.secrets s ON s.id = a.secret_id
-          LEFT JOIN private.users u ON u.id = a.user_id
-          LEFT JOIN api.groups g ON g.id = a.group_id
-          WHERE a.secret_id = p_secret
-            AND (
-              api.can_admin_project(s.project_id)
-              OR a.user_id = api.current_user_id()
-              OR EXISTS (
-                SELECT 1 FROM api.group_members gm
-                WHERE gm.group_id = a.group_id
-                  AND gm.user_id = api.current_user_id()
-              )
-            )
-          ORDER BY COALESCE(u.email, g.name);
-        $$
-        """,
-        "GRANT EXECUTE ON FUNCTION private.secret_acl_rows TO authenticator, authenticated",
         # ── Org RBAC: team-scoped groups + group grants ─────────────────
         """
         CREATE TABLE IF NOT EXISTS api.groups (
@@ -2067,62 +1937,7 @@ def ensure_schema():
           PRIMARY KEY (project_id, group_id)
         )
         """,
-        # secret_acl: allow group grants (user_id nullable + group_id)
-        """
-        ALTER TABLE api.secret_acl
-          ALTER COLUMN user_id DROP NOT NULL
-        """,
-        """
-        ALTER TABLE api.secret_acl
-          ADD COLUMN IF NOT EXISTS group_id uuid
-            REFERENCES api.groups(id) ON DELETE CASCADE
-        """,
-        """
-        DO $$
-        DECLARE r record;
-        BEGIN
-          FOR r IN
-            SELECT c.conname
-            FROM pg_constraint c
-            JOIN pg_class t ON c.conrelid = t.oid
-            JOIN pg_namespace n ON t.relnamespace = n.oid
-            WHERE n.nspname = 'api' AND t.relname = 'secret_acl'
-              AND c.contype = 'u'
-          LOOP
-            EXECUTE format('ALTER TABLE api.secret_acl DROP CONSTRAINT %I', r.conname);
-          END LOOP;
-          FOR r IN
-            SELECT c.conname
-            FROM pg_constraint c
-            JOIN pg_class t ON c.conrelid = t.oid
-            JOIN pg_namespace n ON t.relnamespace = n.oid
-            WHERE n.nspname = 'api' AND t.relname = 'secret_acl'
-              AND c.contype = 'c'
-              AND pg_get_constraintdef(c.oid) ILIKE '%user_id%'
-              AND pg_get_constraintdef(c.oid) ILIKE '%group_id%'
-          LOOP
-            EXECUTE format('ALTER TABLE api.secret_acl DROP CONSTRAINT %I', r.conname);
-          END LOOP;
-          ALTER TABLE api.secret_acl
-            ADD CONSTRAINT secret_acl_principal_check CHECK (
-              (user_id IS NOT NULL AND group_id IS NULL)
-              OR (user_id IS NULL AND group_id IS NOT NULL)
-            );
-        EXCEPTION WHEN others THEN NULL;
-        END $$
-        """,
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS secret_acl_user_uidx
-          ON api.secret_acl (secret_id, user_id) WHERE user_id IS NOT NULL
-        """,
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS secret_acl_group_uidx
-          ON api.secret_acl (secret_id, group_id) WHERE group_id IS NOT NULL
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS secret_acl_group_idx
-          ON api.secret_acl (group_id) WHERE group_id IS NOT NULL
-        """,
+        # legacy secret_acl group-grant migration removed
         """
         CREATE OR REPLACE FUNCTION api._role_rank(r text) RETURNS int
         LANGUAGE sql IMMUTABLE AS $$
@@ -2268,17 +2083,7 @@ def ensure_schema():
             WHEN mode = 'owners' THEN (
               api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
             )
-            WHEN mode = 'custom' THEN EXISTS (
-              SELECT 1 FROM api.secret_acl a
-              WHERE a.secret_id = sid
-                AND api._perm_rank(a.permission) >= api._perm_rank(need)
-                AND (
-                  a.user_id = api.current_user_id()
-                  OR EXISTS (
-                    SELECT 1 FROM api.group_members gm
-                    WHERE gm.group_id = a.group_id
-                      AND gm.user_id = api.current_user_id()
-                  )
+            WHEN mode = 'custom' THEN false
                 )
             )
             ELSE false
@@ -2457,43 +2262,12 @@ def ensure_schema():
         """,
         # Return type changed (added group_id / group_name) — must DROP first
         "DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid)",
-        """
-        CREATE OR REPLACE FUNCTION private.secret_acl_rows(p_secret uuid)
-        RETURNS TABLE (
-          id uuid, user_id uuid, group_id uuid,
-          email text, name text, group_name text,
-          permission text, created_at timestamptz
-        )
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT a.id, a.user_id, a.group_id,
-                 COALESCE(u.email, ''), COALESCE(u.name, ''),
-                 COALESCE(g.name, ''), a.permission, a.created_at
-          FROM api.secret_acl a
-          JOIN api.secrets s ON s.id = a.secret_id
-          LEFT JOIN private.users u ON u.id = a.user_id
-          LEFT JOIN api.groups g ON g.id = a.group_id
-          WHERE a.secret_id = p_secret
-            AND (
-              api.can_admin_project(s.project_id)
-              OR a.user_id = api.current_user_id()
-              OR EXISTS (
-                SELECT 1 FROM api.group_members gm
-                WHERE gm.group_id = a.group_id
-                  AND gm.user_id = api.current_user_id()
-              )
-            )
-          ORDER BY COALESCE(u.email, g.name);
-        $$
-        """,
         "GRANT EXECUTE ON FUNCTION api._role_rank TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.project_role TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION private.team_group_rows TO authenticator, authenticated",
         "GRANT EXECUTE ON FUNCTION private.group_member_rows TO authenticator, authenticated",
         "GRANT EXECUTE ON FUNCTION private.project_group_role_rows TO authenticator, authenticated",
-        "GRANT EXECUTE ON FUNCTION private.secret_acl_rows TO authenticator, authenticated",
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.groups TO authenticated",
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.group_members TO authenticated",
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.project_group_roles TO authenticated",
@@ -2542,51 +2316,7 @@ def ensure_schema():
         """,
         "DROP POLICY IF EXISTS secret_versions_insert ON api.secret_versions",
         "REVOKE INSERT, UPDATE, DELETE ON api.secret_versions FROM authenticated",
-        # L2: ACL group grants must share the secret's team
-        "DROP POLICY IF EXISTS secret_acl_insert ON api.secret_acl",
-        """
-        CREATE POLICY secret_acl_insert ON api.secret_acl FOR INSERT TO authenticated
-          WITH CHECK (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              JOIN api.projects p ON p.id = s.project_id
-              WHERE s.id = secret_id
-                AND api.can_admin_project(s.project_id)
-                AND (
-                  group_id IS NULL
-                  OR EXISTS (
-                    SELECT 1 FROM api.groups g
-                    WHERE g.id = group_id AND g.team_id = p.team_id
-                  )
-                )
-            )
-          )
-        """,
-        "DROP POLICY IF EXISTS secret_acl_update ON api.secret_acl",
-        """
-        CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
-          USING (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
-            )
-          )
-          WITH CHECK (
-            EXISTS (
-              SELECT 1 FROM api.secrets s
-              JOIN api.projects p ON p.id = s.project_id
-              WHERE s.id = secret_id
-                AND api.can_admin_project(s.project_id)
-                AND (
-                  group_id IS NULL
-                  OR EXISTS (
-                    SELECT 1 FROM api.groups g
-                    WHERE g.id = group_id AND g.team_id = p.team_id
-                  )
-                )
-            )
-          )
-        """,
+        # L2: secret_acl group-team check removed with table
         # L3: no user directory SELECT for JWT clients; private not in PostgREST schemas
         "REVOKE ALL ON api.user_directory FROM authenticated",
         "REVOKE ALL ON api.user_directory FROM anon",
@@ -2598,7 +2328,6 @@ def ensure_schema():
         "ALTER TABLE api.project_members FORCE ROW LEVEL SECURITY",
         "ALTER TABLE api.secrets FORCE ROW LEVEL SECURITY",
         "ALTER TABLE api.secret_versions FORCE ROW LEVEL SECURITY",
-        "ALTER TABLE api.secret_acl FORCE ROW LEVEL SECURITY",
         "ALTER TABLE api.secret_meta FORCE ROW LEVEL SECURITY",
         "ALTER TABLE api.secret_access_requests FORCE ROW LEVEL SECURITY",
         "ALTER TABLE api.machine_tokens FORCE ROW LEVEL SECURITY",

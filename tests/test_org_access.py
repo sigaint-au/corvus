@@ -107,21 +107,23 @@ class TestOrgAccess:
         assert 'REVOKE INSERT, UPDATE, DELETE ON api.secret_versions FROM authenticated' in init
         assert 'SECURITY DEFINER' in init.split('archive_secret_version')[1][:400]
         assert 'REVOKE INSERT, UPDATE, DELETE ON api.secret_versions' in src
-        assert 'g.team_id = p.team_id' in init
-        assert 'g.team_id = p.team_id' in src
+        # L2 was secret_acl group-team check; table dropped — ensure drop remains
+        assert 'DROP TABLE IF EXISTS api.secret_acl' in src
+        assert 'CREATE TABLE api.secret_acl' not in init
         assert 'FORCE ROW LEVEL SECURITY' in init
         assert 'FORCE ROW LEVEL SECURITY' in src
 
     def test_secret_acl_schema_and_config(self):
         from pathlib import Path
-        assert 'owners' in config.SECRET_ACL_MODES
+        assert 'inherit' in config.SECRET_ACL_MODES
+        assert 'custom' in config.SECRET_ACL_MODES
         assert 'reveal' in config.SECRET_ACL_PERMISSIONS
+        assert config.SECRET_ACL_PERM_TO_ROLE['reveal'] == 'secret-reveal'
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         assert 'acl_mode' in init
-        assert 'CREATE TABLE api.secret_acl' in init
+        assert 'CREATE TABLE api.secret_acl' not in init
         assert 'api.can_access_secret' in init
         assert 'api.can_access_secret_row' in init
-        assert 'api._perm_rank' in init
         assert "can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)" in init
         rev = init[init.index('FUNCTION api.can_reveal_secret'):]
         rev = rev[:rev.index('$$;') + 3]
@@ -129,11 +131,14 @@ class TestOrgAccess:
         src = Path(schema_mod.__file__).read_text()
         assert 'can_access_secret' in src
         assert 'can_access_secret_row' in src
-        assert 'secret_acl' in src
+        assert 'DROP TABLE IF EXISTS api.secret_acl' in src
         assert "NOT api.can_access_secret(sid, 'reveal')" in src
+        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'DROP TABLE IF EXISTS api.secret_acl' in rbac
+        assert 'rbac_secret_binding_allows' in rbac
 
     def test_can_access_secret_row_modes_in_sql(self):
-        """ACL mode branches exist for inherit/writers/admins/owners/custom."""
+        """Bootstrap init keeps mode branches; k8s rbac rewrites custom to bindings."""
         from pathlib import Path
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         start = init.index('FUNCTION api.can_access_secret_row')
@@ -142,8 +147,11 @@ class TestOrgAccess:
             assert mode in body, f'mode {mode} missing from can_access_secret_row'
         for need in ("'read'", "'reveal'", "'write'"):
             assert need in body
-        assert 'group_members' in body
-        assert '_perm_rank' in body
+        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        rstart = rbac.index('FUNCTION api.can_access_secret_row')
+        rbody = rbac[rstart:rstart + 2500]
+        assert 'rbac_secret_binding_allows' in rbody
+        assert 'api.secret_acl' not in rbody
 
     def test_export_filters_reveal_permission(self):
         """Plain export SQL must filter by can_access_secret reveal + can_reveal."""
@@ -257,7 +265,7 @@ class TestOrgAccess:
         assert 'CREATE TABLE IF NOT EXISTS api.groups' in src
         assert 'project_group_roles' in src
         assert 'team_group_rows' in src
-        assert 'secret_acl_principal_check' in src
+        assert 'DROP TABLE IF EXISTS api.secret_acl' in src
         teams_src = (APP_ROOT / 'routes' / 'teams.py').read_text()
         assert 'create_team_group' in teams_src
         assert 'apply_group_membership_maps' in Path(APP_ROOT / 'ldap_auth.py').read_text()

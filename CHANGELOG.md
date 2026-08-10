@@ -16,8 +16,16 @@ tagged releases.
   Access review). Start-fresh: no data migration from legacy membership tables.
 - Pytest suite under `tests/` (domain modules) run via `tox -e py`
 
+### Removed
+
+- Legacy `api.secret_acl` table and `private.secret_acl_rows` (per-secret grants
+  are secret-scope `rbac.bindings` only; dropped on schema ensure)
+
 ### Changed
 
+- Team admin RBAC UX: Access nav (Role bindings / Roles / Review) open to all
+  signed-in users; **Team → Access** tab; bindings page breadcrumb + scope-aware
+  project/group pickers; `can_manage_rbac` allows project admins on secret scope
 - Regenerated `docs/postgrest-openapi.json` from live PostgREST (authenticated
   role): groups, secret ACL/meta/access requests, machine token scope,
   project description / ACL / last_accessed columns, new `api.can_*` RPCs

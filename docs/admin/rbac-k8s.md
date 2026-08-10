@@ -6,11 +6,12 @@ systems to a single model:
 **Subjects** (User, Group, ServiceAccount) + **Roles** (verbs × resources) +
 **Bindings** (subject + role + scope).
 
-> **Start-fresh:** existing `team_members`, `project_members`, `secret_acl`, and
-> machine-token roles are **not** migrated into bindings. New installs and
-> upgraded databases get empty bindings plus built-in role definitions. Team
-> creation still inserts a **team-owner** binding for the creator (and a legacy
-> `team_members` owner row for transitional UI).
+> **Start-fresh:** existing `team_members` / `project_members` and machine-token
+> roles are **not** migrated into bindings automatically (membership UIs dual-write
+> going forward). The legacy `api.secret_acl` table is **dropped**; per-secret
+> grants use secret-scope `rbac.bindings`. New installs get built-in roles plus
+> empty bindings. Team creation still inserts a **team-owner** binding for the
+> creator (and a transitional `team_members` owner row for the Members UI).
 
 ## Scope hierarchy
 
@@ -40,16 +41,36 @@ requires `reveal` via RBAC, then applies the approval layer.
 
 ## Admin UI
 
-| Screen | Path | Purpose |
-|--------|------|---------|
-| Roles | `/rbac/roles` | List built-in / create custom roles |
-| Bindings | `/rbac/bindings` | Bind subject + role at a scope (familiar dropdowns) |
-| Access review | `/rbac/access-review` | Who can do X on a resource |
+| Screen | Path | Who | Purpose |
+|--------|------|-----|---------|
+| Roles | `/rbac/roles` | Global admin (create/edit) | List built-in / create custom roles |
+| Bindings | `/rbac/bindings` | Team/project admins + global | Bind subject + role at a scope |
+| Access review | `/rbac/access-review` | Anyone who can open Access | Who can do X on a resource |
+| Team → **Access** | links to bindings scoped to that team | Team owner/admin | Fast path for team admins |
+| Secret → **Permissions** | secret view | Project admin | Secret-scope bindings + access mode |
+
+## Team admin: manage RBAC easily
+
+Day-to-day people management still uses familiar tabs (they dual-write
+`rbac.bindings`):
+
+| Task | Easiest UI |
+|------|------------|
+| Add a person to the team | **Team → Members** (role owner/admin/member/viewer) |
+| Manage groups | **Team → Groups** |
+| Project-only access | **Project → Settings → Members** |
+| Advanced (group as subject, SA, extra roles) | **Team → Access** or **Access → Role bindings** |
+| Restrict one secret | **Secret → Permissions** → Restricted + bindings |
+
+Authorization for binding writes uses `api.can_manage_rbac(scope, id)`:
+team owner/admin for team scope; project admin for project/secret scopes;
+global admin for cluster.
 
 ## Schema
 
 - `rbac.roles`, `rbac.role_rules`, `rbac.bindings` — see `db/rbac.sql`
 - Applied by `ensure_schema()` and on fresh volumes via compose `02-rbac.sql`
+- **`api.secret_acl` is dropped** on ensure (no dual-write)
 - Compatibility helpers `can_read_project`, `can_write_project`,
   `can_admin_project`, `can_access_secret`, `team_role`, `project_role` are
   reimplemented on top of `api.can` (legacy membership tables not consulted
@@ -57,8 +78,9 @@ requires `reveal` via RBAC, then applies the approval layer.
 
 ## Granting access after upgrade
 
-1. Sign in as a **global admin** (still bypasses all checks).
-2. Open **Access → Role bindings**.
+1. Sign in as a **global admin** (still bypasses all checks), or as a team
+   owner if bindings already exist for that team.
+2. Open **Access → Role bindings** (or **Team → Access**).
 3. Scope **team**, pick the team, bind users with **Owner** / **Admin** /
    **Member** / **Viewer** (maps to `team-*` roles).
 4. Optionally bind at project or secret scopes for tighter grants.
@@ -66,8 +88,8 @@ requires `reveal` via RBAC, then applies the approval layer.
 ## Per-secret permissions (Permissions tab)
 
 The secret **Permissions** tab manages **secret-scope role bindings**
-(`secret-read` / `secret-reveal` / `secret-write`), not the legacy
-`api.secret_acl` table.
+(`secret-read` / `secret-reveal` / `secret-write`). The old `api.secret_acl`
+table is gone.
 
 | Access mode (`acl_mode`) | Behaviour |
 |--------------------------|-----------|

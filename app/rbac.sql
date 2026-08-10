@@ -599,12 +599,21 @@ SET row_security = off AS $$
     OR api.can('admin', 'bindings', p_scope_kind, p_scope_id)
     OR api.can('*', '*', p_scope_kind, p_scope_id)
     OR (
+      p_scope_kind = 'team'
+      AND api.team_role(p_scope_id) IN ('owner', 'admin')
+    )
+    OR (
       p_scope_kind = 'project'
       AND api.can_admin_project(p_scope_id)
     )
     OR (
-      p_scope_kind = 'team'
-      AND api.team_role(p_scope_id) IN ('owner', 'admin')
+      p_scope_kind = 'secret'
+      AND EXISTS (
+        SELECT 1 FROM api.secrets s
+        WHERE s.id = p_scope_id
+          AND s.deleted_at IS NULL
+          AND api.can_admin_project(s.project_id)
+      )
     );
 $$;
 
@@ -640,3 +649,7 @@ DROP POLICY IF EXISTS rbac_bindings_write ON rbac.bindings;
 CREATE POLICY rbac_bindings_write ON rbac.bindings FOR ALL TO authenticated
   USING (api.can_manage_rbac(scope_kind, scope_id))
   WITH CHECK (api.can_manage_rbac(scope_kind, scope_id));
+
+-- ── Drop legacy secret ACL (replaced by secret-scope rbac.bindings) ──
+DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid);
+DROP TABLE IF EXISTS api.secret_acl CASCADE;

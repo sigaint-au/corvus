@@ -73,29 +73,19 @@ back to their **team role**:
 If they **do** have a project grant, that role is used for read/write/admin
 checks (still subject to "team owner/admin always admin/write").
 
-### 2c. Per-secret ACL modes
+### 2c. Per-secret access (role bindings)
 
-Set on the secret (create form or secret full view). Project membership still
-required first (`can_read_project`).
+Set on the secret (create form or secret full view). See also
+[rbac-k8s.md](rbac-k8s.md) for the Kubernetes-style model.
 
-| `acl_mode` | Who may access (beyond "must already see the project") |
-|------------|--------------------------------------------------------|
-| **inherit** (default) | Normal project RBAC (read for readers; write needs write+) |
-| **writers** | Only users who can write the project |
-| **admins** | Only project admins (and team owner/admin / global admin) |
-| **owners** | Only team **owners** (plus global admin) |
-| **custom** | Explicit grants in the secret ACL list (user and/or group) |
-
-On **custom**, each grant has a permission:
-
-| Permission | Meaning |
-|------------|---------|
-| **read** | See the secret exists / metadata |
-| **reveal** | Decrypt and view the value |
-| **write** | Edit / delete (includes reveal + read) |
+| `acl_mode` | Who may access |
+|------------|----------------|
+| **inherit** (default) | Project/team RBAC via the scope chain; optional secret-scope bindings add grants |
+| **custom** (restricted) | Only secret-scope bindings (`secret-read` / `secret-reveal` / `secret-write`) plus project admins |
 
 **Always full access on a secret:** global admins and anyone with
-`can_admin_project` for that secret's project.
+`can_admin_project` for that secret's project. The legacy `api.secret_acl`
+table has been removed.
 
 **Machine tokens** (`ss_…`) and ESO use SECURITY DEFINER helpers and are **not**
 gated by per-secret human ACLs or reveal-approval (project-scoped only). Prefer

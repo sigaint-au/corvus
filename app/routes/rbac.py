@@ -242,32 +242,96 @@ def register(app):
     @app.get("/rbac/bindings")
     @authz.login_required
     def rbac_bindings():
-        """List and create bindings at a chosen scope."""
+        """List and create bindings at a chosen scope.
+
+        Team/project admins manage their scopes; cluster scope is global-admin only.
+        """
         scope_kind = (request.args.get("scope") or "team").strip().lower()
         if scope_kind not in config.RBAC_SCOPE_KINDS:
+            scope_kind = "team"
+        # Non–global admins cannot use cluster scope
+        if scope_kind == "cluster" and not session.get("is_global_admin"):
             scope_kind = "team"
         scope_id = (request.args.get("scope_id") or "").strip() or None
         tid = session.get("team_id")
 
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            # Scope pickers
+            # Scope pickers (RLS filters teams the user can see)
             cur.execute(
                 """
                 SELECT t.id, t.name FROM api.teams t ORDER BY t.name
                 """
             )
             teams = cur.fetchall() or []
+
+            # Default scope_id early so pickers resolve against the right team
+            if scope_kind == "team" and not scope_id and tid:
+                scope_id = tid
+            if scope_kind == "cluster":
+                scope_id = None
+
+            # Resolve team context for project/group/secret pickers
+            # (prefer selected scope over session team so multi-team admins work)
+            picker_team_id = tid
+            scope_label = None
+            back_team_id = None
+            if scope_kind == "team" and scope_id:
+                picker_team_id = scope_id
+                back_team_id = scope_id
+                for t in teams:
+                    if str(t["id"]) == str(scope_id):
+                        scope_label = t["name"]
+                        break
+            elif scope_kind == "project" and scope_id:
+                cur.execute(
+                    """
+                    SELECT p.name, p.team_id, t.name AS team_name
+                    FROM api.projects p
+                    JOIN api.teams t ON t.id = p.team_id
+                    WHERE p.id = %s::uuid
+                    """,
+                    (scope_id,),
+                )
+                prow = cur.fetchone()
+                if prow:
+                    picker_team_id = str(prow["team_id"])
+                    back_team_id = picker_team_id
+                    scope_label = prow["name"]
+            elif scope_kind == "secret" and scope_id:
+                cur.execute(
+                    """
+                    SELECT s.key AS name, p.team_id, p.name AS project_name, t.name AS team_name
+                    FROM api.secrets s
+                    JOIN api.projects p ON p.id = s.project_id
+                    JOIN api.teams t ON t.id = p.team_id
+                    WHERE s.id = %s::uuid AND s.deleted_at IS NULL
+                    """,
+                    (scope_id,),
+                )
+                srow = cur.fetchone()
+                if srow:
+                    picker_team_id = str(srow["team_id"])
+                    back_team_id = picker_team_id
+                    scope_label = f"{srow['project_name']} / {srow['name']}"
+
             projects = []
             secrets = []
-            if tid:
+            if picker_team_id:
                 cur.execute(
                     """
                     SELECT p.id, p.name FROM api.projects p
                     WHERE p.team_id = %s ORDER BY p.name
                     """,
-                    (tid,),
+                    (picker_team_id,),
                 )
                 projects = cur.fetchall() or []
+            else:
+                # All projects the user can see (fallback when no team context)
+                cur.execute(
+                    "SELECT p.id, p.name FROM api.projects p ORDER BY p.name LIMIT 500"
+                )
+                projects = cur.fetchall() or []
+
             if scope_kind == "project" and scope_id:
                 cur.execute(
                     """
@@ -278,7 +342,7 @@ def register(app):
                     (scope_id,),
                 )
                 secrets = cur.fetchall() or []
-            elif scope_kind == "secret" and tid:
+            elif scope_kind == "secret" and picker_team_id:
                 cur.execute(
                     """
                     SELECT s.id, s.key AS name, p.name AS project_name
@@ -287,15 +351,9 @@ def register(app):
                     WHERE p.team_id = %s AND s.deleted_at IS NULL
                     ORDER BY p.name, s.key LIMIT 500
                     """,
-                    (tid,),
+                    (picker_team_id,),
                 )
                 secrets = cur.fetchall() or []
-
-            # Default scope_id
-            if scope_kind == "team" and not scope_id and tid:
-                scope_id = tid
-            if scope_kind == "cluster":
-                scope_id = None
 
             if scope_kind == "cluster":
                 cur.execute(
@@ -359,10 +417,10 @@ def register(app):
             all_roles = cur.fetchall() or []
 
             groups = []
-            if tid:
+            if picker_team_id:
                 cur.execute(
                     "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
-                    (tid,),
+                    (picker_team_id,),
                 )
                 groups = cur.fetchall() or []
 
@@ -389,6 +447,8 @@ def register(app):
             dropdown=dropdown,
             scope_kind=scope_kind,
             scope_id=scope_id,
+            scope_label=scope_label,
+            back_team_id=back_team_id,
             can_edit=can_edit,
             subject_kinds=config.RBAC_SUBJECT_KINDS,
             scope_kinds=config.RBAC_SCOPE_KINDS,
@@ -409,6 +469,9 @@ def register(app):
             flash("Invalid scope", "error")
             return redirect(url_for("rbac_bindings"))
         if scope_kind == "cluster":
+            if not session.get("is_global_admin"):
+                flash("Only global admins can create cluster bindings", "error")
+                return redirect(url_for("rbac_bindings", scope="team"))
             scope_id = None
         elif not scope_id:
             flash("Scope id required", "error")

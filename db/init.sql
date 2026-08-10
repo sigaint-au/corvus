@@ -272,28 +272,8 @@ CREATE TABLE api.secret_meta (
 CREATE INDEX secret_meta_key_idx ON api.secret_meta (key);
 CREATE INDEX secret_meta_value_idx ON api.secret_meta (value);
 
--- Explicit per-user or per-group grants when secrets.acl_mode = 'custom'
-CREATE TABLE api.secret_acl (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
-  user_id uuid REFERENCES private.users(id) ON DELETE CASCADE,
-  group_id uuid REFERENCES api.groups(id) ON DELETE CASCADE,
-  -- read < reveal < write (write implies reveal + read)
-  permission text NOT NULL DEFAULT 'reveal'
-    CHECK (permission IN ('read', 'reveal', 'write')),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
-  CHECK (
-    (user_id IS NOT NULL AND group_id IS NULL)
-    OR (user_id IS NULL AND group_id IS NOT NULL)
-  )
-);
-CREATE UNIQUE INDEX secret_acl_user_uidx
-  ON api.secret_acl (secret_id, user_id) WHERE user_id IS NOT NULL;
-CREATE UNIQUE INDEX secret_acl_group_uidx
-  ON api.secret_acl (secret_id, group_id) WHERE group_id IS NOT NULL;
-CREATE INDEX secret_acl_user_idx ON api.secret_acl (user_id) WHERE user_id IS NOT NULL;
-CREATE INDEX secret_acl_group_idx ON api.secret_acl (group_id) WHERE group_id IS NOT NULL;
+-- Legacy per-secret ACL table removed: use secret-scope rbac.bindings
+-- (secrets.acl_mode inherit|custom remains; custom = exclusive secret bindings).
 
 
 -- Per-user pins (favorites) and recently accessed secrets
@@ -608,19 +588,8 @@ SET row_security = off AS $$
     WHEN mode = 'owners' THEN (
       api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
     )
-    WHEN mode = 'custom' THEN EXISTS (
-      SELECT 1 FROM api.secret_acl a
-      WHERE a.secret_id = sid
-        AND api._perm_rank(a.permission) >= api._perm_rank(need)
-        AND (
-          a.user_id = api.current_user_id()
-          OR EXISTS (
-            SELECT 1 FROM api.group_members gm
-            WHERE gm.group_id = a.group_id
-              AND gm.user_id = api.current_user_id()
-          )
-        )
-    )
+    -- custom/restricted: rewritten by db/rbac.sql to use secret-scope bindings
+    WHEN mode = 'custom' THEN false
     ELSE false
   END;
 $$;
@@ -695,7 +664,6 @@ ALTER TABLE api.org_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_audit ENABLE ROW LEVEL SECURITY;
-ALTER TABLE api.secret_acl ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_meta ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_access_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
@@ -917,62 +885,7 @@ CREATE POLICY pgr_update ON api.project_group_roles FOR UPDATE TO authenticated
 CREATE POLICY pgr_delete ON api.project_group_roles FOR DELETE TO authenticated
   USING (api.can_admin_project(project_id));
 
-CREATE POLICY secret_acl_select ON api.secret_acl FOR SELECT TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id
-        AND api.can_access_secret_row(
-          s.id, s.project_id, s.acl_mode, 'read', s.deleted_at
-        )
-    )
-  );
--- L2: group grants must be groups on the same team as the secret's project
-CREATE POLICY secret_acl_insert ON api.secret_acl FOR INSERT TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      JOIN api.projects p ON p.id = s.project_id
-      WHERE s.id = secret_id
-        AND api.can_admin_project(s.project_id)
-        AND (
-          group_id IS NULL
-          OR EXISTS (
-            SELECT 1 FROM api.groups g
-            WHERE g.id = group_id AND g.team_id = p.team_id
-          )
-        )
-    )
-  );
-CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      JOIN api.projects p ON p.id = s.project_id
-      WHERE s.id = secret_id
-        AND api.can_admin_project(s.project_id)
-        AND (
-          group_id IS NULL
-          OR EXISTS (
-            SELECT 1 FROM api.groups g
-            WHERE g.id = group_id AND g.team_id = p.team_id
-          )
-        )
-    )
-  );
-CREATE POLICY secret_acl_delete ON api.secret_acl FOR DELETE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
-    )
-  );
+-- Legacy secret_acl RLS policies removed (use rbac.bindings)
 
 CREATE POLICY secret_access_requests_select ON api.secret_access_requests
   FOR SELECT TO authenticated
@@ -1039,7 +952,6 @@ ALTER TABLE api.projects FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.project_members FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_versions FORCE ROW LEVEL SECURITY;
-ALTER TABLE api.secret_acl FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_meta FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_access_requests FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens FORCE ROW LEVEL SECURITY;
@@ -1329,43 +1241,6 @@ SET row_security = off AS $$
   WHERE pgr.project_id = p_project
     AND api.can_read_project(p_project)
   ORDER BY g.name;
-$$;
-
--- Per-secret ACL rows (user and/or group grants)
-CREATE OR REPLACE FUNCTION private.secret_acl_rows(p_secret uuid)
-RETURNS TABLE (
-  id uuid,
-  user_id uuid,
-  group_id uuid,
-  email text,
-  name text,
-  group_name text,
-  permission text,
-  created_at timestamptz
-)
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT a.id, a.user_id, a.group_id,
-         COALESCE(u.email, ''),
-         COALESCE(u.name, ''),
-         COALESCE(g.name, ''),
-         a.permission, a.created_at
-  FROM api.secret_acl a
-  JOIN api.secrets s ON s.id = a.secret_id
-  LEFT JOIN private.users u ON u.id = a.user_id
-  LEFT JOIN api.groups g ON g.id = a.group_id
-  WHERE a.secret_id = p_secret
-    AND (
-      api.can_admin_project(s.project_id)
-      OR a.user_id = api.current_user_id()
-      OR EXISTS (
-        SELECT 1 FROM api.group_members gm
-        WHERE gm.group_id = a.group_id
-          AND gm.user_id = api.current_user_id()
-      )
-    )
-  ORDER BY COALESCE(u.email, g.name);
 $$;
 
 -- Custom metadata rows for a secret
@@ -1763,7 +1638,6 @@ GRANT EXECUTE ON FUNCTION private.project_member_rows TO authenticator, authenti
 GRANT EXECUTE ON FUNCTION private.team_group_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.group_member_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.project_group_role_rows TO authenticator, authenticated;
-GRANT EXECUTE ON FUNCTION private.secret_acl_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.secret_meta_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.touch_secret_access TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.audit_org TO authenticator, authenticated;

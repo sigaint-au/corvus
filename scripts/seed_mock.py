@@ -127,7 +127,8 @@ PROJECT_GROUP_ROLES = [
     ("Payments", "billing-api", "payments-readers", "read"),
 ]
 
-# Custom secret ACL: (team, project, secret_key, user_email|None, group_name|None, perm)
+# Secret-scope RBAC bindings: (team, project, secret_key, user_email|None, group_name|None, perm)
+# perm maps to secret-read / secret-reveal / secret-write.
 SECRET_ACL_GRANTS = [
     ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", "alice@example.com", None, "reveal"),
     ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", None, "platform-ops", "read"),
@@ -323,9 +324,15 @@ def main() -> None:
             )
             print(f"pgr   {team_name}/{proj_name}/{gname} → {role}")
 
-        # Custom secret ACL grants
+        # Secret-scope role bindings (replaces legacy secret_acl grants)
+        perm_to_role = {
+            "read": "secret-read",
+            "reveal": "secret-reveal",
+            "write": "secret-write",
+        }
         for team_name, proj_name, key, user_email, gname, perm in SECRET_ACL_GRANTS:
             sid = secret_ids[(team_name, proj_name, key)]
+            role_name = perm_to_role.get(perm, "secret-reveal")
             cur.execute(
                 """
                 UPDATE api.secrets SET acl_mode = 'custom'
@@ -333,33 +340,48 @@ def main() -> None:
                 """,
                 (sid,),
             )
+            cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (role_name,))
+            role = cur.fetchone()
+            if not role:
+                print(f"warn  missing role {role_name} — skip binding for {key}")
+                continue
             if user_email:
                 cur.execute(
-                    "DELETE FROM api.secret_acl WHERE secret_id = %s::uuid AND user_id = %s::uuid",
+                    """
+                    DELETE FROM rbac.bindings
+                    WHERE scope_kind = 'secret' AND scope_id = %s::uuid
+                      AND subject_kind = 'User' AND subject_id = %s::uuid
+                    """,
                     (sid, uids[user_email]),
                 )
                 cur.execute(
                     """
-                    INSERT INTO api.secret_acl (secret_id, user_id, permission)
-                    VALUES (%s::uuid, %s::uuid, %s)
+                    INSERT INTO rbac.bindings
+                      (role_id, subject_kind, subject_id, scope_kind, scope_id)
+                    VALUES (%s::uuid, 'User', %s::uuid, 'secret', %s::uuid)
                     """,
-                    (sid, uids[user_email], perm),
+                    (str(role["id"]), uids[user_email], sid),
                 )
-                print(f"acl   {key} user={user_email} {perm}")
+                print(f"bind  {key} user={user_email} {role_name}")
             if gname:
                 gid = group_ids[(team_name, gname)]
                 cur.execute(
-                    "DELETE FROM api.secret_acl WHERE secret_id = %s::uuid AND group_id = %s::uuid",
+                    """
+                    DELETE FROM rbac.bindings
+                    WHERE scope_kind = 'secret' AND scope_id = %s::uuid
+                      AND subject_kind = 'Group' AND subject_id = %s::uuid
+                    """,
                     (sid, gid),
                 )
                 cur.execute(
                     """
-                    INSERT INTO api.secret_acl (secret_id, group_id, permission)
-                    VALUES (%s::uuid, %s::uuid, %s)
+                    INSERT INTO rbac.bindings
+                      (role_id, subject_kind, subject_id, scope_kind, scope_id)
+                    VALUES (%s::uuid, 'Group', %s::uuid, 'secret', %s::uuid)
                     """,
-                    (sid, gid, perm),
+                    (str(role["id"]), gid, sid),
                 )
-                print(f"acl   {key} group={gname} {perm}")
+                print(f"bind  {key} group={gname} {role_name}")
 
     print()
     print("All accounts password:", PASSWORD)

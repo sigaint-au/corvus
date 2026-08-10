@@ -165,7 +165,7 @@ def sync_user_project_binding(
 def backfill_all_legacy_to_bindings(cur) -> dict:
     """One-shot: copy team_members, project_members, group roles into bindings.
 
-    Does not migrate secret_acl (Permissions tab already writes secret bindings).
+    Does not touch secrets (Permissions tab writes secret-scope bindings; secret_acl dropped).
     Safe to re-run (deletes then re-inserts per subject/scope role family).
     """
     stats = {"team_members": 0, "project_members": 0, "group_team": 0, "group_project": 0}

@@ -36,6 +36,10 @@
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'activity' else 'false' }}">Activity</a>
   {% if is_admin %}
+  <a href="{{ url_for('rbac_bindings', scope='team', scope_id=team.id) }}"
+     class="tab"
+     role="tab"
+     title="Manage role bindings for this team">Access</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
      role="tab"

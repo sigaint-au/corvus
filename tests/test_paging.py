@@ -238,6 +238,6 @@ def test_force_rls_on_core_tables():
         "api.secrets",
         "api.machine_tokens",
         "api.machine_token_scope",
-        "api.secret_acl",
     ):
         assert f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY" in init
+    assert "ALTER TABLE api.secret_acl FORCE ROW LEVEL SECURITY" not in init

@@ -50,7 +50,7 @@ The app connects as `authenticator`, then `SET ROLE authenticated` and sets
 | `api.secrets` | Secret rows (`value_enc` = Fernet ciphertext) |
 | `api.secret_versions` | Archived prior ciphertext on update |
 | `api.secret_meta` | Custom searchable metadata |
-| `api.secret_acl` | Per-secret user/group grants (custom mode) |
+| `rbac.roles` / `rbac.role_rules` / `rbac.bindings` | K8s-style RBAC (incl. secret-scope grants) |
 | `api.secret_access_requests` | Reveal-approval requests + grants |
 | `api.secret_audit` / `api.org_audit` | Append-only audit |
 | `api.machine_tokens` | Machine tokens (hash only) |
@@ -98,7 +98,7 @@ SECURITY with `USING`/`WITH CHECK` policies for `authenticated`. Key ones:
 | `groups` / `group_members` | owner/admin manage; members select |
 | `secrets` | select/update/delete: `can_access_secret_row`; insert: `can_write_project` |
 | `secret_versions` | select: parent readable; **no client insert** (trigger-only) |
-| `secret_acl` | insert/update/delete: `can_admin_project` + group must be on the secret's team |
+| `rbac.bindings` | select: manage scope or self subject; write: `can_manage_rbac` |
 | `secret_access_requests` | select: admin or self; insert: self + can_read; update: admin |
 | `secret_audit` / `org_audit` | select only; no client insert |
 | `machine_tokens` | select: can_read; insert/delete: can_write |
