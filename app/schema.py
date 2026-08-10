@@ -1804,8 +1804,6 @@ def ensure_schema():
               api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
             )
             WHEN mode = 'custom' THEN false
-                )
-            )
             ELSE false
           END;
         $$
@@ -2084,8 +2082,6 @@ def ensure_schema():
               api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
             )
             WHEN mode = 'custom' THEN false
-                )
-            )
             ELSE false
           END;
         $$
