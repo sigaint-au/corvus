@@ -189,12 +189,9 @@ def register(app):
                 cur.execute(
                     """
                     SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
-                           b.created_at, r.name AS role_name, r.built_in,
-                           u.email AS subject_email
+                           b.created_at, r.name AS role_name, r.built_in
                     FROM rbac.bindings b
                     JOIN rbac.roles r ON r.id = b.role_id
-                    LEFT JOIN private.users u
-                      ON b.subject_kind = 'User' AND u.id = b.subject_id
                     WHERE b.scope_kind = 'cluster'
                     ORDER BY b.created_at DESC
                     LIMIT 200
@@ -205,12 +202,9 @@ def register(app):
                     """
                     SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
                            b.created_at, r.name AS role_name, r.built_in,
-                           u.email AS subject_email,
                            g.name AS group_name
                     FROM rbac.bindings b
                     JOIN rbac.roles r ON r.id = b.role_id
-                    LEFT JOIN private.users u
-                      ON b.subject_kind = 'User' AND u.id = b.subject_id
                     LEFT JOIN api.groups g
                       ON b.subject_kind = 'Group' AND g.id = b.subject_id
                     WHERE b.scope_kind = %s AND b.scope_id = %s::uuid
@@ -221,7 +215,31 @@ def register(app):
                 )
             else:
                 cur.execute("SELECT 1 WHERE false")
-            bindings = cur.fetchall() or []
+            bindings = list(cur.fetchall() or [])
+
+            # Enrich user emails via admin DSN (private.users not visible to JWT role)
+            user_ids = [
+                str(b["subject_id"])
+                for b in bindings
+                if b.get("subject_kind") == "User" and b.get("subject_id")
+            ]
+            email_map = {}
+            if user_ids:
+                with db.connect_admin() as aconn, aconn.cursor() as acur:
+                    acur.execute(
+                        """
+                        SELECT id, email FROM private.users
+                        WHERE id = ANY(%s::uuid[])
+                        """,
+                        (user_ids,),
+                    )
+                    for row in acur.fetchall() or []:
+                        email_map[str(row["id"])] = row["email"]
+            for b in bindings:
+                if b.get("subject_kind") == "User":
+                    b["subject_email"] = email_map.get(str(b.get("subject_id")))
+                else:
+                    b["subject_email"] = None
 
             cur.execute(
                 "SELECT id, name, built_in FROM rbac.roles ORDER BY built_in DESC, name"

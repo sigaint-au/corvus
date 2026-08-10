@@ -2983,9 +2983,9 @@ def _split_sql_statements(sql: str) -> list[str]:
 
 def _apply_rbac_sql(cur) -> None:
     """Apply Kubernetes-style RBAC schema (db/rbac.sql), start-fresh (no data migrate)."""
-    path = Path(__file__).resolve().parents[1] / "db" / "rbac.sql"
+    path = Path(__file__).resolve().parent / "rbac.sql"
     if not path.is_file():
-        log.warning("rbac.sql not found at %s; skipping RBAC ensure", path)
+        log.warning("RBAC SQL not found at %s; skipping RBAC ensure", path)
         return
     sql = path.read_text()
     for stmt in _split_sql_statements(sql):
