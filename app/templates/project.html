@@ -13,6 +13,11 @@
 <h1>{{ project.name }}</h1>
 {% if project.description %}
 <p class="page-desc">{{ project.description }}</p>
+{% elif can_admin or can_settings %}
+<p class="page-desc muted">
+  No description yet —
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}">add a purpose in Settings</a>.
+</p>
 {% endif %}
 <p class="page-desc muted">Project ID: <code class="k">{{ project.id }}</code></p>
 

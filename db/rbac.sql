@@ -423,6 +423,8 @@ SET row_security = off AS $$
     OR api.can('*', '*', 'project', pid);
 $$;
 
+-- Admin floor: anyone who can admin the project has full access to every secret
+-- in it (see can_access_secret_row). Bindings cannot remove that floor.
 CREATE OR REPLACE FUNCTION api.can_admin_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -478,7 +480,8 @@ $$;
 GRANT EXECUTE ON FUNCTION api.rbac_secret_binding_allows TO authenticator, authenticated, anon;
 
 -- Secret access: RBAC on scope chain, or restricted (custom) = secret bindings only.
--- acl_mode 'custom' means exclusive: only secret-scope bindings (+ project admins).
+-- acl_mode 'custom' is the exclusive / "deny broader grants" mode: team and project
+-- bindings do NOT apply — only secret-scope bindings + project admins (admin floor).
 CREATE OR REPLACE FUNCTION api.can_access_secret_row(
   sid uuid,
   pid uuid,

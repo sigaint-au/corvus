@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}RBAC — {{ app_name }}{% endblock %}
+{% block title %}{% if panel == 'roles' %}Roles{% else %}Role bindings{% endif %} — {{ app_name }}{% endblock %}
 {% block body %}
 <style>
   .role-create {
@@ -111,11 +111,20 @@
 {% endif %}
 
 <div class="page-head">
-  <h1>Roles &amp; bindings</h1>
+  {% if panel == 'roles' %}
+  <h1>Roles</h1>
   <p class="page-desc muted">
-    Roles define permissions (verbs × resources). Bindings attach a role to a
-    user, group, or service account at a scope (team → project → secret).
+    Named sets of permissions (verbs × resources). Assign them under
+    <a href="{{ url_for('rbac_bindings', panel='bindings', scope='team') }}">Role bindings</a>.
   </p>
+  {% else %}
+  <h1>Role bindings</h1>
+  <p class="page-desc muted">
+    Bind a user, group, or service account to a role at a scope
+    (team → project → secret). Catalogue and create custom roles under
+    <a href="{{ url_for('rbac_bindings', panel='roles', roles_tab='builtin') }}">Roles</a>.
+  </p>
+  {% endif %}
 </div>
 
 <nav class="tabs" role="tablist" aria-label="RBAC sections">
