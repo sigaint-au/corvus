@@ -1134,7 +1134,28 @@ def register(app):
                 action="revealed",
             )
             conn.commit()
-        plaintext = crypto.decrypt(value_enc)
+        try:
+            plaintext = crypto.decrypt(value_enc)
+        except ValueError as e:
+            flash(str(e), "error")
+            body, code = _render_secret_view(
+                project_id=project_id,
+                secret_id=secret_id,
+                row=row,
+                plaintext="",
+                kind=normalize_kind(row.get("kind")),
+                can_write=False,
+                is_version=is_version,
+                can_admin=can_admin,
+                secret_bindings=secret_bindings if can_admin else [],
+                can_reveal=False,
+                team_groups=team_groups if can_admin else [],
+                active_tab="meta" if active_tab == "meta" else "secret",
+                access_blocked=True,
+                access_state="decrypt_error",
+                custom_meta=custom_meta,
+            )
+            return body, code
         kind = normalize_kind(row.get("kind"))
         body, code = _render_secret_view(
             project_id=project_id,

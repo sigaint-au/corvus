@@ -315,6 +315,15 @@ def register(app):
                     flash("You don't have permission to do that", "error")
                     conn.rollback()
                 else:
+                    import rbac_sync
+
+                    rbac_sync.sync_user_team_binding(
+                        cur,
+                        user_id=u["id"],
+                        team_id=team_id,
+                        role=role,
+                        created_by=session["user_id"],
+                    )
                     action = audit.ORG_MEMBER_ROLE if prev else audit.ORG_MEMBER_ADD
                     detail = f"{email} → {role}"
                     if prev:
@@ -362,6 +371,11 @@ def register(app):
                     flash("You don't have permission to do that", "error")
                     conn.rollback()
                 else:
+                    import rbac_sync
+
+                    rbac_sync.sync_user_team_binding(
+                        cur, user_id=user_id, team_id=team_id, role=None
+                    )
                     audit.log_org(
                         cur,
                         team_id=team_id,
@@ -1166,6 +1180,15 @@ def register(app):
                     (str(team_id), name, source, external_key, team_role),
                 )
                 gid = cur.fetchone()["id"]
+                import rbac_sync
+
+                rbac_sync.sync_group_team_binding(
+                    cur,
+                    group_id=gid,
+                    team_id=team_id,
+                    team_role=team_role,
+                    created_by=session["user_id"],
+                )
                 audit.log_org(
                     cur,
                     team_id=team_id,
@@ -1212,6 +1235,15 @@ def register(app):
                     flash("Group not found or not permitted", "error")
                     conn.rollback()
                 else:
+                    import rbac_sync
+
+                    rbac_sync.sync_group_team_binding(
+                        cur,
+                        group_id=group_id,
+                        team_id=team_id,
+                        team_role=team_role,
+                        created_by=session["user_id"],
+                    )
                     audit.log_org(
                         cur,
                         team_id=team_id,

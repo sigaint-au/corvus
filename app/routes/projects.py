@@ -664,6 +664,15 @@ def register(app):
                     flash("You don't have permission to do that", "error")
                     conn.rollback()
                 else:
+                    import rbac_sync
+
+                    rbac_sync.sync_user_project_binding(
+                        cur,
+                        user_id=u["id"],
+                        project_id=project_id,
+                        role=role,
+                        created_by=session["user_id"],
+                    )
                     action = (
                         audit.ORG_PROJECT_MEMBER_ROLE if prev else audit.ORG_PROJECT_MEMBER_ADD
                     )
@@ -719,6 +728,11 @@ def register(app):
             if cur.rowcount == 0:
                 flash("Member not found or not permitted", "error")
             else:
+                import rbac_sync
+
+                rbac_sync.sync_user_project_binding(
+                    cur, user_id=user_id, project_id=project_id, role=None
+                )
                 audit.log_org(
                     cur,
                     team_id=proj["team_id"] if proj else None,
@@ -772,6 +786,15 @@ def register(app):
                     """,
                     (str(project_id), group_id, role),
                 )
+                import rbac_sync
+
+                rbac_sync.sync_group_project_binding(
+                    cur,
+                    group_id=group_id,
+                    project_id=project_id,
+                    role=role,
+                    created_by=session["user_id"],
+                )
                 audit.log_org(
                     cur,
                     team_id=row["team_id"],
@@ -807,6 +830,16 @@ def register(app):
                 (str(project_id), str(group_id)),
             )
             if cur.rowcount:
+                import rbac_sync
+
+                rbac_sync.sync_group_project_binding(
+                    cur,
+                    group_id=group_id,
+                    project_id=project_id,
+                    role=None,
+                    created_by=session.get("user_id"),
+                )
+
                 audit.log_org(
                     cur,
                     team_id=proj["team_id"] if proj else None,
