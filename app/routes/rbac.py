@@ -272,6 +272,9 @@ def register(app):
             scope_kind = "team"
         scope_id = (request.args.get("scope_id") or "").strip() or None
         tid = session.get("team_id")
+        # Default to active team when no scope_id selected
+        if scope_kind == "team" and not scope_id and tid:
+            scope_id = tid
 
         bindings = []
         teams = []

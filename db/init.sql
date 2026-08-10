@@ -170,6 +170,8 @@ CREATE TABLE api.projects (
   description text NOT NULL DEFAULT '',
   -- When true, secrets inherit require-approval for reveal (unless per-secret override)
   require_reveal_approval boolean NOT NULL DEFAULT false,
+  default_acl_mode text NOT NULL DEFAULT 'inherit'
+    CHECK (default_acl_mode IN ('inherit', 'restricted')),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, name)
 );
@@ -249,7 +251,7 @@ CREATE TABLE api.secrets (
   requires_approval boolean,
   -- Per-secret access tighter than project membership (see api.can_access_secret)
   acl_mode text NOT NULL DEFAULT 'inherit'
-    CHECK (acl_mode IN ('inherit', 'writers', 'admins', 'owners', 'custom')),
+    CHECK (acl_mode IN ('inherit', 'restricted', 'custom', 'writers', 'admins', 'owners')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
@@ -381,8 +383,8 @@ CREATE TABLE api.machine_tokens (
   name text NOT NULL,
   token_hash text NOT NULL,
   token_prefix text NOT NULL UNIQUE,
-  role text NOT NULL DEFAULT 'read-only'
-    CHECK (role IN ('read-only', 'write')),
+  role text NOT NULL DEFAULT 'reveal'
+    CHECK (role IN ('read', 'reveal', 'write', 'read-only')),
   expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );

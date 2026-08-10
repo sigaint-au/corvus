@@ -136,7 +136,7 @@ def test_create_token_persists_scopes(client):
             f"/projects/{pid}/tokens",
             data={
                 "name": "eso",
-                "role": "read-only",
+                "role": "reveal",
                 "expires_days": "30",
                 "scope_keys": "API_KEY\nprod/*\n",
             },

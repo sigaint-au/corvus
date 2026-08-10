@@ -36,11 +36,6 @@
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'activity' else 'false' }}">Activity</a>
   {% if is_admin %}
-  <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}"
-     class="tab {% if active_tab == 'access' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}"
-     title="Manage role bindings for this team">Access</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
      role="tab"
@@ -128,31 +123,60 @@
   </form>
   {% endif %}
   {% if members %}
-  <table>
-    <thead><tr><th>User</th><th>Role</th><th>Source</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
-    <tbody>
-    {% for m in members %}
-      <tr>
-        <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
-        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
-        <td class="muted">{{ m.source or 'manual' }}</td>
-        {% if is_admin %}
-        <td class="acts">
-          <form method="post"
-                action="{{ url_for('remove_team_member', team_id=team.id, user_id=m.user_id) }}"
-                class="inline"
-                onsubmit="return confirm('Remove {{ m.email }} from this team?')">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="link danger">Remove</button>
-          </form>
-        </td>
-        {% endif %}
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Subject</th><th>Role</th><th>Created</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+      {% for b in members %}
+        <tr>
+          <td>
+            <span class="badge">{{ b.subject_kind }}</span>
+            {% if b.subject_email %}{{ b.subject_email }}
+            {% elif b.group_name %}{{ b.group_name }}
+            {% else %}<code>{{ b.subject_id }}</code>{% endif %}
+          </td>
+          <td>
+            {% if b.role_short and b.role_short != b.role_name %}
+            <span class="badge" data-variant="secondary">{{ b.role_short }}</span>
+            <code class="muted" style="font-size:.75rem">{{ b.role_name }}</code>
+            {% else %}
+            <code>{{ b.role_name }}</code>
+            {% endif %}
+          </td>
+          <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
+          {% if is_admin %}
+          <td class="acts">
+            <form method="post"
+                  action="{{ url_for('team_access_binding_delete', team_id=team.id, binding_id=b.id) }}"
+                  class="inline"
+                  onsubmit="return confirm('Remove this binding?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Remove</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
-  <p class="empty">No members listed.</p>
+  <p class="empty">No members yet. Add one above.</p>
+  {% endif %}
+  {% if is_admin and can_edit_access %}
+  <details style="margin-top:1.25rem">
+    <summary class="button ghost small" style="cursor:pointer">Advanced: add group or service account binding</summary>
+    {% set panel_title = 'Advanced team bindings' %}
+    {% set create_url = url_for('team_access_binding_create', team_id=team.id) %}
+    {% set delete_endpoint = 'team_access_binding_delete' %}
+    {% set delete_team_id = team.id %}
+    {% set form_id_prefix = 'team-adv-access' %}
+    {% set role_dropdown = team_role_dropdown %}
+    {% set full_bindings_url = url_for('rbac_bindings', scope='team', scope_id=team.id) %}
+    {% set empty_message = 'No additional bindings.' %}
+    {% set help_html = 'Bind users, groups, or service accounts to a team role. Grants flow downward (team → project → secret).' %}
+    {% include "partials/access_bindings_panel.html" %}
+  </details>
   {% endif %}
 </section>
 
@@ -246,7 +270,7 @@
   <p class="muted">
     Groups are RBAC principals for this team. Open a group to manage membership.
     Optional <strong>team role</strong> grants team access; bind groups on project settings
-    or secret Permissions. Map LDAP/OIDC via an external key (sync on login).
+    or secret Access. Map LDAP/OIDC via an external key (sync on login).
   </p>
   {% if is_admin %}
   <form method="post" action="{{ url_for('create_team_group', team_id=team.id) }}" class="row">
@@ -302,18 +326,6 @@
   <p class="empty">{% if search_q %}No groups match “{{ search_q }}”.{% else %}No groups yet.{% endif %}</p>
   {% endif %}
 </section>
-
-{% elif active_tab == 'access' and is_admin %}
-{% set panel_title = 'Team access' %}
-{% set create_url = url_for('team_access_binding_create', team_id=team.id) %}
-{% set delete_endpoint = 'team_access_binding_delete' %}
-{% set delete_team_id = team.id %}
-{% set form_id_prefix = 'team-access' %}
-{% set role_dropdown = team_role_dropdown %}
-{% set full_bindings_url = url_for('rbac_bindings', scope='team', scope_id=team.id) %}
-{% set empty_message = 'No team-scope bindings yet. Add one above, or use Members / Groups.' %}
-{% set help_html = 'Bind users, groups, or service accounts to a <strong>team</strong> role. Day-to-day people: <a href="' ~ url_for('team_detail', team_id=team.id, tab='members') ~ '">Members</a> and <a href="' ~ url_for('team_detail', team_id=team.id, tab='groups') ~ '">Groups</a> (they create bindings too). Project/secret grants: project <strong>Access</strong> tab or a secret’s Permissions tab.' %}
-{% include "partials/access_bindings_panel.html" %}
 
 {% elif active_tab == 'activity' %}
 <section>

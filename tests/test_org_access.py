@@ -116,7 +116,8 @@ class TestOrgAccess:
     def test_secret_acl_schema_and_config(self):
         from pathlib import Path
         assert 'inherit' in config.SECRET_ACL_MODES
-        assert 'custom' in config.SECRET_ACL_MODES
+        assert 'restricted' in config.SECRET_ACL_MODES
+        assert 'custom' in config.SECRET_ACL_MODE_LABELS  # legacy alias in labels
         assert 'reveal' in config.SECRET_ACL_PERMISSIONS
         assert config.SECRET_ACL_PERM_TO_ROLE['reveal'] == 'secret-reveal'
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
@@ -143,7 +144,7 @@ class TestOrgAccess:
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         start = init.index('FUNCTION api.can_access_secret_row')
         body = init[start:start + 2500]
-        for mode in ('inherit', 'writers', 'admins', 'owners', 'custom'):
+        for mode in ('inherit', 'writers', 'admins', 'owners', 'custom', 'restricted'):
             assert mode in body, f'mode {mode} missing from can_access_secret_row'
         for need in ("'read'", "'reveal'", "'write'"):
             assert need in body
@@ -226,7 +227,7 @@ class TestOrgAccess:
                 return False
             if mode == 'owners':
                 return team_role == 'owner'
-            if mode == 'custom':
+            if mode in ('custom', 'restricted'):
                 grants = grants or []
                 need_r = perm_rank[need]
                 return any((perm_rank.get(g, 0) >= need_r for g in grants))
@@ -241,10 +242,13 @@ class TestOrgAccess:
         assert row_access(mode='admins', need='reveal', can_admin=True)
         assert not row_access(mode='owners', need='read', can_read=True, team_role='admin')
         assert row_access(mode='owners', need='read', can_read=True, team_role='owner')
+        assert not row_access(mode='restricted', need='reveal', can_read=True, grants=['read'])
+        assert row_access(mode='restricted', need='reveal', can_read=True, grants=['reveal'])
+        assert row_access(mode='restricted', need='read', can_read=True, grants=['write'])
+        assert not row_access(mode='restricted', need='write', can_read=True, grants=['reveal'])
+        # Legacy 'custom' alias works the same as 'restricted'
         assert not row_access(mode='custom', need='reveal', can_read=True, grants=['read'])
         assert row_access(mode='custom', need='reveal', can_read=True, grants=['reveal'])
-        assert row_access(mode='custom', need='read', can_read=True, grants=['write'])
-        assert not row_access(mode='custom', need='write', can_read=True, grants=['reveal'])
         assert not row_access(mode='inherit', need='read', deleted=True)
         assert not row_access(mode='inherit', need='read', can_read=False)
 

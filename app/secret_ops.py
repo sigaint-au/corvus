@@ -309,7 +309,11 @@ def _parse_requires_approval(form_or_value) -> bool | None:
 
 
 def _parse_acl_mode(form_or_value) -> str:
-    """Parse secret ACL mode; default inherit."""
+    """Parse secret ACL mode; default inherit.
+
+    Accepts 'restricted' (preferred) and 'custom' (legacy alias for 'restricted').
+    Legacy 'writers'/'admins'/'owners' are normalised to 'inherit'.
+    """
     if isinstance(form_or_value, dict) or (
         hasattr(form_or_value, "get") and not isinstance(form_or_value, (str, bytes))
     ):
@@ -317,6 +321,12 @@ def _parse_acl_mode(form_or_value) -> str:
     else:
         raw = form_or_value
     mode = (raw or "inherit").strip().lower()
+    # Legacy alias: custom → restricted
+    if mode == "custom":
+        return "restricted"
+    # Legacy modes treated as inherit
+    if mode in ("writers", "admins", "owners"):
+        return "inherit"
     if mode not in config.SECRET_ACL_MODES:
         return "inherit"
     return mode

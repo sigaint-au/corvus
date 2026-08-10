@@ -119,7 +119,8 @@ class TestTeams:
         assert r.status_code == 200
         assert b'Invites' in r.data
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
-        assert 'team_member_rows' in sql
+        # Members tab now reads from rbac.bindings (not legacy team_member_rows)
+        assert 'rbac.bindings' in sql or 'rbac_sync' in sql.lower() or 'list_scope_bindings' in sql
 
     def test_add_member_user_missing(self):
         tid = uuid4()
@@ -149,11 +150,11 @@ class TestTeams:
     def test_non_member_cannot_self_join(self):
         """RLS must reject self-insert into a team the user does not admin."""
         tid = uuid4()
-        rls_err = Exception('new row violates row-level security policy for table "team_members"')
+        rls_err = Exception('new row violates row-level security policy for table "rbac.bindings"')
         state = {'n': 0}
 
         def execute(sql, params=None):
-            if 'INSERT INTO api.team_members' in str(sql):
+            if 'INSERT INTO rbac.bindings' in str(sql):
                 raise rls_err
 
         def fetchone():

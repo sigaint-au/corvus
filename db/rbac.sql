@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS rbac.bindings (
   scope_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
+  updated_at timestamptz,
+  updated_by uuid,
   CHECK (
     (scope_kind = 'cluster' AND scope_id IS NULL)
     OR (scope_kind <> 'cluster' AND scope_id IS NOT NULL)
@@ -48,6 +50,10 @@ CREATE INDEX IF NOT EXISTS bindings_subject_idx
 CREATE INDEX IF NOT EXISTS bindings_scope_idx
   ON rbac.bindings(scope_kind, scope_id);
 CREATE INDEX IF NOT EXISTS bindings_role_idx ON rbac.bindings(role_id);
+-- Prevent duplicate bindings (same subject + role + scope)
+CREATE UNIQUE INDEX IF NOT EXISTS bindings_unique_idx
+  ON rbac.bindings(role_id, subject_kind, subject_id, scope_kind,
+                   COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON rbac.roles TO authenticator, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON rbac.role_rules TO authenticator, authenticated;
@@ -90,16 +96,17 @@ BEGIN
   INSERT INTO rbac.role_rules (role_id, resources, verbs)
   VALUES (rid, ARRAY['audit'], ARRAY['get', 'list']);
 
-  -- team-owner
+  -- team-owner (scoped — not wildcard; cluster-admin is the only * / * role)
   INSERT INTO rbac.roles (name, description, built_in)
   VALUES ('team-owner', 'Full control of a team and its projects/secrets', true)
   ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
   RETURNING id INTO rid;
   DELETE FROM rbac.role_rules WHERE role_id = rid;
   INSERT INTO rbac.role_rules (role_id, resources, verbs) VALUES
-    (rid, ARRAY['*'], ARRAY['*']);
+    (rid, ARRAY['teams', 'projects', 'secrets', 'bindings', 'groups', 'machine_tokens', 'audit'],
+         ARRAY['get', 'list', 'create', 'update', 'delete', 'reveal', 'admin']);
 
-  -- team-admin
+  -- team-admin (includes roles read for binding dropdowns)
   INSERT INTO rbac.roles (name, description, built_in)
   VALUES ('team-admin', 'Administer team projects and members (not ownership transfer)', true)
   ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
@@ -108,15 +115,17 @@ BEGIN
   INSERT INTO rbac.role_rules (role_id, resources, verbs) VALUES
     (rid, ARRAY['teams', 'projects', 'secrets', 'bindings', 'groups', 'machine_tokens', 'audit'],
          ARRAY['get', 'list', 'create', 'update', 'delete', 'reveal', 'admin']);
+  INSERT INTO rbac.role_rules (role_id, resources, verbs) VALUES
+    (rid, ARRAY['roles'], ARRAY['get', 'list']);
 
-  -- team-member
+  -- team-member (no reveal — members must be granted reveal explicitly)
   INSERT INTO rbac.roles (name, description, built_in)
   VALUES ('team-member', 'Read projects; create/update secrets in team projects', true)
   ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
   RETURNING id INTO rid;
   DELETE FROM rbac.role_rules WHERE role_id = rid;
   INSERT INTO rbac.role_rules (role_id, resources, verbs) VALUES
-    (rid, ARRAY['projects', 'secrets', 'machine_tokens'], ARRAY['get', 'list', 'create', 'update', 'reveal']);
+    (rid, ARRAY['projects', 'secrets', 'machine_tokens'], ARRAY['get', 'list', 'create', 'update']);
 
   -- team-viewer
   INSERT INTO rbac.roles (name, description, built_in)
@@ -137,15 +146,24 @@ BEGIN
     (rid, ARRAY['projects', 'secrets', 'bindings', 'machine_tokens', 'audit'],
          ARRAY['get', 'list', 'create', 'update', 'delete', 'reveal', 'admin']);
 
-  -- project-write
+  -- project-write (includes reveal — document clearly)
   INSERT INTO rbac.roles (name, description, built_in)
-  VALUES ('project-write', 'Create and update secrets in a project', true)
+  VALUES ('project-write', 'Create, update, and reveal secrets in a project', true)
   ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
   RETURNING id INTO rid;
   DELETE FROM rbac.role_rules WHERE role_id = rid;
   INSERT INTO rbac.role_rules (role_id, resources, verbs) VALUES
     (rid, ARRAY['projects', 'secrets', 'machine_tokens'],
          ARRAY['get', 'list', 'create', 'update', 'reveal']);
+
+  -- project-reveal (reveal without write)
+  INSERT INTO rbac.roles (name, description, built_in)
+  VALUES ('project-reveal', 'Read project and reveal secret values (no edit)', true)
+  ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
+  RETURNING id INTO rid;
+  DELETE FROM rbac.role_rules WHERE role_id = rid;
+  INSERT INTO rbac.role_rules (role_id, resources, verbs) VALUES
+    (rid, ARRAY['projects', 'secrets'], ARRAY['get', 'list', 'reveal']);
 
   -- project-read
   INSERT INTO rbac.roles (name, description, built_in)
@@ -174,16 +192,35 @@ BEGIN
   VALUES (rid, ARRAY['secrets'], ARRAY['get', 'list', 'reveal']);
 
   INSERT INTO rbac.roles (name, description, built_in)
-  VALUES ('secret-write', 'Update secret value and metadata', true)
+  VALUES ('secret-write', 'Create, update, delete secret value and metadata', true)
   ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
   RETURNING id INTO rid;
   DELETE FROM rbac.role_rules WHERE role_id = rid;
   INSERT INTO rbac.role_rules (role_id, resources, verbs)
-  VALUES (rid, ARRAY['secrets'], ARRAY['get', 'list', 'update', 'reveal']);
+  VALUES (rid, ARRAY['secrets'], ARRAY['get', 'list', 'create', 'update', 'delete', 'reveal']);
+
+  -- team-audit-viewer (team-scoped audit delegation)
+  INSERT INTO rbac.roles (name, description, built_in)
+  VALUES ('team-audit-viewer', 'Read audit logs for a specific team', true)
+  ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
+  RETURNING id INTO rid;
+  DELETE FROM rbac.role_rules WHERE role_id = rid;
+  INSERT INTO rbac.role_rules (role_id, resources, verbs)
+  VALUES (rid, ARRAY['audit'], ARRAY['get', 'list']);
 
   -- service accounts (machine tokens)
+  -- service-read: metadata only (no plaintext)
   INSERT INTO rbac.roles (name, description, built_in)
-  VALUES ('service-readonly', 'Machine token: list and get secrets', true)
+  VALUES ('service-read', 'Machine token: list and get secret metadata (no plaintext)', true)
+  ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
+  RETURNING id INTO rid;
+  DELETE FROM rbac.role_rules WHERE role_id = rid;
+  INSERT INTO rbac.role_rules (role_id, resources, verbs)
+  VALUES (rid, ARRAY['secrets'], ARRAY['get', 'list']);
+
+  -- service-reveal: metadata + plaintext (for ESO)
+  INSERT INTO rbac.roles (name, description, built_in)
+  VALUES ('service-reveal', 'Machine token: list, get, and reveal secrets', true)
   ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
   RETURNING id INTO rid;
   DELETE FROM rbac.role_rules WHERE role_id = rid;
@@ -311,6 +348,16 @@ BEGIN
     SELECT 1 FROM private.users WHERE id = uid AND is_global_admin
   ) THEN
     RETURN true;
+  END IF;
+
+  -- Reject deleted secrets at the authorizer level
+  IF v_res = 'secrets' AND p_scope_kind = 'secret' AND p_scope_id IS NOT NULL THEN
+    IF EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = p_scope_id AND s.deleted_at IS NOT NULL
+    ) THEN
+      RETURN false;
+    END IF;
   END IF;
 
   SELECT EXISTS (
@@ -479,9 +526,10 @@ $$;
 
 GRANT EXECUTE ON FUNCTION api.rbac_secret_binding_allows TO authenticator, authenticated, anon;
 
--- Secret access: RBAC on scope chain, or restricted (custom) = secret bindings only.
--- acl_mode 'custom' is the exclusive / "deny broader grants" mode: team and project
+-- Secret access: RBAC on scope chain, or restricted = secret bindings only.
+-- acl_mode 'restricted' is the exclusive / "deny broader grants" mode: team and project
 -- bindings do NOT apply — only secret-scope bindings + project admins (admin floor).
+-- Legacy 'custom' value is treated as 'restricted' for backward compat.
 CREATE OR REPLACE FUNCTION api.can_access_secret_row(
   sid uuid,
   pid uuid,
@@ -498,11 +546,11 @@ SET row_security = off AS $$
     WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
     -- Project admins always full
     WHEN api.can_admin_project(pid) THEN true
-    -- Restricted (legacy name: custom): secret-scope bindings only
-    WHEN COALESCE(mode, 'inherit') = 'custom' THEN
+    -- Restricted (legacy 'custom'): secret-scope bindings only
+    WHEN COALESCE(mode, 'inherit') IN ('restricted', 'custom') THEN
       api.rbac_secret_binding_allows(sid, need)
     -- inherit / writers / admins / owners → project/team RBAC via scope chain
-    -- (writers/admins/owners treated as inherit under k8s RBAC; use custom to restrict)
+    -- (writers/admins/owners treated as inherit under k8s RBAC; use restricted to restrict)
     WHEN need = 'write' THEN (
       api.can('update', 'secrets', 'secret', sid)
       OR api.can('create', 'secrets', 'secret', sid)
@@ -577,10 +625,7 @@ DECLARE
   rid uuid;
 BEGIN
   INSERT INTO api.teams (name, created_by) VALUES (p_name, p_user) RETURNING id INTO tid;
-  -- legacy membership row kept for UI that still reads team_members
-  INSERT INTO api.team_members (team_id, user_id, role, source)
-  VALUES (tid, p_user, 'owner', 'manual')
-  ON CONFLICT (team_id, user_id) DO UPDATE SET role = 'owner', source = 'manual';
+  -- RBAC only: create team-owner binding (no legacy team_members write)
   SELECT id INTO rid FROM rbac.roles WHERE name = 'team-owner' LIMIT 1;
   IF rid IS NOT NULL THEN
     INSERT INTO rbac.bindings (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)

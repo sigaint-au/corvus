@@ -2234,22 +2234,22 @@
     {% set workspace_eps = (
       'projects_list', 'project_detail', 'create_secret', 'delete_secret',
       'reveal_secret', 'create_token', 'delete_token', 'create_project',
-      'secrets_list', 'machines_list', 'trash', 'global_search'
+      'secrets_list', 'machines_list', 'global_search'
     ) %}
     {% set account_eps = (
       'teams', 'create_team', 'team_detail', 'add_team_member',
       'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team',
-      'delete_project_from_team', 'profile'
+      'delete_project_from_team', 'profile', 'trash'
     ) %}
     {% set access_eps = (
       'access_requests_inbox',
-      'rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete',
-      'rbac_roles', 'rbac_roles_create', 'rbac_roles_delete',
-      'rbac_access_review',
     ) %}
     {% set admin_eps = (
       'admin_audit', 'admin_audit_access_export', 'admin_audit_export',
       'server_settings',
+      'rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete',
+      'rbac_roles', 'rbac_roles_create', 'rbac_roles_delete',
+      'rbac_access_review',
     ) %}
     {# Server defaults only used until localStorage preference is set #}
     {% set workspace_open = ep in workspace_eps or (ep not in account_eps and ep not in access_eps and ep not in admin_eps) %}
@@ -2266,36 +2266,31 @@
              href="{{ url_for('secrets_list') }}">Secrets</a>
           <a class="side-nav-link {% if ep == 'machines_list' %}active{% endif %}"
              href="{{ url_for('machines_list') }}">Machine accounts</a>
-          <a class="side-nav-link {% if ep == 'trash' %}active{% endif %}"
-             href="{{ url_for('trash') }}">Trash</a>
         </div>
       </details>
       <details class="side-group" data-side-group="account"{% if account_open %} open{% endif %}>
-        <summary>Account</summary>
+        <summary>Organisation</summary>
         <div class="side-group-body">
           <a class="side-nav-link {% if ep in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}"
              href="{{ url_for('teams') }}">Teams</a>
+          <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}"
+             href="{{ url_for('access_requests_inbox') }}">Access requests{% if nav_access_pending %}<span class="tab-badge" title="{{ nav_access_pending }} pending">{{ nav_access_pending }}</span>{% endif %}</a>
+          <a class="side-nav-link {% if ep == 'trash' %}active{% endif %}"
+             href="{{ url_for('trash') }}">Trash</a>
           <a class="side-nav-link {% if ep == 'profile' %}active{% endif %}"
              href="{{ url_for('profile') }}">My profile</a>
-        </div>
-      </details>
-      <details class="side-group" data-side-group="access"{% if access_open %} open{% endif %}>
-        <summary>Access</summary>
-        <div class="side-group-body">
-          <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}"
-             href="{{ url_for('access_requests_inbox') }}">Requests{% if nav_access_pending %}<span class="tab-badge" title="{{ nav_access_pending }} pending">{{ nav_access_pending }}</span>{% endif %}</a>
-          <a class="side-nav-link {% if ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}active{% endif %}"
-             href="{{ url_for('rbac_bindings', scope='team') }}">Role bindings</a>
-          <a class="side-nav-link {% if ep in ('rbac_roles', 'rbac_roles_create', 'rbac_roles_delete') %}active{% endif %}"
-             href="{{ url_for('rbac_roles') }}">Roles</a>
-          <a class="side-nav-link {% if ep == 'rbac_access_review' %}active{% endif %}"
-             href="{{ url_for('rbac_access_review') }}">Review</a>
         </div>
       </details>
       {% if is_global_admin %}
       <details class="side-group" data-side-group="administration"{% if admin_open %} open{% endif %}>
         <summary>Administration</summary>
         <div class="side-group-body">
+          <a class="side-nav-link {% if ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}active{% endif %}"
+             href="{{ url_for('rbac_bindings', scope='team') }}">Role bindings</a>
+          <a class="side-nav-link {% if ep in ('rbac_roles', 'rbac_roles_create', 'rbac_roles_delete') %}active{% endif %}"
+             href="{{ url_for('rbac_roles') }}">Roles</a>
+          <a class="side-nav-link {% if ep == 'rbac_access_review' %}active{% endif %}"
+             href="{{ url_for('rbac_access_review') }}">Access review</a>
           <a class="side-nav-link {% if ep in ('admin_audit', 'admin_audit_access_export', 'admin_audit_export') %}active{% endif %}"
              href="{{ url_for('admin_audit') }}">Auditing</a>
           <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}"

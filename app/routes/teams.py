@@ -111,7 +111,10 @@ def register(app):
         """
         session["team_id"] = str(team_id)
         tab = (request.args.get("tab") or "projects").strip().lower()
-        if tab not in ("projects", "members", "groups", "activity", "access", "settings"):
+        # Merge legacy "access" tab into "members" (single unified access UI)
+        if tab == "access":
+            tab = "members"
+        if tab not in ("projects", "members", "groups", "activity", "settings"):
             tab = "projects"
         q = (request.args.get("q") or "").strip()
         members, projects, ldap_maps, oidc_maps = [], [], [], []
@@ -158,11 +161,25 @@ def register(app):
                     )
                 projects = cur.fetchall()
             elif tab == "members":
+                # Read members from rbac.bindings (not legacy team_members)
+                import rbac_sync
+
+                access_bindings = rbac_sync.list_scope_bindings(
+                    cur, "team", team_id
+                )
+                rbac_sync.enrich_binding_emails(access_bindings)
+                # Filter to user+group team-role bindings for the members list
+                members = [
+                    b for b in access_bindings
+                    if b.get("role_name", "").startswith("team-")
+                ]
+                # Load groups for the binding form
                 cur.execute(
-                    "SELECT * FROM private.team_member_rows(%s::uuid)",
+                    "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
                     (str(team_id),),
                 )
-                members = cur.fetchall()
+                access_groups = list(cur.fetchall() or [])
+                can_edit_access = bool(can_edit_access or is_admin)
                 if is_admin:
                     cur.execute(
                         """
@@ -215,22 +232,6 @@ def register(app):
                     org_events = audit.list_org_for_team(cur, team_id)
                 except Exception:
                     org_events = []
-            elif tab == "access" and is_admin:
-                cur.execute(
-                    "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
-                    (str(team_id),),
-                )
-                can_edit_access = bool((cur.fetchone() or {}).get("ok"))
-                import rbac_sync
-
-                access_bindings = rbac_sync.list_scope_bindings(
-                    cur, "team", team_id
-                )
-                cur.execute(
-                    "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
-                    (str(team_id),),
-                )
-                access_groups = list(cur.fetchall() or [])
             elif tab == "settings" and is_admin:
                 cur.execute(
                     """
@@ -304,7 +305,7 @@ def register(app):
     @authz.login_required
     def team_access_binding_create(team_id):
         """Create a team-scope role binding (team admin)."""
-        access_url = url_for("team_detail", team_id=team_id, tab="access")
+        access_url = url_for("team_detail", team_id=team_id, tab="members")
         role_name = (request.form.get("role_name") or "").strip()
         subject_kind = (request.form.get("subject_kind") or "User").strip()
         subject_email = (request.form.get("subject_email") or "").strip().lower()
@@ -380,7 +381,7 @@ def register(app):
     @authz.login_required
     def team_access_binding_delete(team_id, binding_id):
         """Remove a team-scope role binding (team admin)."""
-        access_url = url_for("team_detail", team_id=team_id, tab="access")
+        access_url = url_for("team_detail", team_id=team_id, tab="members")
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
@@ -442,43 +443,44 @@ def register(app):
                 flash("User not found — they must register or sign in via LDAP first", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             try:
+                import rbac_sync
+
+                # Check for existing binding to determine add vs update
+                rname = rbac_sync.TEAM_ROLE_TO_RBAC.get(role, "team-member")
+                cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (rname,))
+                role_row = cur.fetchone()
+                if not role_row:
+                    flash(f"Built-in role {rname} missing — run schema ensure", "error")
+                    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+                # Check existing team binding for this user
                 cur.execute(
                     """
-                    SELECT role FROM api.team_members
-                    WHERE team_id = %s AND user_id = %s
+                    SELECT b.id, r.name AS role_name
+                    FROM rbac.bindings b
+                    JOIN rbac.roles r ON r.id = b.role_id
+                    WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
+                      AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                      AND r.name IN ('team-owner','team-admin','team-member','team-viewer')
                     """,
-                    (str(team_id), str(u["id"])),
+                    (str(u["id"]), str(team_id)),
                 )
                 prev = cur.fetchone()
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s, %s, %s, 'manual')
-                    ON CONFLICT (team_id, user_id) DO UPDATE
-                      SET role = EXCLUDED.role, source = 'manual'
-                    """,
-                    (str(team_id), str(u["id"]), role),
+                rbac_sync.sync_user_team_binding(
+                    cur,
+                    user_id=u["id"],
+                    team_id=team_id,
+                    role=role,
+                    created_by=session["user_id"],
                 )
-                if cur.rowcount == 0:
-                    flash("You don't have permission to do that", "error")
-                    conn.rollback()
-                else:
-                    import rbac_sync
-
-                    rbac_sync.sync_user_team_binding(
-                        cur,
-                        user_id=u["id"],
-                        team_id=team_id,
-                        role=role,
-                        created_by=session["user_id"],
-                    )
-                    action = audit.ORG_MEMBER_ROLE if prev else audit.ORG_MEMBER_ADD
-                    detail = f"{email} → {role}"
-                    if prev:
-                        detail = f"{email}: {prev['role']} → {role}"
-                    audit.log_org(cur, team_id=team_id, action=action, detail=detail)
-                    conn.commit()
+                action = audit.ORG_MEMBER_ROLE if prev else audit.ORG_MEMBER_ADD
+                detail = f"{email} → {role}"
+                if prev:
+                    detail = f"{email}: {prev['role_name']} → {role}"
+                audit.log_org(cur, team_id=team_id, action=action, detail=detail)
+                conn.commit()
+                flash(f"Bound {email} as {role}", "ok")
             except Exception as e:
+                conn.rollback()
                 flash(str(e), "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
@@ -500,39 +502,37 @@ def register(app):
         """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
+                import rbac_sync
+
+                # Find existing team binding for this user
                 cur.execute(
                     """
-                    SELECT role FROM api.team_members
-                    WHERE team_id = %s AND user_id = %s
+                    SELECT b.id, r.name AS role_name
+                    FROM rbac.bindings b
+                    JOIN rbac.roles r ON r.id = b.role_id
+                    WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
+                      AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                      AND r.name IN ('team-owner','team-admin','team-member','team-viewer')
                     """,
-                    (str(team_id), str(user_id)),
+                    (str(user_id), str(team_id)),
                 )
                 row = cur.fetchone()
                 if not row:
                     flash("Member not found", "error")
                     return redirect(url_for("team_detail", team_id=team_id, tab="members"))
-                cur.execute(
-                    "DELETE FROM api.team_members WHERE team_id = %s AND user_id = %s",
-                    (str(team_id), str(user_id)),
+                rbac_sync.sync_user_team_binding(
+                    cur, user_id=user_id, team_id=team_id, role=None
                 )
-                if cur.rowcount == 0:
-                    flash("You don't have permission to do that", "error")
-                    conn.rollback()
-                else:
-                    import rbac_sync
-
-                    rbac_sync.sync_user_team_binding(
-                        cur, user_id=user_id, team_id=team_id, role=None
-                    )
-                    audit.log_org(
-                        cur,
-                        team_id=team_id,
-                        action=audit.ORG_MEMBER_REMOVE,
-                        detail=f"user {user_id} ({row['role']})",
-                    )
-                    conn.commit()
-                    flash("Member removed", "ok")
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_MEMBER_REMOVE,
+                    detail=f"user {user_id} ({row['role_name']})",
+                )
+                conn.commit()
+                flash("Member removed", "ok")
             except Exception as e:
+                conn.rollback()
                 flash(str(e), "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 

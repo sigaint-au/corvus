@@ -1,9 +1,9 @@
-"""Sync membership / group role UI into rbac.bindings (k8s model).
+"""RBAC binding helpers (k8s model).
 
-Project members and project group roles are RBAC-only: UI and mgmt API write
-``rbac.bindings`` (project-admin / project-write / project-read). Legacy
-``api.project_members`` / ``api.project_group_roles`` tables may still exist
-for older rows; ``backfill_all_legacy_to_bindings`` copies them once.
+Membership UIs (team Members, project Access) write ``rbac.bindings`` directly.
+``backfill_all_legacy_to_bindings`` is a one-shot migration for existing
+``team_members`` / ``project_members`` / ``project_group_roles`` rows.
+Legacy tables are NOT written to going forward (pure RBAC model).
 """
 
 from __future__ import annotations

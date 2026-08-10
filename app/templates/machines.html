@@ -18,7 +18,7 @@
       <td>{{ t.name }}</td>
       <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
       <td><code class="k">{{ t.token_prefix }}…</code></td>
-      <td><span class="badge" data-variant="secondary">{{ t.role or 'read-only' }}</span></td>
+      <td><span class="badge" data-variant="secondary">{{ t.role or 'reveal' }}</span></td>
       <td class="muted">{{ t.created_at }}</td>
       <td class="muted">
         {{ t.expires_at or 'never' }}

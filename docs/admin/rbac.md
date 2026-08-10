@@ -47,7 +47,7 @@ more group grants. Manual memberships are **never** removed by directory sync.
 |------|-------------|-----|
 | **owner** | Team lead / break-glass | Full team control; delete team; always project admin/write |
 | **admin** | Team operators | Manage members, groups, maps, settings; always project admin/write |
-| **member** | Day-to-day contributors | Create projects; write secrets (unless project demotes them) |
+| **member** | Day-to-day contributors | Create projects; create/update secrets (no reveal — grant separately) |
 | **viewer** | Read-only observers | Read projects/secrets (unless project elevates them) |
 
 Team **owner** and **admin** cannot be demoted by project-level grants: they
@@ -81,15 +81,17 @@ Set on the secret (create form or secret full view). See also
 | `acl_mode` | Who may access |
 |------------|----------------|
 | **inherit** (default) | Project/team RBAC via the scope chain; optional secret-scope bindings add grants |
-| **custom** (restricted) | Only secret-scope bindings (`secret-read` / `secret-reveal` / `secret-write`) plus project admins |
+| **restricted** | Only secret-scope bindings (`secret-read` / `secret-reveal` / `secret-write`) plus project admins |
+| **custom** (legacy alias) | Treated as `restricted` |
 
 **Always full access on a secret:** global admins and anyone with
 `can_admin_project` for that secret's project. The legacy `api.secret_acl`
 table has been removed.
 
 **Machine tokens** (`ss_…`) and ESO use SECURITY DEFINER helpers and are **not**
-gated by per-secret human ACLs or reveal-approval (project-scoped only). Prefer
-a dedicated project, **key allow-list** (exact keys and/or globs like `prod/*`
+gated by per-secret human ACLs or reveal-approval (project-scoped only). Token roles:
+`read` (metadata only), `reveal` (metadata + plaintext, for ESO), `write` (read + write).
+Prefer a dedicated project, **key allow-list** (exact keys and/or globs like `prod/*`
 on the token), or both when automation must not see every secret in a shared
 project. See [machine-tokens.md](machine-tokens.md).
 
@@ -227,12 +229,12 @@ Then grant that group: a **team role**, a **project group role**, or a
 
 ---
 
-## 7. Secret ACL (UI)
+## 7. Secret access (UI)
 
 1. Open the secret **full view**.
-2. Tabs: **Secret** (value) · **Metadata** · **Permissions** (admins).
-3. On **Permissions**: set **Access mode** and **Reveal approval**, then save.
-4. If mode is **custom**:
+2. Tabs: **Secret** (value) · **Metadata** · **Access** (admins).
+3. On **Access**: set **Access mode** and **Reveal approval**, then save.
+4. If mode is **restricted**:
    - Grant by **email** or **team group**.
    - Choose permission: read / reveal / write.
 5. Remove grants from the same table.
@@ -308,7 +310,7 @@ Permission rank: `read` < `reveal` < `write`.
 5. Create project "prod-api"
 6. Project Settings → Group roles → eng = write, sec-leads = admin
 7. Create secret DB_PASSWORD; leave ACL inherit
-8. Create secret ROOT_CA_KEY; ACL custom → grant group sec-leads reveal
+8. Create secret ROOT_CA_KEY; ACL restricted → grant group sec-leads reveal
 9. Invite break-glass local owner on team Members if using SSO for everyone else
 ```
 

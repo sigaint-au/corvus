@@ -730,9 +730,9 @@ def register(app):
             return err
         body = request.get_json(silent=True) or {}
         name = (body.get("name") or "machine").strip() or "machine"
-        role = (body.get("role") or "read-only").strip()
+        role = (body.get("role") or "reveal").strip()
         if role not in config.MACHINE_TOKEN_ROLES:
-            role = "read-only"
+            role = "reveal"
         expires_at = None
         days = body.get("expires_days")
         if days is not None:

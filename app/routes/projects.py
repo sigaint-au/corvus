@@ -723,14 +723,6 @@ def register(app):
                 rbac_sync.sync_user_project_binding(
                     cur, user_id=user_id, project_id=project_id, role=None
                 )
-                # Clear legacy row if present (transitional)
-                cur.execute(
-                    """
-                    DELETE FROM api.project_members
-                    WHERE project_id = %s AND user_id = %s
-                    """,
-                    (str(project_id), str(user_id)),
-                )
                 audit.log_org(
                     cur,
                     team_id=proj["team_id"] if proj else None,
@@ -788,14 +780,6 @@ def register(app):
                     role=role,
                     created_by=session["user_id"],
                 )
-                # Clear legacy dual-store if present
-                cur.execute(
-                    """
-                    DELETE FROM api.project_group_roles
-                    WHERE project_id = %s AND group_id = %s
-                    """,
-                    (str(project_id), group_id),
-                )
                 audit.log_org(
                     cur,
                     team_id=row["team_id"],
@@ -836,13 +820,6 @@ def register(app):
                     project_id=project_id,
                     role=None,
                     created_by=session.get("user_id"),
-                )
-                cur.execute(
-                    """
-                    DELETE FROM api.project_group_roles
-                    WHERE project_id = %s AND group_id = %s
-                    """,
-                    (str(project_id), str(group_id)),
                 )
                 audit.log_org(
                     cur,
@@ -1076,6 +1053,9 @@ def register(app):
         require = (request.form.get("require_reveal_approval") or "").strip().lower()
         require_on = require in ("1", "true", "yes", "on")
         description = (request.form.get("description") or "").strip()[:500]
+        default_acl = (request.form.get("default_acl_mode") or "inherit").strip().lower()
+        if default_acl not in ("inherit", "restricted"):
+            default_acl = "inherit"
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             if not (cur.fetchone() or {}).get("a"):
@@ -1086,10 +1066,10 @@ def register(app):
             cur.execute(
                 """
                 UPDATE api.projects
-                SET require_reveal_approval = %s, description = %s
+                SET require_reveal_approval = %s, description = %s, default_acl_mode = %s
                 WHERE id = %s
                 """,
-                (require_on, description, str(project_id)),
+                (require_on, description, default_acl, str(project_id)),
             )
             if cur.rowcount == 0:
                 flash("Project not found or not permitted", "error")
@@ -1105,8 +1085,53 @@ def register(app):
                     team_id=proj["team_id"] if proj else None,
                     project_id=project_id,
                     action="project_settings",
-                    detail=f"require_reveal_approval={require_on}",
+                    detail=f"require_reveal_approval={require_on}, default_acl_mode={default_acl}",
                 )
                 conn.commit()
                 flash("Project settings saved", "ok")
         return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
+
+    @app.post("/projects/<uuid:project_id>/secrets/bulk-acl")
+    @authz.login_required
+    def bulk_secret_acl_mode(project_id):
+        """Set acl_mode on multiple secrets at once (project admin only).
+
+        Body: secret_ids (comma-separated UUIDs) + acl_mode (inherit|restricted).
+        """
+        from secret_ops import _parse_acl_mode
+
+        mode = _parse_acl_mode(request.form)
+        secret_ids_raw = (request.form.get("secret_ids") or "").strip()
+        if not secret_ids_raw:
+            flash("Select at least one secret", "error")
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        secret_ids = [s.strip() for s in secret_ids_raw.split(",") if s.strip()]
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+            if not (cur.fetchone() or {}).get("a"):
+                flash("You don't have permission to do that", "error")
+                return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+            try:
+                count = 0
+                for sid in secret_ids:
+                    cur.execute(
+                        """
+                        UPDATE api.secrets
+                        SET acl_mode = %s
+                        WHERE id = %s::uuid AND project_id = %s::uuid AND deleted_at IS NULL
+                        """,
+                        (mode, sid, str(project_id)),
+                    )
+                    count += cur.rowcount
+                audit.log_org(
+                    cur,
+                    project_id=project_id,
+                    action="project_settings",
+                    detail=f"bulk acl_mode={mode} on {count} secrets",
+                )
+                conn.commit()
+                flash(f"Updated {count} secret(s) to {config.SECRET_ACL_MODE_LABELS.get(mode, mode)}", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))

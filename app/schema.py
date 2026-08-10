@@ -790,7 +790,7 @@ def ensure_schema():
         """,
         """
         ALTER TABLE api.machine_tokens
-          ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'read-only'
+          ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'reveal'
         """,
         """
         DO $$ BEGIN
@@ -804,9 +804,13 @@ def ensure_schema():
           ALTER TABLE api.machine_tokens DROP CONSTRAINT IF EXISTS machine_tokens_role_check;
           ALTER TABLE api.machine_tokens
             ADD CONSTRAINT machine_tokens_role_check
-            CHECK (role IN ('read-only', 'write'));
+            CHECK (role IN ('read', 'reveal', 'write', 'read-only'));
         EXCEPTION WHEN others THEN NULL;
         END $$
+        """,
+        # Migrate legacy machine token roles: read-only → reveal
+        """
+        UPDATE api.machine_tokens SET role = 'reveal' WHERE role = 'read-only'
         """,
         """
         CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
@@ -1756,13 +1760,50 @@ def ensure_schema():
           ALTER TABLE api.secrets DROP CONSTRAINT IF EXISTS secrets_acl_mode_check;
           ALTER TABLE api.secrets
             ADD CONSTRAINT secrets_acl_mode_check
-            CHECK (acl_mode IN ('inherit', 'writers', 'admins', 'owners', 'custom'));
+            CHECK (acl_mode IN ('inherit', 'restricted', 'custom', 'writers', 'admins', 'owners'));
         EXCEPTION WHEN others THEN NULL;
         END $$
+        """,
+        # Migrate legacy acl_mode values: custom → restricted; writers/admins/owners → inherit
+        """
+        UPDATE api.secrets SET acl_mode = 'restricted' WHERE acl_mode = 'custom'
+        """,
+        """
+        UPDATE api.secrets SET acl_mode = 'inherit'
+        WHERE acl_mode IN ('writers', 'admins', 'owners')
         """,
         # Legacy api.secret_acl removed — use secret-scope rbac.bindings
         "DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid)",
         "DROP TABLE IF EXISTS api.secret_acl CASCADE",
+        # Add default_acl_mode to projects
+        """
+        ALTER TABLE api.projects
+          ADD COLUMN IF NOT EXISTS default_acl_mode text NOT NULL DEFAULT 'inherit'
+        """,
+        """
+        DO $$ BEGIN
+          ALTER TABLE api.projects DROP CONSTRAINT IF EXISTS projects_default_acl_mode_check;
+          ALTER TABLE api.projects
+            ADD CONSTRAINT projects_default_acl_mode_check
+            CHECK (default_acl_mode IN ('inherit', 'restricted'));
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        # Add updated_at / updated_by to rbac.bindings
+        """
+        ALTER TABLE rbac.bindings
+          ADD COLUMN IF NOT EXISTS updated_at timestamptz
+        """,
+        """
+        ALTER TABLE rbac.bindings
+          ADD COLUMN IF NOT EXISTS updated_by uuid
+        """,
+        # Add unique index on bindings (prevent duplicates)
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS bindings_unique_idx
+          ON rbac.bindings(role_id, subject_kind, subject_id, scope_kind,
+                           COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid))
+        """,
         """
         CREATE OR REPLACE FUNCTION api._perm_rank(p text) RETURNS int
         LANGUAGE sql IMMUTABLE AS $$
@@ -1803,7 +1844,7 @@ def ensure_schema():
             WHEN mode = 'owners' THEN (
               api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
             )
-            WHEN mode = 'custom' THEN false
+            WHEN mode IN ('custom', 'restricted') THEN false
             ELSE false
           END;
         $$
@@ -2081,7 +2122,7 @@ def ensure_schema():
             WHEN mode = 'owners' THEN (
               api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
             )
-            WHEN mode = 'custom' THEN false
+            WHEN mode IN ('custom', 'restricted') THEN false
             ELSE false
           END;
         $$

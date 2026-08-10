@@ -8,7 +8,7 @@
   {% if compact %}
   <header>
     <h3>Machine account for ESO</h3>
-    <p class="muted">Create a <strong>read-only</strong> token for the cluster to pull secrets.</p>
+    <p class="muted">Create a <strong>reveal</strong> token for the cluster to pull secrets.</p>
   </header>
   {% endif %}
   <form method="post"
@@ -28,7 +28,8 @@
       <label data-field>
         Role
         <select name="role" data-token-role aria-label="Token role">
-          <option value="read-only" selected>Read-only — fetch secrets</option>
+          <option value="read">Read — metadata only</option>
+          <option value="reveal" selected>Reveal — fetch secrets (ESO)</option>
           <option value="write">Write — fetch and update</option>
         </select>
       </label>
@@ -86,7 +87,7 @@
     </div>
 
     <div role="alert" data-variant="warning" data-token-write-warn hidden>
-      Write tokens can create and update secrets via the machine API. Prefer read-only for ESO.
+      Write tokens can create and update secrets via the machine API. Prefer reveal for ESO.
     </div>
 
     <footer class="token-create-actions">

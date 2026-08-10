@@ -12,11 +12,17 @@ import config
 def test_builtin_role_names_match_docs():
     assert "team-owner" in config.RBAC_BUILTIN_ROLES
     assert "project-write" in config.RBAC_BUILTIN_ROLES
+    assert "project-reveal" in config.RBAC_BUILTIN_ROLES
     assert "secret-reveal" in config.RBAC_BUILTIN_ROLES
-    assert "service-readonly" in config.RBAC_BUILTIN_ROLES
+    assert "service-read" in config.RBAC_BUILTIN_ROLES
+    assert "service-reveal" in config.RBAC_BUILTIN_ROLES
+    assert "service-write" in config.RBAC_BUILTIN_ROLES
+    assert "team-audit-viewer" in config.RBAC_BUILTIN_ROLES
     assert "cluster-admin" in config.RBAC_BUILTIN_ROLES
     assert "reveal" in config.RBAC_VERBS
     assert "secrets" in config.RBAC_RESOURCES
+    # Legacy service-readonly should NOT be in the list (split into read/reveal)
+    assert "service-readonly" not in config.RBAC_BUILTIN_ROLES
 
 
 def test_rbac_sql_ships_can_and_tables():
@@ -30,6 +36,20 @@ def test_rbac_sql_ships_can_and_tables():
     # create_team seeds team-owner binding; no bulk migrate from team_members
     assert "INSERT INTO rbac.bindings" in sql
     assert "team-owner" in sql
+    # New roles present
+    assert "project-reveal" in sql
+    assert "team-audit-viewer" in sql
+    assert "service-read" in sql
+    assert "service-reveal" in sql
+    # Unique index on bindings
+    assert "bindings_unique_idx" in sql
+    # updated_at / updated_by columns
+    assert "updated_at timestamptz" in sql
+    assert "updated_by uuid" in sql
+    # Deleted secret check in can()
+    assert "deleted_at IS NOT NULL" in sql
+    # 'restricted' accepted alongside legacy 'custom'
+    assert "'restricted'" in sql
 
 
 def test_schema_applies_rbac_sql():
@@ -58,7 +78,30 @@ def test_dropdowns_cover_legacy_vocabularies():
     team_names = {n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN}
     assert team_names == {"team-owner", "team-admin", "team-member", "team-viewer"}
     proj = {n for n, _ in config.RBAC_PROJECT_ROLE_DROPDOWN}
-    assert proj == {"project-admin", "project-write", "project-read"}
+    assert proj == {"project-admin", "project-write", "project-reveal", "project-read"}
+
+
+def test_service_dropdown_has_new_roles():
+    svc = {n for n, _ in config.RBAC_SERVICE_ROLE_DROPDOWN}
+    assert "service-read" in svc
+    assert "service-reveal" in svc
+    assert "service-write" in svc
+    assert "service-readonly" not in svc
+
+
+def test_machine_token_roles_updated():
+    assert "read" in config.MACHINE_TOKEN_ROLES
+    assert "reveal" in config.MACHINE_TOKEN_ROLES
+    assert "write" in config.MACHINE_TOKEN_ROLES
+    assert "read-only" not in config.MACHINE_TOKEN_ROLES
+
+
+def test_acl_modes_updated():
+    assert "inherit" in config.SECRET_ACL_MODES
+    assert "restricted" in config.SECRET_ACL_MODES
+    assert "custom" not in config.SECRET_ACL_MODES
+    # Legacy alias still in labels for display
+    assert "custom" in config.SECRET_ACL_MODE_LABELS
 
 
 def test_parse_rules_yaml_multi_rule():
@@ -85,3 +128,16 @@ def test_parse_rules_yaml_rejects_empty():
 
     with pytest.raises(ValueError):
         parse_rules_yaml("# only comments\n")
+
+
+def test_parse_acl_mode_accepts_restricted():
+    from secret_ops import _parse_acl_mode
+
+    assert _parse_acl_mode("restricted") == "restricted"
+    assert _parse_acl_mode("custom") == "restricted"
+    assert _parse_acl_mode("inherit") == "inherit"
+    assert _parse_acl_mode("writers") == "inherit"
+    assert _parse_acl_mode("admins") == "inherit"
+    assert _parse_acl_mode("owners") == "inherit"
+    assert _parse_acl_mode("") == "inherit"
+    assert _parse_acl_mode({"acl_mode": "restricted"}) == "restricted"

@@ -2468,11 +2468,11 @@ def register(app):
                         session["user_id"],
                     ),
                 )
-                # Restricted mode if not already — bindings only apply as exclusive when custom
-                if (sec.get("acl_mode") or "inherit") != "custom":
+                # Restricted mode if not already — bindings only apply as exclusive when restricted
+                if (sec.get("acl_mode") or "inherit") not in ("restricted", "custom"):
                     cur.execute(
                         """
-                        UPDATE api.secrets SET acl_mode = 'custom'
+                        UPDATE api.secrets SET acl_mode = 'restricted'
                         WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                         """,
                         (str(secret_id), str(project_id)),

@@ -35,7 +35,7 @@ class TestTokens:
         with self.client.session_transaction() as s:
             assert s.get('new_token', '').startswith('ss_')
         sql = ' '.join((str(c) for c in cur.execute.call_args_list))
-        assert 'read-only' in sql
+        assert 'reveal' in sql
 
     def test_create_token_write_role(self):
         conn, cur = _conn(fetchone={'w': True})
@@ -47,16 +47,16 @@ class TestTokens:
         assert insert_calls
         assert insert_calls[0].args[1][4] == 'write'
 
-    def test_create_token_invalid_role_defaults_read_only(self):
+    def test_create_token_invalid_role_defaults_reveal(self):
         conn, cur = _conn(fetchone={'w': True})
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'x', 'role': 'owner'}, follow_redirects=False)
         assert r.status_code == 302
         insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
-        assert insert_calls[0].args[1][4] == 'read-only'
+        assert insert_calls[0].args[1][4] == 'reveal'
 
-    def test_create_token_read_only_denied(self):
+    def test_create_token_reveal_denied(self):
         conn, _ = _conn(fetchone={'w': False})
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'openshift'}, follow_redirects=False)
@@ -74,7 +74,7 @@ class TestTokens:
             r = self.client.post(f'/projects/{self.pid}/tokens/{uuid4()}/delete', follow_redirects=False)
         assert r.status_code == 302
 
-    def test_delete_token_read_only_denied(self):
+    def test_delete_token_reveal_denied(self):
         conn, _ = _conn(fetchone={'w': False})
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/tokens/{uuid4()}/delete', follow_redirects=False)
@@ -84,7 +84,7 @@ class TestTokens:
         assert any(('permission' in msg.lower() for _cat, msg in flashes))
 
     def test_mt_select_policy_allows_readers(self):
-        """Read-only may list tokens; only writers insert/delete."""
+        """Reveal-role may list tokens; only writers insert/delete."""
         from pathlib import Path
         init_sql = (REPO_ROOT / 'db' / 'init.sql').read_text()
         sel_start = init_sql.index('CREATE POLICY mt_select ON api.machine_tokens')

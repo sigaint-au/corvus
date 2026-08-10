@@ -360,7 +360,7 @@
 {% set role_dropdown = project_role_dropdown %}
 {% set full_bindings_url = url_for('rbac_bindings', scope='project', scope_id=project.id) %}
 {% set empty_message = 'No project-scope bindings yet. Team members still have access via their team role.' %}
-{% set help_html = 'Bind users, groups, or service accounts to a <strong>project</strong> role (<code>project-admin</code> / <code>project-write</code> / <code>project-read</code>). Prefer team membership for broad access. Secret-level grants: secret Permissions tab. Reveal approval requests live under <a href="' ~ url_for('project_detail', project_id=project.id, tab='requests') ~ '">Requests</a>.' %}
+{% set help_html = 'Bind users, groups, or service accounts to a <strong>project</strong> role (<code>project-admin</code> / <code>project-write</code> / <code>project-reveal</code> / <code>project-read</code>). Prefer team membership for broad access. Secret-level grants: secret Access tab. Reveal approval requests live under <a href="' ~ url_for('project_detail', project_id=project.id, tab='requests') ~ '">Requests</a>.' %}
 {% include "partials/access_bindings_panel.html" %}
 
 {% elif active_tab == 'requests' %}
@@ -562,7 +562,7 @@
         <tr>
           <td>{{ t.name }}</td>
           <td><code class="k">{{ t.token_prefix }}…</code></td>
-          <td><span class="badge" data-variant="secondary">{{ t.role or 'read-only' }}</span></td>
+          <td><span class="badge" data-variant="secondary">{{ t.role or 'reveal' }}</span></td>
           <td class="col-note">
             {% if t.scopes %}
             <div class="token-scope-badges">
@@ -779,11 +779,22 @@
              {% if require_reveal_approval %}checked{% endif %}>
       Require approval to reveal secrets (default for this project)
     </label>
+    <label>Default access mode for new secrets
+      <select name="default_acl_mode">
+        <option value="inherit" {% if (project.default_acl_mode or 'inherit') == 'inherit' %}selected{% endif %}>
+          Inherit project access
+        </option>
+        <option value="restricted" {% if project.default_acl_mode in ('restricted', 'custom') %}selected{% endif %}>
+          Restricted (role bindings only)
+        </option>
+      </select>
+    </label>
     <button type="submit">Save</button>
   </form>
   <p class="muted">
     Reveal approval is the project default; individual secrets can override it
-    (require or exempt) on their Permissions tab.
+    (require or exempt) on their Access tab. Default access mode applies to new secrets;
+    existing secrets keep their current mode.
   </p>
 </section>
 {% endif %}

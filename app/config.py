@@ -133,8 +133,8 @@ ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}
 INVITE_ROLES = ("admin", "member", "viewer")
 # Project-scoped membership (in addition to team roles)
 PROJECT_ROLES = ("admin", "write", "read")
-# Machine accounts / ESO tokens: read-only (fetch) or write (fetch + upsert API)
-MACHINE_TOKEN_ROLES = ("read-only", "write")
+# Machine accounts / ESO tokens: read (metadata), reveal (metadata + plaintext), write (read + write)
+MACHINE_TOKEN_ROLES = ("read", "reveal", "write")
 
 # ── Kubernetes-style RBAC (Subjects + Roles + Bindings) ───────────────
 # Familiar dropdown labels map to built-in rbac.roles names.
@@ -163,11 +163,14 @@ RBAC_BUILTIN_ROLES = (
     "team-viewer",
     "project-admin",
     "project-write",
+    "project-reveal",
     "project-read",
     "secret-read",
     "secret-reveal",
     "secret-write",
-    "service-readonly",
+    "team-audit-viewer",
+    "service-read",
+    "service-reveal",
     "service-write",
 )
 # Dropdown presets by scope (replaces old role vocabularies in Bindings UI)
@@ -180,6 +183,7 @@ RBAC_TEAM_ROLE_DROPDOWN = (
 RBAC_PROJECT_ROLE_DROPDOWN = (
     ("project-admin", "Admin"),
     ("project-write", "Write"),
+    ("project-reveal", "Reveal"),
     ("project-read", "Read"),
 )
 RBAC_SECRET_ROLE_DROPDOWN = (
@@ -192,7 +196,8 @@ RBAC_CLUSTER_ROLE_DROPDOWN = (
     ("audit-viewer", "Audit viewer"),
 )
 RBAC_SERVICE_ROLE_DROPDOWN = (
-    ("service-readonly", "Read-only"),
+    ("service-read", "Read (metadata)"),
+    ("service-reveal", "Reveal (plaintext)"),
     ("service-write", "Write"),
 )
 # Clipboard auto-clear after copy (seconds); 0 disables
@@ -213,11 +218,13 @@ REVEAL_ACCESS_GRANT_CHOICES = (15, 60, 240, 1440)  # 15m, 1h, 4h, 1d
 # Structured secret kinds for advanced create form
 SECRET_KINDS = ("plain", "database", "certificate", "ssh", "kv")
 # Per-secret access modes (k8s RBAC). Stored in secrets.acl_mode.
-# inherit = project/team bindings apply; custom = restricted (secret-scope bindings only).
-# writers/admins/owners kept for DB CHECK / display of legacy rows (treated as inherit).
-SECRET_ACL_MODES = ("inherit", "custom")
+# inherit = project/team bindings apply; restricted = secret-scope bindings only.
+# 'custom' is accepted as a legacy alias for 'restricted'.
+# writers/admins/owners kept for DB CHECK of legacy rows (treated as inherit).
+SECRET_ACL_MODES = ("inherit", "restricted")
 SECRET_ACL_MODE_LABELS = {
     "inherit": "Inherit project access",
+    "restricted": "Restricted (role bindings only)",
     "custom": "Restricted (role bindings only)",
     "writers": "Writers and above (legacy)",
     "admins": "Project admins (legacy)",
