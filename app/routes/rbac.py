@@ -450,14 +450,14 @@ def register(app):
                         url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
                     )
 
+                # Resolve scope_id in Python — CASE %s IS NULL confuses PG type inference
+                scope_uuid = None if scope_kind == "cluster" or not scope_id else str(scope_id)
                 cur.execute(
                     """
                     INSERT INTO rbac.bindings
                       (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
                     VALUES (
-                      %s, %s, %s::uuid, %s,
-                      CASE WHEN %s IS NULL OR %s = '' THEN NULL ELSE %s::uuid END,
-                      %s::uuid
+                      %s::uuid, %s, %s::uuid, %s, %s::uuid, %s::uuid
                     )
                     """,
                     (
@@ -465,9 +465,7 @@ def register(app):
                         subject_kind,
                         subject_id,
                         scope_kind,
-                        scope_id,
-                        scope_id,
-                        scope_id,
+                        scope_uuid,
                         session["user_id"],
                     ),
                 )
@@ -557,22 +555,17 @@ def register(app):
                     """
                 )
                 users = acur.fetchall() or []
+                scope_uuid = None if scope_kind == "cluster" or not scope_id else str(scope_id)
                 for u in users:
                     acur.execute(
                         """
-                        SELECT api.can(
-                          %s, %s, %s,
-                          CASE WHEN %s IS NULL OR %s = '' THEN NULL ELSE %s::uuid END,
-                          %s::uuid
-                        ) AS ok
+                        SELECT api.can(%s, %s, %s, %s::uuid, %s::uuid) AS ok
                         """,
                         (
                             verb,
                             resource,
                             scope_kind,
-                            scope_id,
-                            scope_id,
-                            scope_id,
+                            scope_uuid,
                             str(u["id"]),
                         ),
                     )
