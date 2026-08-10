@@ -43,10 +43,10 @@ requires `reveal` via RBAC, then applies the approval layer.
 
 | Screen | Path | Who | Purpose |
 |--------|------|-----|---------|
-| Roles | `/rbac/roles` | Global admin (create/edit) | List built-in / create custom roles |
-| Bindings | `/rbac/bindings` | Team/project admins + global | Bind subject + role at a scope |
+| Roles & bindings | `/rbac/bindings` (`panel=bindings` \| `roles`) | Team/project admins + global | One page: bindings + role catalogue |
 | Access review | `/rbac/access-review` | Anyone who can open Access | Who can do X on a resource |
-| Team → **Access** | links to bindings scoped to that team | Team owner/admin | Fast path for team admins |
+| Team → **Access** | team tab | Team owner/admin | Team-scope bindings |
+| Project → **Access** | project tab | Project admin | Project-scope bindings |
 | Secret → **Permissions** | secret view | Project admin | Secret-scope bindings + access mode |
 
 ## Team admin: manage RBAC easily
@@ -59,7 +59,7 @@ Day-to-day people management still uses familiar tabs (they dual-write
 | Add a person to the team | **Team → Members** (role owner/admin/member/viewer) |
 | Manage groups | **Team → Groups** |
 | Project-only access | **Project → Settings → Members** |
-| Advanced (group as subject, SA, extra roles) | **Team → Access** or **Access → Role bindings** |
+| Advanced (group as subject, SA, extra roles) | **Team → Access** or **Access → Roles & bindings** |
 | Restrict one secret | **Secret → Permissions** → Restricted + bindings |
 
 Authorization for binding writes uses `api.can_manage_rbac(scope, id)`:
@@ -80,10 +80,11 @@ global admin for cluster.
 
 1. Sign in as a **global admin** (still bypasses all checks), or as a team
    owner if bindings already exist for that team.
-2. Open **Access → Role bindings** (or **Team → Access**).
-3. Scope **team**, pick the team, bind users with **Owner** / **Admin** /
-   **Member** / **Viewer** (maps to `team-*` roles).
+2. Open **Access → Roles & bindings** (or **Team → Access**).
+3. On the **Bindings** tab, scope **team**, pick the team, bind users with
+   **Owner** / **Admin** / **Member** / **Viewer** (maps to `team-*` roles).
 4. Optionally bind at project or secret scopes for tighter grants.
+   Custom roles: **Roles** tab (global admin).
 
 ## Per-secret permissions (Permissions tab)
 

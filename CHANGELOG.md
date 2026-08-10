@@ -27,6 +27,8 @@ tagged releases.
   to `project_members` / `project_group_roles`); managed on **Project → Access**
 - Project reveal-approval tab renamed **Requests**; new **Access** tab for
   project-scope role bindings (shared panel with improved Team Access form)
+- Nav: single **Roles & bindings** page (Bindings + Roles tabs); removed quick-paths
+  blurb and obsolete dual-menu Roles / Role bindings links
 - Team admin RBAC UX: Access nav (Role bindings / Roles / Review) open to all
   signed-in users; **Team → Access** tab; bindings page breadcrumb + scope-aware
   project/group pickers; `can_manage_rbac` allows project admins on secret scope

@@ -310,7 +310,7 @@
 {% set delete_team_id = team.id %}
 {% set form_id_prefix = 'team-access' %}
 {% set role_dropdown = team_role_dropdown %}
-{% set full_bindings_url = url_for('rbac_bindings', scope='team', scope_id=team.id) %}
+{% set full_bindings_url = url_for('rbac_bindings', panel='bindings', scope='team', scope_id=team.id) %}
 {% set empty_message = 'No team-scope bindings yet. Add one above, or use Members / Groups.' %}
 {% set help_html = 'Bind users, groups, or service accounts to a <strong>team</strong> role. Day-to-day people: <a href="' ~ url_for('team_detail', team_id=team.id, tab='members') ~ '">Members</a> and <a href="' ~ url_for('team_detail', team_id=team.id, tab='groups') ~ '">Groups</a> (they create bindings too). Project/secret grants: project <strong>Access</strong> tab or a secret’s Permissions tab.' %}
 {% include "partials/access_bindings_panel.html" %}
