@@ -1,0 +1,141 @@
+{# Shared RBAC Access panel (team or project scope).
+   Expects: can_edit_access, access_bindings, access_groups, role_dropdown,
+            subject_kinds, create_url, delete_url_for (callable-ish via string pattern),
+            form_id_prefix, help_html (optional), full_bindings_url (optional)
+#}
+{% set pref = form_id_prefix|default('access') %}
+<section class="access-rbac-panel">
+  <div class="section-head" style="display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.5rem">
+    <h2 style="margin:0">{{ panel_title|default('Role bindings') }}</h2>
+    {% if full_bindings_url %}
+    <a class="button ghost small" href="{{ full_bindings_url }}">Open full Role bindings</a>
+    {% endif %}
+  </div>
+  {% if help_html %}
+  <p class="muted">{{ help_html|safe }}</p>
+  {% endif %}
+
+  {% if can_edit_access %}
+  <div class="card access-bind-card" style="margin:1rem 0 1.25rem;padding:1rem 1.1rem">
+    <h3 style="margin:0 0 .75rem;font-size:1rem">Add binding</h3>
+    <form method="post" action="{{ create_url }}" class="settings-form" id="{{ pref }}-bind-form">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+      <fieldset class="field-group">
+        <legend>Who</legend>
+        <div class="field-grid">
+          <label>Subject type
+            <select name="subject_kind" id="{{ pref }}-subject-kind">
+              {% for sk in subject_kinds|default(['User', 'Group', 'ServiceAccount']) %}
+              <option value="{{ sk }}">{{ sk }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label id="{{ pref }}-user" class="span-2">User email
+            <input type="email" name="subject_email" class="user-suggest"
+                   list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+          </label>
+          <label id="{{ pref }}-group" class="span-2" hidden>Team group
+            <select name="subject_group">
+              <option value="">— select group —</option>
+              {% for g in access_groups|default([]) %}
+              <option value="{{ g.id }}">{{ g.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label id="{{ pref }}-sa" class="span-2" hidden>Service account id
+            <input type="text" name="subject_sa" placeholder="machine token uuid" autocomplete="off">
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="field-group">
+        <legend>Role</legend>
+        <div class="field-grid">
+          <label class="span-2">Grant
+            <select name="role_name" required>
+              {% for name, label in role_dropdown|default([]) %}
+              <option value="{{ name }}">{{ label }} — <code>{{ name }}</code></option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <p class="field-hint muted" style="margin:.4rem 0 0;font-size:var(--text-7)">
+          Grants apply at this scope and flow downward (team → project → secret).
+        </p>
+      </fieldset>
+
+      <p class="form-actions" style="margin:0">
+        <button type="submit" class="button">Add binding</button>
+      </p>
+    </form>
+  </div>
+  <script>
+  (function () {
+    var pref = {{ pref|tojson }};
+    var sel = document.getElementById(pref + '-subject-kind');
+    if (!sel) return;
+    function sync() {
+      var v = sel.value;
+      var u = document.getElementById(pref + '-user');
+      var g = document.getElementById(pref + '-group');
+      var s = document.getElementById(pref + '-sa');
+      if (u) u.hidden = v !== 'User';
+      if (g) g.hidden = v !== 'Group';
+      if (s) s.hidden = v !== 'ServiceAccount';
+    }
+    sel.addEventListener('change', sync);
+    sync();
+  })();
+  </script>
+  {% endif %}
+
+  {% if access_bindings %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>Role</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for b in access_bindings %}
+        <tr>
+          <td>
+            <span class="badge">{{ b.subject_kind }}</span>
+            {% if b.subject_email %}{{ b.subject_email }}
+            {% elif b.group_name %}{{ b.group_name }}
+            {% else %}<code>{{ b.subject_id }}</code>{% endif %}
+          </td>
+          <td>
+            {% if b.role_short and b.role_short != b.role_name %}
+            <span class="badge" data-variant="secondary">{{ b.role_short }}</span>
+            <code class="muted" style="font-size:.75rem">{{ b.role_name }}</code>
+            {% else %}
+            <code>{{ b.role_name }}</code>
+            {% endif %}
+          </td>
+          <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
+          <td class="acts">
+            {% if can_edit_access and delete_endpoint %}
+            <form method="post"
+                  action="{% if delete_team_id is defined and delete_team_id %}{{ url_for(delete_endpoint, team_id=delete_team_id, binding_id=b.id) }}{% else %}{{ url_for(delete_endpoint, project_id=delete_project_id, binding_id=b.id) }}{% endif %}"
+                  class="inline"
+                  onsubmit="return confirm('Remove this binding?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Remove</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">{{ empty_message|default('No bindings at this scope yet.') }}</p>
+  {% endif %}
+</section>

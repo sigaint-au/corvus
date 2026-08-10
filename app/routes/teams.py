@@ -221,22 +221,11 @@ def register(app):
                     (str(team_id),),
                 )
                 can_edit_access = bool((cur.fetchone() or {}).get("ok"))
-                cur.execute(
-                    """
-                    SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
-                           b.created_at, r.name AS role_name, r.built_in,
-                           g.name AS group_name
-                    FROM rbac.bindings b
-                    JOIN rbac.roles r ON r.id = b.role_id
-                    LEFT JOIN api.groups g
-                      ON b.subject_kind = 'Group' AND g.id = b.subject_id
-                    WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
-                    ORDER BY b.created_at DESC
-                    LIMIT 200
-                    """,
-                    (str(team_id),),
+                import rbac_sync
+
+                access_bindings = rbac_sync.list_scope_bindings(
+                    cur, "team", team_id
                 )
-                access_bindings = list(cur.fetchall() or [])
                 cur.execute(
                     "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
                     (str(team_id),),
@@ -278,33 +267,10 @@ def register(app):
                 for jr in join_requests:
                     jr.setdefault("email", str(jr.get("user_id")))
                     jr.setdefault("name", "")
-        # Enrich binding subject emails for Access tab
         if access_bindings:
-            user_ids = [
-                str(b["subject_id"])
-                for b in access_bindings
-                if b.get("subject_kind") == "User" and b.get("subject_id")
-            ]
-            email_map = {}
-            if user_ids:
-                try:
-                    with db.connect_admin() as aconn, aconn.cursor() as acur:
-                        acur.execute(
-                            """
-                            SELECT id, email FROM private.users
-                            WHERE id = ANY(%s::uuid[])
-                            """,
-                            (user_ids,),
-                        )
-                        for row in acur.fetchall() or []:
-                            email_map[str(row["id"])] = row["email"]
-                except Exception:
-                    pass
-            for b in access_bindings:
-                if b.get("subject_kind") == "User":
-                    b["subject_email"] = email_map.get(str(b.get("subject_id")))
-                else:
-                    b["subject_email"] = None
+            import rbac_sync
+
+            rbac_sync.enrich_binding_emails(access_bindings)
         return render_template(
             "team.html",
             team=team,

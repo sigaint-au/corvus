@@ -487,8 +487,22 @@ def register(app):
             pid = _resolve_project(cur, project_ref)
             if not pid:
                 return jsonify({"error": "not found"}), 404
-            cur.execute("SELECT * FROM private.project_member_rows(%s::uuid)", (pid,))
-            items = [_row(r) for r in (cur.fetchall() or [])]
+            import rbac_sync
+
+            bindings = rbac_sync.list_scope_bindings(cur, "project", pid)
+            rbac_sync.enrich_binding_emails(bindings)
+            items = []
+            for b in bindings:
+                if b.get("subject_kind") != "User":
+                    continue
+                items.append(
+                    {
+                        "user_id": str(b.get("subject_id")),
+                        "email": b.get("subject_email"),
+                        "role": b.get("role_short") or b.get("role_name"),
+                        "role_name": b.get("role_name"),
+                    }
+                )
         return jsonify({"items": items})
 
     @app.post("/eso/v1/projects/<project_ref>/members")
@@ -512,20 +526,20 @@ def register(app):
             if not mid:
                 return jsonify({"error": "user not found"}), 404
             cur.execute(
-                """
-                INSERT INTO api.project_members (project_id, user_id, role)
-                VALUES (%s::uuid, %s::uuid, %s)
-                ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role
-                """,
-                (pid, mid, role),
+                "SELECT api.can_manage_rbac('project', %s::uuid) AS ok", (pid,)
             )
-            if cur.rowcount == 0:
+            if not (cur.fetchone() or {}).get("ok"):
                 return jsonify({"error": "forbidden"}), 403
+            import rbac_sync
+
+            rbac_sync.sync_user_project_binding(
+                cur, user_id=mid, project_id=pid, role=role, created_by=uid
+            )
             audit.log_org(
                 cur,
                 project_id=pid,
                 action=audit.ORG_PROJECT_MEMBER_ADD,
-                detail=f"{email} → {role}",
+                detail=f"{email} → {role} (rbac)",
             )
             conn.commit()
         return jsonify({"ok": True, "email": email, "role": role})
@@ -544,14 +558,23 @@ def register(app):
             if not mid:
                 return jsonify({"error": "user not found"}), 404
             cur.execute(
+                "SELECT api.can_manage_rbac('project', %s::uuid) AS ok", (pid,)
+            )
+            if not (cur.fetchone() or {}).get("ok"):
+                return jsonify({"error": "forbidden"}), 403
+            import rbac_sync
+
+            rbac_sync.sync_user_project_binding(
+                cur, user_id=mid, project_id=pid, role=None, created_by=uid
+            )
+            # Clear legacy dual-store row if present
+            cur.execute(
                 """
                 DELETE FROM api.project_members
                 WHERE project_id = %s::uuid AND user_id = %s::uuid
                 """,
                 (pid, mid),
             )
-            if cur.rowcount == 0:
-                return jsonify({"error": "forbidden or not a member"}), 403
             audit.log_org(
                 cur,
                 project_id=pid,

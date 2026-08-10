@@ -304,112 +304,16 @@
 </section>
 
 {% elif active_tab == 'access' and is_admin %}
-<section>
-  <div class="section-head" style="display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.5rem">
-    <h2 style="margin:0">Role bindings</h2>
-    <a class="button ghost small" href="{{ url_for('rbac_bindings', scope='team', scope_id=team.id) }}">Open full Role bindings</a>
-  </div>
-  <p class="muted">
-    Bind users, groups, or service accounts to a team role.
-    Day-to-day people management is on the <a href="{{ url_for('team_detail', team_id=team.id, tab='members') }}">Members</a>
-    and <a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Groups</a> tabs (they create bindings too).
-    Project- or secret-level grants use
-    <a href="{{ url_for('rbac_bindings', scope='project') }}">Role bindings</a>
-    or a secret’s Permissions tab.
-  </p>
-
-  {% if can_edit_access %}
-  <form method="post" action="{{ url_for('team_access_binding_create', team_id=team.id) }}" class="row settings-form" style="margin-bottom:1.25rem">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Role
-      <select name="role_name" required>
-        {% for name, label in team_role_dropdown|default([]) %}
-        <option value="{{ name }}">{{ label }} ({{ name }})</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Subject kind
-      <select name="subject_kind" id="team-access-subject-kind">
-        {% for sk in subject_kinds|default(['User', 'Group', 'ServiceAccount']) %}
-        <option value="{{ sk }}">{{ sk }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label id="team-access-user">User email
-      <input type="email" name="subject_email" class="user-suggest"
-             list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
-    </label>
-    <label id="team-access-group" hidden>Group
-      <select name="subject_group">
-        <option value="">— select group —</option>
-        {% for g in access_groups|default([]) %}
-        <option value="{{ g.id }}">{{ g.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label id="team-access-sa" hidden>Service account id
-      <input type="text" name="subject_sa" placeholder="machine token uuid">
-    </label>
-    <button type="submit">Add binding</button>
-  </form>
-  <script>
-  (function () {
-    var sel = document.getElementById('team-access-subject-kind');
-    if (!sel) return;
-    function sync() {
-      var v = sel.value;
-      document.getElementById('team-access-user').hidden = v !== 'User';
-      document.getElementById('team-access-group').hidden = v !== 'Group';
-      document.getElementById('team-access-sa').hidden = v !== 'ServiceAccount';
-    }
-    sel.addEventListener('change', sync);
-    sync();
-  })();
-  </script>
-  {% endif %}
-
-  {% if access_bindings %}
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Subject</th>
-          <th>Role</th>
-          <th>Created</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for b in access_bindings %}
-        <tr>
-          <td>
-            <span class="badge">{{ b.subject_kind }}</span>
-            {% if b.subject_email %}{{ b.subject_email }}
-            {% elif b.group_name %}{{ b.group_name }}
-            {% else %}<code>{{ b.subject_id }}</code>{% endif %}
-          </td>
-          <td><code>{{ b.role_name }}</code></td>
-          <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
-          <td class="acts">
-            {% if can_edit_access %}
-            <form method="post"
-                  action="{{ url_for('team_access_binding_delete', team_id=team.id, binding_id=b.id) }}"
-                  class="inline"
-                  onsubmit="return confirm('Remove this binding?')">
-              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-              <button type="submit" class="link danger">Remove</button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="empty">No team-scope bindings yet. Add one above, or use Members / Groups.</p>
-  {% endif %}
-</section>
+{% set panel_title = 'Team access' %}
+{% set create_url = url_for('team_access_binding_create', team_id=team.id) %}
+{% set delete_endpoint = 'team_access_binding_delete' %}
+{% set delete_team_id = team.id %}
+{% set form_id_prefix = 'team-access' %}
+{% set role_dropdown = team_role_dropdown %}
+{% set full_bindings_url = url_for('rbac_bindings', scope='team', scope_id=team.id) %}
+{% set empty_message = 'No team-scope bindings yet. Add one above, or use Members / Groups.' %}
+{% set help_html = 'Bind users, groups, or service accounts to a <strong>team</strong> role. Day-to-day people: <a href="' ~ url_for('team_detail', team_id=team.id, tab='members') ~ '">Members</a> and <a href="' ~ url_for('team_detail', team_id=team.id, tab='groups') ~ '">Groups</a> (they create bindings too). Project/secret grants: project <strong>Access</strong> tab or a secret’s Permissions tab.' %}
+{% include "partials/access_bindings_panel.html" %}
 
 {% elif active_tab == 'activity' %}
 <section>

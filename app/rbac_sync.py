@@ -1,10 +1,14 @@
-"""Sync legacy membership / group role UI into rbac.bindings (k8s model)."""
+"""Sync membership / group role UI into rbac.bindings (k8s model).
+
+Project members and project group roles are RBAC-only: UI and mgmt API write
+``rbac.bindings`` (project-admin / project-write / project-read). Legacy
+``api.project_members`` / ``api.project_group_roles`` tables may still exist
+for older rows; ``backfill_all_legacy_to_bindings`` copies them once.
+"""
 
 from __future__ import annotations
 
 import logging
-
-import config
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +24,10 @@ PROJECT_ROLE_TO_RBAC = {
     "write": "project-write",
     "read": "project-read",
 }
+RBAC_TO_PROJECT_ROLE = {v: k for k, v in PROJECT_ROLE_TO_RBAC.items()}
+RBAC_TO_TEAM_ROLE = {v: k for k, v in TEAM_ROLE_TO_RBAC.items()}
+PROJECT_ROLE_NAMES = tuple(PROJECT_ROLE_TO_RBAC.values())
+TEAM_ROLE_NAMES = tuple(TEAM_ROLE_TO_RBAC.values())
 
 
 def _role_id(cur, name: str):
@@ -131,7 +139,7 @@ def sync_user_team_binding(cur, *, user_id, team_id, role: str | None, created_b
 def sync_user_project_binding(
     cur, *, user_id, project_id, role: str | None, created_by=None
 ):
-    """Upsert User→project binding from project_members.role."""
+    """Upsert User→project binding (role: admin|write|read or None to clear)."""
     cur.execute(
         """
         DELETE FROM rbac.bindings
@@ -146,7 +154,9 @@ def sync_user_project_binding(
     )
     if not role:
         return
-    rname = PROJECT_ROLE_TO_RBAC.get(role)
+    rname = PROJECT_ROLE_TO_RBAC.get(role) or (
+        role if role in PROJECT_ROLE_NAMES else None
+    )
     if not rname:
         return
     rid = _role_id(cur, rname)
@@ -160,6 +170,63 @@ def sync_user_project_binding(
         """,
         (rid, str(user_id), str(project_id), str(created_by) if created_by else None),
     )
+
+
+def list_scope_bindings(cur, scope_kind: str, scope_id) -> list:
+    """List bindings at a scope (with group_name; emails filled by caller)."""
+    cur.execute(
+        """
+        SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
+               b.created_at, r.name AS role_name, r.built_in,
+               g.name AS group_name
+        FROM rbac.bindings b
+        JOIN rbac.roles r ON r.id = b.role_id
+        LEFT JOIN api.groups g
+          ON b.subject_kind = 'Group' AND g.id = b.subject_id
+        WHERE b.scope_kind = %s AND b.scope_id = %s::uuid
+        ORDER BY b.created_at DESC
+        LIMIT 200
+        """,
+        (scope_kind, str(scope_id)),
+    )
+    return list(cur.fetchall() or [])
+
+
+def enrich_binding_emails(bindings: list) -> list:
+    """Attach subject_email for User subjects via admin DSN."""
+    if not bindings:
+        return bindings
+    user_ids = [
+        str(b["subject_id"])
+        for b in bindings
+        if b.get("subject_kind") == "User" and b.get("subject_id")
+    ]
+    email_map: dict[str, str] = {}
+    if user_ids:
+        try:
+            import db
+
+            with db.connect_admin() as aconn, aconn.cursor() as acur:
+                acur.execute(
+                    """
+                    SELECT id, email FROM private.users
+                    WHERE id = ANY(%s::uuid[])
+                    """,
+                    (user_ids,),
+                )
+                for row in acur.fetchall() or []:
+                    email_map[str(row["id"])] = row["email"]
+        except Exception:
+            log.debug("enrich_binding_emails failed", exc_info=True)
+    for b in bindings:
+        if b.get("subject_kind") == "User":
+            b["subject_email"] = email_map.get(str(b.get("subject_id")))
+        else:
+            b["subject_email"] = None
+        # Friendly short role for project-* / team-*
+        rn = b.get("role_name") or ""
+        b["role_short"] = RBAC_TO_PROJECT_ROLE.get(rn) or RBAC_TO_TEAM_ROLE.get(rn) or rn
+    return bindings
 
 
 def backfill_all_legacy_to_bindings(cur) -> dict:

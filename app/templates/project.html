@@ -28,10 +28,17 @@
      class="tab {% if active_tab == 'secrets' %}active{% endif %}"
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'secrets' else 'false' }}">Secrets</a>
+  {% if can_admin %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}"
      class="tab {% if active_tab == 'access' %}active{% endif %}"
      role="tab"
-     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}">Access{% if access_pending_count %}<span class="tab-badge" title="{{ access_pending_count }} pending">{{ access_pending_count }}</span>{% endif %}</a>
+     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}"
+     title="Role bindings for this project">Access</a>
+  {% endif %}
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='requests') }}"
+     class="tab {% if active_tab == 'requests' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'requests' else 'false' }}">Requests{% if access_pending_count %}<span class="tab-badge" title="{{ access_pending_count }} pending">{{ access_pending_count }}</span>{% endif %}</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
      class="tab {% if active_tab == 'audit' %}active{% endif %}"
      role="tab"
@@ -339,10 +346,22 @@
   <p class="muted">You need write access to import secrets.</p>
   {% endif %}
 </section>
-{% elif active_tab == 'access' %}
+{% elif active_tab == 'access' and can_admin %}
+{% set panel_title = 'Project access' %}
+{% set create_url = url_for('project_access_binding_create', project_id=project.id) %}
+{% set delete_endpoint = 'project_access_binding_delete' %}
+{% set delete_project_id = project.id %}
+{% set form_id_prefix = 'proj-access' %}
+{% set role_dropdown = project_role_dropdown %}
+{% set full_bindings_url = url_for('rbac_bindings', scope='project', scope_id=project.id) %}
+{% set empty_message = 'No project-scope bindings yet. Team members still have access via their team role.' %}
+{% set help_html = 'Bind users, groups, or service accounts to a <strong>project</strong> role (<code>project-admin</code> / <code>project-write</code> / <code>project-read</code>). Prefer team membership for broad access. Secret-level grants: secret Permissions tab. Reveal approval requests live under <a href="' ~ url_for('project_detail', project_id=project.id, tab='requests') ~ '">Requests</a>.' %}
+{% include "partials/access_bindings_panel.html" %}
+
+{% elif active_tab == 'requests' %}
 <section>
   <div class="section-head">
-    <h2>Access</h2>
+    <h2>Reveal requests</h2>
   </div>
   <p class="muted">Pending and recent reveal-approval requests for this project.</p>
   {% if access_requests %}
@@ -763,111 +782,14 @@
   </p>
 </section>
 <section>
-  <h2>Members</h2>
+  <h2>Access</h2>
   <p class="muted">
-    Project-level access for people on this project only.
-    Creates a <strong>role binding</strong> (<code>project-read</code> /
-    <code>project-write</code> / <code>project-admin</code>).
-    Prefer team membership for broad access.
-    Advanced (groups, service accounts, extra roles):
-    <a href="{{ url_for('rbac_bindings', scope='project', scope_id=project.id) }}">Role bindings</a>.
+    Project members and group roles are managed as <strong>role bindings</strong>
+    on the
+    <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}">Access</a>
+    tab (Kubernetes-style RBAC). Team-wide people stay under
+    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='members') }}">{{ project.team_name }} → Members</a>.
   </p>
-  <form method="post" action="{{ url_for('add_project_member', project_id=project.id) }}" class="row">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>User email
-      <input type="email" name="email" required class="user-suggest"
-             list="user-suggest-list" placeholder="e.g. alice@example.com" autocomplete="off">
-    </label>
-    <label>Role
-      <select name="role">
-        {% for r in project_roles %}
-        <option value="{{ r }}" {% if r == 'read' %}selected{% endif %}>{{ r }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">Add</button>
-  </form>
-  {% if project_members %}
-  <table>
-    <thead><tr><th>User</th><th>Role</th><th></th></tr></thead>
-    <tbody>
-    {% for m in project_members %}
-      <tr>
-        <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
-        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
-        <td class="acts">
-          <form method="post"
-                action="{{ url_for('remove_project_member', project_id=project.id, user_id=m.user_id) }}"
-                class="inline"
-                onsubmit="return confirm('Remove {{ m.email }} from this project?')">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="link danger">Remove</button>
-          </form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="empty">No project-level members. Team members still have access via their team role.</p>
-  {% endif %}
-</section>
-<section>
-  <h2>Group roles</h2>
-  <p class="muted">
-    Bind a <strong>team group</strong> to a project role (same as a Group subject
-    on Role bindings). Members of the group inherit the grant.
-    Manage groups under
-    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='groups') }}">{{ project.team_name }} → Groups</a>.
-  </p>
-  {% if team_groups %}
-  <form method="post" action="{{ url_for('add_project_group_role', project_id=project.id) }}" class="row">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Team group
-      <select name="group_id" required>
-        {% for g in team_groups %}
-        <option value="{{ g.id }}">{{ g.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Role
-      <select name="role">
-        {% for r in project_roles %}
-        <option value="{{ r }}" {% if r == 'read' %}selected{% endif %}>{{ r }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">Add</button>
-  </form>
-  {% else %}
-  <p class="empty">
-    No team groups yet —
-    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='groups') }}">create one on {{ project.team_name }} → Groups</a>.
-  </p>
-  {% endif %}
-  {% if project_group_roles %}
-  <table>
-    <thead><tr><th>Group</th><th>Role</th><th>Source</th><th></th></tr></thead>
-    <tbody>
-    {% for g in project_group_roles %}
-      <tr>
-        <td>{{ g.group_name }}</td>
-        <td><span class="badge" data-variant="secondary">{{ g.role }}</span></td>
-        <td class="muted">{{ g.source }}</td>
-        <td class="acts">
-          <form method="post"
-                action="{{ url_for('remove_project_group_role', project_id=project.id, group_id=g.group_id) }}"
-                class="inline"
-                onsubmit="return confirm('Remove group role for {{ g.group_name }}?')">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="link danger">Remove</button>
-          </form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
 </section>
 {% endif %}
 {% if can_delete %}
