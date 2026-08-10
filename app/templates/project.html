@@ -781,16 +781,6 @@
     (require or exempt) on their Permissions tab.
   </p>
 </section>
-<section>
-  <h2>Access</h2>
-  <p class="muted">
-    Project members and group roles are managed as <strong>role bindings</strong>
-    on the
-    <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}">Access</a>
-    tab (Kubernetes-style RBAC). Team-wide people stay under
-    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='members') }}">{{ project.team_name }} → Members</a>.
-  </p>
-</section>
 {% endif %}
 {% if can_delete %}
 <section>
