@@ -170,7 +170,85 @@ def main() -> None:
             uids[email] = uid
             print(f"user  {email:24}  admin={is_admin}  {uid}")
 
-        # Teams + memberships
+        # Teams + RBAC memberships (bindings only)
+        team_role_map = {
+            "owner": "team-owner",
+            "admin": "team-admin",
+            "member": "team-member",
+            "viewer": "team-viewer",
+        }
+        project_role_map = {
+            "admin": "project-admin",
+            "write": "project-write",
+            "reveal": "project-reveal",
+            "read": "project-read",
+        }
+
+        def bind_user(role_name: str, user_id: str, scope_kind: str, scope_id: str):
+            cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (role_name,))
+            r = cur.fetchone()
+            if not r:
+                print(f"warn  missing role {role_name}")
+                return
+            cur.execute(
+                """
+                DELETE FROM rbac.bindings
+                WHERE subject_kind = 'User' AND subject_id = %s::uuid
+                  AND scope_kind = %s AND scope_id = %s::uuid
+                  AND role_id IN (
+                    SELECT id FROM rbac.roles
+                    WHERE name LIKE %s
+                  )
+                """,
+                (
+                    user_id,
+                    scope_kind,
+                    scope_id,
+                    "team-%" if scope_kind == "team" else "project-%",
+                ),
+            )
+            cur.execute(
+                """
+                INSERT INTO rbac.bindings
+                  (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
+                VALUES (%s::uuid, 'User', %s::uuid, %s, %s::uuid, %s::uuid)
+                ON CONFLICT DO NOTHING
+                """,
+                (str(r["id"]), user_id, scope_kind, scope_id, user_id),
+            )
+
+        def bind_group(role_name: str, group_id: str, scope_kind: str, scope_id: str, by: str):
+            cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (role_name,))
+            r = cur.fetchone()
+            if not r:
+                print(f"warn  missing role {role_name}")
+                return
+            cur.execute(
+                """
+                DELETE FROM rbac.bindings
+                WHERE subject_kind = 'Group' AND subject_id = %s::uuid
+                  AND scope_kind = %s AND scope_id = %s::uuid
+                  AND role_id IN (
+                    SELECT id FROM rbac.roles WHERE name LIKE %s
+                  )
+                """,
+                (
+                    group_id,
+                    scope_kind,
+                    scope_id,
+                    "team-%" if scope_kind == "team" else "project-%",
+                ),
+            )
+            cur.execute(
+                """
+                INSERT INTO rbac.bindings
+                  (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
+                VALUES (%s::uuid, 'Group', %s::uuid, %s, %s::uuid, %s::uuid)
+                ON CONFLICT DO NOTHING
+                """,
+                (str(r["id"]), group_id, scope_kind, scope_id, by),
+            )
+
         team_ids: dict[str, str] = {}
         for team_name, owner_email, members in TEAMS:
             cur.execute("SELECT id FROM api.teams WHERE name = %s", (team_name,))
@@ -189,27 +267,13 @@ def main() -> None:
                 tid = str(cur.fetchone()["id"])
             team_ids[team_name] = tid
 
-            # owner
-            cur.execute(
-                """
-                INSERT INTO api.team_members (team_id, user_id, role, source)
-                VALUES (%s::uuid, %s::uuid, 'owner', 'manual')
-                ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role
-                """,
-                (tid, uids[owner_email]),
-            )
+            bind_user("team-owner", uids[owner_email], "team", tid)
             for email, role in members:
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s::uuid, %s::uuid, %s, 'manual')
-                    ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role
-                    """,
-                    (tid, uids[email], role),
-                )
+                rname = team_role_map.get(role, "team-member")
+                bind_user(rname, uids[email], "team", tid)
             print(f"team  {team_name:24}  {tid}")
 
-        # Projects + project members
+        # Projects + project RBAC bindings
         project_ids: dict[tuple[str, str], str] = {}
         for team_name, proj_name, members in PROJECTS:
             tid = team_ids[team_name]
@@ -232,14 +296,8 @@ def main() -> None:
                 pid = str(cur.fetchone()["id"])
             project_ids[(team_name, proj_name)] = pid
             for email, role in members:
-                cur.execute(
-                    """
-                    INSERT INTO api.project_members (project_id, user_id, role)
-                    VALUES (%s::uuid, %s::uuid, %s)
-                    ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role
-                    """,
-                    (pid, uids[email], role),
-                )
+                rname = project_role_map.get(role, "project-read")
+                bind_user(rname, uids[email], "project", pid)
             print(f"proj  {team_name}/{proj_name:16}  {pid}")
 
         # Secrets (encrypted with app MASTER_KEY)
@@ -265,7 +323,7 @@ def main() -> None:
             secret_ids[(team_name, proj_name, key)] = sid
             print(f"sec   {team_name}/{proj_name}/{key}  {sid}")
 
-        # Groups + members
+        # Groups + members + team-scope RBAC bindings
         group_ids: dict[tuple[str, str], str] = {}
         for team_name, gname, source, ext_key, team_role, members in GROUPS:
             tid = team_ids[team_name]
@@ -282,20 +340,20 @@ def main() -> None:
                 cur.execute(
                     """
                     UPDATE api.groups
-                       SET source = %s, external_key = %s, team_role = %s
+                       SET source = %s, external_key = %s, team_role = NULL
                      WHERE id = %s::uuid
                     """,
-                    (source, ext_key, team_role, gid),
+                    (source, ext_key, gid),
                 )
             else:
                 cur.execute(
                     """
                     INSERT INTO api.groups
                       (team_id, name, source, external_key, team_role)
-                    VALUES (%s::uuid, %s, %s, %s, %s)
+                    VALUES (%s::uuid, %s, %s, %s, NULL)
                     RETURNING id
                     """,
-                    (tid, gname, source, ext_key, team_role),
+                    (tid, gname, source, ext_key),
                 )
                 gid = str(cur.fetchone()["id"])
             group_ids[(team_name, gname)] = gid
@@ -308,23 +366,26 @@ def main() -> None:
                     """,
                     (gid, uids[email]),
                 )
-            print(f"group {team_name}/{gname:24}  {gid}  role={team_role}")
+            if team_role:
+                rname = team_role_map.get(team_role, f"team-{team_role}")
+                bind_group(rname, gid, "team", tid, uids.get("admin@example.com") or next(iter(uids.values())))
+            print(f"group {team_name}/{gname:24}  {gid}  bind={team_role or 'none'}")
 
-        # Project group roles
+        # Project-scope group RBAC bindings
         for team_name, proj_name, gname, role in PROJECT_GROUP_ROLES:
             pid = project_ids[(team_name, proj_name)]
             gid = group_ids[(team_name, gname)]
-            cur.execute(
-                """
-                INSERT INTO api.project_group_roles (project_id, group_id, role)
-                VALUES (%s::uuid, %s::uuid, %s)
-                ON CONFLICT (project_id, group_id) DO UPDATE SET role = EXCLUDED.role
-                """,
-                (pid, gid, role),
+            rname = project_role_map.get(role, "project-read")
+            bind_group(
+                rname,
+                gid,
+                "project",
+                pid,
+                uids.get("admin@example.com") or next(iter(uids.values())),
             )
-            print(f"pgr   {team_name}/{proj_name}/{gname} → {role}")
+            print(f"gbind {team_name}/{proj_name}/{gname} → {rname}")
 
-        # Secret-scope role bindings (replaces legacy secret_acl grants)
+        # Secret-scope role bindings
         perm_to_role = {
             "read": "secret-read",
             "reveal": "secret-reveal",
@@ -335,7 +396,7 @@ def main() -> None:
             role_name = perm_to_role.get(perm, "secret-reveal")
             cur.execute(
                 """
-                UPDATE api.secrets SET acl_mode = 'custom'
+                UPDATE api.secrets SET acl_mode = 'restricted'
                 WHERE id = %s::uuid
                 """,
                 (sid,),
@@ -387,7 +448,7 @@ def main() -> None:
     print("All accounts password:", PASSWORD)
     print("Log in at http://127.0.0.1:8080  e.g. admin@example.com / password")
     print("CLI needs a project UUID (above) + machine token ss_… from UI Integrations.")
-    print("Groups: team Groups tab; project group roles on project Settings.")
+    print("Groups: team Groups tab (team access = RBAC binding); project Access for project roles.")
 
 
 if __name__ == "__main__":

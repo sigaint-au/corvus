@@ -268,9 +268,9 @@
     </form>
   </div>
   <p class="muted">
-    Groups are RBAC principals for this team. Open a group to manage membership.
-    Optional <strong>team role</strong> grants team access; bind groups on project settings
-    or secret Access. Map LDAP/OIDC via an external key (sync on login).
+    Groups are RBAC subjects for this team. Open a group to manage membership and
+    optional <strong>team access</strong> (a role binding). Bind groups on project Access
+    or secret Permissions. Map LDAP/OIDC via an external key (sync on login).
   </p>
   {% if is_admin %}
   <form method="post" action="{{ url_for('create_team_group', team_id=team.id) }}" class="row">
@@ -287,20 +287,12 @@
       <input type="text" name="external_key"
              placeholder="e.g. cn=ops,ou=groups,dc=example,dc=com  or  platform-ops">
     </label>
-    <label>Team role
-      <select name="team_role">
-        <option value="">— none —</option>
-        {% for r in team_roles|default(['admin','member','viewer']) %}
-        <option value="{{ r }}" {% if r == 'member' %}selected{% endif %}>{{ r }}</option>
-        {% endfor %}
-      </select>
-    </label>
     <button type="submit">Create group</button>
   </form>
   {% endif %}
   {% if groups %}
   <table>
-    <thead><tr><th>Name</th><th>Source</th><th>External</th><th>Team role</th><th>Members</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Source</th><th>External</th><th>Team access</th><th>Members</th><th></th></tr></thead>
     <tbody>
     {% for g in groups %}
       <tr>

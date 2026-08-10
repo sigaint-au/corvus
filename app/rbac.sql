@@ -698,6 +698,56 @@ CREATE POLICY rbac_bindings_write ON rbac.bindings FOR ALL TO authenticated
   USING (api.can_manage_rbac(scope_kind, scope_id))
   WITH CHECK (api.can_manage_rbac(scope_kind, scope_id));
 
+-- Prevent removing the last team-owner binding (User or Group subject)
+CREATE OR REPLACE FUNCTION rbac.guard_last_team_owner_binding()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  old_role text;
+  new_role text;
+  remaining int;
+  tid uuid;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    SELECT r.name INTO old_role FROM rbac.roles r WHERE r.id = OLD.role_id;
+    IF OLD.scope_kind = 'team' AND old_role = 'team-owner' THEN
+      tid := OLD.scope_id;
+      SELECT count(*) INTO remaining
+      FROM rbac.bindings b
+      JOIN rbac.roles r ON r.id = b.role_id
+      WHERE b.scope_kind = 'team' AND b.scope_id = tid
+        AND r.name = 'team-owner'
+        AND b.id IS DISTINCT FROM OLD.id;
+      IF remaining = 0 THEN
+        RAISE EXCEPTION 'cannot remove the last team owner; transfer ownership first';
+      END IF;
+    END IF;
+    RETURN OLD;
+  ELSIF TG_OP = 'UPDATE' THEN
+    SELECT r.name INTO old_role FROM rbac.roles r WHERE r.id = OLD.role_id;
+    SELECT r.name INTO new_role FROM rbac.roles r WHERE r.id = NEW.role_id;
+    IF OLD.scope_kind = 'team' AND old_role = 'team-owner'
+       AND new_role IS DISTINCT FROM 'team-owner' THEN
+      tid := OLD.scope_id;
+      SELECT count(*) INTO remaining
+      FROM rbac.bindings b
+      JOIN rbac.roles r ON r.id = b.role_id
+      WHERE b.scope_kind = 'team' AND b.scope_id = tid
+        AND r.name = 'team-owner'
+        AND b.id IS DISTINCT FROM OLD.id;
+      IF remaining = 0 THEN
+        RAISE EXCEPTION 'cannot remove the last team owner; transfer ownership first';
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS bindings_guard_last_team_owner ON rbac.bindings;
+CREATE TRIGGER bindings_guard_last_team_owner
+  BEFORE UPDATE OR DELETE ON rbac.bindings
+  FOR EACH ROW EXECUTE FUNCTION rbac.guard_last_team_owner_binding();
+
 -- ── Drop legacy secret ACL (replaced by secret-scope rbac.bindings) ──
 DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid);
 DROP TABLE IF EXISTS api.secret_acl CASCADE;

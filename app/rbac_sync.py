@@ -36,8 +36,80 @@ def _role_id(cur, name: str):
     return str(row["id"]) if row else None
 
 
+def count_team_owner_bindings(cur, team_id) -> int:
+    """Count team-owner bindings (User or Group) at team scope."""
+    cur.execute(
+        """
+        SELECT count(*) AS n
+        FROM rbac.bindings b
+        JOIN rbac.roles r ON r.id = b.role_id
+        WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
+          AND r.name = 'team-owner'
+        """,
+        (str(team_id),),
+    )
+    return int((cur.fetchone() or {}).get("n") or 0)
+
+
+def ensure_not_last_team_owner(
+    cur, team_id, *, subject_kind: str, subject_id, new_role: str | None
+) -> None:
+    """Raise if removing/demoting the last team-owner binding at this scope."""
+    cur.execute(
+        """
+        SELECT r.name AS role_name
+        FROM rbac.bindings b
+        JOIN rbac.roles r ON r.id = b.role_id
+        WHERE b.subject_kind = %s AND b.subject_id = %s::uuid
+          AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
+          AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+        LIMIT 1
+        """,
+        (subject_kind, str(subject_id), str(team_id)),
+    )
+    row = cur.fetchone()
+    if not row or row.get("role_name") != "team-owner":
+        return
+    # Demoting or clearing an owner
+    new_rname = TEAM_ROLE_TO_RBAC.get(new_role or "") if new_role else None
+    if new_rname == "team-owner":
+        return
+    if count_team_owner_bindings(cur, team_id) <= 1:
+        raise ValueError(
+            "cannot remove the last team owner; transfer ownership first"
+        )
+
+
+def group_team_roles_map(cur, team_id) -> dict[str, str]:
+    """Map group_id → short team role (admin/member/viewer/owner) from bindings."""
+    cur.execute(
+        """
+        SELECT b.subject_id::text AS gid, r.name AS role_name
+        FROM rbac.bindings b
+        JOIN rbac.roles r ON r.id = b.role_id
+        WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
+          AND b.subject_kind = 'Group'
+          AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+        """,
+        (str(team_id),),
+    )
+    out: dict[str, str] = {}
+    for row in cur.fetchall() or []:
+        out[str(row["gid"])] = RBAC_TO_TEAM_ROLE.get(
+            row["role_name"], row["role_name"]
+        )
+    return out
+
+
 def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, created_by=None):
-    """Upsert or clear Group→team binding from groups.team_role."""
+    """Upsert or clear Group→team binding (RBAC only; no groups.team_role column)."""
+    ensure_not_last_team_owner(
+        cur,
+        team_id,
+        subject_kind="Group",
+        subject_id=group_id,
+        new_role=team_role,
+    )
     cur.execute(
         """
         DELETE FROM rbac.bindings
@@ -105,7 +177,14 @@ def sync_group_project_binding(
 
 
 def sync_user_team_binding(cur, *, user_id, team_id, role: str | None, created_by=None):
-    """Upsert User→team binding from team_members.role."""
+    """Upsert User→team binding (role: owner|admin|member|viewer or None to clear)."""
+    ensure_not_last_team_owner(
+        cur,
+        team_id,
+        subject_kind="User",
+        subject_id=user_id,
+        new_role=role,
+    )
     cur.execute(
         """
         DELETE FROM rbac.bindings

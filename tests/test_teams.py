@@ -148,22 +148,28 @@ class TestTeams:
         assert 'private.team_member_rows' in init
 
     def test_non_member_cannot_self_join(self):
-        """RLS must reject self-insert into a team the user does not admin."""
+        """RLS must reject binding insert when the actor cannot manage team RBAC."""
         tid = uuid4()
-        rls_err = Exception('new row violates row-level security policy for table "rbac.bindings"')
-        state = {'n': 0}
+        role_id = uuid4()
+        rls_err = Exception(
+            'new row violates row-level security policy for table "rbac.bindings"'
+        )
+        last = {'s': ''}
 
         def execute(sql, params=None):
-            if 'INSERT INTO rbac.bindings' in str(sql):
+            last['s'] = ' '.join(str(sql).lower().split())
+            if 'insert into rbac.bindings' in last['s']:
                 raise rls_err
 
         def fetchone():
-            state['n'] += 1
-            # 1: team_role (non-owner) 2: lookup_user 3: existing membership
-            if state['n'] == 1:
+            s = last['s']
+            if 'team_role' in s:
                 return {'r': 'member'}
-            if state['n'] == 2:
+            if 'lookup_user' in s:
                 return {'id': self.uid}
+            if 'from rbac.roles' in s:
+                return {'id': role_id}
+            # existing binding / last-owner checks
             return None
 
         conn, cur = _conn(fetchone=fetchone)
@@ -176,9 +182,10 @@ class TestTeams:
             )
         assert r.status_code == 302
         conn.commit.assert_not_called()
+        conn.rollback.assert_called()
         with self.client.session_transaction() as s:
             flashes = s.get('_flashes') or []
-        assert any(('row-level security' in msg for _cat, msg in flashes))
+        assert any('row-level security' in msg for _cat, msg in flashes)
 
     def test_tm_insert_policy_forbids_self_join(self):
         """Policy must require owner/admin — no user_id = current_user escape hatch."""

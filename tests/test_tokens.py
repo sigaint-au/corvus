@@ -145,13 +145,17 @@ class TestTokens:
         assert "IN ('owner', 'admin')" in body
 
     def test_add_project_member_requires_admin(self):
-        """Project write members cannot add project members."""
-        conn, cur = _conn(fetchone={'a': False})
+        """Non-admins cannot add project members (can_manage_rbac gate)."""
+        conn, cur = _conn(fetchone={'ok': False, 'a': False})
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/projects/{self.pid}/members', data={'email': 'x@ex.com', 'role': 'read'}, follow_redirects=False)
+            r = self.client.post(
+                f'/projects/{self.pid}/members',
+                data={'email': 'x@ex.com', 'role': 'read'},
+                follow_redirects=False,
+            )
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
-        assert 'can_admin_project' in sql
+        assert 'can_manage_rbac' in sql or 'can_admin_project' in sql
         assert 'insert into api.project_members' not in sql
         with self.client.session_transaction() as s:
             flashes = s.get('_flashes') or []
@@ -160,6 +164,7 @@ class TestTokens:
     def test_add_project_member_ok_for_admin(self):
         uid = uuid4()
         tid = uuid4()
+        rid = uuid4()
         last = {'s': ''}
 
         def execute(sql, params=None):
@@ -167,32 +172,43 @@ class TestTokens:
 
         def fetchone():
             s = last['s']
-            if 'can_admin_project' in s:
-                return {'a': True}
+            if 'can_manage_rbac' in s or 'can_admin_project' in s:
+                return {'ok': True, 'a': True}
             if 'lookup_user' in s:
                 return {'id': uid}
             if 'from api.projects' in s and 'team_id' in s:
                 return {'team_id': tid}
-            if 'from api.project_members' in s and 'select role' in s:
+            if 'from rbac.roles' in s:
+                return {'id': rid}
+            if 'from rbac.bindings' in s:
                 return None
             return None
+
         conn, cur = _conn(fetchone=fetchone)
         cur.execute.side_effect = execute
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/projects/{self.pid}/members', data={'email': 'x@ex.com', 'role': 'write'}, follow_redirects=False)
+            r = self.client.post(
+                f'/projects/{self.pid}/members',
+                data={'email': 'x@ex.com', 'role': 'write'},
+                follow_redirects=False,
+            )
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
-        assert 'insert into api.project_members' in sql
-        assert 'can_admin_project' in sql
+        assert 'rbac.bindings' in sql
+        assert 'insert into api.project_members' not in sql
+        assert 'can_manage_rbac' in sql or 'can_admin_project' in sql
 
     def test_remove_project_member_requires_admin(self):
-        conn, cur = _conn(fetchone={'a': False})
+        conn, cur = _conn(fetchone={'ok': False, 'a': False})
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/projects/{self.pid}/members/{uuid4()}/remove', follow_redirects=False)
+            r = self.client.post(
+                f'/projects/{self.pid}/members/{uuid4()}/remove',
+                follow_redirects=False,
+            )
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
-        assert 'can_admin_project' in sql
+        assert 'can_manage_rbac' in sql or 'can_admin_project' in sql
         assert 'delete from api.project_members' not in sql
 
     def test_secrets_updated_at_trigger_defined(self):
