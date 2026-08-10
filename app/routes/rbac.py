@@ -134,12 +134,23 @@ def register(app):
     @app.get("/rbac/roles")
     @authz.login_required
     def rbac_roles():
-        """Redirect to unified Roles & bindings page (roles panel)."""
+        """List built-in and custom roles with their rules."""
         tab = (request.args.get("tab") or "builtin").strip().lower()
         if tab not in ("builtin", "custom", "create"):
             tab = "builtin"
-        return redirect(
-            url_for("rbac_bindings", panel="roles", roles_tab=tab)
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            roles, builtin, custom, can_edit = _load_roles_catalog(cur)
+        if tab == "create" and not can_edit:
+            tab = "builtin"
+        return render_template(
+            "rbac_roles.html",
+            roles=roles,
+            builtin_roles=builtin,
+            custom_roles=custom,
+            can_edit=can_edit,
+            active_tab=tab,
+            verbs=config.RBAC_VERBS,
+            resources=config.RBAC_RESOURCES,
         )
 
     @app.post("/rbac/roles")
@@ -169,20 +180,14 @@ def register(app):
                 rules = [(resources, verbs)]
         except ValueError as e:
             flash(str(e), "error")
-            return redirect(
-                url_for("rbac_bindings", panel="roles", roles_tab="create")
-            )
+            return redirect(url_for("rbac_roles", tab="create"))
 
         if not name:
             flash("Name is required", "error")
-            return redirect(
-                url_for("rbac_bindings", panel="roles", roles_tab="create")
-            )
+            return redirect(url_for("rbac_roles", tab="create"))
         if name in config.RBAC_BUILTIN_ROLES:
             flash("That name is reserved for a built-in role", "error")
-            return redirect(
-                url_for("rbac_bindings", panel="roles", roles_tab="create")
-            )
+            return redirect(url_for("rbac_roles", tab="create"))
 
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
@@ -198,9 +203,7 @@ def register(app):
                 if not row:
                     flash("Permission denied creating role", "error")
                     conn.rollback()
-                    return redirect(
-                        url_for("rbac_bindings", panel="roles", roles_tab="create")
-                    )
+                    return redirect(url_for("rbac_roles", tab="create"))
                 for resources, verbs in rules:
                     cur.execute(
                         """
@@ -214,14 +217,11 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-                return redirect(
-                    url_for("rbac_bindings", panel="roles", roles_tab="create")
-                )
+                return redirect(url_for("rbac_roles", tab="create"))
         return redirect(
             url_for(
-                "rbac_bindings",
-                panel="roles",
-                roles_tab=redirect_tab if redirect_tab in ("builtin", "custom") else "custom",
+                "rbac_roles",
+                tab=redirect_tab if redirect_tab in ("builtin", "custom") else "custom",
             )
         )
 
@@ -246,37 +246,33 @@ def register(app):
                 flash(str(e), "error")
         return redirect(
             url_for(
-                "rbac_bindings",
-                panel="roles",
-                roles_tab=tab if tab in ("builtin", "custom") else "custom",
+                "rbac_roles",
+                tab=tab if tab in ("builtin", "custom") else "custom",
             )
         )
 
     @app.get("/rbac/bindings")
     @authz.login_required
     def rbac_bindings():
-        """Unified Roles & bindings page (panel=bindings|roles).
+        """List and create bindings at a chosen scope.
 
-        Team/project admins manage bindings for their scopes; cluster is
-        global-admin only. Custom role create/delete is global-admin only.
+        Team/project admins manage their scopes; cluster is global-admin only.
         """
-        panel = (request.args.get("panel") or "bindings").strip().lower()
-        if panel not in ("bindings", "roles"):
-            panel = "bindings"
-        roles_tab = (request.args.get("roles_tab") or "builtin").strip().lower()
-        if roles_tab not in ("builtin", "custom", "create"):
-            roles_tab = "builtin"
+        # Legacy unified-page query params
+        if (request.args.get("panel") or "").strip().lower() == "roles":
+            tab = (request.args.get("roles_tab") or "builtin").strip().lower()
+            if tab not in ("builtin", "custom", "create"):
+                tab = "builtin"
+            return redirect(url_for("rbac_roles", tab=tab))
 
         scope_kind = (request.args.get("scope") or "team").strip().lower()
         if scope_kind not in config.RBAC_SCOPE_KINDS:
             scope_kind = "team"
-        # Non–global admins cannot use cluster scope
         if scope_kind == "cluster" and not session.get("is_global_admin"):
             scope_kind = "team"
         scope_id = (request.args.get("scope_id") or "").strip() or None
         tid = session.get("team_id")
 
-        # Defaults for roles panel when not loading bindings heavily
         bindings = []
         teams = []
         projects = []
@@ -287,188 +283,173 @@ def register(app):
         scope_label = None
         back_team_id = None
         can_edit = False
-        roles = []
-        builtin_roles = []
-        custom_roles = []
-        can_edit_roles = False
 
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            roles, builtin_roles, custom_roles, can_edit_roles = _load_roles_catalog(
-                cur
-            )
-            if roles_tab == "create" and not can_edit_roles:
-                roles_tab = "builtin"
+            cur.execute("SELECT t.id, t.name FROM api.teams t ORDER BY t.name")
+            teams = cur.fetchall() or []
 
-            if panel == "bindings":
+            if scope_kind == "team" and not scope_id and tid:
+                scope_id = tid
+            if scope_kind == "cluster":
+                scope_id = None
+
+            picker_team_id = tid
+            if scope_kind == "team" and scope_id:
+                picker_team_id = scope_id
+                back_team_id = scope_id
+                for t in teams:
+                    if str(t["id"]) == str(scope_id):
+                        scope_label = t["name"]
+                        break
+            elif scope_kind == "project" and scope_id:
                 cur.execute(
-                    "SELECT t.id, t.name FROM api.teams t ORDER BY t.name"
+                    """
+                    SELECT p.name, p.team_id
+                    FROM api.projects p
+                    WHERE p.id = %s::uuid
+                    """,
+                    (scope_id,),
                 )
-                teams = cur.fetchall() or []
+                prow = cur.fetchone()
+                if prow:
+                    picker_team_id = str(prow["team_id"])
+                    back_team_id = picker_team_id
+                    scope_label = prow["name"]
+            elif scope_kind == "secret" and scope_id:
+                cur.execute(
+                    """
+                    SELECT s.key AS name, p.team_id, p.name AS project_name
+                    FROM api.secrets s
+                    JOIN api.projects p ON p.id = s.project_id
+                    WHERE s.id = %s::uuid AND s.deleted_at IS NULL
+                    """,
+                    (scope_id,),
+                )
+                srow = cur.fetchone()
+                if srow:
+                    picker_team_id = str(srow["team_id"])
+                    back_team_id = picker_team_id
+                    scope_label = f"{srow['project_name']} / {srow['name']}"
 
-                if scope_kind == "team" and not scope_id and tid:
-                    scope_id = tid
-                if scope_kind == "cluster":
-                    scope_id = None
+            if picker_team_id:
+                cur.execute(
+                    """
+                    SELECT p.id, p.name FROM api.projects p
+                    WHERE p.team_id = %s ORDER BY p.name
+                    """,
+                    (picker_team_id,),
+                )
+                projects = cur.fetchall() or []
+            else:
+                cur.execute(
+                    "SELECT p.id, p.name FROM api.projects p ORDER BY p.name LIMIT 500"
+                )
+                projects = cur.fetchall() or []
 
-                picker_team_id = tid
-                if scope_kind == "team" and scope_id:
-                    picker_team_id = scope_id
-                    back_team_id = scope_id
-                    for t in teams:
-                        if str(t["id"]) == str(scope_id):
-                            scope_label = t["name"]
-                            break
-                elif scope_kind == "project" and scope_id:
-                    cur.execute(
-                        """
-                        SELECT p.name, p.team_id
-                        FROM api.projects p
-                        WHERE p.id = %s::uuid
-                        """,
-                        (scope_id,),
-                    )
-                    prow = cur.fetchone()
-                    if prow:
-                        picker_team_id = str(prow["team_id"])
-                        back_team_id = picker_team_id
-                        scope_label = prow["name"]
-                elif scope_kind == "secret" and scope_id:
-                    cur.execute(
-                        """
-                        SELECT s.key AS name, p.team_id, p.name AS project_name
-                        FROM api.secrets s
-                        JOIN api.projects p ON p.id = s.project_id
-                        WHERE s.id = %s::uuid AND s.deleted_at IS NULL
-                        """,
-                        (scope_id,),
-                    )
-                    srow = cur.fetchone()
-                    if srow:
-                        picker_team_id = str(srow["team_id"])
-                        back_team_id = picker_team_id
-                        scope_label = f"{srow['project_name']} / {srow['name']}"
+            if scope_kind == "project" and scope_id:
+                cur.execute(
+                    """
+                    SELECT s.id, s.key AS name FROM api.secrets s
+                    WHERE s.project_id = %s AND s.deleted_at IS NULL
+                    ORDER BY s.key LIMIT 500
+                    """,
+                    (scope_id,),
+                )
+                secrets = cur.fetchall() or []
+            elif scope_kind == "secret" and picker_team_id:
+                cur.execute(
+                    """
+                    SELECT s.id, s.key AS name, p.name AS project_name
+                    FROM api.secrets s
+                    JOIN api.projects p ON p.id = s.project_id
+                    WHERE p.team_id = %s AND s.deleted_at IS NULL
+                    ORDER BY p.name, s.key LIMIT 500
+                    """,
+                    (picker_team_id,),
+                )
+                secrets = cur.fetchall() or []
 
-                if picker_team_id:
-                    cur.execute(
+            if scope_kind == "cluster":
+                cur.execute(
+                    """
+                    SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
+                           b.created_at, r.name AS role_name, r.built_in
+                    FROM rbac.bindings b
+                    JOIN rbac.roles r ON r.id = b.role_id
+                    WHERE b.scope_kind = 'cluster'
+                    ORDER BY b.created_at DESC
+                    LIMIT 200
+                    """
+                )
+            elif scope_id:
+                cur.execute(
+                    """
+                    SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
+                           b.created_at, r.name AS role_name, r.built_in,
+                           g.name AS group_name
+                    FROM rbac.bindings b
+                    JOIN rbac.roles r ON r.id = b.role_id
+                    LEFT JOIN api.groups g
+                      ON b.subject_kind = 'Group' AND g.id = b.subject_id
+                    WHERE b.scope_kind = %s AND b.scope_id = %s::uuid
+                    ORDER BY b.created_at DESC
+                    LIMIT 200
+                    """,
+                    (scope_kind, scope_id),
+                )
+            else:
+                cur.execute("SELECT 1 WHERE false")
+            bindings = list(cur.fetchall() or [])
+
+            user_ids = [
+                str(b["subject_id"])
+                for b in bindings
+                if b.get("subject_kind") == "User" and b.get("subject_id")
+            ]
+            email_map = {}
+            if user_ids:
+                with db.connect_admin() as aconn, aconn.cursor() as acur:
+                    acur.execute(
                         """
-                        SELECT p.id, p.name FROM api.projects p
-                        WHERE p.team_id = %s ORDER BY p.name
+                        SELECT id, email FROM private.users
+                        WHERE id = ANY(%s::uuid[])
                         """,
-                        (picker_team_id,),
+                        (user_ids,),
                     )
-                    projects = cur.fetchall() or []
+                    for row in acur.fetchall() or []:
+                        email_map[str(row["id"])] = row["email"]
+            for b in bindings:
+                if b.get("subject_kind") == "User":
+                    b["subject_email"] = email_map.get(str(b.get("subject_id")))
                 else:
-                    cur.execute(
-                        "SELECT p.id, p.name FROM api.projects p ORDER BY p.name LIMIT 500"
-                    )
-                    projects = cur.fetchall() or []
+                    b["subject_email"] = None
 
-                if scope_kind == "project" and scope_id:
-                    cur.execute(
-                        """
-                        SELECT s.id, s.key AS name FROM api.secrets s
-                        WHERE s.project_id = %s AND s.deleted_at IS NULL
-                        ORDER BY s.key LIMIT 500
-                        """,
-                        (scope_id,),
-                    )
-                    secrets = cur.fetchall() or []
-                elif scope_kind == "secret" and picker_team_id:
-                    cur.execute(
-                        """
-                        SELECT s.id, s.key AS name, p.name AS project_name
-                        FROM api.secrets s
-                        JOIN api.projects p ON p.id = s.project_id
-                        WHERE p.team_id = %s AND s.deleted_at IS NULL
-                        ORDER BY p.name, s.key LIMIT 500
-                        """,
-                        (picker_team_id,),
-                    )
-                    secrets = cur.fetchall() or []
+            cur.execute(
+                "SELECT id, name, built_in FROM rbac.roles ORDER BY built_in DESC, name"
+            )
+            all_roles = cur.fetchall() or []
 
-                if scope_kind == "cluster":
-                    cur.execute(
-                        """
-                        SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
-                               b.created_at, r.name AS role_name, r.built_in
-                        FROM rbac.bindings b
-                        JOIN rbac.roles r ON r.id = b.role_id
-                        WHERE b.scope_kind = 'cluster'
-                        ORDER BY b.created_at DESC
-                        LIMIT 200
-                        """
-                    )
-                elif scope_id:
-                    cur.execute(
-                        """
-                        SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
-                               b.created_at, r.name AS role_name, r.built_in,
-                               g.name AS group_name
-                        FROM rbac.bindings b
-                        JOIN rbac.roles r ON r.id = b.role_id
-                        LEFT JOIN api.groups g
-                          ON b.subject_kind = 'Group' AND g.id = b.subject_id
-                        WHERE b.scope_kind = %s AND b.scope_id = %s::uuid
-                        ORDER BY b.created_at DESC
-                        LIMIT 200
-                        """,
-                        (scope_kind, scope_id),
-                    )
-                else:
-                    cur.execute("SELECT 1 WHERE false")
-                bindings = list(cur.fetchall() or [])
+            if picker_team_id:
+                cur.execute(
+                    "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
+                    (picker_team_id,),
+                )
+                groups = cur.fetchall() or []
 
-                user_ids = [
-                    str(b["subject_id"])
-                    for b in bindings
-                    if b.get("subject_kind") == "User" and b.get("subject_id")
-                ]
-                email_map = {}
-                if user_ids:
-                    with db.connect_admin() as aconn, aconn.cursor() as acur:
-                        acur.execute(
-                            """
-                            SELECT id, email FROM private.users
-                            WHERE id = ANY(%s::uuid[])
-                            """,
-                            (user_ids,),
-                        )
-                        for row in acur.fetchall() or []:
-                            email_map[str(row["id"])] = row["email"]
-                for b in bindings:
-                    if b.get("subject_kind") == "User":
-                        b["subject_email"] = email_map.get(str(b.get("subject_id")))
-                    else:
-                        b["subject_email"] = None
+            if scope_kind == "cluster":
+                cur.execute("SELECT api.can_manage_rbac('cluster', NULL) AS ok")
+                can_edit = bool((cur.fetchone() or {}).get("ok"))
+            elif scope_id:
+                cur.execute(
+                    "SELECT api.can_manage_rbac(%s, %s::uuid) AS ok",
+                    (scope_kind, scope_id),
+                )
+                can_edit = bool((cur.fetchone() or {}).get("ok"))
 
-                all_roles = [
-                    {"id": r["id"], "name": r["name"], "built_in": r.get("built_in")}
-                    for r in roles
-                ]
-
-                if picker_team_id:
-                    cur.execute(
-                        "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
-                        (picker_team_id,),
-                    )
-                    groups = cur.fetchall() or []
-
-                if scope_kind == "cluster":
-                    cur.execute("SELECT api.can_manage_rbac('cluster', NULL) AS ok")
-                    can_edit = bool((cur.fetchone() or {}).get("ok"))
-                elif scope_id:
-                    cur.execute(
-                        "SELECT api.can_manage_rbac(%s, %s::uuid) AS ok",
-                        (scope_kind, scope_id),
-                    )
-                    can_edit = bool((cur.fetchone() or {}).get("ok"))
-
-                dropdown = _role_dropdown_for_scope(scope_kind)
+            dropdown = _role_dropdown_for_scope(scope_kind)
 
         return render_template(
-            "rbac.html",
-            panel=panel,
-            roles_tab=roles_tab,
+            "rbac_bindings.html",
             bindings=bindings,
             teams=teams,
             projects=projects,
@@ -481,14 +462,8 @@ def register(app):
             scope_label=scope_label,
             back_team_id=back_team_id,
             can_edit=can_edit,
-            can_edit_roles=can_edit_roles,
-            roles=roles,
-            builtin_roles=builtin_roles,
-            custom_roles=custom_roles,
             subject_kinds=config.RBAC_SUBJECT_KINDS,
             scope_kinds=config.RBAC_SCOPE_KINDS,
-            verbs=config.RBAC_VERBS,
-            resources=config.RBAC_RESOURCES,
         )
 
     @app.post("/rbac/bindings")

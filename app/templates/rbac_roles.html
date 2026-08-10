@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+{% block title %}Roles — {{ app_name }}{% endblock %}
+{% block body %}
+<style>
+  .role-create {
+    padding: 1.15rem 1.25rem 1.35rem;
+    max-width: none;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .role-create-grid {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 2fr);
+    gap: .85rem 1.25rem;
+    margin-bottom: 1.15rem;
+  }
+  @media (max-width: 40rem) {
+    .role-create-grid { grid-template-columns: 1fr; }
+  }
+  .role-create-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+  }
+  .role-create-grid input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .role-create .tabs.role-mode-tabs { margin: 0 0 1rem; }
+  .role-create .tabs.role-mode-tabs .tab {
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    color: var(--muted-foreground);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: .55rem 0 .65rem;
+    margin: 0;
+    font: inherit;
+    font-size: .925rem;
+    font-weight: 500;
+  }
+  .role-create .tabs.role-mode-tabs .tab:hover {
+    color: var(--foreground);
+    background: transparent;
+  }
+  .role-create .tabs.role-mode-tabs .tab.active {
+    color: var(--foreground);
+    border-bottom-color: var(--foreground);
+  }
+  .role-create-panel { min-height: min(40vh, 22rem); }
+  .role-create-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem 1.25rem;
+  }
+  @media (max-width: 40rem) {
+    .role-create-cols { grid-template-columns: 1fr; }
+  }
+  .role-check-set {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 4px);
+    padding: .75rem 1rem 1rem;
+    margin: 0;
+    box-sizing: border-box;
+  }
+  .role-check-set legend {
+    padding: 0 .4rem;
+    font-size: .8rem;
+    font-weight: 600;
+  }
+  .role-check-set .check-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .28rem 0;
+  }
+  .role-yaml {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .875rem;
+    line-height: 1.5;
+    min-height: min(40vh, 22rem);
+    resize: vertical;
+    padding: .75rem .9rem;
+  }
+  .role-create .form-actions {
+    margin-top: 1.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+</style>
+
+<div class="page-head">
+  <h1>Roles</h1>
+</div>
+<p class="page-desc muted">
+  Named sets of permissions (verbs × resources). Assign them to subjects under
+  Role bindings.
+</p>
+
+<nav class="tabs" role="tablist" aria-label="Roles sections">
+  <a href="{{ url_for('rbac_roles', tab='builtin') }}"
+     class="tab {% if active_tab == 'builtin' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'builtin' else 'false' }}">Built-in
+    <span class="tab-badge">{{ builtin_roles|length }}</span>
+  </a>
+  <a href="{{ url_for('rbac_roles', tab='custom') }}"
+     class="tab {% if active_tab == 'custom' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'custom' else 'false' }}">Custom
+    <span class="tab-badge">{{ custom_roles|length }}</span>
+  </a>
+  {% if can_edit %}
+  <a href="{{ url_for('rbac_roles', tab='create') }}"
+     class="tab {% if active_tab == 'create' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'create' else 'false' }}">Create</a>
+  {% endif %}
+</nav>
+
+{% if active_tab == 'builtin' %}
+<section>
+  <p class="muted" style="margin-top:0">
+    Shipped roles used by team, project, and secret Access dropdowns. Rules cannot be edited.
+  </p>
+  {% if builtin_roles %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Rules</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in builtin_roles %}
+        <tr>
+          <td><code>{{ r.name }}</code></td>
+          <td>{{ r.description or "—" }}</td>
+          <td class="muted" style="font-size:.85rem">
+            {% if r.rules %}
+              {% for rule in r.rules %}
+              <div>{{ rule.resources|join(', ') }} → {{ rule.verbs|join(', ') }}</div>
+              {% endfor %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No built-in roles loaded.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if active_tab == 'custom' %}
+<section>
+  {% if not can_edit %}
+  <p class="muted">Only global admins can create or delete custom roles.</p>
+  {% endif %}
+  {% if custom_roles %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Rules</th>
+          {% if can_edit %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in custom_roles %}
+        <tr>
+          <td><code>{{ r.name }}</code></td>
+          <td>{{ r.description or "—" }}</td>
+          <td class="muted" style="font-size:.85rem">
+            {% if r.rules %}
+              {% for rule in r.rules %}
+              <div>{{ rule.resources|join(', ') }} → {{ rule.verbs|join(', ') }}</div>
+              {% endfor %}
+            {% else %}—{% endif %}
+          </td>
+          {% if can_edit %}
+          <td>
+            <form method="post" action="{{ url_for('rbac_roles_delete', role_id=r.id) }}" class="inline"
+                  onsubmit="return confirm('Delete role {{ r.name }}?');">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <input type="hidden" name="tab" value="custom">
+              <button type="submit" class="button ghost small danger">Delete</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    No custom roles yet.
+    {% if can_edit %}
+    <a href="{{ url_for('rbac_roles', tab='create') }}">Create one</a>.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if active_tab == 'create' and can_edit %}
+<section class="role-create-section">
+  <form method="post" action="{{ url_for('rbac_roles_create') }}" class="card role-create" id="role-create-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="tab" value="custom">
+    <input type="hidden" name="mode" id="create-mode" value="form">
+
+    <div class="role-create-grid">
+      <label>Name
+        <input type="text" name="name" required
+               placeholder="secrets-operator"
+               pattern="[a-z0-9][a-z0-9\-]*"
+               title="Lowercase letters, numbers, hyphens"
+               autocomplete="off">
+      </label>
+      <label>Description
+        <input type="text" name="description" placeholder="Optional summary" autocomplete="off">
+      </label>
+    </div>
+
+    <nav class="tabs role-mode-tabs" role="tablist" aria-label="Rule editor mode">
+      <button type="button" class="tab active" data-mode="form" id="mode-form-btn"
+              role="tab" aria-selected="true" aria-controls="mode-form-panel">Form</button>
+      <button type="button" class="tab" data-mode="yaml" id="mode-yaml-btn"
+              role="tab" aria-selected="false" aria-controls="mode-yaml-panel">YAML</button>
+    </nav>
+
+    <div id="mode-form-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-form-btn">
+      <p class="muted" style="margin-top:0;font-size:.85rem">
+        Pick resources and verbs for a single rule. Switch to YAML for multiple rules.
+      </p>
+      <div class="role-create-cols">
+        <fieldset class="role-check-set">
+          <legend>Resources</legend>
+          {% for res in resources %}
+          <label class="check-row">
+            <input type="checkbox" name="resources" value="{{ res }}"
+                   class="form-resource"
+                   {% if res == 'secrets' %}checked{% endif %}>
+            <code>{{ res }}</code>
+          </label>
+          {% endfor %}
+        </fieldset>
+        <fieldset class="role-check-set">
+          <legend>Verbs</legend>
+          {% for v in verbs %}
+          <label class="check-row">
+            <input type="checkbox" name="verbs" value="{{ v }}"
+                   class="form-verb"
+                   {% if v in ('get', 'list') %}checked{% endif %}>
+            <code>{{ v }}</code>
+          </label>
+          {% endfor %}
+        </fieldset>
+      </div>
+    </div>
+
+    <div id="mode-yaml-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-yaml-btn" hidden>
+      <p class="muted" style="margin-top:0;font-size:.85rem">
+        One or more rules. Blank line between rules. Lines starting with <code>#</code> are ignored.
+      </p>
+      <label class="visually-hidden" for="rules_yaml">Rules YAML</label>
+      <textarea name="rules_yaml" id="rules_yaml" rows="16" class="role-yaml mono"
+                spellcheck="false">resources: secrets
+verbs: get, list, reveal</textarea>
+      <details class="role-yaml-help">
+        <summary class="muted">Format reference</summary>
+        <pre class="mono muted" style="font-size:.8rem;white-space:pre-wrap">resources: secrets, projects
+verbs: get, list, reveal
+
+resources: *
+verbs: *
+
+# valid resources: {{ resources|join(', ') }}
+# valid verbs: {{ verbs|join(', ') }}</pre>
+      </details>
+    </div>
+
+    <p class="form-actions">
+      <button type="submit" class="button">Create role</button>
+      <a class="button ghost" href="{{ url_for('rbac_roles', tab='custom') }}">Cancel</a>
+    </p>
+  </form>
+</section>
+<script>
+(function () {
+  var modeInput = document.getElementById('create-mode');
+  var formPanel = document.getElementById('mode-form-panel');
+  var yamlPanel = document.getElementById('mode-yaml-panel');
+  var formBtn = document.getElementById('mode-form-btn');
+  var yamlBtn = document.getElementById('mode-yaml-btn');
+  function setMode(mode) {
+    modeInput.value = mode;
+    var isForm = mode === 'form';
+    formPanel.hidden = !isForm;
+    yamlPanel.hidden = isForm;
+    formBtn.classList.toggle('active', isForm);
+    yamlBtn.classList.toggle('active', !isForm);
+    formBtn.setAttribute('aria-selected', isForm ? 'true' : 'false');
+    yamlBtn.setAttribute('aria-selected', isForm ? 'false' : 'true');
+    formPanel.querySelectorAll('input').forEach(function (el) { el.disabled = !isForm; });
+    var ta = document.getElementById('rules_yaml');
+    if (ta) ta.disabled = isForm;
+  }
+  formBtn.addEventListener('click', function () { setMode('form'); });
+  yamlBtn.addEventListener('click', function () { setMode('yaml'); });
+  setMode('form');
+})();
+</script>
+{% elif active_tab == 'create' %}
+<p class="muted">Only global admins can create roles.</p>
+{% endif %}
+{% endblock %}

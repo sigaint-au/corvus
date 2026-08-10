@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Role bindings — {{ app_name }}{% endblock %}
+{% block body %}
+{% if back_team_id %}
+<nav aria-label="Breadcrumb">
+  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
+    <li><a href="{{ url_for('teams') }}" class="unstyled">Teams</a></li>
+    <li aria-hidden="true">/</li>
+    <li><a href="{{ url_for('team_detail', team_id=back_team_id) }}" class="unstyled">Team</a></li>
+    <li aria-hidden="true">/</li>
+    <li aria-current="page"><strong>Role bindings</strong></li>
+  </ol>
+</nav>
+{% endif %}
+
+<div class="page-head">
+  <h1>Role bindings</h1>
+</div>
+<p class="page-desc muted">
+  Bind a user, group, or service account to a role at a scope
+  (team → project → secret). Grants flow downward.
+</p>
+
+<form method="get" action="{{ url_for('rbac_bindings') }}" class="toolbar" role="search">
+  <label>Scope
+    <select name="scope" onchange="this.form.submit()">
+      {% for sk in scope_kinds %}
+      {% if sk != 'cluster' or session.get('is_global_admin') %}
+      <option value="{{ sk }}" {% if sk == scope_kind %}selected{% endif %}>{{ sk }}</option>
+      {% endif %}
+      {% endfor %}
+    </select>
+  </label>
+  {% if scope_kind == 'team' %}
+  <label>Team
+    <select name="scope_id" onchange="this.form.submit()">
+      <option value="">— select —</option>
+      {% for t in teams %}
+      <option value="{{ t.id }}" {% if scope_id and scope_id|string == t.id|string %}selected{% endif %}>{{ t.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% elif scope_kind == 'project' %}
+  <label>Project
+    <select name="scope_id" onchange="this.form.submit()">
+      <option value="">— select —</option>
+      {% for p in projects %}
+      <option value="{{ p.id }}" {% if scope_id and scope_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% elif scope_kind == 'secret' %}
+  <label>Secret
+    <select name="scope_id" onchange="this.form.submit()">
+      <option value="">— select —</option>
+      {% for s in secrets %}
+      <option value="{{ s.id }}" {% if scope_id and scope_id|string == s.id|string %}selected{% endif %}>
+        {% if s.project_name %}{{ s.project_name }} / {% endif %}{{ s.name }}
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+</form>
+
+{% if scope_label %}
+<p class="muted" style="margin:.25rem 0 1rem">Scope: <strong>{{ scope_kind }}</strong> · {{ scope_label }}</p>
+{% endif %}
+
+<div class="card" style="margin-bottom:1.25rem">
+  <h2 style="margin-top:0;font-size:1rem">Bindings at this scope</h2>
+  {% if not scope_id and scope_kind != 'cluster' %}
+  <p class="muted">Select a scope above to list bindings.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>Role</th>
+          <th>Scope</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bindings %}
+        <tr>
+          <td>
+            <span class="badge">{{ b.subject_kind }}</span>
+            {% if b.subject_email %}{{ b.subject_email }}
+            {% elif b.group_name %}{{ b.group_name }}
+            {% else %}<code>{{ b.subject_id }}</code>{% endif %}
+          </td>
+          <td><code>{{ b.role_name }}</code></td>
+          <td class="muted">{{ b.scope_kind }}</td>
+          <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
+          <td>
+            {% if can_edit %}
+            <form method="post" action="{{ url_for('rbac_bindings_delete', binding_id=b.id) }}" class="inline"
+                  onsubmit="return confirm('Remove this binding?');">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <input type="hidden" name="scope" value="{{ scope_kind }}">
+              <input type="hidden" name="scope_id" value="{{ scope_id or '' }}">
+              <button type="submit" class="button ghost small danger">Remove</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">No bindings at this scope.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not can_edit and (scope_id or scope_kind == 'cluster') %}
+  <p class="muted" style="margin-top:.75rem">View only — team/project admins can add or remove bindings here.</p>
+  {% endif %}
+  {% endif %}
+</div>
+
+{% if can_edit and (scope_id or scope_kind == 'cluster') %}
+<div class="card access-bind-card" style="padding:1rem 1.1rem">
+  <h2 style="margin-top:0;font-size:1rem">Add binding</h2>
+  <form method="post" action="{{ url_for('rbac_bindings_create') }}" class="settings-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="scope_kind" value="{{ scope_kind }}">
+    <input type="hidden" name="scope_id" value="{{ scope_id or '' }}">
+
+    <fieldset class="field-group">
+      <legend>Who</legend>
+      <div class="field-grid">
+        <label>Subject type
+          <select name="subject_kind" id="rbac-subject-kind">
+            {% for sk in subject_kinds %}
+            <option value="{{ sk }}">{{ sk }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label id="rbac-field-user" class="span-2">User email
+          <input type="email" name="subject_email" placeholder="user@example.com" autocomplete="off">
+        </label>
+        <label id="rbac-field-group" class="span-2" hidden>Group
+          <select name="subject_group">
+            <option value="">— select group —</option>
+            {% for g in groups %}
+            <option value="{{ g.id }}">{{ g.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label id="rbac-field-sa" class="span-2" hidden>Service account id
+          <input type="text" name="subject_sa" placeholder="machine token uuid" autocomplete="off">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>Role</legend>
+      <div class="field-grid">
+        <label class="span-2">Grant
+          <select name="role_name" required>
+            {% if dropdown %}
+              {% for name, label in dropdown %}
+              <option value="{{ name }}">{{ label }} ({{ name }})</option>
+              {% endfor %}
+              <optgroup label="All roles">
+                {% for r in all_roles %}
+                <option value="{{ r.name }}">{{ r.name }}</option>
+                {% endfor %}
+              </optgroup>
+            {% else %}
+              {% for r in all_roles %}
+              <option value="{{ r.name }}">{{ r.name }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <p class="form-actions" style="margin:0">
+      <button type="submit" class="button">Create binding</button>
+    </p>
+  </form>
+</div>
+<script>
+(function () {
+  var sel = document.getElementById('rbac-subject-kind');
+  if (!sel) return;
+  function sync() {
+    var v = sel.value;
+    document.getElementById('rbac-field-user').hidden = v !== 'User';
+    document.getElementById('rbac-field-group').hidden = v !== 'Group';
+    document.getElementById('rbac-field-sa').hidden = v !== 'ServiceAccount';
+  }
+  sel.addEventListener('change', sync);
+  sync();
+})();
+</script>
+{% endif %}
+{% endblock %}
