@@ -111,12 +111,15 @@ def register(app):
         """
         session["team_id"] = str(team_id)
         tab = (request.args.get("tab") or "projects").strip().lower()
-        if tab not in ("projects", "members", "groups", "activity", "settings"):
+        if tab not in ("projects", "members", "groups", "activity", "access", "settings"):
             tab = "projects"
         q = (request.args.get("q") or "").strip()
         members, projects, ldap_maps, oidc_maps = [], [], [], []
         groups = []
         invites, join_requests, org_events = [], [], []
+        access_bindings = []
+        access_groups = []
+        can_edit_access = False
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
             team = cur.fetchone()
@@ -124,8 +127,18 @@ def register(app):
                 return "Not found", 404
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             my_role = (cur.fetchone() or {}).get("r")
-            is_admin = my_role in ("owner", "admin")
-            if tab == "settings" and not is_admin:
+            cur.execute(
+                "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
+                (str(team_id),),
+            )
+            can_edit_access = bool((cur.fetchone() or {}).get("ok"))
+            # Team owner/admin, global admin, or anyone who can manage bindings
+            is_admin = (
+                my_role in ("owner", "admin")
+                or bool(session.get("is_global_admin"))
+                or can_edit_access
+            )
+            if tab in ("settings", "access") and not is_admin:
                 tab = "projects"
 
             if tab == "projects":
@@ -202,6 +215,33 @@ def register(app):
                     org_events = audit.list_org_for_team(cur, team_id)
                 except Exception:
                     org_events = []
+            elif tab == "access" and is_admin:
+                cur.execute(
+                    "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
+                    (str(team_id),),
+                )
+                can_edit_access = bool((cur.fetchone() or {}).get("ok"))
+                cur.execute(
+                    """
+                    SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
+                           b.created_at, r.name AS role_name, r.built_in,
+                           g.name AS group_name
+                    FROM rbac.bindings b
+                    JOIN rbac.roles r ON r.id = b.role_id
+                    LEFT JOIN api.groups g
+                      ON b.subject_kind = 'Group' AND g.id = b.subject_id
+                    WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                    ORDER BY b.created_at DESC
+                    LIMIT 200
+                    """,
+                    (str(team_id),),
+                )
+                access_bindings = list(cur.fetchall() or [])
+                cur.execute(
+                    "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
+                    (str(team_id),),
+                )
+                access_groups = list(cur.fetchall() or [])
             elif tab == "settings" and is_admin:
                 cur.execute(
                     """
@@ -238,6 +278,33 @@ def register(app):
                 for jr in join_requests:
                     jr.setdefault("email", str(jr.get("user_id")))
                     jr.setdefault("name", "")
+        # Enrich binding subject emails for Access tab
+        if access_bindings:
+            user_ids = [
+                str(b["subject_id"])
+                for b in access_bindings
+                if b.get("subject_kind") == "User" and b.get("subject_id")
+            ]
+            email_map = {}
+            if user_ids:
+                try:
+                    with db.connect_admin() as aconn, aconn.cursor() as acur:
+                        acur.execute(
+                            """
+                            SELECT id, email FROM private.users
+                            WHERE id = ANY(%s::uuid[])
+                            """,
+                            (user_ids,),
+                        )
+                        for row in acur.fetchall() or []:
+                            email_map[str(row["id"])] = row["email"]
+                except Exception:
+                    pass
+            for b in access_bindings:
+                if b.get("subject_kind") == "User":
+                    b["subject_email"] = email_map.get(str(b.get("subject_id")))
+                else:
+                    b["subject_email"] = None
         return render_template(
             "team.html",
             team=team,
@@ -251,6 +318,11 @@ def register(app):
             invites=invites,
             join_requests=join_requests,
             org_events=org_events,
+            access_bindings=access_bindings,
+            access_groups=access_groups,
+            can_edit_access=can_edit_access or is_admin,
+            team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
+            subject_kinds=config.RBAC_SUBJECT_KINDS,
             invite_roles=config.INVITE_ROLES,
             team_roles=config.GROUP_TEAM_ROLES,
             new_invite_url=session.pop("new_invite_url", None),
@@ -261,6 +333,116 @@ def register(app):
             active_tab=tab,
             is_admin=is_admin,
         )
+
+    @app.post("/teams/<uuid:team_id>/access/bindings")
+    @authz.login_required
+    def team_access_binding_create(team_id):
+        """Create a team-scope role binding (team admin)."""
+        access_url = url_for("team_detail", team_id=team_id, tab="access")
+        role_name = (request.form.get("role_name") or "").strip()
+        subject_kind = (request.form.get("subject_kind") or "User").strip()
+        subject_email = (request.form.get("subject_email") or "").strip().lower()
+        subject_group = (request.form.get("subject_group") or "").strip()
+        subject_sa = (request.form.get("subject_sa") or "").strip()
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
+                (str(team_id),),
+            )
+            if not (cur.fetchone() or {}).get("ok"):
+                flash("Only team admins can manage role bindings", "error")
+                return redirect(access_url)
+            try:
+                cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (role_name,))
+                role = cur.fetchone()
+                if not role:
+                    flash("Unknown role", "error")
+                    return redirect(access_url)
+                subject_id = None
+                if subject_kind == "User":
+                    cur.execute(
+                        "SELECT private.lookup_user(%s) AS id", (subject_email,)
+                    )
+                    u = cur.fetchone()
+                    if not u or not u.get("id"):
+                        flash("User not found — they must register first", "error")
+                        return redirect(access_url)
+                    subject_id = str(u["id"])
+                elif subject_kind == "Group":
+                    cur.execute(
+                        """
+                        SELECT id FROM api.groups
+                        WHERE id = %s::uuid AND team_id = %s::uuid
+                        """,
+                        (subject_group, str(team_id)),
+                    )
+                    g = cur.fetchone()
+                    if not g:
+                        flash("Group not found on this team", "error")
+                        return redirect(access_url)
+                    subject_id = str(g["id"])
+                elif subject_kind == "ServiceAccount":
+                    subject_id = subject_sa
+                else:
+                    flash("Invalid subject kind", "error")
+                    return redirect(access_url)
+                if not subject_id:
+                    flash("Subject required", "error")
+                    return redirect(access_url)
+                cur.execute(
+                    """
+                    INSERT INTO rbac.bindings
+                      (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
+                    VALUES (%s::uuid, %s, %s::uuid, 'team', %s::uuid, %s::uuid)
+                    """,
+                    (
+                        str(role["id"]),
+                        subject_kind,
+                        subject_id,
+                        str(team_id),
+                        session["user_id"],
+                    ),
+                )
+                conn.commit()
+                flash("Binding created", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(access_url)
+
+    @app.post("/teams/<uuid:team_id>/access/bindings/<uuid:binding_id>/delete")
+    @authz.login_required
+    def team_access_binding_delete(team_id, binding_id):
+        """Remove a team-scope role binding (team admin)."""
+        access_url = url_for("team_detail", team_id=team_id, tab="access")
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
+                (str(team_id),),
+            )
+            if not (cur.fetchone() or {}).get("ok"):
+                flash("Only team admins can manage role bindings", "error")
+                return redirect(access_url)
+            try:
+                cur.execute(
+                    """
+                    DELETE FROM rbac.bindings
+                    WHERE id = %s::uuid
+                      AND scope_kind = 'team'
+                      AND scope_id = %s::uuid
+                    """,
+                    (str(binding_id), str(team_id)),
+                )
+                if cur.rowcount:
+                    conn.commit()
+                    flash("Binding removed", "ok")
+                else:
+                    conn.rollback()
+                    flash("Binding not found or not permitted", "error")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(access_url)
 
 
     @app.post("/teams/<uuid:team_id>/members")
