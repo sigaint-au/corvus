@@ -1,10 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Access requests — {{ app_name }}{% endblock %}
+{% block title %}Reveal requests — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>Access requests</h1>
+<div class="page-head">
+  <h1>Reveal requests</h1>
+</div>
 <p class="page-desc muted">
-  Pending reveal approvals for projects you administer.
-  Showing pending requests only — open a project’s <strong>Access</strong> tab for full history.
+  Pending secret-reveal approvals for projects you administer.
+  Showing pending only — open a project’s <strong>Access</strong> tab for full history.
 </p>
 
 {% if requests %}
@@ -74,6 +76,6 @@
 </table>
 </div>
 {% else %}
-<p class="empty">No pending access requests.</p>
+<p class="empty">No pending reveal requests.</p>
 {% endif %}
 {% endblock %}

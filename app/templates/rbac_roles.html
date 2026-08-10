@@ -2,24 +2,6 @@
 {% block title %}Roles — {{ app_name }}{% endblock %}
 {% block body %}
 <style>
-  .role-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-    gap: .85rem;
-  }
-  .role-card { margin: 0; padding: .9rem 1rem; display: flex; flex-direction: column; gap: .5rem; }
-  .role-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
-  .role-card-name { font-size: .95rem; }
-  .role-card-desc { margin: 0; font-size: .85rem; line-height: 1.35; }
-  .role-rules { display: flex; flex-direction: column; gap: .3rem; margin-top: auto; }
-  .role-rule-chip {
-    font-size: .78rem;
-    padding: .3rem .45rem;
-    border-radius: var(--radius-sm, 4px);
-    background: var(--muted);
-    display: flex; flex-wrap: wrap; gap: .25rem .4rem; align-items: baseline;
-  }
-  .role-rule-label { font-weight: 600; }
   .role-create { padding: 1.1rem 1.15rem; max-width: 42rem; }
   .role-create-grid {
     display: grid;
@@ -104,34 +86,39 @@
     Shipped with the product. Use these from the Role bindings dropdowns
     (Owner, Admin, Member, Viewer, …). Rules cannot be edited.
   </p>
-  <div class="role-grid">
-    {% for r in builtin_roles %}
-    <article class="card role-card">
-      <header class="role-card-head">
-        <code class="role-card-name">{{ r.name }}</code>
-        <span class="badge">built-in</span>
-      </header>
-      {% if r.description %}
-      <p class="role-card-desc muted">{{ r.description }}</p>
-      {% endif %}
-      <div class="role-rules">
-        {% if r.rules %}
-          {% for rule in r.rules %}
-          <div class="role-rule-chip">
-            <span class="role-rule-label">{{ rule.resources|join(', ') }}</span>
-            <span class="muted">→</span>
-            <span>{{ rule.verbs|join(', ') }}</span>
-          </div>
-          {% endfor %}
-        {% else %}
-        <span class="muted">No rules</span>
-        {% endif %}
-      </div>
-    </article>
-    {% else %}
-    <p class="muted">No built-in roles loaded — check schema ensure.</p>
-    {% endfor %}
+  {% if builtin_roles %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Rules</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in builtin_roles %}
+        <tr>
+          <td>
+            <code>{{ r.name }}</code>
+            <span class="badge">built-in</span>
+          </td>
+          <td>{{ r.description or "—" }}</td>
+          <td class="muted" style="font-size:.85rem">
+            {% if r.rules %}
+              {% for rule in r.rules %}
+              <div>{{ rule.resources|join(', ') }} → {{ rule.verbs|join(', ') }}</div>
+              {% endfor %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+  {% else %}
+  <p class="empty">No built-in roles loaded — check schema ensure.</p>
+  {% endif %}
 </section>
 {% endif %}
 

@@ -2222,17 +2222,20 @@
       'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team',
       'delete_project_from_team', 'profile'
     ) %}
-    {% set admin_eps = (
+    {% set access_eps = (
       'access_requests_inbox',
-      'admin_audit', 'admin_audit_access_export', 'admin_audit_export',
-      'server_settings',
       'rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete',
       'rbac_roles', 'rbac_roles_create', 'rbac_roles_delete',
       'rbac_access_review',
     ) %}
+    {% set admin_eps = (
+      'admin_audit', 'admin_audit_access_export', 'admin_audit_export',
+      'server_settings',
+    ) %}
     {# Server defaults only used until localStorage preference is set #}
-    {% set workspace_open = ep in workspace_eps or (ep not in account_eps and ep not in admin_eps) %}
+    {% set workspace_open = ep in workspace_eps or (ep not in account_eps and ep not in access_eps and ep not in admin_eps) %}
     {% set account_open = ep in account_eps %}
+    {% set access_open = ep in access_eps %}
     {% set admin_open = ep in admin_eps %}
     <nav aria-label="Main">
       <details class="side-group" data-side-group="workspace"{% if workspace_open %} open{% endif %}>
@@ -2257,25 +2260,32 @@
              href="{{ url_for('profile') }}">My profile</a>
         </div>
       </details>
-      <details class="side-group" data-side-group="administration"{% if admin_open %} open{% endif %}>
-        <summary>Administration</summary>
+      <details class="side-group" data-side-group="access"{% if access_open %} open{% endif %}>
+        <summary>Access</summary>
         <div class="side-group-body">
           <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}"
-             href="{{ url_for('access_requests_inbox') }}">Access requests{% if nav_access_pending %}<span class="tab-badge" title="{{ nav_access_pending }} pending">{{ nav_access_pending }}</span>{% endif %}</a>
+             href="{{ url_for('access_requests_inbox') }}">Reveal requests{% if nav_access_pending %}<span class="tab-badge" title="{{ nav_access_pending }} pending">{{ nav_access_pending }}</span>{% endif %}</a>
           {% if is_global_admin %}
-          <a class="side-nav-link {% if ep in ('admin_audit', 'admin_audit_access_export', 'admin_audit_export') %}active{% endif %}"
-             href="{{ url_for('admin_audit') }}">Auditing</a>
           <a class="side-nav-link {% if ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}active{% endif %}"
              href="{{ url_for('rbac_bindings') }}">Role bindings</a>
           <a class="side-nav-link {% if ep in ('rbac_roles', 'rbac_roles_create', 'rbac_roles_delete') %}active{% endif %}"
              href="{{ url_for('rbac_roles') }}">Roles</a>
           <a class="side-nav-link {% if ep == 'rbac_access_review' %}active{% endif %}"
              href="{{ url_for('rbac_access_review') }}">Access review</a>
-          <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}"
-             href="{{ url_for('server_settings') }}">Server settings</a>
           {% endif %}
         </div>
       </details>
+      {% if is_global_admin %}
+      <details class="side-group" data-side-group="administration"{% if admin_open %} open{% endif %}>
+        <summary>Administration</summary>
+        <div class="side-group-body">
+          <a class="side-nav-link {% if ep in ('admin_audit', 'admin_audit_access_export', 'admin_audit_export') %}active{% endif %}"
+             href="{{ url_for('admin_audit') }}">Auditing</a>
+          <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}"
+             href="{{ url_for('server_settings') }}">Server settings</a>
+        </div>
+      </details>
+      {% endif %}
     </nav>
     {% include "partials/side_pins.html" %}
     {% if nav_recent %}
