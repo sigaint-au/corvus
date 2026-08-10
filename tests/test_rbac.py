@@ -59,3 +59,29 @@ def test_dropdowns_cover_legacy_vocabularies():
     assert team_names == {"team-owner", "team-admin", "team-member", "team-viewer"}
     proj = {n for n, _ in config.RBAC_PROJECT_ROLE_DROPDOWN}
     assert proj == {"project-admin", "project-write", "project-read"}
+
+
+def test_parse_rules_yaml_multi_rule():
+    from routes.rbac import parse_rules_yaml
+
+    rules = parse_rules_yaml(
+        """
+        resources: secrets, projects
+        verbs: get, list, reveal
+
+        resources: *
+        verbs: get
+        """
+    )
+    assert len(rules) == 2
+    assert rules[0][0] == ["secrets", "projects"]
+    assert "reveal" in rules[0][1]
+    assert rules[1][0] == ["*"]
+
+
+def test_parse_rules_yaml_rejects_empty():
+    from routes.rbac import parse_rules_yaml
+    import pytest
+
+    with pytest.raises(ValueError):
+        parse_rules_yaml("# only comments\n")

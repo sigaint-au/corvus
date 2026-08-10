@@ -2225,7 +2225,10 @@
     {% set admin_eps = (
       'access_requests_inbox',
       'admin_audit', 'admin_audit_access_export', 'admin_audit_export',
-      'server_settings'
+      'server_settings',
+      'rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete',
+      'rbac_roles', 'rbac_roles_create', 'rbac_roles_delete',
+      'rbac_access_review',
     ) %}
     {# Server defaults only used until localStorage preference is set #}
     {% set workspace_open = ep in workspace_eps or (ep not in account_eps and ep not in admin_eps) %}
@@ -2262,9 +2265,9 @@
           {% if is_global_admin %}
           <a class="side-nav-link {% if ep in ('admin_audit', 'admin_audit_access_export', 'admin_audit_export') %}active{% endif %}"
              href="{{ url_for('admin_audit') }}">Auditing</a>
-          <a class="side-nav-link {% if ep and ep.startswith('rbac_') %}active{% endif %}"
-             href="{{ url_for('rbac_bindings') }}">Access (RBAC)</a>
-          <a class="side-nav-link {% if ep == 'rbac_roles' %}active{% endif %}"
+          <a class="side-nav-link {% if ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}active{% endif %}"
+             href="{{ url_for('rbac_bindings') }}">Role bindings</a>
+          <a class="side-nav-link {% if ep in ('rbac_roles', 'rbac_roles_create', 'rbac_roles_delete') %}active{% endif %}"
              href="{{ url_for('rbac_roles') }}">Roles</a>
           <a class="side-nav-link {% if ep == 'rbac_access_review' %}active{% endif %}"
              href="{{ url_for('rbac_access_review') }}">Access review</a>
