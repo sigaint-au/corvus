@@ -29,6 +29,7 @@ def register_all(app):
         project_io,
         project_tokens,
         projects,
+        rbac,
         secrets,
         teams,
     )
@@ -39,6 +40,7 @@ def register_all(app):
     secrets.register(app)
     project_io.register(app)
     project_tokens.register(app)
+    rbac.register(app)
     admin.register(app)
     api.register(app)
     eso.register(app)

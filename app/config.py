@@ -135,6 +135,66 @@ INVITE_ROLES = ("admin", "member", "viewer")
 PROJECT_ROLES = ("admin", "write", "read")
 # Machine accounts / ESO tokens: read-only (fetch) or write (fetch + upsert API)
 MACHINE_TOKEN_ROLES = ("read-only", "write")
+
+# ── Kubernetes-style RBAC (Subjects + Roles + Bindings) ───────────────
+# Familiar dropdown labels map to built-in rbac.roles names.
+RBAC_SCOPE_KINDS = ("cluster", "team", "project", "secret")
+RBAC_SUBJECT_KINDS = ("User", "Group", "ServiceAccount")
+RBAC_VERBS = ("get", "list", "create", "update", "delete", "reveal", "admin", "*")
+RBAC_RESOURCES = (
+    "teams",
+    "projects",
+    "secrets",
+    "bindings",
+    "roles",
+    "groups",
+    "machine_tokens",
+    "audit",
+    "users",
+    "*",
+)
+# Built-in role names (seeded in db/rbac.sql) — keep in sync with rbac.ensure_builtin_roles
+RBAC_BUILTIN_ROLES = (
+    "cluster-admin",
+    "audit-viewer",
+    "team-owner",
+    "team-admin",
+    "team-member",
+    "team-viewer",
+    "project-admin",
+    "project-write",
+    "project-read",
+    "secret-read",
+    "secret-reveal",
+    "secret-write",
+    "service-readonly",
+    "service-write",
+)
+# Dropdown presets by scope (replaces old role vocabularies in Bindings UI)
+RBAC_TEAM_ROLE_DROPDOWN = (
+    ("team-owner", "Owner"),
+    ("team-admin", "Admin"),
+    ("team-member", "Member"),
+    ("team-viewer", "Viewer"),
+)
+RBAC_PROJECT_ROLE_DROPDOWN = (
+    ("project-admin", "Admin"),
+    ("project-write", "Write"),
+    ("project-read", "Read"),
+)
+RBAC_SECRET_ROLE_DROPDOWN = (
+    ("secret-write", "Write"),
+    ("secret-reveal", "Reveal"),
+    ("secret-read", "Read"),
+)
+RBAC_CLUSTER_ROLE_DROPDOWN = (
+    ("cluster-admin", "Cluster admin"),
+    ("audit-viewer", "Audit viewer"),
+)
+RBAC_SERVICE_ROLE_DROPDOWN = (
+    ("service-readonly", "Read-only"),
+    ("service-write", "Write"),
+)
 # Clipboard auto-clear after copy (seconds); 0 disables
 CLIPBOARD_CLEAR_SECONDS = max(
     0, int(os.environ.get("CLIPBOARD_CLEAR_SECONDS", "30") or "30")

@@ -8,15 +8,22 @@ tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Kubernetes-style RBAC** (branch `feature/k8s-rbac`): `rbac.roles` /
+  `role_rules` / `bindings`, `api.can(verb, resource, scope…)`, scope chain
+  cluster→team→project→secret, built-in roles, admin UI (Roles, Bindings,
+  Access review). Start-fresh: no data migration from legacy membership tables.
+- Pytest suite under `tests/` (domain modules) run via `tox -e py`
+
 ### Changed
 
 - Regenerated `docs/postgrest-openapi.json` from live PostgREST (authenticated
   role): groups, secret ACL/meta/access requests, machine token scope,
   project description / ACL / last_accessed columns, new `api.can_*` RPCs
+- `can_*` / `team_role` / `project_role` helpers evaluate RBAC bindings (legacy
+  tables retained but not used for authorization on this branch)
 
-### Added
-
-- Pytest suite under `tests/` (domain modules) run via `tox -e py`
 - CI workflows (Forgejo/GitHub Actions): unit tests + pylint
 - `SECURITY.md`, `CONTRIBUTING.md`, and this changelog
 - Machine token key allow-list (exact keys + `*` / `?` globs)

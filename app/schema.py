@@ -1,5 +1,6 @@
 """Idempotent schema upgrades for existing database volumes."""
 import logging
+from pathlib import Path
 
 from config import DATABASE_ADMIN_URL, bootstrap_admin_email
 import db
@@ -2908,6 +2909,7 @@ def ensure_schema():
             try:
                 for sql in stmts:
                     cur.execute(sql)
+                _apply_rbac_sql(cur)
                 # Bootstrap: only explicit GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL
                 # (never auto-promote the first registrant — race / takeover risk)
                 boot = bootstrap_admin_email()
@@ -2926,6 +2928,75 @@ def ensure_schema():
     except Exception:
         log.exception("ensure_schema failed")
         raise
+
+
+def _split_sql_statements(sql: str) -> list[str]:
+    """Split a SQL script into statements, respecting dollar-quoted bodies."""
+    stmts: list[str] = []
+    buf: list[str] = []
+    i = 0
+    n = len(sql)
+    in_dollar = False
+    dollar_tag = ""
+    while i < n:
+        if not in_dollar and sql[i] == "-" and i + 1 < n and sql[i + 1] == "-":
+            # line comment
+            while i < n and sql[i] != "\n":
+                buf.append(sql[i])
+                i += 1
+            continue
+        if not in_dollar and sql[i] == "$":
+            # start dollar quote $$ or $tag$
+            j = i + 1
+            while j < n and (sql[j].isalnum() or sql[j] == "_"):
+                j += 1
+            if j < n and sql[j] == "$":
+                dollar_tag = sql[i : j + 1]
+                in_dollar = True
+                buf.append(dollar_tag)
+                i = j + 1
+                continue
+        if in_dollar:
+            if sql.startswith(dollar_tag, i):
+                buf.append(dollar_tag)
+                i += len(dollar_tag)
+                in_dollar = False
+                dollar_tag = ""
+                continue
+            buf.append(sql[i])
+            i += 1
+            continue
+        if sql[i] == ";":
+            chunk = "".join(buf).strip()
+            if chunk:
+                stmts.append(chunk)
+            buf = []
+            i += 1
+            continue
+        buf.append(sql[i])
+        i += 1
+    chunk = "".join(buf).strip()
+    if chunk:
+        stmts.append(chunk)
+    return stmts
+
+
+def _apply_rbac_sql(cur) -> None:
+    """Apply Kubernetes-style RBAC schema (db/rbac.sql), start-fresh (no data migrate)."""
+    path = Path(__file__).resolve().parents[1] / "db" / "rbac.sql"
+    if not path.is_file():
+        log.warning("rbac.sql not found at %s; skipping RBAC ensure", path)
+        return
+    sql = path.read_text()
+    for stmt in _split_sql_statements(sql):
+        # Skip pure comment blocks
+        body = "\n".join(
+            ln for ln in stmt.splitlines() if not ln.strip().startswith("--")
+        ).strip()
+        if not body:
+            continue
+        cur.execute(stmt)
+    log.info("RBAC schema ensure complete (rbac.roles / bindings / api.can)")
 
 
 def _backfill_secret_kinds(cur) -> None:

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Roles — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Roles</h1>
+  <p class="muted">Kubernetes-style roles: verbs on resources. Built-in roles mirror classic team/project permissions.</p>
+</div>
+
+<div class="card" style="margin-bottom:1.25rem">
+  <h2 style="margin-top:0;font-size:1rem">Built-in &amp; custom roles</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Rules</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in roles %}
+        <tr>
+          <td>
+            <code>{{ r.name }}</code>
+            {% if r.built_in %}<span class="badge">built-in</span>{% endif %}
+          </td>
+          <td>{{ r.description or "—" }}</td>
+          <td class="muted" style="font-size:.85rem">
+            {% if r.rules %}
+              {% for rule in r.rules %}
+                <div><strong>resources</strong> {{ rule.resources|join(', ') }}
+                  · <strong>verbs</strong> {{ rule.verbs|join(', ') }}</div>
+              {% endfor %}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if can_edit and not r.built_in %}
+            <form method="post" action="{{ url_for('rbac_roles_delete', role_id=r.id) }}" class="inline"
+                  onsubmit="return confirm('Delete role {{ r.name }}?');">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="button ghost small danger">Delete</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No roles yet — schema may not be applied.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if can_edit %}
+<div class="card">
+  <h2 style="margin-top:0;font-size:1rem">Create custom role</h2>
+  <form method="post" action="{{ url_for('rbac_roles_create') }}" class="settings-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Name
+      <input type="text" name="name" required placeholder="e.g. secrets-operator" pattern="[a-z0-9][a-z0-9\-]*">
+    </label>
+    <label>Description
+      <input type="text" name="description" placeholder="Optional">
+    </label>
+    <fieldset>
+      <legend>Resources</legend>
+      {% for res in resources %}
+      <label class="check-row"><input type="checkbox" name="resources" value="{{ res }}"
+        {% if res == 'secrets' %}checked{% endif %}> {{ res }}</label>
+      {% endfor %}
+    </fieldset>
+    <fieldset>
+      <legend>Verbs</legend>
+      {% for v in verbs %}
+      <label class="check-row"><input type="checkbox" name="verbs" value="{{ v }}"
+        {% if v in ('get', 'list') %}checked{% endif %}> {{ v }}</label>
+      {% endfor %}
+    </fieldset>
+    <button type="submit" class="button">Create role</button>
+  </form>
+</div>
+{% else %}
+<p class="muted">Only cluster admins can create or delete custom roles.</p>
+{% endif %}
+{% endblock %}

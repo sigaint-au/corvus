@@ -2262,6 +2262,12 @@
           {% if is_global_admin %}
           <a class="side-nav-link {% if ep in ('admin_audit', 'admin_audit_access_export', 'admin_audit_export') %}active{% endif %}"
              href="{{ url_for('admin_audit') }}">Auditing</a>
+          <a class="side-nav-link {% if ep and ep.startswith('rbac_') %}active{% endif %}"
+             href="{{ url_for('rbac_bindings') }}">Access (RBAC)</a>
+          <a class="side-nav-link {% if ep == 'rbac_roles' %}active{% endif %}"
+             href="{{ url_for('rbac_roles') }}">Roles</a>
+          <a class="side-nav-link {% if ep == 'rbac_access_review' %}active{% endif %}"
+             href="{{ url_for('rbac_access_review') }}">Access review</a>
           <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}"
              href="{{ url_for('server_settings') }}">Server settings</a>
           {% endif %}

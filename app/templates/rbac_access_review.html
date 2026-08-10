@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Access review — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Access review</h1>
+  <p class="muted">Who can perform a verb on a resource at a given scope (uses <code>api.can</code>).</p>
+</div>
+
+<form method="get" action="{{ url_for('rbac_access_review') }}" class="toolbar card" style="display:grid;gap:.75rem;padding:1rem">
+  <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:end">
+    <label>Verb
+      <select name="verb">
+        {% for v in verbs %}
+        <option value="{{ v }}" {% if v == verb %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Resource
+      <select name="resource">
+        {% for r in resources %}
+        <option value="{{ r }}" {% if r == resource %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Scope
+      <select name="scope" id="rev-scope">
+        {% for sk in scope_kinds %}
+        <option value="{{ sk }}" {% if sk == scope_kind %}selected{% endif %}>{{ sk }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label id="rev-team-wrap">Team
+      <select name="scope_id" id="rev-team">
+        <option value="">—</option>
+        {% for t in teams %}
+        <option value="{{ t.id }}" {% if scope_id and scope_id|string == t.id|string and scope_kind == 'team' %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label id="rev-project-wrap">Project
+      <select name="scope_id" id="rev-project">
+        <option value="">—</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}" {% if scope_id and scope_id|string == p.id|string and scope_kind == 'project' %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="button">Review</button>
+  </div>
+  <p class="muted" style="margin:0;font-size:.85rem">
+    Query: <code>can({{ verb }}, {{ resource }}, {{ scope_kind }}, {{ scope_id or 'null' }})</code>
+  </p>
+</form>
+
+<div class="card" style="margin-top:1rem">
+  <h2 style="margin-top:0;font-size:1rem">Subjects with access</h2>
+  {% if not scope_id and scope_kind != 'cluster' %}
+  <p class="muted">Choose a team or project scope and run Review.</p>
+  {% elif not results %}
+  <p class="muted">No users matched (start-fresh RBAC may have no bindings yet; global admins always match).</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Email</th><th>Name</th><th>Flags</th></tr>
+      </thead>
+      <tbody>
+        {% for u in results %}
+        <tr>
+          <td>{{ u.email }}</td>
+          <td>{{ u.name or '—' }}</td>
+          <td>{% if u.is_global_admin %}<span class="badge">global admin</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+<script>
+(function () {
+  var scope = document.getElementById('rev-scope');
+  var team = document.getElementById('rev-team-wrap');
+  var proj = document.getElementById('rev-project-wrap');
+  var teamSel = document.getElementById('rev-team');
+  var projSel = document.getElementById('rev-project');
+  function sync() {
+    var v = scope.value;
+    team.hidden = v !== 'team';
+    proj.hidden = v !== 'project';
+    // only one name=scope_id active
+    teamSel.disabled = v !== 'team';
+    projSel.disabled = v !== 'project';
+  }
+  scope.addEventListener('change', sync);
+  sync();
+})();
+</script>
+{% endblock %}
