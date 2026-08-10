@@ -211,12 +211,6 @@ def register(app):
                     groups = list(cur.fetchall() or [])
                 except Exception:
                     groups = []
-                # Team role comes from rbac.bindings (not groups.team_role column)
-                import rbac_sync
-
-                role_map = rbac_sync.group_team_roles_map(cur, team_id)
-                for g in groups:
-                    g["team_role"] = role_map.get(str(g.get("id")))
                 if q:
                     ql = q.lower()
                     groups = [
@@ -225,7 +219,6 @@ def register(app):
                         if ql in (g.get("name") or "").lower()
                         or ql in (g.get("external_key") or "").lower()
                         or ql in (g.get("source") or "").lower()
-                        or ql in (g.get("team_role") or "").lower()
                     ]
                 # Legacy ?group_id= → dedicated group page
                 gid = (request.args.get("group_id") or "").strip()
@@ -297,7 +290,6 @@ def register(app):
             team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
             subject_kinds=config.RBAC_SUBJECT_KINDS,
             invite_roles=config.INVITE_ROLES,
-            team_roles=config.GROUP_TEAM_ROLES,
             new_invite_url=session.pop("new_invite_url", None),
             ldap_enabled=settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled")),
             oidc_enabled=settings_svc.truthy(
@@ -1277,11 +1269,6 @@ def register(app):
             if not group:
                 flash("Group not found", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
-            import rbac_sync
-
-            group = dict(group)
-            role_map = rbac_sync.group_team_roles_map(cur, team_id)
-            group["team_role"] = role_map.get(str(group_id))
             try:
                 cur.execute(
                     "SELECT * FROM private.group_member_rows(%s::uuid)",
@@ -1307,7 +1294,6 @@ def register(app):
             search_q=q,
             my_role=my_role,
             is_admin=is_admin,
-            team_roles=config.GROUP_TEAM_ROLES,
         )
 
     @app.post("/teams/<uuid:team_id>/groups")
@@ -1315,7 +1301,7 @@ def register(app):
     def create_team_group(team_id):
         """Create a team-scoped group (manual or LDAP/OIDC-mapped).
 
-        Team access for the group is a separate RBAC binding (set on group detail).
+        Group membership only; grant team access via Members (Group subject binding).
         """
         name = (request.form.get("name") or "").strip()
         source = (request.form.get("source") or "manual").strip().lower()
@@ -1348,7 +1334,10 @@ def register(app):
                     detail=f"{name} ({source})",
                 )
                 conn.commit()
-                flash(f"Group “{name}” created — set team access on the group page", "ok")
+                flash(
+                    f"Group “{name}” created — bind it under Members as subject Group",
+                    "ok",
+                )
                 return redirect(_group_detail_url(team_id, gid))
             except Exception as e:
                 conn.rollback()
@@ -1392,55 +1381,6 @@ def register(app):
                     )
                     conn.commit()
                     flash("Group updated", "ok")
-            except Exception as e:
-                conn.rollback()
-                flash(str(e), "error")
-        return redirect(_group_detail_url(team_id, group_id))
-
-    @app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>/team-role")
-    @authz.login_required
-    def update_team_group_role(team_id, group_id):
-        """Set or clear Group→team RBAC binding (admin|member|viewer|owner)."""
-        team_role = (request.form.get("team_role") or "").strip() or None
-        if team_role and team_role not in config.GROUP_TEAM_ROLES:
-            team_role = None
-        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            try:
-                cur.execute(
-                    """
-                    SELECT id, name FROM api.groups
-                    WHERE id = %s AND team_id = %s
-                    """,
-                    (str(group_id), str(team_id)),
-                )
-                g = cur.fetchone()
-                if not g:
-                    flash("Group not found or not permitted", "error")
-                    return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
-                import rbac_sync
-
-                rbac_sync.sync_group_team_binding(
-                    cur,
-                    group_id=group_id,
-                    team_id=team_id,
-                    team_role=team_role,
-                    created_by=session["user_id"],
-                )
-                cur.execute(
-                    "UPDATE api.groups SET team_role = NULL WHERE id = %s",
-                    (str(group_id),),
-                )
-                audit.log_org(
-                    cur,
-                    team_id=team_id,
-                    action="group_update",
-                    detail=f"{g['name']} team binding → {team_role or 'none'}",
-                )
-                conn.commit()
-                flash(
-                    f"Team access for “{g['name']}” → {team_role or 'none'}",
-                    "ok",
-                )
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")

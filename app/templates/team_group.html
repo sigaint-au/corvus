@@ -16,13 +16,16 @@
   <div class="section-head-main">
     <h1>{{ group.name }}</h1>
     <span class="badge" data-variant="secondary">{{ group.source }}</span>
-    {% if group.team_role %}<span class="badge" data-variant="secondary">{{ group.team_role }}</span>{% endif %}
   </div>
   <div class="section-tools">
     <a class="button outline small" href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Back</a>
   </div>
 </div>
-<p class="page-desc muted">Your team role: <span class="badge" data-variant="secondary">{{ my_role or '—' }}</span></p>
+<p class="page-desc muted">
+  Group membership only — grant this group team or project access via
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='members') }}">Members</a>
+  (bind subject kind <strong>Group</strong>) or project Access.
+</p>
 
 {% if is_admin %}
 <section>
@@ -37,25 +40,6 @@
     </label>
     {% endif %}
     <button type="submit">Save</button>
-  </form>
-</section>
-<section>
-  <h2>Team access</h2>
-  <p class="muted">
-    Optional role binding for this group on the team (same as binding a Group subject
-    under Members). Members of the group inherit the grant.
-  </p>
-  <form method="post" action="{{ url_for('update_team_group_role', team_id=team.id, group_id=group.id) }}" class="row">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Team role binding
-      <select name="team_role">
-        <option value="">— none —</option>
-        {% for r in team_roles|default(['admin','member','viewer']) %}
-        <option value="{{ r }}" {% if group.team_role == r %}selected{% endif %}>{{ r }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">Save access</button>
   </form>
 </section>
 {% endif %}
