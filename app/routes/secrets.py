@@ -739,7 +739,7 @@ def register(app):
         is_version: bool = False,
         status: int = 200,
         can_admin: bool = False,
-        acl_grants=None,
+        secret_bindings=None,
         can_reveal: bool = True,
         team_groups=None,
         active_tab: str = "secret",
@@ -794,7 +794,7 @@ def register(app):
                 acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
                 acl_permissions=config.SECRET_ACL_PERMISSIONS,
                 acl_perm_labels=config.SECRET_ACL_PERM_LABELS,
-                acl_grants=acl_grants or [],
+                secret_bindings=secret_bindings or [],
                 team_groups=team_groups or [],
                 active_tab=tab,
                 access_blocked=access_blocked,
@@ -909,17 +909,56 @@ def register(app):
                 custom_meta = cur.fetchall() or []
             except Exception:
                 custom_meta = []
-            acl_grants = []
+            secret_bindings = []
             team_groups = []
             if can_admin:
                 try:
                     cur.execute(
-                        "SELECT * FROM private.secret_acl_rows(%s::uuid)",
+                        """
+                        SELECT b.id, b.subject_kind, b.subject_id, b.created_at,
+                               r.name AS role_name,
+                               g.name AS group_name
+                        FROM rbac.bindings b
+                        JOIN rbac.roles r ON r.id = b.role_id
+                        LEFT JOIN api.groups g
+                          ON b.subject_kind = 'Group' AND g.id = b.subject_id
+                        WHERE b.scope_kind = 'secret' AND b.scope_id = %s::uuid
+                        ORDER BY b.created_at DESC
+                        """,
                         (str(secret_id),),
                     )
-                    acl_grants = cur.fetchall() or []
+                    secret_bindings = list(cur.fetchall() or [])
                 except Exception:
-                    acl_grants = []
+                    secret_bindings = []
+                # Enrich user emails (private.users not visible under JWT)
+                user_ids = [
+                    str(b["subject_id"])
+                    for b in secret_bindings
+                    if b.get("subject_kind") == "User"
+                ]
+                email_map = {}
+                if user_ids:
+                    try:
+                        with db.connect_admin() as aconn, aconn.cursor() as acur:
+                            acur.execute(
+                                """
+                                SELECT id, email, name FROM private.users
+                                WHERE id = ANY(%s::uuid[])
+                                """,
+                                (user_ids,),
+                            )
+                            for row in acur.fetchall() or []:
+                                email_map[str(row["id"])] = row
+                    except Exception:
+                        email_map = {}
+                for b in secret_bindings:
+                    b["permission"] = config.SECRET_ACL_ROLE_TO_PERM.get(
+                        b.get("role_name") or "", b.get("role_name") or ""
+                    )
+                    if b.get("subject_kind") == "User":
+                        u = email_map.get(str(b.get("subject_id"))) or {}
+                        b["email"] = u.get("email")
+                        b["name"] = u.get("name")
                 try:
                     cur.execute(
                         """
@@ -1042,7 +1081,7 @@ def register(app):
                     can_write=can_write,
                     is_version=False,
                     can_admin=can_admin,
-                    acl_grants=acl_grants,
+                    secret_bindings=secret_bindings,
                     can_reveal=can_reveal,
                     team_groups=team_groups,
                     active_tab=active_tab,
@@ -1064,7 +1103,7 @@ def register(app):
                     can_write=False,
                     is_version=is_version,
                     can_admin=can_admin,
-                    acl_grants=acl_grants if can_admin else [],
+                    secret_bindings=secret_bindings if can_admin else [],
                     can_reveal=False,
                     team_groups=team_groups if can_admin else [],
                     active_tab="meta" if active_tab == "meta" else "secret",
@@ -1106,7 +1145,7 @@ def register(app):
             can_write=can_write,
             is_version=is_version,
             can_admin=can_admin,
-            acl_grants=acl_grants,
+            secret_bindings=secret_bindings,
             can_reveal=can_reveal,
             team_groups=team_groups,
             active_tab=active_tab,
@@ -2318,12 +2357,13 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl/grants")
     @authz.login_required
     def add_secret_acl_grant(project_id, secret_id):
-        """Grant a user or group access to a custom-ACL secret (project admin only)."""
+        """Bind a user/group to a secret-* role at secret scope (project admin)."""
         email = (request.form.get("email") or "").strip().lower()
         group_id = (request.form.get("group_id") or "").strip()
         perm = (request.form.get("permission") or "reveal").strip().lower()
         if perm not in config.SECRET_ACL_PERMISSIONS:
             perm = "reveal"
+        role_name = config.SECRET_ACL_PERM_TO_ROLE.get(perm, "secret-reveal")
         access_url = url_for(
             "secret_view",
             project_id=project_id,
@@ -2336,7 +2376,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             if not (cur.fetchone() or {}).get("a"):
-                flash("Only project admins can manage secret grants", "error")
+                flash("Only project admins can manage secret bindings", "error")
                 return redirect(access_url)
             cur.execute(
                 """
@@ -2353,8 +2393,12 @@ def register(app):
                 return redirect(
                     url_for("project_detail", project_id=project_id, tab="secrets")
                 )
-            if (sec.get("acl_mode") or "inherit") != "custom":
-                flash("Switch access mode to Custom list first", "error")
+            cur.execute(
+                "SELECT id FROM rbac.roles WHERE name = %s", (role_name,)
+            )
+            role = cur.fetchone()
+            if not role:
+                flash(f"Built-in role {role_name} missing — run schema ensure", "error")
                 return redirect(access_url)
             try:
                 if group_id:
@@ -2369,23 +2413,7 @@ def register(app):
                     if not g:
                         flash("Group not found on this team", "error")
                         return redirect(access_url)
-                    # Upsert group grant (partial unique index)
-                    cur.execute(
-                        """
-                        DELETE FROM api.secret_acl
-                        WHERE secret_id = %s AND group_id = %s
-                        """,
-                        (str(secret_id), group_id),
-                    )
-                    cur.execute(
-                        """
-                        INSERT INTO api.secret_acl
-                          (secret_id, group_id, permission, created_by)
-                        VALUES (%s, %s, %s, %s)
-                        """,
-                        (str(secret_id), group_id, perm, session["user_id"]),
-                    )
-                    who = f"group {g['name']}"
+                    subject_kind, subject_id, who = "Group", str(g["id"]), f"group {g['name']}"
                 else:
                     cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
                     u = cur.fetchone()
@@ -2395,22 +2423,39 @@ def register(app):
                             "error",
                         )
                         return redirect(access_url)
+                    subject_kind, subject_id, who = "User", str(u["id"]), email
+                # Replace any existing secret-scope binding for this subject
+                cur.execute(
+                    """
+                    DELETE FROM rbac.bindings
+                    WHERE scope_kind = 'secret' AND scope_id = %s::uuid
+                      AND subject_kind = %s AND subject_id = %s::uuid
+                    """,
+                    (str(secret_id), subject_kind, subject_id),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO rbac.bindings
+                      (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
+                    VALUES (%s::uuid, %s, %s::uuid, 'secret', %s::uuid, %s::uuid)
+                    """,
+                    (
+                        str(role["id"]),
+                        subject_kind,
+                        subject_id,
+                        str(secret_id),
+                        session["user_id"],
+                    ),
+                )
+                # Restricted mode if not already — bindings only apply as exclusive when custom
+                if (sec.get("acl_mode") or "inherit") != "custom":
                     cur.execute(
                         """
-                        DELETE FROM api.secret_acl
-                        WHERE secret_id = %s AND user_id = %s
+                        UPDATE api.secrets SET acl_mode = 'custom'
+                        WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                         """,
-                        (str(secret_id), str(u["id"])),
+                        (str(secret_id), str(project_id)),
                     )
-                    cur.execute(
-                        """
-                        INSERT INTO api.secret_acl
-                          (secret_id, user_id, permission, created_by)
-                        VALUES (%s, %s, %s, %s)
-                        """,
-                        (str(secret_id), str(u["id"]), perm, session["user_id"]),
-                    )
-                    who = email
                 audit.log_secret(
                     cur,
                     project_id=project_id,
@@ -2419,7 +2464,7 @@ def register(app):
                     action="updated",
                 )
                 conn.commit()
-                flash(f"Granted {perm} to {who}", "ok")
+                flash(f"Bound {who} as {role_name}", "ok")
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
@@ -2430,7 +2475,7 @@ def register(app):
     )
     @authz.login_required
     def delete_secret_acl_grant(project_id, secret_id, grant_id):
-        """Remove a custom ACL grant (project admin only)."""
+        """Remove a secret-scope role binding (project admin only)."""
         access_url = url_for(
             "secret_view",
             project_id=project_id,
@@ -2440,21 +2485,23 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             if not (cur.fetchone() or {}).get("a"):
-                flash("Only project admins can manage secret grants", "error")
+                flash("Only project admins can manage secret bindings", "error")
                 return redirect(access_url)
             cur.execute(
                 """
-                DELETE FROM api.secret_acl a
+                DELETE FROM rbac.bindings b
                 USING api.secrets s
-                WHERE a.id = %s AND a.secret_id = s.id
-                  AND s.id = %s AND s.project_id = %s
+                WHERE b.id = %s::uuid
+                  AND b.scope_kind = 'secret'
+                  AND b.scope_id = s.id
+                  AND s.id = %s::uuid AND s.project_id = %s::uuid
                 RETURNING s.key
                 """,
                 (str(grant_id), str(secret_id), str(project_id)),
             )
             row = cur.fetchone()
             if not row:
-                flash("Grant not found", "error")
+                flash("Binding not found", "error")
                 conn.rollback()
             else:
                 audit.log_secret(
@@ -2465,5 +2512,5 @@ def register(app):
                     action="updated",
                 )
                 conn.commit()
-                flash("Grant removed", "ok")
+                flash("Binding removed", "ok")
         return redirect(access_url)

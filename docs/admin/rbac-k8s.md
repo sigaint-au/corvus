@@ -58,7 +58,20 @@ requires `reveal` via RBAC, then applies the approval layer.
 ## Granting access after upgrade
 
 1. Sign in as a **global admin** (still bypasses all checks).
-2. Open **Access (RBAC) → Bindings**.
+2. Open **Access → Role bindings**.
 3. Scope **team**, pick the team, bind users with **Owner** / **Admin** /
    **Member** / **Viewer** (maps to `team-*` roles).
 4. Optionally bind at project or secret scopes for tighter grants.
+
+## Per-secret permissions (Permissions tab)
+
+The secret **Permissions** tab manages **secret-scope role bindings**
+(`secret-read` / `secret-reveal` / `secret-write`), not the legacy
+`api.secret_acl` table.
+
+| Access mode (`acl_mode`) | Behaviour |
+|--------------------------|-----------|
+| **Inherit** (`inherit`) | Project/team bindings apply via the scope chain. Secret-level bindings add extra grants. |
+| **Restricted** (`custom`) | Only secret-scope bindings (+ project admins) apply. Team/project roles do not. |
+
+Reveal approval remains a separate layer after the `reveal` verb.

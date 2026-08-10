@@ -212,21 +212,27 @@ REVEAL_ACCESS_GRANT_MINUTES = max(
 REVEAL_ACCESS_GRANT_CHOICES = (15, 60, 240, 1440)  # 15m, 1h, 4h, 1d
 # Structured secret kinds for advanced create form
 SECRET_KINDS = ("plain", "database", "certificate", "ssh", "kv")
-# Per-secret ACL modes (tighter than project membership)
-# inherit = project RBAC; writers/admins/owners = min role; custom = user allow-list
-SECRET_ACL_MODES = ("inherit", "writers", "admins", "owners", "custom")
+# Per-secret access modes (k8s RBAC). Stored in secrets.acl_mode.
+# inherit = project/team bindings apply; custom = restricted (secret-scope bindings only).
+# writers/admins/owners kept for DB CHECK / display of legacy rows (treated as inherit).
+SECRET_ACL_MODES = ("inherit", "custom")
 SECRET_ACL_MODE_LABELS = {
-    "inherit": "Everyone with project access",
-    "writers": "Writers and above",
-    "admins": "Project admins and team owners/admins",
-    # Non-admins: team_role owner only; team owners/admins always bypass via can_admin_project
-    "owners": "Team owners and admins",
-    "custom": "Custom user or group list",
+    "inherit": "Inherit project access",
+    "custom": "Restricted (role bindings only)",
+    "writers": "Writers and above (legacy)",
+    "admins": "Project admins (legacy)",
+    "owners": "Team owners (legacy)",
 }
-# Permissions grantable on custom secret ACLs (ordered weakest → strongest)
+# Grant dropdown on Permissions tab → built-in secret-* roles
 SECRET_ACL_PERMISSIONS = ("read", "reveal", "write")
+SECRET_ACL_PERM_TO_ROLE = {
+    "read": "secret-read",
+    "reveal": "secret-reveal",
+    "write": "secret-write",
+}
+SECRET_ACL_ROLE_TO_PERM = {v: k for k, v in SECRET_ACL_PERM_TO_ROLE.items()}
 SECRET_ACL_PERM_LABELS = {
-    "read": "List / metadata",
+    "read": "Read (metadata)",
     "reveal": "Reveal value",
     "write": "Edit / delete",
 }

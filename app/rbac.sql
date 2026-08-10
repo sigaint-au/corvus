@@ -432,7 +432,53 @@ SET row_security = off AS $$
     OR api.can('admin', 'bindings', 'project', pid);
 $$;
 
--- Secret ACL modes (inherit/custom/…) retained as optional restriction *after* RBAC
+-- Does the subject have a secret-scoped binding that covers this need?
+-- (Does not walk project/team ancestors — used for restricted secrets.)
+CREATE OR REPLACE FUNCTION api.rbac_secret_binding_allows(
+  p_sid uuid,
+  p_need text,
+  p_subject uuid DEFAULT NULL
+) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, rbac, private, pg_catalog
+SET row_security = off AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM api.rbac_subjects(COALESCE(p_subject, api.current_user_id())) sub
+    JOIN rbac.bindings b
+      ON b.subject_kind = sub.subject_kind
+     AND b.subject_id = sub.subject_id
+    JOIN rbac.role_rules rr ON rr.role_id = b.role_id
+    WHERE b.scope_kind = 'secret'
+      AND b.scope_id = p_sid
+      AND (
+        CASE lower(COALESCE(p_need, ''))
+          WHEN 'write' THEN
+            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'update')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'create')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
+          WHEN 'reveal' THEN
+            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'reveal')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'update')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
+          ELSE
+            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'get')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'list')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'reveal')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'update')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
+        END
+      )
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION api.rbac_secret_binding_allows TO authenticator, authenticated, anon;
+
+-- Secret access: RBAC on scope chain, or restricted (custom) = secret bindings only.
+-- acl_mode 'custom' means exclusive: only secret-scope bindings (+ project admins).
 CREATE OR REPLACE FUNCTION api.can_access_secret_row(
   sid uuid,
   pid uuid,
@@ -447,33 +493,33 @@ SET row_security = off AS $$
     WHEN sid IS NULL OR pid IS NULL THEN false
     WHEN deleted_at IS NOT NULL THEN false
     WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
-    -- RBAC gate (scope chain includes secret + ancestors)
-    WHEN need = 'write' AND NOT (
+    -- Project admins always full
+    WHEN api.can_admin_project(pid) THEN true
+    -- Restricted (legacy name: custom): secret-scope bindings only
+    WHEN COALESCE(mode, 'inherit') = 'custom' THEN
+      api.rbac_secret_binding_allows(sid, need)
+    -- inherit / writers / admins / owners → project/team RBAC via scope chain
+    -- (writers/admins/owners treated as inherit under k8s RBAC; use custom to restrict)
+    WHEN need = 'write' THEN (
       api.can('update', 'secrets', 'secret', sid)
       OR api.can('create', 'secrets', 'secret', sid)
       OR api.can('admin', 'secrets', 'secret', sid)
       OR api.can('*', '*', 'secret', sid)
-    ) THEN false
-    WHEN need = 'reveal' AND NOT (
+    )
+    WHEN need = 'reveal' THEN (
       api.can('reveal', 'secrets', 'secret', sid)
       OR api.can('update', 'secrets', 'secret', sid)
       OR api.can('admin', 'secrets', 'secret', sid)
       OR api.can('*', '*', 'secret', sid)
-    ) THEN false
-    WHEN need = 'read' AND NOT (
+    )
+    ELSE (
       api.can('get', 'secrets', 'secret', sid)
       OR api.can('list', 'secrets', 'secret', sid)
       OR api.can('reveal', 'secrets', 'secret', sid)
       OR api.can('update', 'secrets', 'secret', sid)
       OR api.can('admin', 'secrets', 'secret', sid)
       OR api.can('*', '*', 'secret', sid)
-    ) THEN false
-    -- Project admins / * always full
-    WHEN api.can_admin_project(pid) THEN true
-    -- Optional legacy-style mode ladder (start-fresh: inherit = project RBAC only)
-    WHEN COALESCE(mode, 'inherit') IN ('inherit', 'writers', 'admins', 'owners', 'custom')
-      THEN true
-    ELSE false
+    )
   END;
 $$;
 
