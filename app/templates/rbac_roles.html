@@ -2,33 +2,67 @@
 {% block title %}Roles — {{ app_name }}{% endblock %}
 {% block body %}
 <style>
-  .role-create { padding: 1.1rem 1.15rem; max-width: 42rem; }
+  /* Full-width create surface */
+  .role-create {
+    padding: 1.15rem 1.25rem 1.35rem;
+    max-width: none;
+    width: 100%;
+    box-sizing: border-box;
+  }
   .role-create-grid {
     display: grid;
-    grid-template-columns: 1fr 1.4fr;
-    gap: .75rem;
-    margin-bottom: 1rem;
+    grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 2fr);
+    gap: .85rem 1.25rem;
+    margin-bottom: 1.15rem;
   }
   @media (max-width: 40rem) {
     .role-create-grid { grid-template-columns: 1fr; }
   }
-  .role-create-mode-tabs {
+  .role-create-grid label {
     display: flex;
-    gap: .25rem;
-    margin-bottom: .85rem;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: .35rem;
+    flex-direction: column;
+    gap: .35rem;
   }
-  .role-create-mode-tabs .tab {
-    border: none;
-    background: transparent;
+  .role-create-grid input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  /* Mode tabs: match page .tabs look; buttons need explicit reset */
+  .role-create .tabs.role-mode-tabs {
+    margin: 0 0 1rem;
+  }
+  .role-create .tabs.role-mode-tabs .tab {
     cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    color: var(--muted-foreground);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: .55rem 0 .65rem;
+    margin: 0;
     font: inherit;
+    font-size: .925rem;
+    font-weight: 500;
+    line-height: inherit;
+  }
+  .role-create .tabs.role-mode-tabs .tab:hover {
+    color: var(--foreground);
+    background: transparent;
+  }
+  .role-create .tabs.role-mode-tabs .tab.active {
+    color: var(--foreground);
+    border-bottom-color: var(--foreground);
+  }
+  .role-create-panel {
+    min-height: min(50vh, 28rem);
   }
   .role-create-cols {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1rem;
+    gap: 1rem 1.25rem;
+    min-height: min(42vh, 22rem);
   }
   @media (max-width: 40rem) {
     .role-create-cols { grid-template-columns: 1fr; }
@@ -36,22 +70,41 @@
   .role-check-set {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 4px);
-    padding: .65rem .75rem;
+    padding: .75rem 1rem 1rem;
     margin: 0;
+    min-height: 100%;
+    box-sizing: border-box;
   }
   .role-check-set legend {
-    padding: 0 .35rem;
+    padding: 0 .4rem;
     font-size: .8rem;
     font-weight: 600;
   }
-  .role-yaml {
-    width: 100%;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: .85rem;
-    line-height: 1.45;
-    min-height: 12rem;
+  .role-check-set .check-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .28rem 0;
   }
-  .role-yaml-help { margin-top: .5rem; }
+  .role-yaml {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .875rem;
+    line-height: 1.5;
+    min-height: min(50vh, 28rem);
+    resize: vertical;
+    padding: .75rem .9rem;
+  }
+  .role-yaml-help { margin-top: .65rem; }
+  .role-create .form-actions {
+    margin-top: 1.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+  }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 </style>
 <div class="page-head">
@@ -177,7 +230,7 @@
 {% endif %}
 
 {% if active_tab == 'create' and can_edit %}
-<section>
+<section class="role-create-section">
   <form method="post" action="{{ url_for('rbac_roles_create') }}" class="card role-create" id="role-create-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="tab" value="custom">
@@ -196,12 +249,14 @@
       </label>
     </div>
 
-    <div class="role-create-mode-tabs" role="tablist" aria-label="Rule editor mode">
-      <button type="button" class="tab active" data-mode="form" id="mode-form-btn" role="tab" aria-selected="true">Form</button>
-      <button type="button" class="tab" data-mode="yaml" id="mode-yaml-btn" role="tab" aria-selected="false">YAML</button>
-    </div>
+    <nav class="tabs role-mode-tabs" role="tablist" aria-label="Rule editor mode">
+      <button type="button" class="tab active" data-mode="form" id="mode-form-btn"
+              role="tab" aria-selected="true" aria-controls="mode-form-panel">Form</button>
+      <button type="button" class="tab" data-mode="yaml" id="mode-yaml-btn"
+              role="tab" aria-selected="false" aria-controls="mode-yaml-panel">YAML</button>
+    </nav>
 
-    <div id="mode-form-panel" class="role-create-panel">
+    <div id="mode-form-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-form-btn">
       <p class="muted" style="margin-top:0;font-size:.85rem">
         Pick resources and verbs for a single rule. Switch to YAML for multiple rules.
       </p>
@@ -231,12 +286,12 @@
       </div>
     </div>
 
-    <div id="mode-yaml-panel" class="role-create-panel" hidden>
+    <div id="mode-yaml-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-yaml-btn" hidden>
       <p class="muted" style="margin-top:0;font-size:.85rem">
         One or more rules. Blank line between rules. Lines starting with <code>#</code> are ignored.
       </p>
       <label class="visually-hidden" for="rules_yaml">Rules YAML</label>
-      <textarea name="rules_yaml" id="rules_yaml" rows="14" class="role-yaml mono"
+      <textarea name="rules_yaml" id="rules_yaml" rows="20" class="role-yaml mono"
                 spellcheck="false" placeholder="resources: secrets, projects
 verbs: get, list, reveal
 
