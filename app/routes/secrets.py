@@ -1752,7 +1752,7 @@ def register(app):
                     )
                 flash("You already have access to reveal this secret", "ok")
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             if access_state == "pending":
                 if wants_htmx:
@@ -1766,7 +1766,7 @@ def register(app):
                     )
                 flash("Access request already pending approval", "ok")
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             try:
                 cur.execute(
@@ -1807,7 +1807,7 @@ def register(app):
                         )
                     flash("Access request already pending approval", "ok")
                     return redirect(
-                        url_for("project_detail", project_id=project_id, tab="access")
+                        url_for("project_detail", project_id=project_id, tab="requests")
                     )
                 audit.log_secret(
                     cur,
@@ -1835,7 +1835,7 @@ def register(app):
                 conn.rollback()
                 log.exception("access request failed")
                 flash(str(e), "error")
-        return redirect(url_for("project_detail", project_id=project_id, tab="access"))
+        return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
 
     @app.post("/projects/<uuid:project_id>/access-requests/<uuid:req_id>/approve")
     @authz.login_required
@@ -1877,7 +1877,7 @@ def register(app):
                     "error",
                 )
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             cur.execute(
                 """
@@ -1892,7 +1892,7 @@ def register(app):
             if not req or req["status"] != "pending":
                 flash("Request not found or already resolved", "error")
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             try:
                 cur.execute(
@@ -1938,7 +1938,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(url_for("project_detail", project_id=project_id, tab="access"))
+        return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
 
     @app.post("/projects/<uuid:project_id>/access-requests/<uuid:req_id>/deny")
     @authz.login_required
@@ -1963,7 +1963,7 @@ def register(app):
                     "error",
                 )
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             cur.execute(
                 """
@@ -1978,7 +1978,7 @@ def register(app):
             if not req or req["status"] != "pending":
                 flash("Request not found or already resolved", "error")
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             try:
                 cur.execute(
@@ -2012,7 +2012,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(url_for("project_detail", project_id=project_id, tab="access"))
+        return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
 
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/rollback/<uuid:version_id>")
     @authz.login_required

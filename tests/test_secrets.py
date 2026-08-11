@@ -261,7 +261,7 @@ class TestSecrets:
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/access-requests/{rid}/approve', data={'minutes': '15'}, follow_redirects=False)
         assert r.status_code == 302
-        assert 'tab=access' in r.location
+        assert 'tab=requests' in r.location
         conn.commit.assert_called()
         all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
         assert 'approved' in all_args
@@ -275,7 +275,7 @@ class TestSecrets:
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/access-requests/{rid}/deny', follow_redirects=False)
         assert r.status_code == 302
-        assert 'tab=access' in r.location
+        assert 'tab=requests' in r.location
         conn.commit.assert_called()
         all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
         assert 'denied' in all_args

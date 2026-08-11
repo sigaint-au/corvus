@@ -19,9 +19,9 @@
     <div class="reveal-head">
       <span class="badge" data-variant="{% if kind == 'kv' %}success{% elif kind in ('certificate', 'ssh') %}warning{% else %}secondary{% endif %}">{{ kind }}</span>
       <span class="reveal-actions">
-        <a href="#" class="link copy-btn" role="button"
+        <button type="button" class="link copy-btn"
            data-copy-target="{{ val_id }}"
-           data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</a>
+           data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
         <button type="submit" class="link save-link">Save</button>
         {% if view_url %}
         <a class="link" href="{{ view_url }}">Open full view</a>
@@ -47,9 +47,9 @@
   <div class="reveal-head">
     <span class="badge" data-variant="{% if kind == 'kv' %}success{% elif kind in ('certificate', 'ssh') %}warning{% else %}secondary{% endif %}">{{ kind }}</span>
     <span class="reveal-actions">
-      <a href="#" class="link copy-btn" role="button"
+      <button type="button" class="link copy-btn"
          data-copy-target="{{ val_id }}"
-         data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</a>
+         data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
       {% if view_url %}
       <a class="link" href="{{ view_url }}">Open full view</a>
       {% endif %}

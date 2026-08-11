@@ -793,6 +793,10 @@ def ensure_schema():
           ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'reveal'
         """,
         """
+        ALTER TABLE api.machine_tokens
+          ADD COLUMN IF NOT EXISTS last_used_at timestamptz
+        """,
+        """
         DO $$ BEGIN
           ALTER TABLE api.machine_tokens
             ADD CONSTRAINT machine_tokens_token_prefix_key UNIQUE (token_prefix);
@@ -814,12 +818,22 @@ def ensure_schema():
         """,
         """
         CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
-        RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = api AS $$
-          SELECT EXISTS (
-            SELECT 1 FROM api.machine_tokens
-            WHERE project_id = p_project AND token_hash = p_hash
-              AND (expires_at IS NULL OR expires_at > now())
-          );
+        RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = api AS $$
+          DECLARE
+            ok boolean;
+          BEGIN
+            SELECT EXISTS (
+              SELECT 1 FROM api.machine_tokens
+              WHERE project_id = p_project AND token_hash = p_hash
+                AND (expires_at IS NULL OR expires_at > now())
+            ) INTO ok;
+            IF ok THEN
+              UPDATE api.machine_tokens
+              SET last_used_at = now()
+              WHERE project_id = p_project AND token_hash = p_hash;
+            END IF;
+            RETURN ok;
+          END;
         $$
         """,
         "GRANT EXECUTE ON FUNCTION private.auth_machine TO authenticator",

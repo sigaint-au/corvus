@@ -478,7 +478,7 @@ def register(app):
             ]
             cur.execute(
                 """
-                SELECT id, name, token_prefix, role, expires_at, created_at
+                SELECT id, name, token_prefix, role, expires_at, last_used_at, created_at
                   FROM api.machine_tokens
                  WHERE project_id = %s::uuid
                  ORDER BY created_at DESC
@@ -707,7 +707,7 @@ def register(app):
                 return jsonify({"error": "not found"}), 404
             cur.execute(
                 """
-                SELECT id, name, token_prefix, role, expires_at, created_at
+                SELECT id, name, token_prefix, role, expires_at, last_used_at, created_at
                   FROM api.machine_tokens
                  WHERE project_id = %s::uuid
                  ORDER BY created_at DESC

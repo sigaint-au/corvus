@@ -4,27 +4,22 @@
 <div class="page-head"><h1>My profile</h1></div>
 <p class="page-desc muted">Your account, security, memberships, and recent activity.</p>
 
-<nav class="tabs" role="tablist" aria-label="Profile sections">
+<nav class="tabs" aria-label="Profile sections">
   <a href="{{ url_for('profile', tab='account') }}"
      class="tab {% if active_tab == 'account' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'account' else 'false' }}">Account</a>
+>Account</a>
   <a href="{{ url_for('profile', tab='security') }}"
      class="tab {% if active_tab == 'security' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'security' else 'false' }}">Security</a>
+>Security</a>
   <a href="{{ url_for('profile', tab='teams') }}"
      class="tab {% if active_tab == 'teams' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'teams' else 'false' }}">Teams</a>
+>Teams</a>
   <a href="{{ url_for('profile', tab='projects') }}"
      class="tab {% if active_tab == 'projects' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'projects' else 'false' }}">Projects</a>
+>Projects</a>
   <a href="{{ url_for('profile', tab='activity') }}"
      class="tab {% if active_tab == 'activity' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'activity' else 'false' }}">Activity</a>
+>Activity</a>
 </nav>
 
 {% if active_tab == 'account' %}

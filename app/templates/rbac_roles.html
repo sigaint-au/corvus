@@ -106,24 +106,21 @@
   Role bindings.
 </p>
 
-<nav class="tabs" role="tablist" aria-label="Roles sections">
+<nav class="tabs" aria-label="Roles sections">
   <a href="{{ url_for('rbac_roles', tab='builtin') }}"
      class="tab {% if active_tab == 'builtin' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'builtin' else 'false' }}">Built-in
+>Built-in
     <span class="tab-badge">{{ builtin_roles|length }}</span>
   </a>
   <a href="{{ url_for('rbac_roles', tab='custom') }}"
      class="tab {% if active_tab == 'custom' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'custom' else 'false' }}">Custom
+>Custom
     <span class="tab-badge">{{ custom_roles|length }}</span>
   </a>
   {% if can_edit %}
   <a href="{{ url_for('rbac_roles', tab='create') }}"
      class="tab {% if active_tab == 'create' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'create' else 'false' }}">Create</a>
+>Create</a>
   {% endif %}
 </nav>
 

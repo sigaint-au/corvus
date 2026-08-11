@@ -18,33 +18,28 @@
 </div>
 {% endif %}
 
-<nav class="tabs" role="tablist" aria-label="Team sections">
+<nav class="tabs" aria-label="Team sections">
   <a href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}"
      class="tab {% if active_tab == 'projects' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'projects' else 'false' }}">Projects</a>
+>Projects</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='members') }}"
      class="tab {% if active_tab == 'members' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'members' else 'false' }}">Members</a>
+>Members</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}"
      class="tab {% if active_tab == 'groups' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'groups' else 'false' }}">Groups</a>
+>Groups</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='activity') }}"
      class="tab {% if active_tab == 'activity' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'activity' else 'false' }}">Activity</a>
+>Activity</a>
   {% if is_admin %}
   <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}"
      class="tab {% if active_tab == 'access' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}"
+    
+    
      title="Role bindings for this team">Access</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'settings' else 'false' }}">Settings</a>
+>Settings</a>
   {% endif %}
 </nav>
 

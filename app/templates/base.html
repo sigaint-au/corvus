@@ -44,10 +44,10 @@
       --secondary-foreground: light-dark(#677381, #a3a9b0);
 
       --muted:               light-dark(#f0f1f2, #181b1e);
-      --muted-foreground:    light-dark(#677381, #8b929a);
+      --muted-foreground:    light-dark(#57626e, #a3aab3);
 
       --faint:               light-dark(#fafafa, #111111);
-      --faint-foreground:    light-dark(#677381, #6b7280);
+      --faint-foreground:    light-dark(#64707c, #737a84);
 
       --accent:              light-dark(#eef0f1, #1a1e22);
 
@@ -472,6 +472,21 @@
       gap: .5rem 1rem;
       width: 100%;
       min-height: 1.5rem;
+    }
+    .reveal-head .auto-hide-note {
+      display: inline-flex;
+      align-items: center;
+      gap: .28rem;
+      font-size: .72rem;
+      font-weight: 500;
+      color: var(--muted-foreground);
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: .12rem .4rem;
+      line-height: 1.3;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
     .reveal-body .input-with-btn {
       max-width: none;
@@ -1407,6 +1422,14 @@
       font-weight: 550;
       white-space: nowrap;
       margin-left: auto;
+      background: none;
+      border: none;
+      padding: .15rem 0;
+      font-family: inherit;
+      font: inherit;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
     }
     .value-field .section-head .copy-btn:hover,
     .pem-field .section-head .copy-btn:hover,
@@ -1813,6 +1836,21 @@
     table { width: 100%; border-collapse: collapse; font-size: .925rem; table-layout: auto; }
     th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
     th { color: var(--muted-foreground); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+    /* Responsive table container: horizontal scroll on narrow screens instead of
+       overflowing the card/viewport. Also supports sticky key/action columns. */
+    .table-wrap,
+    .access-requests-wrap {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      -ms-overflow-style: -ms-autohiding-scrollbar;
+    }
+    .table-wrap > table,
+    .access-requests-wrap > table {
+      min-width: 0;
+      width: 100%;
+    }
     /* Selected table row (e.g. team Groups tab) */
     tr.selected > td {
       background: var(--muted);
@@ -1890,6 +1928,23 @@
       clip: rect(0, 0, 0, 0);
       white-space: nowrap;
       border: 0;
+    }
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      z-index: 1000;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      padding: .6rem .9rem;
+      border-radius: 0 0 var(--radius) 0;
+      font-weight: 600;
+      font-size: .875rem;
+      text-decoration: none;
+    }
+    .skip-link:focus {
+      left: 0;
+      color: var(--primary-foreground);
     }
     .token-once {
       background: color-mix(in srgb, var(--warning) 12%, var(--background));
@@ -1991,6 +2046,20 @@
     .acts .danger,
     a.danger,
     button.link.danger { color: var(--danger); }
+    .acts a:focus-visible,
+    .acts button.link:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+    a.secret-masked:focus-visible,
+    button.secret-masked:focus-visible {
+      outline: 2px solid var(--ring);
+      outline-offset: 2px;
+      background: var(--muted);
+      border-color: var(--border);
+      text-decoration: none;
+    }
     .acts a.reveal-toggle {
       font-size: .875rem;
       text-decoration: none;
@@ -2092,6 +2161,38 @@
       .sidebar-foot .logout-link { width: auto; }
 
       .main { padding: 1rem 1rem 2.5rem; }
+      /* Keep the Key and Actions columns pinned while a wide table scrolls,
+         so context is never lost on phones. Cards/panels use --card as the
+         opaque backing so scrolled rows hide underneath. */
+      .table-wrap td.col-key,
+      .table-wrap th:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: var(--card);
+        box-shadow: 1px 0 0 var(--border);
+      }
+      .table-wrap tr:nth-child(odd) td.col-key {
+        background: var(--card);
+      }
+      .table-wrap td.acts-menu {
+        position: sticky;
+        right: 0;
+        z-index: 1;
+        background: var(--card);
+        box-shadow: -1px 0 0 var(--border);
+      }
+      /* Expanded inline reveal: let the cell take full available width and
+         scroll, so multi-line/structured values don't blow out the row. */
+      td.secret-cell:has(.reveal-wrap) {
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+      }
+      td.secret-cell:has(.reveal-wrap) .reveal-pre,
+      td.secret-cell:has(.reveal-wrap) textarea.secret-value-area {
+        max-height: 12rem;
+      }
     }
     /* ── Machine account create + scope chips ── */
     .machine-accounts .token-create-card,
@@ -2185,6 +2286,7 @@
   </style>
 </head>
 <body class="{% if session.get('user_id') %}app{% else %}auth{% endif %}">
+  <a class="skip-link" href="#main-content">Skip to content</a>
   {% if classification and classification.enabled %}
   <div class="class-banner"
        style="background: {{ classification.color }}; color: {{ classification.fg }};"
@@ -2251,6 +2353,10 @@
       'rbac_roles', 'rbac_roles_create', 'rbac_roles_delete',
       'rbac_access_review',
     ) %}
+    {# Role-bindings nav: the Organisation item is team/project/secret-scoped; the
+       Administration item is the general (scope-less) view. Highlight exactly one. #}
+    {% set is_rbac_bindings = ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}
+    {% set rbac_scoped = (request.args.get('scope_id') or ''|string)|string %}
     {# Server defaults only used until localStorage preference is set #}
     {% set workspace_open = ep in workspace_eps or (ep not in account_eps and ep not in access_eps and ep not in admin_eps) %}
     {% set account_open = ep in account_eps %}
@@ -2274,7 +2380,7 @@
            <a class="side-nav-link {% if ep in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}"
               href="{{ url_for('teams') }}">Teams</a>
            {% if session.get('team_id') %}
-           <a class="side-nav-link {% if ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}active{% endif %}"
+           <a class="side-nav-link {% if is_rbac_bindings and rbac_scoped %}active{% endif %}"
               href="{{ url_for('rbac_bindings', scope='team', scope_id=session.get('team_id')) }}">Role bindings</a>
            {% endif %}
           <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}"
@@ -2289,7 +2395,7 @@
       <details class="side-group" data-side-group="administration"{% if admin_open %} open{% endif %}>
         <summary>Administration</summary>
         <div class="side-group-body">
-          <a class="side-nav-link {% if ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}active{% endif %}"
+          <a class="side-nav-link {% if is_rbac_bindings and not rbac_scoped %}active{% endif %}"
              href="{{ url_for('rbac_bindings', scope='team') }}">Role bindings</a>
           <a class="side-nav-link {% if ep in ('rbac_roles', 'rbac_roles_create', 'rbac_roles_delete') %}active{% endif %}"
              href="{{ url_for('rbac_roles') }}">Roles</a>
@@ -2393,7 +2499,7 @@
     });
   })();
   </script>
-  <div class="main">
+  <div class="main" id="main-content">
   {% else %}
   <div class="auth-wrap">
   <div class="auth-card">
@@ -2650,6 +2756,16 @@
           if (span) span.textContent = '(' + label + ')';
         }
       });
+      /* Auto-hide countdown note (revealed secret rows) */
+      (root.querySelectorAll ? root.querySelectorAll('[data-hide-until]') : []).forEach(function (el) {
+        var until = el.getAttribute('data-hide-until');
+        if (!until) return;
+        var t = Date.parse(until);
+        if (isNaN(t)) return;
+        var s = Math.max(0, Math.ceil((t - Date.now()) / 1000));
+        var count = el.querySelector('.auto-hide-count');
+        if (count) count.textContent = s + 's';
+      });
     }
     setInterval(function () { tickGrantCountdowns(document); }, 1000);
     document.addEventListener('DOMContentLoaded', function () {
@@ -2668,6 +2784,21 @@
       var sid = wrap.getAttribute('data-secret-id') || '';
       var key = sid || String(Math.random());
       if (hideTimers[key]) clearTimeout(hideTimers[key]);
+      /* Disclose the auto-hide so users aren't surprised when it re-masks. */
+      var head = wrap.querySelector('.reveal-head') || wrap;
+      var note = head.querySelector('.auto-hide-note');
+      if (!note && secs > 0) {
+        note = document.createElement('span');
+        note.className = 'auto-hide-note';
+        note.innerHTML =
+          '<span class="auto-hide-label">Auto-hides in</span> <span class="auto-hide-count"></span>';
+        head.appendChild(note);
+      }
+      if (note) {
+        note.setAttribute('data-hide-until', new Date(Date.now() + secs * 1000).toISOString());
+        var count = note.querySelector('.auto-hide-count');
+        if (count) count.textContent = secs + 's';
+      }
       hideTimers[key] = setTimeout(function () {
         hideTimers[key] = null;
         var cell = wrap.closest('.secret-cell');
@@ -2834,11 +2965,17 @@
         var opt = action.options[action.selectedIndex];
         var url = opt && opt.getAttribute('data-url');
         var confirmMsg = opt && opt.getAttribute('data-confirm');
+        var n = selected().length;
         if (!url) return;
-        if (confirmMsg && !window.confirm(confirmMsg)) return;
-        // Extra confirm for permanent delete
+        if (confirmMsg) {
+          confirmMsg = String(confirmMsg).replace(/\{n\}/g, String(n));
+          if (!window.confirm(confirmMsg)) return;
+        }
+        // Extra confirm for permanent delete (count-aware)
         if (action.value === 'purge'
-            && !window.confirm('Delete forever? This cannot be undone.')) {
+            && !window.confirm(
+                 'Permanently delete ' + n + (n === 1 ? ' secret' : ' secrets')
+                 + ' forever? This cannot be undone.')) {
           return;
         }
         var field = form.querySelector('#bulk-action-field')

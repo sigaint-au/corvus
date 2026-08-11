@@ -4,19 +4,16 @@
 <div class="page-head"><h1>Auditing</h1></div>
 <p class="page-desc muted">Global admin only. Access reviews, role-change history, and audit export / retention.</p>
 
-<nav class="tabs" role="tablist" aria-label="Auditing sections">
+<nav class="tabs" aria-label="Auditing sections">
   <a href="{{ url_for('admin_audit', tab='access') }}"
      class="tab {% if active_tab == 'access' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}">Access review</a>
+>Access review</a>
   <a href="{{ url_for('admin_audit', tab='roles') }}"
      class="tab {% if active_tab == 'roles' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'roles' else 'false' }}">Role changes</a>
+>Role changes</a>
   <a href="{{ url_for('admin_audit', tab='export') }}"
      class="tab {% if active_tab == 'export' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'export' else 'false' }}">Export &amp; retention</a>
+>Export &amp; retention</a>
 </nav>
 
 {% if active_tab == 'access' %}

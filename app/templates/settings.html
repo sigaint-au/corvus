@@ -4,39 +4,31 @@
 <div class="page-head"><h1>Server settings</h1></div>
 <p class="page-desc muted">Global admin only. Changes apply immediately for all users.</p>
 
-<nav class="tabs" role="tablist" aria-label="Server settings sections">
+<nav class="tabs" aria-label="Server settings sections">
   <a href="{{ url_for('server_settings', tab='general') }}"
      class="tab {% if active_tab == 'general' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'general' else 'false' }}">General</a>
+>General</a>
   <a href="{{ url_for('server_settings', tab='branding') }}"
      class="tab {% if active_tab == 'branding' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'branding' else 'false' }}">Branding</a>
+>Branding</a>
   <a href="{{ url_for('server_settings', tab='banner') }}"
      class="tab {% if active_tab == 'banner' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'banner' else 'false' }}">Classification</a>
+>Classification</a>
   <a href="{{ url_for('server_settings', tab='admins') }}"
      class="tab {% if active_tab == 'admins' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'admins' else 'false' }}">Admins</a>
+>Admins</a>
   <a href="{{ url_for('server_settings', tab='users') }}"
      class="tab {% if active_tab == 'users' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'users' else 'false' }}">Users</a>
+>Users</a>
   <a href="{{ url_for('server_settings', tab='ldap') }}"
      class="tab {% if active_tab == 'ldap' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'ldap' else 'false' }}">LDAP</a>
+>LDAP</a>
   <a href="{{ url_for('server_settings', tab='oidc') }}"
      class="tab {% if active_tab == 'oidc' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'oidc' else 'false' }}">OIDC / SSO</a>
+>OIDC / SSO</a>
   <a href="{{ url_for('server_settings', tab='email') }}"
      class="tab {% if active_tab == 'email' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'email' else 'false' }}">Email</a>
+>Email</a>
 </nav>
 
 {% if active_tab == 'general' %}
