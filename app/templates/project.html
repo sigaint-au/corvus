@@ -162,13 +162,9 @@
     {# Preserve list filters across HTMX create round-trips #}
     <input type="hidden" name="page" value="{{ secrets_pager.page if secrets_pager else 1 }}">
     <input type="hidden" name="q" value="{{ search_q or '' }}">
+    {# Quick-add only creates plain secrets; use Advanced create for structured types. #}
+    <input type="hidden" name="kind" value="plain">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
-     <label>Type
-       <select name="kind" id="secret-kind" aria-label="Secret type">
-         <option value="plain" selected>Plain</option>
-       </select>
-       <span class="field-hint muted">For database, certificate, SSH, or key/value secrets, use <a href="{{ url_for('secret_new', project_id=project.id) }}">Advanced create</a>.</span>
-     </label>
     <label class="value-label">Value
       <span class="input-with-btn">
         <input type="password" name="value" id="secret-value" required placeholder="••••••••" autocomplete="off">
@@ -214,33 +210,6 @@
     var form = document.getElementById('secret-form');
     var btn = document.getElementById('gen-btn');
     var inp = document.getElementById('secret-value');
-    var kindSel = document.getElementById('secret-kind');
-    var kindTouched = false;
-    if (kindSel) {
-      kindSel.addEventListener('change', function () { kindTouched = true; });
-    }
-    function suggestKind(value) {
-      var v = value || '';
-      if (/BEGIN CERTIFICATE/.test(v)) return 'certificate';
-      if (/BEGIN (?:OPENSSH |RSA |EC |DSA |ED25519 )?PRIVATE KEY/.test(v)) return 'ssh';
-      if (/^(postgresql|postgres|mysql|mongodb|redis|amqp|https?):\/\//i.test(v.trim()) && v.indexOf('\n') < 0) {
-        return 'database';
-      }
-      var lines = v.split(/\n/).map(function (l) { return l.trim(); }).filter(function (l) {
-        return l && l.charAt(0) !== '#';
-      });
-      var kv = 0;
-      for (var i = 0; i < lines.length; i++) {
-        if (/^[A-Za-z_][A-Za-z0-9_.-]*=/.test(lines[i])) kv++;
-      }
-      if (lines.length >= 2 && kv >= 2) return 'kv';
-      return 'plain';
-    }
-    function maybeSuggest() {
-      if (!kindSel || kindTouched || !inp) return;
-      var s = suggestKind(inp.value);
-      if (s) kindSel.value = s;
-    }
     if (!btn || !inp) return;
     function maskValue() {
       inp.type = 'password';
@@ -257,19 +226,11 @@
       inp.focus();
       inp.select();
     });
-    inp.addEventListener('input', function () {
-      maybeSuggest();
-    });
-    inp.addEventListener('paste', function () {
-      setTimeout(maybeSuggest, 0);
-    });
     if (form) {
       form.addEventListener('htmx:afterRequest', function (e) {
         if (e.detail && e.detail.successful) {
           form.reset();
           maskValue();
-          kindTouched = false;
-          if (kindSel) kindSel.value = 'plain';
         }
       });
     }
@@ -763,38 +724,55 @@
 {% elif active_tab == 'settings' and can_settings %}
 {% if can_admin %}
 <section>
-  <h2>General</h2>
-  <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="row">
+  <div class="section-head">
+    <h2>General</h2>
+    <p class="muted" style="margin:0">Settings applied when new secrets are created in this project.</p>
+  </div>
+  <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label class="full-width">Description
-      <input type="text" name="description" maxlength="500"
-             value="{{ project.description or '' }}"
-             placeholder="Short purpose for this project">
-    </label>
-    <label class="checkbox-label">
-      <input type="checkbox" name="require_reveal_approval" value="1"
-             {% if require_reveal_approval %}checked{% endif %}>
-      Require approval to reveal secrets (default for this project)
-    </label>
-    <label>Default access for new secrets
-      <select name="default_acl_mode">
-        <option value="inherit" {% if (project.default_acl_mode or 'inherit') == 'inherit' %}selected{% endif %}>
-          Inherit team / project roles
-        </option>
-        <option value="restricted" {% if project.default_acl_mode == 'restricted' %}selected{% endif %}>
-          Restricted (role bindings only)
-        </option>
-      </select>
-    </label>
-    <button type="submit">Save</button>
+    <fieldset class="field-group">
+      <legend>Project</legend>
+      <div class="field-grid">
+        <label class="span-2">Description
+          <input type="text" name="description" maxlength="500"
+                 value="{{ project.description or '' }}"
+                 placeholder="Short purpose for this project">
+          <span class="field-hint">Shown at the top of this project alongside its name.</span>
+        </label>
+      </div>
+    </fieldset>
+    <fieldset class="field-group">
+      <legend>Reveal access</legend>
+      <div class="field-grid">
+        <label class="check-row span-2">
+          <input type="checkbox" name="require_reveal_approval" value="1"
+                 {% if require_reveal_approval %}checked{% endif %}>
+          Require approval to reveal secrets
+        </label>
+        <label>Default access for new secrets
+          <select name="default_acl_mode">
+            <option value="inherit" {% if (project.default_acl_mode or 'inherit') == 'inherit' %}selected{% endif %}>
+              Inherit team / project roles
+            </option>
+            <option value="restricted" {% if project.default_acl_mode == 'restricted' %}selected{% endif %}>
+              Restricted (role bindings only)
+            </option>
+          </select>
+        </label>
+        <span class="field-hint span-2">
+          The project default is a baseline: individual secrets can override it (require or exempt)
+          on their Access tab, and existing secrets keep their current mode.
+        </span>
+        <span class="field-hint span-2">
+          <strong>Inherit</strong> means new secrets follow team/project roles;
+          <strong>Restricted</strong> starts them locked to role bindings only.
+        </span>
+      </div>
+    </fieldset>
+    <p class="form-actions">
+      <button type="submit" class="button">Save changes</button>
+    </p>
   </form>
-  <p class="muted">
-    Reveal approval is the project default; individual secrets can override it
-    (require or exempt) on their Access tab. The default access mode applies to new
-    secrets — <strong>Inherit</strong> means new secrets follow team/project roles;
-    <strong>Restricted</strong> means they start locked to role bindings only.
-    Existing secrets keep their current mode.
-  </p>
 </section>
 {% endif %}
 {% if can_delete %}
