@@ -955,8 +955,8 @@ def register(app):
                                 """,
                                 (user_ids,),
                             )
-                            for row in acur.fetchall() or []:
-                                email_map[str(row["id"])] = row
+                            for urow in acur.fetchall() or []:
+                                email_map[str(urow["id"])] = urow
                     except Exception:
                         email_map = {}
                 for b in secret_bindings:

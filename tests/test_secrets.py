@@ -281,6 +281,67 @@ class TestSecrets:
         assert 'denied' in all_args
         assert 'access_denied' in all_args
 
+    def test_secret_view_keeps_secret_row_after_binding_enrichment(self):
+        """Regression: the admin binding email-enrichment loop previously shadowed
+        the `row` variable, clobbering the secret row and raising KeyError: 'key'
+        later when rendering/auditing the reveal. (secret_view reveal path)."""
+        from contextlib import contextmanager
+        sid = uuid4()
+        binder_uid = str(uuid4())
+        enc = crypto.encrypt('super-secret')
+        conn, cur = _conn()
+        row = {
+            'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'note': '', 'kind': 'plain',
+            'expires_at': None, 'requires_approval': None, 'acl_mode': 'inherit',
+            'created_at': '2026-01-01', 'updated_at': '2026-01-01',
+            'last_accessed_at': None, 'last_accessed_by': None,
+            'project_name': 'prod', 'require_reveal_approval': False,
+        }
+        # as_user cursor fetchone order:
+        #   [secret row, can_write, can_reveal_acl, helper can_admin_project, can_admin]
+        cur.fetchone.side_effect = [row, {'w': True}, {'r': True}, {'a': True}, {'a': True}]
+        bindings = [{'id': sid, 'subject_kind': 'User', 'subject_id': binder_uid,
+                     'created_at': '2026-01-01', 'role_name': 'secret-reveal', 'group_name': None}]
+        # fetchall order: custom_meta, secret_bindings, team_groups
+        cur.fetchall.side_effect = [[], bindings, []]
+        # admin connection (enrichment) — returns the binder user row
+        acur = MagicMock()
+        acur.fetchall.return_value = [{'id': binder_uid, 'email': 'b@x.com', 'name': 'Bob'}]
+
+        @contextmanager
+        def _acur_cm(*_a, **_k):
+            yield acur
+
+        aconn = MagicMock()
+        aconn.__enter__ = MagicMock(return_value=aconn)
+        aconn.__exit__ = MagicMock(return_value=False)
+        aconn.cursor.side_effect = _acur_cm
+        with patch.object(db, 'as_user', return_value=conn), \
+             patch.object(db, 'connect_admin', return_value=aconn):
+            r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/view')
+        assert r.status_code == 200
+        assert b'API_KEY' in r.data
+        assert b'super-secret' in r.data
+
+    def test_secret_view_plain_get(self):
+        sid = uuid4()
+        enc = crypto.encrypt('plain-value')
+        conn, cur = _conn()
+        row = {
+            'id': sid, 'key': 'DATABASE_URL', 'value_enc': enc, 'note': '', 'kind': 'plain',
+            'expires_at': None, 'requires_approval': None, 'acl_mode': 'inherit',
+            'created_at': '2026-01-01', 'updated_at': '2026-01-01',
+            'last_accessed_at': None, 'last_accessed_by': None,
+            'project_name': 'prod', 'require_reveal_approval': False,
+        }
+        cur.fetchone.side_effect = [row, {'w': True}, {'r': True}, {'a': True}, {'a': False}]
+        cur.fetchall.side_effect = [[], [], []]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/view')
+        assert r.status_code == 200
+        assert b'DATABASE_URL' in r.data
+        assert b'plain-value' in r.data
+
     def test_hide_secret(self):
         sid = uuid4()
         with self.client.session_transaction() as s:
