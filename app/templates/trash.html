@@ -49,6 +49,7 @@
   {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
 </form>
 <section class="list-panel">
+<div class="table-wrap">
 <table>
   <thead>
     <tr>
@@ -72,16 +73,16 @@
       <td class="col-key"><code class="k">{{ item.key }}</code></td>
       <td><a href="{{ url_for('project_detail', project_id=item.project_id) }}">{{ item.project_name }}</a></td>
       <td class="col-note muted">{{ item.note }}</td>
-      <td class="muted">{{ item.deleted_at }}</td>
+       <td class="muted" title="{{ item.deleted_at|time_when }}">{{ item.deleted_at|time_ago }}</td>
       <td class="acts">
         {% if item.can_write %}
         <form method="post" action="{{ url_for('restore_secret', secret_id=item.id, q=search_q or none) }}" class="inline"
-              onsubmit="return confirm('Restore {{ item.key }} to the project?')">
+                             onsubmit="return confirm({{ ('Restore ' ~ item.key ~ ' to the project?')|tojson }})">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="link">Restore</button>
         </form>
         <form method="post" action="{{ url_for('purge_secret', secret_id=item.id, q=search_q or none) }}" class="inline"
-              onsubmit="return confirm('Permanently delete {{ item.key }}?') && confirm('Delete forever — this cannot be undone. Continue?')">
+                             onsubmit="return confirm({{ ('Permanently delete ' ~ item.key ~ '?')|tojson }}) && confirm('Delete forever — this cannot be undone. Continue?')">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="link danger">Delete forever</button>
         </form>
@@ -93,6 +94,7 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
 </section>
 {% else %}
 <p class="empty">

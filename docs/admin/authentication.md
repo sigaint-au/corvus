@@ -135,10 +135,11 @@ unique name).
 
 Create a token on a project under **Integrations** (or **Tokens**). Roles:
 
-| Role | `GET` / list | Create / update / delete |
-|------|--------------|---------------------------|
-| `read-only` (default) | yes | **403** |
-| `write` | yes | yes |
+| Role | Metadata | Reveal values | Write |
+|------|----------|---------------|-------|
+| `read` | yes | no | no |
+| `reveal` | yes | yes | no |
+| `write` | yes | yes | yes |
 
 Raw `ss_…` tokens are stored only as SHA-256 hashes; the raw value is shown
 once at creation.
@@ -311,7 +312,7 @@ Key security properties:
 - **Server settings → OIDC / SSO → OIDC group → roles** maps a group to
   `global_admin`.
 - **Team → Settings → OIDC group membership** maps a directory group to a
-  direct `team_members` row. Manual memberships are never overwritten.
+  directory-managed `rbac.bindings` row. Manual memberships are never overwritten.
 - **Team → Groups** can create a first-class group with `source=oidc` and an
   `external_key` matching the claim value; on login, matching users are synced
   into `group_members`. That group can hold a **team role**, a **project role**,
@@ -339,7 +340,7 @@ POST /login  (email, password)
 
 - LDAP over cleartext is rejected unless StartTLS is enabled.
 - **Team → Settings → LDAP group membership** maps a group to a direct
-  `team_members` role.
+  team-scope RBAC role binding.
 - **Team → Groups** with `source=ldap` + `external_key` syncs membership into
   `group_members`.
 - **Server settings → LDAP → LDAP group → roles** maps a group to

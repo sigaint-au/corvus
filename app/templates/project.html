@@ -134,10 +134,12 @@
         <label class="visually-hidden" for="bulk-action">Bulk action</label>
         <select id="bulk-action" class="bulk-action" aria-label="Bulk action">
           <option value="">Action…</option>
-          <option value="export_env"
-                  data-url="{{ url_for('bulk_export', project_id=project.id, format='env') }}">Export .env</option>
-          <option value="export_json"
-                  data-url="{{ url_for('bulk_export', project_id=project.id, format='json') }}">Export JSON</option>
+           <option value="export_env"
+                   data-url="{{ url_for('bulk_export', project_id=project.id, format='env') }}"
+                   data-confirm="Download plaintext secrets for this project?">Export .env</option>
+           <option value="export_json"
+                   data-url="{{ url_for('bulk_export', project_id=project.id, format='json') }}"
+                   data-confirm="Download plaintext secrets for this project?">Export JSON</option>
           {% if can_write %}
           <option value="delete"
                   data-url="{{ url_for('bulk_secrets', project_id=project.id) }}"
@@ -174,15 +176,12 @@
     <input type="hidden" name="page" value="{{ secrets_pager.page if secrets_pager else 1 }}">
     <input type="hidden" name="q" value="{{ search_q or '' }}">
     <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
-    <label>Type
-      <select name="kind" id="secret-kind" aria-label="Secret type">
-        <option value="plain" selected>Plain</option>
-        <option value="database">Database</option>
-        <option value="certificate">Certificate</option>
-        <option value="ssh">SSH</option>
-        <option value="kv">Key / value</option>
-      </select>
-    </label>
+     <label>Type
+       <select name="kind" id="secret-kind" aria-label="Secret type">
+         <option value="plain" selected>Plain</option>
+       </select>
+       <span class="field-hint muted">For database, certificate, SSH, or key/value secrets, use <a href="{{ url_for('secret_new', project_id=project.id) }}">Advanced create</a>.</span>
+     </label>
     <label class="value-label">Value
       <span class="input-with-btn">
         <input type="password" name="value" id="secret-value" required placeholder="••••••••" autocomplete="off">
@@ -532,12 +531,12 @@
     </div>
   </div>
   <p class="page-desc muted">
-    Project-scoped tokens for ESO and CI. Human ACLs and reveal-approval do not apply —
+    Project-scoped machine accounts for ESO and CI. Human access controls and reveal approval do not apply —
     use a <strong>key allow-list</strong> when automation should only see some secrets.
   </p>
 
   {% if can_write %}
-  {% with form_id='token-form', default_name='openshift', compact=false %}
+  {% with form_id='token-form', default_name='machine', compact=false %}
     {% include "partials/token_create_form.html" %}
   {% endwith %}
   {% endif %}
@@ -548,8 +547,9 @@
     <table>
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Prefix</th>
+           <th>Name</th>
+           <th>Machine account ID</th>
+           <th>Prefix</th>
           <th>Role</th>
           <th>Key scope</th>
           <th>Created</th>
@@ -560,8 +560,9 @@
       <tbody>
       {% for t in tokens %}
         <tr>
-          <td>{{ t.name }}</td>
-          <td><code class="k">{{ t.token_prefix }}…</code></td>
+           <td>{{ t.name }}</td>
+           <td><code class="k">{{ t.id }}</code></td>
+           <td><code class="k">{{ t.token_prefix }}…</code></td>
           <td><span class="badge" data-variant="secondary">{{ t.role or 'reveal' }}</span></td>
           <td class="col-note">
             {% if t.scopes %}
@@ -784,7 +785,7 @@
         <option value="inherit" {% if (project.default_acl_mode or 'inherit') == 'inherit' %}selected{% endif %}>
           Inherit project access
         </option>
-        <option value="restricted" {% if project.default_acl_mode in ('restricted', 'custom') %}selected{% endif %}>
+        <option value="restricted" {% if project.default_acl_mode == 'restricted' %}selected{% endif %}>
           Restricted (role bindings only)
         </option>
       </select>

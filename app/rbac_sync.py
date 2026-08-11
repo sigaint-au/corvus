@@ -1,9 +1,6 @@
 """RBAC binding helpers (k8s model).
 
-Membership UIs (team Members, project Access) write ``rbac.bindings`` directly.
-``backfill_all_legacy_to_bindings`` is a one-shot migration for existing
-``team_members`` / ``project_members`` / ``project_group_roles`` rows.
-Legacy tables are NOT written to going forward (pure RBAC model).
+Membership UIs and directory synchronization write ``rbac.bindings`` directly.
 """
 
 from __future__ import annotations
@@ -144,7 +141,7 @@ def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, cr
 def sync_group_project_binding(
     cur, *, group_id, project_id, role: str | None, created_by=None
 ):
-    """Upsert or clear Group→project binding from project_group_roles."""
+    """Upsert or clear a Group→project RBAC binding."""
     cur.execute(
         """
         DELETE FROM rbac.bindings
@@ -176,7 +173,9 @@ def sync_group_project_binding(
     )
 
 
-def sync_user_team_binding(cur, *, user_id, team_id, role: str | None, created_by=None):
+def sync_user_team_binding(
+    cur, *, user_id, team_id, role: str | None, created_by=None, source="manual"
+):
     """Upsert User→team binding (role: owner|admin|member|viewer or None to clear)."""
     ensure_not_last_team_owner(
         cur,
@@ -190,12 +189,13 @@ def sync_user_team_binding(cur, *, user_id, team_id, role: str | None, created_b
         DELETE FROM rbac.bindings
         WHERE subject_kind = 'User' AND subject_id = %s::uuid
           AND scope_kind = 'team' AND scope_id = %s::uuid
+          AND source = %s
           AND role_id IN (
             SELECT id FROM rbac.roles
             WHERE name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
           )
         """,
-        (str(user_id), str(team_id)),
+        (str(user_id), str(team_id), source),
     )
     if not role:
         return
@@ -208,10 +208,10 @@ def sync_user_team_binding(cur, *, user_id, team_id, role: str | None, created_b
     cur.execute(
         """
         INSERT INTO rbac.bindings
-          (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
-        VALUES (%s::uuid, 'User', %s::uuid, 'team', %s::uuid, %s::uuid)
+          (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by, source)
+        VALUES (%s::uuid, 'User', %s::uuid, 'team', %s::uuid, %s::uuid, %s)
         """,
-        (rid, str(user_id), str(team_id), str(created_by) if created_by else None),
+        (rid, str(user_id), str(team_id), str(created_by) if created_by else None, source),
     )
 
 
@@ -255,8 +255,8 @@ def list_scope_bindings(cur, scope_kind: str, scope_id) -> list:
     """List bindings at a scope (with group_name; emails filled by caller)."""
     cur.execute(
         """
-        SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
-               b.created_at, r.name AS role_name, r.built_in,
+         SELECT b.id, b.subject_kind, b.subject_id, b.scope_kind, b.scope_id,
+                b.created_at, b.source, r.name AS role_name, r.built_in,
                g.name AS group_name
         FROM rbac.bindings b
         JOIN rbac.roles r ON r.id = b.role_id
@@ -306,57 +306,3 @@ def enrich_binding_emails(bindings: list) -> list:
         rn = b.get("role_name") or ""
         b["role_short"] = RBAC_TO_PROJECT_ROLE.get(rn) or RBAC_TO_TEAM_ROLE.get(rn) or rn
     return bindings
-
-
-def backfill_all_legacy_to_bindings(cur) -> dict:
-    """One-shot: copy team_members, project_members, group roles into bindings.
-
-    Does not touch secrets (Permissions tab writes secret-scope bindings; secret_acl dropped).
-    Safe to re-run (deletes then re-inserts per subject/scope role family).
-    """
-    stats = {"team_members": 0, "project_members": 0, "group_team": 0, "group_project": 0}
-    cur.execute(
-        "SELECT team_id, user_id, role FROM api.team_members"
-    )
-    for row in cur.fetchall() or []:
-        sync_user_team_binding(
-            cur,
-            user_id=row["user_id"],
-            team_id=row["team_id"],
-            role=row["role"],
-        )
-        stats["team_members"] += 1
-    cur.execute(
-        "SELECT project_id, user_id, role FROM api.project_members"
-    )
-    for row in cur.fetchall() or []:
-        sync_user_project_binding(
-            cur,
-            user_id=row["user_id"],
-            project_id=row["project_id"],
-            role=row["role"],
-        )
-        stats["project_members"] += 1
-    cur.execute(
-        "SELECT id, team_id, team_role FROM api.groups WHERE team_role IS NOT NULL"
-    )
-    for row in cur.fetchall() or []:
-        sync_group_team_binding(
-            cur,
-            group_id=row["id"],
-            team_id=row["team_id"],
-            team_role=row["team_role"],
-        )
-        stats["group_team"] += 1
-    cur.execute(
-        "SELECT project_id, group_id, role FROM api.project_group_roles"
-    )
-    for row in cur.fetchall() or []:
-        sync_group_project_binding(
-            cur,
-            group_id=row["group_id"],
-            project_id=row["project_id"],
-            role=row["role"],
-        )
-        stats["group_project"] += 1
-    return stats

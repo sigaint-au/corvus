@@ -195,7 +195,13 @@ class TestLDAPMaps:
                 yield fo[-1]
 
         cur.fetchone.side_effect = _fo()
-        cur.fetchall.side_effect = fa
+        def _fa():
+            for rows in fa:
+                yield rows
+            while True:
+                yield []
+
+        cur.fetchall.side_effect = _fa()
         with patch.object(db, 'connect_admin', return_value=conn):
             user = ldap_auth.sync_ldap_user(
                 'u@ex.com', 'U', ['CN=admins,OU=g,DC=x']
@@ -203,6 +209,6 @@ class TestLDAPMaps:
         assert str(user['id']) == str(uid)
         assert user['is_global_admin']
         executed = ' '.join((str(c) for c in cur.execute.call_args_list)).lower()
-        assert 'team_members' in executed
+        assert 'rbac.bindings' in executed
         assert 'upsert_ldap_user' in executed
 

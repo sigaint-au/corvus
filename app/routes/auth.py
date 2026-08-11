@@ -1054,15 +1054,17 @@ def register(app):
                 if tab in ("account", "teams"):
                     cur.execute(
                         """
-                        SELECT t.id, t.name, tm.role, tm.source, t.created_at,
+                        SELECT t.id, t.name,
+                               api.team_role(t.id) AS role,
+                               'rbac' AS source,
+                               t.created_at,
                           (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id)
                             AS project_count
                         FROM api.teams t
-                        JOIN api.team_members tm ON tm.team_id = t.id
-                        WHERE tm.user_id = %s
+                        WHERE api.is_team_member(t.id)
                         ORDER BY t.name
                         """,
-                        (uid,),
+                        (),
                     )
                     teams = cur.fetchall() or []
 
@@ -1071,20 +1073,17 @@ def register(app):
                         """
                         SELECT p.id, p.name, p.created_at,
                                t.id AS team_id, t.name AS team_name,
-                               tm.role AS team_role,
-                               pm.role AS project_role,
+                               api.team_role(t.id) AS team_role,
+                               api.project_role(p.id) AS project_role,
                           (SELECT count(*) FROM api.secrets s
                            WHERE s.project_id = p.id AND s.deleted_at IS NULL)
                             AS secret_count
                         FROM api.projects p
                         JOIN api.teams t ON t.id = p.team_id
-                        LEFT JOIN api.team_members tm
-                          ON tm.team_id = t.id AND tm.user_id = %s
-                        LEFT JOIN api.project_members pm
-                          ON pm.project_id = p.id AND pm.user_id = %s
+                        WHERE api.can_read_project(p.id)
                         ORDER BY t.name, p.name
                         """,
-                        (uid, uid),
+
                     )
                     projects = cur.fetchall() or []
 

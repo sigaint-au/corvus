@@ -1,7 +1,7 @@
 {# Machine token create form — modern card layout + chip allow-list.
    Params: form_id, return_tab (optional), default_name, compact (bool for ESO) #}
 {% set form_id = form_id|default('token-form') %}
-{% set default_name = default_name|default('openshift') %}
+{% set default_name = default_name|default('machine') %}
 {% set return_tab = return_tab|default(none) %}
 {% set compact = compact|default(false) %}
 <article class="card token-create-card" id="{{ form_id }}-card">
@@ -91,7 +91,7 @@
     </div>
 
     <footer class="token-create-actions">
-      <button type="submit">{% if compact %}Create machine account{% else %}Create token{% endif %}</button>
+      <button type="submit">Create machine account</button>
     </footer>
   </form>
 </article>

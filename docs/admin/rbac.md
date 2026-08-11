@@ -31,7 +31,7 @@ Organisation
 |-------|------------------|------------------|
 | **Team** | See the team, its projects (default), team settings | Direct **Members**, or a **Group** with a team role |
 | **Project** | Read / write secrets, manage project settings | Direct **project members**, **group roles**, or inherit from team role |
-| **Secret** | Tighter than project (who may list / reveal / edit) | Secret **ACL mode** + optional user/group grants |
+| **Secret** | Tighter than project (who may list / reveal / edit) | Secret access mode + optional user/group role bindings |
 | **Global admin** | Everything | Server bootstrap email or LDAP/OIDC → `global_admin` map |
 
 **Highest matching role wins** when a user has both a direct grant and one or
@@ -57,7 +57,7 @@ always keep project admin/write on every project in the team.
 
 | Role | Can |
 |------|-----|
-| **admin** | Write secrets + manage project members / group roles / secret ACLs / approval settings |
+| **admin** | Write secrets + manage project and secret role bindings / approval settings |
 | **write** | Create, edit, delete secrets |
 | **read** | List secrets and metadata; reveal depends on ACL + approval policy |
 
@@ -85,7 +85,7 @@ Set on the secret (create form or secret full view). See also
 | **custom** (legacy alias) | Treated as `restricted` |
 
 **Always full access on a secret:** global admins and anyone with
-`can_admin_project` for that secret's project. The legacy `api.secret_acl`
+`can_admin_project` for that secret's project. Secret access is represented by
 table has been removed.
 
 **Machine tokens** (`ss_…`) and ESO use SECURITY DEFINER helpers and are **not**
@@ -174,16 +174,16 @@ access. For secret ACLs, they still need `can_read_project` first.
 
 Two complementary mapping styles — use either or both.
 
-### 5a. Legacy direct maps (team membership rows)
+### 5a. Directory-managed RBAC bindings
 
 | Where | Effect |
 |-------|--------|
-| **Team → Settings → LDAP group membership** | Matching LDAP group → `team_members` row |
-| **Team → Settings → OIDC group membership** | Matching OIDC group → `team_members` row |
+| **Team → Settings → LDAP group membership** | Matching LDAP group → directory-managed `rbac.bindings` row |
+| **Team → Settings → OIDC group membership** | Matching OIDC group → directory-managed `rbac.bindings` row |
 | **Server settings → LDAP / OIDC group → roles** | Matching group → `global_admin` |
 
 - Applied on each LDAP bind login / OIDC login.
-- **Manual** `team_members` rows are never overwritten or deleted by sync.
+- Manual `rbac.bindings` are never overwritten or deleted by directory sync.
 - Highest matching role wins if several maps match.
 
 ### 5b. First-class groups (`Team → Groups` + `external_key`)
@@ -201,8 +201,8 @@ On login, the app:
 4. Removes **stale directory-sourced** memberships for that source; leaves
    `source=manual` members alone.
 
-Then grant that group: a **team role**, a **project group role**, or a
-**secret ACL** (custom mode).
+Then grant that group a **team**, **project**, or **secret** role through
+`rbac.bindings`.
 
 ### 5c. Recommended org pattern
 
@@ -251,7 +251,7 @@ Simplified rules (same logic as the SQL helpers):
 team_role(user, team) =
   global_admin → owner
   else max(
-    direct team_members.role,
+    direct team-scope binding,
     team_role of every group the user is in on that team
   )
 
@@ -259,8 +259,8 @@ is_team_member = global_admin OR direct member OR in a group with non-null team_
 
 project_role(user, project) =
   max(
-    direct project_members.role,
-    project_group_roles.role for groups the user is in
+    direct project-scope binding,
+    project-scope binding for groups the user is in
   )   # may be null
 
 can_admin_project =

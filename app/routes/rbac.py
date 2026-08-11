@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import re
+from uuid import UUID
 
 from flask import flash, redirect, render_template, request, session, url_for
 
+import audit
 import authz
 import config
 import db
@@ -27,6 +29,28 @@ def _role_dropdown_for_scope(scope_kind: str) -> list[tuple[str, str]]:
     if scope_kind == "secret":
         return list(config.RBAC_SECRET_ROLE_DROPDOWN)
     return []
+
+
+def _valid_uuid(value: str) -> bool:
+    try:
+        UUID(str(value))
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def _role_allowed_at_scope(role_name: str, scope_kind: str) -> bool:
+    if role_name.startswith("team-"):
+        return scope_kind == "team"
+    if role_name.startswith("project-"):
+        return scope_kind == "project"
+    if role_name.startswith("secret-"):
+        return scope_kind == "secret"
+    if role_name.startswith("service-"):
+        return scope_kind in ("project", "secret")
+    if role_name in ("global-admin", "audit-viewer"):
+        return scope_kind == "cluster"
+    return scope_kind != "cluster"
 
 
 def _split_csv(val: str) -> list[str]:
@@ -182,6 +206,9 @@ def register(app):
             flash(str(e), "error")
             return redirect(url_for("rbac_roles", tab="create"))
 
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name):
+            flash("Name must use lowercase letters, numbers, and hyphens", "error")
+            return redirect(url_for("rbac_roles", tab="create"))
         if not name:
             flash("Name is required", "error")
             return redirect(url_for("rbac_roles", tab="create"))
@@ -212,6 +239,11 @@ def register(app):
                         """,
                         (str(row["id"]), resources, verbs),
                     )
+                audit.log_org(
+                    cur,
+                    action="rbac_role_created",
+                    detail=name,
+                )
                 conn.commit()
                 flash(f"Role “{name}” created", "ok")
             except Exception as e:
@@ -236,6 +268,11 @@ def register(app):
                     (str(role_id),),
                 )
                 if cur.rowcount:
+                    audit.log_org(
+                        cur,
+                        action="rbac_role_deleted",
+                        detail=str(role_id),
+                    )
                     conn.commit()
                     flash("Role deleted", "ok")
                 else:
@@ -430,7 +467,10 @@ def register(app):
             cur.execute(
                 "SELECT id, name, built_in FROM rbac.roles ORDER BY built_in DESC, name"
             )
-            all_roles = cur.fetchall() or []
+            all_roles = [
+                r for r in (cur.fetchall() or [])
+                if _role_allowed_at_scope(r.get("name", ""), scope_kind)
+            ]
 
             if picker_team_id:
                 cur.execute(
@@ -503,6 +543,11 @@ def register(app):
                     return redirect(
                         url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
                     )
+                if not _role_allowed_at_scope(role_name, scope_kind):
+                    flash("That role cannot be assigned at this scope", "error")
+                    return redirect(
+                        url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
+                    )
 
                 subject_id = None
                 if subject_kind == "User":
@@ -519,8 +564,87 @@ def register(app):
                         )
                     subject_id = str(u["id"])
                 elif subject_kind == "Group":
+                    if not _valid_uuid(subject_group):
+                        flash("Select a valid group", "error")
+                        return redirect(
+                            url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
+                        )
+                    cur.execute(
+                        """
+                        SELECT 1
+                        FROM api.groups g
+                        WHERE g.id = %s::uuid
+                          AND (
+                            %s = 'cluster'
+                            OR (%s = 'team' AND g.team_id = %s::uuid)
+                            OR (%s = 'project' AND EXISTS (
+                              SELECT 1 FROM api.projects p
+                              WHERE p.id = %s::uuid AND p.team_id = g.team_id
+                            ))
+                            OR (%s = 'secret' AND EXISTS (
+                              SELECT 1 FROM api.secrets s
+                              JOIN api.projects p ON p.id = s.project_id
+                              WHERE s.id = %s::uuid AND p.team_id = g.team_id
+                            ))
+                          )
+                        """,
+                        (
+                            subject_group,
+                            scope_kind,
+                            scope_kind,
+                            scope_id or subject_group,
+                            scope_kind,
+                            scope_id or subject_group,
+                            scope_kind,
+                            scope_id or subject_group,
+                        ),
+                    )
+                    if not cur.fetchone():
+                        flash("Group does not belong to the selected scope", "error")
+                        return redirect(
+                            url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
+                        )
                     subject_id = subject_group
                 elif subject_kind == "ServiceAccount":
+                    if not _valid_uuid(subject_sa):
+                        flash("Enter a valid machine account ID", "error")
+                        return redirect(
+                            url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
+                        )
+                    cur.execute(
+                        """
+                        SELECT 1
+                        FROM api.machine_tokens mt
+                        WHERE mt.id = %s::uuid
+                          AND (
+                            %s = 'cluster'
+                            OR (%s = 'project' AND mt.project_id = %s::uuid)
+                            OR (%s = 'secret' AND EXISTS (
+                              SELECT 1 FROM api.secrets s
+                              WHERE s.id = %s::uuid AND s.project_id = mt.project_id
+                            ))
+                            OR (%s = 'team' AND EXISTS (
+                              SELECT 1 FROM api.projects p
+                              WHERE p.id = mt.project_id AND p.team_id = %s::uuid
+                            ))
+                          )
+                        """,
+                        (
+                            subject_sa,
+                            scope_kind,
+                            scope_kind,
+                            scope_id or subject_sa,
+                            scope_kind,
+                            scope_id or subject_sa,
+                            scope_kind,
+                            scope_id or subject_sa,
+                        ),
+                    )
+                    if not cur.fetchone():
+                        flash("Machine account does not belong to the selected scope", "error")
+                        return redirect(
+                            url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
+                        )
                     subject_id = subject_sa
                 else:
                     flash("Invalid subject kind", "error")
@@ -551,6 +675,13 @@ def register(app):
                     flash("Permission denied", "error")
                     conn.rollback()
                 else:
+                    audit.log_org(
+                        cur,
+                        action="rbac_binding_created",
+                        detail=f"{subject_kind}:{subject_id} → {role_name} at {scope_kind}",
+                        team_id=scope_id if scope_kind == "team" else None,
+                        project_id=scope_id if scope_kind == "project" else None,
+                    )
                     conn.commit()
                     flash("Binding created", "ok")
             except Exception as e:
@@ -567,10 +698,29 @@ def register(app):
         scope_id = request.form.get("scope_id") or ""
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
-                cur.execute(
-                    "DELETE FROM rbac.bindings WHERE id = %s", (str(binding_id),)
-                )
+                if scope not in config.RBAC_SCOPE_KINDS:
+                    scope = "team"
+                if scope == "cluster":
+                    cur.execute(
+                        "DELETE FROM rbac.bindings WHERE id = %s AND scope_kind = 'cluster'",
+                        (str(binding_id),),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        DELETE FROM rbac.bindings
+                        WHERE id = %s AND scope_kind = %s AND scope_id = %s::uuid
+                        """,
+                        (str(binding_id), scope, scope_id),
+                    )
                 if cur.rowcount:
+                    audit.log_org(
+                        cur,
+                        action="rbac_binding_deleted",
+                        detail=f"binding={binding_id} at {scope}",
+                        team_id=scope_id if scope == "team" else None,
+                        project_id=scope_id if scope == "project" else None,
+                    )
                     conn.commit()
                     flash("Binding removed", "ok")
                 else:
@@ -588,24 +738,32 @@ def register(app):
         verb = (request.args.get("verb") or "reveal").strip().lower()
         resource = (request.args.get("resource") or "secrets").strip().lower()
         scope_kind = (request.args.get("scope") or "project").strip().lower()
+        if scope_kind not in config.RBAC_SCOPE_KINDS:
+            scope_kind = "project"
         scope_id = (request.args.get("scope_id") or "").strip() or None
         results = []
         teams = []
         projects = []
+        secrets = []
 
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT id, name FROM api.teams ORDER BY name")
             teams = cur.fetchall() or []
-            tid = session.get("team_id")
-            if tid:
+            cur.execute(
+                "SELECT id, name FROM api.projects ORDER BY name LIMIT 1000"
+            )
+            projects = cur.fetchall() or []
+            if scope_kind == "secret":
                 cur.execute(
                     """
-                    SELECT id, name FROM api.projects
-                    WHERE team_id = %s ORDER BY name
-                    """,
-                    (tid,),
+                    SELECT s.id, s.key AS name, p.name AS project_name
+                    FROM api.secrets s
+                    JOIN api.projects p ON p.id = s.project_id
+                    WHERE s.deleted_at IS NULL
+                    ORDER BY p.name, s.key LIMIT 1000
+                    """
                 )
-                projects = cur.fetchall() or []
+                secrets = cur.fetchall() or []
 
         if scope_id or scope_kind == "cluster":
             # private.users is not visible under RLS JWT role — use admin DSN
@@ -659,6 +817,7 @@ def register(app):
             results=results,
             teams=teams,
             projects=projects,
+            secrets=secrets,
             verbs=config.RBAC_VERBS,
             resources=config.RBAC_RESOURCES,
             scope_kinds=config.RBAC_SCOPE_KINDS,

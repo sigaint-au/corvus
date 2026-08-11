@@ -308,12 +308,8 @@ def _parse_requires_approval(form_or_value) -> bool | None:
 
 
 
-def _parse_acl_mode(form_or_value) -> str:
-    """Parse secret ACL mode; default inherit.
-
-    Accepts 'restricted' (preferred) and 'custom' (legacy alias for 'restricted').
-    Legacy 'writers'/'admins'/'owners' are normalised to 'inherit'.
-    """
+def _parse_access_mode(form_or_value) -> str:
+    """Parse the secret access mode; default to inherited project access."""
     if isinstance(form_or_value, dict) or (
         hasattr(form_or_value, "get") and not isinstance(form_or_value, (str, bytes))
     ):
@@ -321,13 +317,7 @@ def _parse_acl_mode(form_or_value) -> str:
     else:
         raw = form_or_value
     mode = (raw or "inherit").strip().lower()
-    # Legacy alias: custom → restricted
-    if mode == "custom":
-        return "restricted"
-    # Legacy modes treated as inherit
-    if mode in ("writers", "admins", "owners"):
-        return "inherit"
-    if mode not in config.SECRET_ACL_MODES:
+    if mode not in config.SECRET_ACCESS_MODES:
         return "inherit"
     return mode
 
@@ -364,7 +354,7 @@ def _upsert_secret(
             do not set expires_at.
         requires_approval: Per-secret override (None = inherit project default).
         set_requires_approval: When True, write requires_approval column.
-        acl_mode: Per-secret access mode (see config.SECRET_ACL_MODES).
+        acl_mode: Per-secret access mode (see config.SECRET_ACCESS_MODES).
         set_acl_mode: When True, write acl_mode on insert/update.
 
     Returns:
@@ -378,7 +368,7 @@ def _upsert_secret(
     from secret_kinds import normalize_kind
 
     kind = normalize_kind(kind)
-    mode = _parse_acl_mode(acl_mode)
+    mode = _parse_access_mode(acl_mode)
     enc = value_or_enc if already_enc else crypto.encrypt(str(value_or_enc))
     cur.execute(
         """

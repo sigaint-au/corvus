@@ -168,7 +168,8 @@ def register(app):
                 body,
                 mimetype="application/json",
                 headers={
-                    "Content-Disposition": f'attachment; filename="secrets-{project_id}-enc.json"'
+                    "Content-Disposition": f'attachment; filename="secrets-{project_id}-enc.json"',
+                    "Cache-Control": "no-store",
                 },
             )
         pairs = [(r["key"], crypto.decrypt(r["value_enc"])) for r in rows]

@@ -18,7 +18,7 @@ Sigaint Secret Server exposes three machine-facing surfaces:
 | Goal | Recommended API | Token |
 |------|-----------------|-------|
 | **CLI / CI: list, get, create, update, delete secrets (plaintext)** | `/eso/v1` secret API | `ss_…` (**write** to mutate) **or** `pat_…` (user write access) |
-| **OpenShift External Secrets Operator pull** | `GET /eso/v1/…/secrets/{key}` | Machine token `ss_…` (**read-only** is enough) |
+| **OpenShift External Secrets Operator pull** | `GET /eso/v1/…/secrets/{key}` | Machine account `ss_…` (`reveal` reads values) |
 | **Scripts: list teams/projects/metadata under user RLS** | PostgREST **or** `GET /eso/v1/projects` (PAT) | PAT → JWT via `/api/token`, or PAT on `/eso/v1` |
 | **Browser UI** | HTML session routes | Cookie session |
 
@@ -84,12 +84,13 @@ Also available in the UI: **My profile → Security → API access → Show JWT*
 Create on a project (**Integrations** / machine accounts). Format: `ss_…`
 (shown once). Scoped to **one project**.
 
-| Role | List / get | Create / update / delete |
-|------|------------|---------------------------|
-| `read-only` (default) | yes | **403** |
-| `write` | yes | yes |
+| Role | Metadata | Reveal values | Write |
+|------|----------|---------------|-------|
+| `read` | yes | no | no |
+| `reveal` | yes | yes | no |
+| `write` | yes | yes | yes |
 
-- Prefer **`read-only`** for ESO pull and read-only automation.
+- Prefer **`reveal`** for ESO pull and automation that needs values.
 - Use **`write`** for CLI/CI that creates, rotates, or deletes secrets.
 
 ---
@@ -181,7 +182,7 @@ Also: **`GET /eso/v1/projects`** (PAT only) lists projects visible to the user
 **Machine token**
 
 ```text
-1. Project → Integrations / Tokens → create write (or read-only).
+1. Project → Integrations / Tokens → create write (or reveal).
 2. Copy ss_… and the project UUID.
 ```
 
@@ -244,7 +245,7 @@ System fields are not set via API body. Custom `metadata` is managed in the UI
 **Always full access:** global admins and users with `can_admin_project`.
 
 **Machine tokens / ESO** use SECURITY DEFINER helpers and are **not** gated by
-per-secret human ACLs or reveal-approval. Prefer a **separate project** and/or
+per-secret human role bindings or reveal-approval. Prefer a **separate project** and/or
 **key allow-list** for sensitive values.
 
 **Key allow-list (optional):** each token may list exact keys and/or glob
@@ -428,7 +429,7 @@ curl -s -X PATCH -H "$AUTH" -H "Content-Type: application/json" \
 
 **200** — updated secret object + `"ok": true`  
 **404** `{"error":"not found"}`  
-**403** read-only token  
+**403** read token cannot mutate
 **400** validation errors
 
 ---
@@ -476,7 +477,7 @@ secretserver delete secret API_KEY
 | **400** | `{"error":"kind must be one of: …"}` | Invalid `kind` |
 | **400** | `{"error":"expires_days must be …"}` / ISO parse errors | Bad expiry |
 | **401** | `{"error":"unauthorized"}` | Missing/invalid/wrong-project/expired token |
-| **403** | `{"error":"token is read-only"}` | Mutate with a read-only token |
+| **403** | `{"error":"token does not allow writes"}` | Mutate with a `read` token |
 | **403** | `{"error":"forbidden"}` | Write path denied by DB helper |
 | **403** | `{"error":"approval_required",…}` | PAT reveal blocked until approved |
 | **404** | `{"error":"not found"}` | Get/PATCH/DELETE on missing key |
@@ -583,7 +584,7 @@ Auth: `Authorization: Bearer pat_…`. Team/project refs: UUID or unique name.
 | `GET` | `/eso/v1/admin/users` | Global admin: user list (`?q=`) |
 | `GET` | `/eso/v1/admin/audit` | Global admin: org / secret / access audit |
 
-**Groups, secret ACLs, and custom metadata** are managed in the **browser UI**
+**Groups, secret role bindings, and custom metadata** are managed in the **browser UI**
 today (Team → Groups, Secret → Permissions / Metadata).
 
 ### Management CLI examples
@@ -632,18 +633,16 @@ Use the JWT from `/api/token`. Default compose port: **3000**.
 | Path | Typical use | Notes |
 |------|-------------|--------|
 | `/teams` | List/create teams | RLS: membership / global admin |
-| `/team_members` | Membership rows | `role`: owner/admin/member/viewer |
 | `/team_ldap_maps` / `/team_oidc_maps` | Directory group → team role | Team admin+ |
 | `/team_invites` | Invite metadata | Token hashes only |
 | `/team_join_requests` | Join request workflow | status: pending/approved/rejected |
 | `/projects` | Projects under teams | Optional `description` |
-| `/project_members` | Project-scoped user roles | `role`: admin/write/read |
-| `/groups` | Team-scoped groups | `source`: manual/ldap/oidc; optional `team_role` |
+| `/groups` | Team-scoped groups | `source`: manual/ldap/oidc |
 | `/group_members` | Group membership | |
-| `/project_group_roles` | Group → project role | |
+| RBAC bindings UI/API | Role bindings | Scoped cluster/team/project/secret; not exposed as a public PostgREST table |
+ |
 | `/secrets` | Row metadata + `value_enc` | Soft-delete via `deleted_at`; `acl_mode` |
 | `/secret_meta` | Custom secret labels | Searchable in UI/API `q=` |
-| (removed) `/secret_acl` | — | Use secret-scope `rbac.bindings` / Permissions UI |
 | `/secret_versions` | Prior ciphertexts | Filled on value change |
 | `/secret_audit` | Secret actions | Append-only |
 | `/secret_access_requests` | Reveal approval workflow | pending/approved/denied |

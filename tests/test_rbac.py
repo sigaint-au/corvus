@@ -97,11 +97,10 @@ def test_machine_token_roles_updated():
 
 
 def test_acl_modes_updated():
-    assert "inherit" in config.SECRET_ACL_MODES
-    assert "restricted" in config.SECRET_ACL_MODES
-    assert "custom" not in config.SECRET_ACL_MODES
-    # Legacy alias still in labels for display
-    assert "custom" in config.SECRET_ACL_MODE_LABELS
+    assert "inherit" in config.SECRET_ACCESS_MODES
+    assert "restricted" in config.SECRET_ACCESS_MODES
+    assert "custom" not in config.SECRET_ACCESS_MODES
+    assert set(config.SECRET_ACCESS_MODE_LABELS) == {"inherit", "restricted"}
 
 
 def test_parse_rules_yaml_multi_rule():
@@ -130,14 +129,11 @@ def test_parse_rules_yaml_rejects_empty():
         parse_rules_yaml("# only comments\n")
 
 
-def test_parse_acl_mode_accepts_restricted():
-    from secret_ops import _parse_acl_mode
+def test_parse_access_mode_accepts_rbac_modes():
+    from secret_ops import _parse_access_mode
 
-    assert _parse_acl_mode("restricted") == "restricted"
-    assert _parse_acl_mode("custom") == "restricted"
-    assert _parse_acl_mode("inherit") == "inherit"
-    assert _parse_acl_mode("writers") == "inherit"
-    assert _parse_acl_mode("admins") == "inherit"
-    assert _parse_acl_mode("owners") == "inherit"
-    assert _parse_acl_mode("") == "inherit"
-    assert _parse_acl_mode({"acl_mode": "restricted"}) == "restricted"
+    assert _parse_access_mode("restricted") == "restricted"
+    assert _parse_access_mode("inherit") == "inherit"
+    assert _parse_access_mode("") == "inherit"
+    assert _parse_access_mode("unknown") == "inherit"
+    assert _parse_access_mode({"acl_mode": "restricted"}) == "restricted"

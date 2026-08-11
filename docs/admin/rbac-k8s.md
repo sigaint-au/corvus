@@ -5,12 +5,11 @@ Sigaint Secret Server uses a single access model:
 **Subjects** (User, Group, ServiceAccount) + **Roles** (verbs × resources) +
 **Bindings** (subject + role + scope).
 
-> **Pure model:** legacy `team_members` / `project_members` / `project_group_roles`
-> are no longer written to. The `backfill_all_legacy_to_bindings` function can
-> migrate existing rows once. The legacy `api.secret_acl` table is **dropped**;
-> per-secret grants use secret-scope `rbac.bindings`. New installs get built-in
-> roles plus empty bindings. Team creation inserts a **team-owner** binding for
-> the creator.
+The RBAC tables are the only authorization source. Team, project, group, and
+secret access is represented by `rbac.bindings`; new installations have no
+legacy membership or ACL tables. Existing installations are migrated and the
+legacy tables are removed during schema ensure. Team creation inserts a
+**team-owner** binding for the creator.
 
 ## Scope hierarchy
 
@@ -99,7 +98,7 @@ Reveal approval remains a separate layer after the `reveal` verb.
 - Unique index on `bindings(role_id, subject_kind, subject_id, scope_kind, scope_id)`
 - `updated_at` / `updated_by` columns on bindings
 - Applied by `ensure_schema()` and on fresh volumes via compose `02-rbac.sql`
-- `api.secret_acl` is dropped
+- Legacy membership and ACL tables are removed during schema ensure
 - `can()` rejects deleted secrets at the authorizer level
 - Compatibility helpers `can_read_project`, `can_write_project`,
   `can_admin_project`, `can_access_secret`, `team_role`, `project_role` are

@@ -11,6 +11,7 @@ import authz
 import config
 import db
 import ldap_auth
+import rbac_sync
 import settings_svc
 from crypto import sha256_hex
 
@@ -159,7 +160,6 @@ def register(app):
                 projects = cur.fetchall()
             elif tab == "members":
                 # User subjects only (people + invites)
-                import rbac_sync
 
                 all_b = rbac_sync.list_scope_bindings(cur, "team", team_id)
                 rbac_sync.enrich_binding_emails(all_b)
@@ -192,7 +192,6 @@ def register(app):
                     )
                     join_requests = cur.fetchall() or []
             elif tab == "access" and is_admin:
-                import rbac_sync
 
                 # All team-scope bindings (users, groups, service accounts)
                 access_bindings = rbac_sync.list_scope_bindings(cur, "team", team_id)
@@ -269,7 +268,6 @@ def register(app):
                     jr.setdefault("email", str(jr.get("user_id")))
                     jr.setdefault("name", "")
         if access_bindings:
-            import rbac_sync
 
             rbac_sync.enrich_binding_emails(access_bindings)
         return render_template(
@@ -442,8 +440,6 @@ def register(app):
                 flash("User not found — they must register or sign in via LDAP first", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             try:
-                import rbac_sync
-
                 # Check for existing binding to determine add vs update
                 rname = rbac_sync.TEAM_ROLE_TO_RBAC.get(role, "team-member")
                 cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (rname,))
@@ -501,8 +497,6 @@ def register(app):
         """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
-                import rbac_sync
-
                 # Find existing team binding for this user
                 cur.execute(
                     """
@@ -570,21 +564,19 @@ def register(app):
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             try:
                 # Promote new owner first (avoids last-owner guard)
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s, %s, 'owner', 'manual')
-                    ON CONFLICT (team_id, user_id) DO UPDATE
-                      SET role = 'owner', source = 'manual'
-                    """,
-                    (str(team_id), new_uid),
+                rbac_sync.sync_user_team_binding(
+                    cur,
+                    user_id=new_uid,
+                    team_id=team_id,
+                    role="owner",
+                    created_by=session["user_id"],
                 )
-                cur.execute(
-                    """
-                    UPDATE api.team_members SET role = 'admin'
-                    WHERE team_id = %s AND user_id = %s AND role = 'owner'
-                    """,
-                    (str(team_id), session["user_id"]),
+                rbac_sync.sync_user_team_binding(
+                    cur,
+                    user_id=session["user_id"],
+                    team_id=team_id,
+                    role="admin",
+                    created_by=session["user_id"],
                 )
                 audit.log_org(
                     cur,
@@ -729,8 +721,12 @@ def register(app):
             # Already a member?
             cur.execute(
                 """
-                SELECT role FROM api.team_members
-                WHERE team_id = %s AND user_id = %s
+                SELECT 1
+                FROM rbac.bindings b
+                JOIN rbac.roles r ON r.id = b.role_id
+                WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                  AND b.subject_kind = 'User' AND b.subject_id = %s::uuid
+                  AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
                 """,
                 (str(inv["team_id"]), session["user_id"]),
             )
@@ -807,14 +803,12 @@ def register(app):
                 flash("Request not found", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             try:
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s, %s, %s, 'manual')
-                    ON CONFLICT (team_id, user_id) DO UPDATE
-                      SET role = EXCLUDED.role, source = 'manual'
-                    """,
-                    (str(team_id), str(req["user_id"]), req["role"]),
+                rbac_sync.sync_user_team_binding(
+                    cur,
+                    user_id=req["user_id"],
+                    team_id=team_id,
+                    role=req["role"],
+                    created_by=session["user_id"],
                 )
                 cur.execute(
                     """
@@ -1260,13 +1254,17 @@ def register(app):
             )
             cur.execute(
                 """
-                SELECT id, name, source, external_key, team_role, created_at
+                SELECT id, name, source, external_key, created_at
                 FROM api.groups
                 WHERE id = %s AND team_id = %s
                 """,
                 (str(group_id), str(team_id)),
             )
             group = cur.fetchone()
+            if group:
+                group["team_role"] = rbac_sync.group_team_roles_map(cur, team_id).get(
+                    str(group_id)
+                )
             if not group:
                 flash("Group not found", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
@@ -1321,8 +1319,8 @@ def register(app):
             try:
                 cur.execute(
                     """
-                    INSERT INTO api.groups (team_id, name, source, external_key, team_role)
-                    VALUES (%s, %s, %s, %s, NULL)
+                    INSERT INTO api.groups (team_id, name, source, external_key)
+                    VALUES (%s, %s, %s, %s)
                     RETURNING id
                     """,
                     (str(team_id), name, source, external_key),
@@ -1359,7 +1357,7 @@ def register(app):
                 cur.execute(
                     """
                     UPDATE api.groups
-                    SET name = %s, team_role = NULL,
+                    SET name = %s,
                         external_key = CASE
                           WHEN source = 'manual' THEN NULL
                           ELSE COALESCE(%s, external_key)

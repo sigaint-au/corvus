@@ -109,9 +109,9 @@ Configured under **Administration → Server settings**. Stored in
 | `TEAM_ROLES` | `owner, admin, member, viewer` | Team roles |
 | `GROUP_TEAM_ROLES` | `admin, member, viewer` | Group-inherited team roles (never owner) |
 | `PROJECT_ROLES` | `admin, write, read` | Project roles |
-| `MACHINE_TOKEN_ROLES` | `read-only, write` | Machine token roles |
-| `SECRET_ACL_MODES` | `inherit, writers, admins, owners, custom` | Per-secret ACL modes |
-| `SECRET_ACL_PERMISSIONS` | `read, reveal, write` | Custom grant permissions |
+| `MACHINE_TOKEN_ROLES` | `read, reveal, write` | Machine account roles |
+| `SECRET_ACCESS_MODES` | `inherit, restricted` | Secret access modes |
+| `SECRET_ACCESS_PERMISSIONS` | `read, reveal, write` | Secret binding permissions |
 | `REVEAL_ACCESS_GRANT_CHOICES` | `15, 60, 240, 1440` | Allowed grant durations (minutes) |
 | `SECRET_KINDS` | `plain, database, certificate, ssh, kv` | Structured secret kinds |
 | `MAX_EXPIRY_DAYS` | `3650` | Max optional expiry |

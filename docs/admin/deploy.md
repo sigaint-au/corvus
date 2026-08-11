@@ -73,7 +73,7 @@ Then, in order:
 1. Create a team
 2. Create a project inside the team
 3. Add secrets to the project
-4. (ESO) create a machine account — prefer read-only
+4. (ESO) create a machine account — use reveal for value reads
 5. (optional) OIDC/LDAP, SMTP, TOTP enforcement, audit retention
 ```
 

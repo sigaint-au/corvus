@@ -11,13 +11,14 @@
 <section class="list-panel">
 {% if tokens %}
 <table>
-  <thead><tr><th>Name</th><th>Project</th><th>Prefix</th><th>Role</th><th>Created</th><th>Expires</th></tr></thead>
+  <thead><tr><th>Name</th><th>Project</th><th>Machine account ID</th><th>Prefix</th><th>Role</th><th>Created</th><th>Expires</th></tr></thead>
   <tbody>
   {% for t in tokens %}
     <tr>
-      <td>{{ t.name }}</td>
-      <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
-      <td><code class="k">{{ t.token_prefix }}…</code></td>
+       <td>{{ t.name }}</td>
+       <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
+       <td><code class="k">{{ t.id }}</code></td>
+       <td><code class="k">{{ t.token_prefix }}…</code></td>
       <td><span class="badge" data-variant="secondary">{{ t.role or 'reveal' }}</span></td>
       <td class="muted">{{ t.created_at }}</td>
       <td class="muted">

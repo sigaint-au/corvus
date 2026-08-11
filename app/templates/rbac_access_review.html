@@ -45,6 +45,14 @@
         {% endfor %}
       </select>
     </label>
+    <label id="rev-secret-wrap">Secret
+      <select name="scope_id" id="rev-secret">
+        <option value="">—</option>
+        {% for s in secrets %}
+        <option value="{{ s.id }}" {% if scope_id and scope_id|string == s.id|string and scope_kind == 'secret' %}selected{% endif %}>{{ s.project_name }} / {{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <button type="submit" class="button">Review</button>
   </div>
   <p class="muted" style="margin:0;font-size:.85rem">
@@ -82,15 +90,18 @@
   var scope = document.getElementById('rev-scope');
   var team = document.getElementById('rev-team-wrap');
   var proj = document.getElementById('rev-project-wrap');
+  var secret = document.getElementById('rev-secret-wrap');
   var teamSel = document.getElementById('rev-team');
   var projSel = document.getElementById('rev-project');
+  var secretSel = document.getElementById('rev-secret');
   function sync() {
     var v = scope.value;
     team.hidden = v !== 'team';
     proj.hidden = v !== 'project';
-    // only one name=scope_id active
+    secret.hidden = v !== 'secret';
     teamSel.disabled = v !== 'team';
     projSel.disabled = v !== 'project';
+    secretSel.disabled = v !== 'secret';
   }
   scope.addEventListener('change', sync);
   sync();

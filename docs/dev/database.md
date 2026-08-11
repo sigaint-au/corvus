@@ -43,10 +43,10 @@ The app connects as `authenticator`, then `SET ROLE authenticated` and sets
 
 | Table | Purpose |
 |-------|---------|
-| `api.teams` / `api.team_members` | Teams + direct user → team role |
-| `api.projects` / `api.project_members` | Projects + direct user → project role |
+| `api.teams` | Teams and settings |
+| `api.projects` | Projects and settings |
 | `api.groups` / `api.group_members` | Team-scoped groups + membership |
-| `api.project_group_roles` | Group → project role |
+| `rbac.roles` / `rbac.role_rules` / `rbac.bindings` | User, group, and machine-account access at cluster/team/project/secret scopes |
 | `api.secrets` | Secret rows (`value_enc` = Fernet ciphertext) |
 | `api.secret_versions` | Archived prior ciphertext on update |
 | `api.secret_meta` | Custom searchable metadata |
@@ -77,7 +77,7 @@ All helpers set `SET search_path = api, private` and `SET row_security = off`
 | `api.can_read_project(pid)` | Read access |
 | `api.can_write_project(pid)` | Write access |
 | `api.can_admin_project(pid)` | Admin access |
-| `api.can_access_secret_row(sid,pid,mode,need,deleted_at)` | Per-secret ACL using row fields (safe for INSERT…RETURNING) |
+| `api.can_access_secret_row(sid,pid,mode,need,deleted_at)` | Secret access using inherited or restricted RBAC bindings (safe for INSERT…RETURNING) |
 | `api.can_access_secret(sid,need)` | Loads row then applies `can_access_secret_row` |
 | `api.can_reveal_secret(sid)` | Can reveal now (ACL + approval + grant) |
 | `api.secret_requires_approval(sid)` | Effective approval policy |
@@ -92,9 +92,8 @@ SECURITY with `USING`/`WITH CHECK` policies for `authenticated`. Key ones:
 | Table | Policy highlights |
 |-------|-------------------|
 | `teams` | select: member/admin; update: owner/admin; delete: owner |
-| `team_members` | insert/update: owner/admin; **only owners may set role=owner** |
-| `projects` | select: team member or project member; update: `can_admin_project`; delete: owner/admin |
-| `project_members` | insert/update/delete: `can_admin_project` |
+| `projects` | select: RBAC-readable; update: `can_admin_project`; delete: owner/admin |
+| `rbac.bindings` | select: scope manager or subject; write: `can_manage_rbac` |
 | `groups` / `group_members` | owner/admin manage; members select |
 | `secrets` | select/update/delete: `can_access_secret_row`; insert: `can_write_project` |
 | `secret_versions` | select: parent readable; **no client insert** (trigger-only) |
@@ -115,7 +114,7 @@ gated on the token hash and granted only to `authenticator` (not
 | Function | Purpose |
 |----------|---------|
 | `private.auth_machine(project, hash)` | Validate machine token (hash + expiry) |
-| `private.machine_role(project, hash)` | Token role (read-only/write) |
+| `private.machine_role(project, hash)` | Machine-account role (read/reveal/write) |
 | `private.machine_get_row` / `machine_list_enc` / `machine_list_meta` | Read secrets (respects token scope) |
 | `private.machine_delete` / `machine_upsert_enc` | Write secrets (write role) |
 | `private.audit_secret` / `audit_org` | Append-only audit (actor from JWT, never caller) |

@@ -251,7 +251,7 @@ CREATE TABLE api.secrets (
   requires_approval boolean,
   -- Per-secret access tighter than project membership (see api.can_access_secret)
   acl_mode text NOT NULL DEFAULT 'inherit'
-    CHECK (acl_mode IN ('inherit', 'restricted', 'custom', 'writers', 'admins', 'owners')),
+    CHECK (acl_mode IN ('inherit', 'restricted')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,

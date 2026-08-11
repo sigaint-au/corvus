@@ -217,28 +217,22 @@ REVEAL_ACCESS_GRANT_MINUTES = max(
 REVEAL_ACCESS_GRANT_CHOICES = (15, 60, 240, 1440)  # 15m, 1h, 4h, 1d
 # Structured secret kinds for advanced create form
 SECRET_KINDS = ("plain", "database", "certificate", "ssh", "kv")
-# Per-secret access modes (k8s RBAC). Stored in secrets.acl_mode.
-# inherit = project/team bindings apply; restricted = secret-scope bindings only.
-# 'custom' is accepted as a legacy alias for 'restricted'.
-# writers/admins/owners kept for DB CHECK of legacy rows (treated as inherit).
-SECRET_ACL_MODES = ("inherit", "restricted")
-SECRET_ACL_MODE_LABELS = {
+# Per-secret access modes. Inherit uses project/team bindings; restricted uses
+# secret-scope role bindings only.
+SECRET_ACCESS_MODES = ("inherit", "restricted")
+SECRET_ACCESS_MODE_LABELS = {
     "inherit": "Inherit project access",
     "restricted": "Restricted (role bindings only)",
-    "custom": "Restricted (role bindings only)",
-    "writers": "Writers and above (legacy)",
-    "admins": "Project admins (legacy)",
-    "owners": "Team owners (legacy)",
 }
 # Grant dropdown on Permissions tab → built-in secret-* roles
-SECRET_ACL_PERMISSIONS = ("read", "reveal", "write")
-SECRET_ACL_PERM_TO_ROLE = {
+SECRET_ACCESS_PERMISSIONS = ("read", "reveal", "write")
+SECRET_ACCESS_PERM_TO_ROLE = {
     "read": "secret-read",
     "reveal": "secret-reveal",
     "write": "secret-write",
 }
-SECRET_ACL_ROLE_TO_PERM = {v: k for k, v in SECRET_ACL_PERM_TO_ROLE.items()}
-SECRET_ACL_PERM_LABELS = {
+SECRET_ACCESS_ROLE_TO_PERM = {v: k for k, v in SECRET_ACCESS_PERM_TO_ROLE.items()}
+SECRET_ACCESS_PERM_LABELS = {
     "read": "Read (metadata)",
     "reveal": "Reveal value",
     "write": "Edit / delete",

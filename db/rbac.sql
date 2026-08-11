@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS rbac.bindings (
   scope_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
+  source text NOT NULL DEFAULT 'manual'
+    CHECK (source IN ('manual', 'ldap', 'oidc')),
   updated_at timestamptz,
   updated_by uuid,
   CHECK (
@@ -243,6 +245,47 @@ $$;
 
 SELECT rbac.ensure_builtin_roles();
 
+-- Migrate legacy membership rows once, then remove the legacy authorization tables.
+DO $$
+BEGIN
+  IF to_regclass('api.team_members') IS NOT NULL THEN
+    INSERT INTO rbac.bindings (role_id, subject_kind, subject_id, scope_kind, scope_id, source)
+    SELECT r.id, 'User', tm.user_id, 'team', tm.team_id, 'manual'
+    FROM api.team_members tm
+    JOIN rbac.roles r ON r.name = 'team-' || tm.role
+    ON CONFLICT DO NOTHING;
+  END IF;
+  IF to_regclass('api.project_members') IS NOT NULL THEN
+    INSERT INTO rbac.bindings (role_id, subject_kind, subject_id, scope_kind, scope_id, source)
+    SELECT r.id, 'User', pm.user_id, 'project', pm.project_id, 'manual'
+    FROM api.project_members pm
+    JOIN rbac.roles r ON r.name = 'project-' || pm.role
+    ON CONFLICT DO NOTHING;
+  END IF;
+  IF to_regclass('api.groups') IS NOT NULL THEN
+    BEGIN
+      INSERT INTO rbac.bindings (role_id, subject_kind, subject_id, scope_kind, scope_id, source)
+      SELECT r.id, 'Group', g.id, 'team', g.team_id, 'manual'
+      FROM api.groups g
+      JOIN rbac.roles r ON r.name = 'team-' || g.team_role
+      WHERE g.team_role IS NOT NULL
+      ON CONFLICT DO NOTHING;
+    EXCEPTION WHEN undefined_column THEN NULL;
+    END;
+  END IF;
+  IF to_regclass('api.project_group_roles') IS NOT NULL THEN
+    INSERT INTO rbac.bindings (role_id, subject_kind, subject_id, scope_kind, scope_id, source)
+    SELECT r.id, 'Group', pgr.group_id, 'project', pgr.project_id, 'manual'
+    FROM api.project_group_roles pgr
+    JOIN rbac.roles r ON r.name = 'project-' || pgr.role
+    ON CONFLICT DO NOTHING;
+  END IF;
+END $$;
+
+DROP TABLE IF EXISTS api.project_group_roles CASCADE;
+DROP TABLE IF EXISTS api.project_members CASCADE;
+DROP TABLE IF EXISTS api.team_members CASCADE;
+ALTER TABLE api.groups DROP COLUMN IF EXISTS team_role;
 -- ── Scope ancestry: secret → project → team → cluster ────────────────
 CREATE OR REPLACE FUNCTION api.rbac_scope_chain(
   p_scope_kind text,
@@ -533,7 +576,6 @@ GRANT EXECUTE ON FUNCTION api.rbac_secret_binding_allows TO authenticator, authe
 -- Secret access: RBAC on scope chain, or restricted = secret bindings only.
 -- acl_mode 'restricted' is the exclusive / "deny broader grants" mode: team and project
 -- bindings do NOT apply — only secret-scope bindings + project admins (admin floor).
--- Legacy 'custom' value is treated as 'restricted' for backward compat.
 CREATE OR REPLACE FUNCTION api.can_access_secret_row(
   sid uuid,
   pid uuid,
@@ -550,11 +592,10 @@ SET row_security = off AS $$
     WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
     -- Project admins always full
     WHEN api.can_admin_project(pid) THEN true
-    -- Restricted (legacy 'custom'): secret-scope bindings only
-    WHEN COALESCE(mode, 'inherit') IN ('restricted', 'custom') THEN
+    -- Restricted: secret-scope bindings only
+    WHEN COALESCE(mode, 'inherit') = 'restricted' THEN
       api.rbac_secret_binding_allows(sid, need)
-    -- inherit / writers / admins / owners → project/team RBAC via scope chain
-    -- (writers/admins/owners treated as inherit under k8s RBAC; use restricted to restrict)
+    -- inherit uses project/team RBAC via the scope chain
     WHEN need = 'write' THEN (
       api.can('update', 'secrets', 'secret', sid)
       OR api.can('create', 'secrets', 'secret', sid)

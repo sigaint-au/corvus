@@ -102,7 +102,7 @@ functions key off that value. See [database.md](database.md).
    - `ss_…` → machine token hash → SECURITY DEFINER helpers (bypass RLS).
    - `pat_…` → user id → `db.as_user()` → RLS.
 3. Machine helpers gate on `auth_machine(project, hash)` (validity + expiry)
-   and the token role (`read-only`/`write`).
+   and the token role (`read`/`reveal`/`write`).
 4. Secret values are decrypted with `MASTER_KEY` and returned as plaintext.
 5. Reveals are audited.
 

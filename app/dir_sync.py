@@ -50,11 +50,10 @@ def apply_team_membership_maps(
     group_key: str,
     source: str,
 ) -> None:
-    """Sync ``api.team_members`` rows with ``source`` ldap|oidc from directory maps.
+    """Sync directory-managed team bindings from LDAP/OIDC maps.
 
-    Builds desired team→role from matching maps (highest ``ROLE_RANK`` wins).
-    Removes stale directory-sourced memberships, inserts/updates matching ones,
-    and never overwrites ``source='manual'`` memberships.
+    Builds desired team roles from matching maps (highest ``ROLE_RANK`` wins),
+    removes stale directory bindings, and never overwrites manual bindings.
 
     Args:
         cur: Open admin DB cursor.
@@ -83,41 +82,44 @@ def apply_team_membership_maps(
         if tid not in desired or ROLE_RANK.get(role, 0) > ROLE_RANK.get(desired[tid], 0):
             desired[tid] = role
 
+    import rbac_sync
+
     cur.execute(
-        f"""
-        DELETE FROM api.team_members
-        WHERE user_id = %s AND source = %s
-          AND NOT (team_id = ANY(%s::uuid[]))
+        """
+        SELECT b.scope_id
+        FROM rbac.bindings b
+        JOIN rbac.roles r ON r.id = b.role_id
+        WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
+          AND b.scope_kind = 'team' AND b.source = %s
+          AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
         """,
-        (str(uid), source, list(desired.keys()) or []),
+        (str(uid), source),
     )
+    for row in cur.fetchall() or []:
+        tid = str(row["scope_id"])
+        if tid not in desired:
+            rbac_sync.sync_user_team_binding(
+                cur, user_id=uid, team_id=tid, role=None, source=source
+            )
     for tid, role in desired.items():
         cur.execute(
             """
-            SELECT role, source FROM api.team_members
-            WHERE team_id = %s AND user_id = %s
+            SELECT 1
+            FROM rbac.bindings b
+            JOIN rbac.roles r ON r.id = b.role_id
+            WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
+              AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
+              AND b.source = 'manual'
+              AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+            LIMIT 1
             """,
-            (tid, str(uid)),
+            (str(uid), tid),
         )
-        existing = cur.fetchone()
-        if existing and existing.get("source") == "manual":
+        if cur.fetchone():
             continue
-        if existing:
-            cur.execute(
-                """
-                UPDATE api.team_members SET role = %s, source = %s
-                WHERE team_id = %s AND user_id = %s
-                """,
-                (role, source, tid, str(uid)),
-            )
-        else:
-            cur.execute(
-                """
-                INSERT INTO api.team_members (team_id, user_id, role, source)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (tid, str(uid), role, source),
-            )
+        rbac_sync.sync_user_team_binding(
+            cur, user_id=uid, team_id=tid, role=role, source=source
+        )
 
 
 def apply_group_membership_maps(

@@ -2271,8 +2271,12 @@
       <details class="side-group" data-side-group="account"{% if account_open %} open{% endif %}>
         <summary>Organisation</summary>
         <div class="side-group-body">
-          <a class="side-nav-link {% if ep in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}"
-             href="{{ url_for('teams') }}">Teams</a>
+           <a class="side-nav-link {% if ep in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}"
+              href="{{ url_for('teams') }}">Teams</a>
+           {% if session.get('team_id') %}
+           <a class="side-nav-link {% if ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}active{% endif %}"
+              href="{{ url_for('rbac_bindings', scope='team', scope_id=session.get('team_id')) }}">Role bindings</a>
+           {% endif %}
           <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}"
              href="{{ url_for('access_requests_inbox') }}">Access requests{% if nav_access_pending %}<span class="tab-badge" title="{{ nav_access_pending }} pending">{{ nav_access_pending }}</span>{% endif %}</a>
           <a class="side-nav-link {% if ep == 'trash' %}active{% endif %}"

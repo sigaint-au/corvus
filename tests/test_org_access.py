@@ -115,11 +115,11 @@ class TestOrgAccess:
 
     def test_secret_acl_schema_and_config(self):
         from pathlib import Path
-        assert 'inherit' in config.SECRET_ACL_MODES
-        assert 'restricted' in config.SECRET_ACL_MODES
-        assert 'custom' in config.SECRET_ACL_MODE_LABELS  # legacy alias in labels
-        assert 'reveal' in config.SECRET_ACL_PERMISSIONS
-        assert config.SECRET_ACL_PERM_TO_ROLE['reveal'] == 'secret-reveal'
+        assert 'inherit' in config.SECRET_ACCESS_MODES
+        assert 'restricted' in config.SECRET_ACCESS_MODES
+        assert set(config.SECRET_ACCESS_MODE_LABELS) == {'inherit', 'restricted'}
+        assert 'reveal' in config.SECRET_ACCESS_PERMISSIONS
+        assert config.SECRET_ACCESS_PERM_TO_ROLE['reveal'] == 'secret-reveal'
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         assert 'acl_mode' in init
         assert 'CREATE TABLE api.secret_acl' not in init
@@ -144,7 +144,7 @@ class TestOrgAccess:
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         start = init.index('FUNCTION api.can_access_secret_row')
         body = init[start:start + 2500]
-        for mode in ('inherit', 'writers', 'admins', 'owners', 'custom', 'restricted'):
+        for mode in ('inherit', 'restricted'):
             assert mode in body, f'mode {mode} missing from can_access_secret_row'
         for need in ("'read'", "'reveal'", "'write'"):
             assert need in body
@@ -167,9 +167,9 @@ class TestOrgAccess:
         """Secret ACL mode/grant routes registered and gated to admins."""
         from pathlib import Path
         src = (APP_ROOT / 'routes' / 'secrets.py').read_text()
-        assert 'def update_secret_acl_mode' in src
-        assert 'def add_secret_acl_grant' in src
-        assert 'def delete_secret_acl_grant' in src
+        assert 'def update_secret_access' in src
+        assert 'def add_secret_access_binding' in src
+        assert 'def delete_secret_access_binding' in src
         assert 'can_admin_project' in src
         assert 'tab="access"' in src
 

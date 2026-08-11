@@ -348,8 +348,7 @@ def register(app):
         audit_rows = []
         tokens = []
         project_secret_keys = []
-        project_members = []
-        project_group_roles = []
+
         team_groups = []
         access_requests = []
         access_pending_count = 0
@@ -564,8 +563,7 @@ def register(app):
             subject_kinds=config.RBAC_SUBJECT_KINDS,
             secrets_pager=secrets_pager,
             audit_pager=audit_pager,
-            project_members=project_members,
-            project_group_roles=project_group_roles,
+
             team_groups=team_groups,
             project_roles=config.PROJECT_ROLES,
             default_token_days=default_token_days,
@@ -593,8 +591,8 @@ def register(app):
             )
             if project
             else False,
-            acl_modes=config.SECRET_ACL_MODES,
-            acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
+            acl_modes=config.SECRET_ACCESS_MODES,
+            acl_mode_labels=config.SECRET_ACCESS_MODE_LABELS,
         )
 
 
@@ -1090,48 +1088,3 @@ def register(app):
                 conn.commit()
                 flash("Project settings saved", "ok")
         return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
-
-    @app.post("/projects/<uuid:project_id>/secrets/bulk-acl")
-    @authz.login_required
-    def bulk_secret_acl_mode(project_id):
-        """Set acl_mode on multiple secrets at once (project admin only).
-
-        Body: secret_ids (comma-separated UUIDs) + acl_mode (inherit|restricted).
-        """
-        from secret_ops import _parse_acl_mode
-
-        mode = _parse_acl_mode(request.form)
-        secret_ids_raw = (request.form.get("secret_ids") or "").strip()
-        if not secret_ids_raw:
-            flash("Select at least one secret", "error")
-            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
-        secret_ids = [s.strip() for s in secret_ids_raw.split(",") if s.strip()]
-        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
-            if not (cur.fetchone() or {}).get("a"):
-                flash("You don't have permission to do that", "error")
-                return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
-            try:
-                count = 0
-                for sid in secret_ids:
-                    cur.execute(
-                        """
-                        UPDATE api.secrets
-                        SET acl_mode = %s
-                        WHERE id = %s::uuid AND project_id = %s::uuid AND deleted_at IS NULL
-                        """,
-                        (mode, sid, str(project_id)),
-                    )
-                    count += cur.rowcount
-                audit.log_org(
-                    cur,
-                    project_id=project_id,
-                    action="project_settings",
-                    detail=f"bulk acl_mode={mode} on {count} secrets",
-                )
-                conn.commit()
-                flash(f"Updated {count} secret(s) to {config.SECRET_ACL_MODE_LABELS.get(mode, mode)}", "ok")
-            except Exception as e:
-                conn.rollback()
-                flash(str(e), "error")
-        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))

@@ -110,7 +110,7 @@ Type:  Plain
 Value: postgres://user:pass@host/db
 Note:  optional label
 Expires: (optional date)
-Access: Project access        (ACL mode)
+Access: Project access        (access mode)
 Approval: Default (project)   (reveal approval override)
 ```
 
@@ -205,7 +205,7 @@ Format:  Encrypted JSON | .env (plaintext) | JSON (plaintext) | CSV (plaintext)
 [Download]
 ```
 
-Plaintext exports require a confirmation. Exports respect reveal ACLs — you
+Plaintext exports require a confirmation. Exports respect reveal permissions — you
 only get secrets you may reveal.
 
 ### Import

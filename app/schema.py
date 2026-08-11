@@ -2673,9 +2673,78 @@ def ensure_schema():
                 (_ENSURE_LOCK_K1, _ENSURE_LOCK_K2),
             )
             try:
+                legacy_markers = (
+                    "api.team_members",
+                    "api.project_members",
+                    "api.project_group_roles",
+                    "private.team_member_rows",
+                    "private.project_member_rows",
+                    "private.project_group_role_rows",
+                    "team_role text",
+                    "g.team_role",
+                    "set team_role",
+                )
                 for sql in stmts:
+                    if any(marker in sql.lower() for marker in legacy_markers):
+                        continue
                     cur.execute(sql)
+                cur.execute(
+                    """
+                    DO $$ BEGIN
+                      IF to_regclass('rbac.bindings') IS NOT NULL THEN
+                        ALTER TABLE rbac.bindings
+                          ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'manual';
+                      END IF;
+                    END $$
+                    """
+                )
                 _apply_rbac_sql(cur)
+                cur.execute(
+                    """
+                    ALTER TABLE rbac.bindings
+                      ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'manual'
+                    """
+                )
+                cur.execute(
+                    """
+                    DO $$ BEGIN
+                      ALTER TABLE rbac.bindings
+                        ADD CONSTRAINT bindings_source_check
+                        CHECK (source IN ('manual', 'ldap', 'oidc'));
+                    EXCEPTION WHEN duplicate_object THEN NULL;
+                    END $$
+                    """
+                )
+                cur.execute(
+                    """
+                    UPDATE api.secrets
+                    SET acl_mode = CASE
+                      WHEN acl_mode = 'custom' THEN 'restricted'
+                      ELSE 'inherit'
+                    END
+                    WHERE acl_mode NOT IN ('inherit', 'restricted')
+                    """
+                )
+                cur.execute(
+                    """
+                    DO $$
+                    DECLARE c record;
+                    BEGIN
+                      FOR c IN
+                        SELECT conname
+                        FROM pg_constraint
+                        WHERE conrelid = 'api.secrets'::regclass
+                          AND pg_get_constraintdef(oid) ILIKE '%acl_mode%'
+                      LOOP
+                        EXECUTE format('ALTER TABLE api.secrets DROP CONSTRAINT %I', c.conname);
+                      END LOOP;
+                      ALTER TABLE api.secrets
+                        ADD CONSTRAINT secrets_acl_mode_check
+                        CHECK (acl_mode IN ('inherit', 'restricted'));
+                    EXCEPTION WHEN duplicate_object THEN NULL;
+                    END $$
+                    """
+                )
                 # Bootstrap: only explicit GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL
                 # (never auto-promote the first registrant — race / takeover risk)
                 boot = bootstrap_admin_email()
@@ -2685,6 +2754,8 @@ def ensure_schema():
                         (boot,),
                     )
                 _backfill_secret_kinds(cur)
+
+
             finally:
                 cur.execute(
                     "SELECT pg_advisory_unlock(%s, %s)",

@@ -45,7 +45,7 @@ class TestSecrets:
             fa = [[]]
         elif tab == 'secrets':
             fa = [rows, [], [], []]
-        elif tab == 'access':
+        elif tab in ('access', 'requests'):
             fa = [access_requests or []]
         else:
             fa = [rows] if tab in ('audit', 'tokens') else []
@@ -65,8 +65,8 @@ class TestSecrets:
 
     def test_project_access_tab(self):
         reqs = [{'id': uuid4(), 'secret_id': uuid4(), 'secret_key': 'API_KEY', 'user_id': self.uid, 'email': 'u@ex.com', 'name': 'User', 'status': 'pending', 'reason': 'debug prod', 'created_at': '2026-01-01', 'resolved_at': None, 'approved_until': None, 'resolver_email': ''}]
-        with patch.object(db, 'as_user', return_value=self._project_conn(tab='access', access_requests=reqs, pending_count=1)):
-            r = self.client.get(f'/projects/{self.pid}?tab=access')
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='requests', access_requests=reqs, pending_count=1)):
+            r = self.client.get(f'/projects/{self.pid}?tab=requests')
         assert r.status_code == 200
         assert b'API_KEY' in r.data
         assert b'pending' in r.data
@@ -113,7 +113,7 @@ class TestSecrets:
         with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='owner')):
             r = self.client.get(f'/projects/{self.pid}?tab=settings')
         assert r.status_code == 200
-        assert b'Members' in r.data
+        assert b'Settings' in r.data
         assert b'Danger zone' in r.data
         assert b'Delete project' in r.data
         assert b'Settings' in r.data
@@ -139,7 +139,7 @@ class TestSecrets:
         with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='member', can_write=True, can_admin=True)):
             r = self.client.get(f'/projects/{self.pid}?tab=settings')
         assert r.status_code == 200
-        assert b'Members' in r.data
+        assert b'Settings' in r.data
         assert b'Delete project' not in r.data
 
     def test_project_secrets_tab_no_danger_zone(self):
