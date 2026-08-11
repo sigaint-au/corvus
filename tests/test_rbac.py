@@ -18,7 +18,7 @@ def test_builtin_role_names_match_docs():
     assert "service-reveal" in config.RBAC_BUILTIN_ROLES
     assert "service-write" in config.RBAC_BUILTIN_ROLES
     assert "team-audit-viewer" in config.RBAC_BUILTIN_ROLES
-    assert "cluster-admin" in config.RBAC_BUILTIN_ROLES
+    assert "global-admin" in config.RBAC_BUILTIN_ROLES
     assert "reveal" in config.RBAC_VERBS
     assert "secrets" in config.RBAC_RESOURCES
     # Legacy service-readonly should NOT be in the list (split into read/reveal)

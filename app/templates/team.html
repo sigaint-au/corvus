@@ -36,6 +36,11 @@
      role="tab"
      aria-selected="{{ 'true' if active_tab == 'activity' else 'false' }}">Activity</a>
   {% if is_admin %}
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}"
+     class="tab {% if active_tab == 'access' %}active{% endif %}"
+     role="tab"
+     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}"
+     title="Role bindings for this team">Access</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
      role="tab"
@@ -99,44 +104,71 @@
   {% endif %}
 </section>
 
-{% elif active_tab == 'members' %}
-{% if is_admin and can_edit_access %}
-{% set panel_title = 'Members' %}
+{% elif active_tab == 'access' and is_admin %}
+{% set panel_title = 'Access' %}
 {% set create_url = url_for('team_access_binding_create', team_id=team.id) %}
 {% set delete_endpoint = 'team_access_binding_delete' %}
 {% set delete_team_id = team.id %}
-{% set form_id_prefix = 'team-members-rbac' %}
+{% set form_id_prefix = 'team-access-rbac' %}
 {% set role_dropdown = team_role_dropdown %}
-{% set access_bindings = members %}
-{% set full_bindings_url = none %}
-{% set empty_message = 'No team bindings yet. Add a user or group below.' %}
-{% set help_html = 'Bind users, <strong>groups</strong>, or service accounts to a team role. Create groups under the Groups tab first, then choose subject kind Group.' %}
+{% set full_bindings_url = url_for('rbac_bindings', scope='team', scope_id=team.id) %}
+{% set empty_message = 'No team bindings yet. Add a user, group, or service account below.' %}
+{% set help_html = 'Role bindings for this team (users, groups, service accounts). Groups are created under the Groups tab, then bound here as subject kind <strong>Group</strong>.' %}
 {% include "partials/access_bindings_panel.html" %}
-{% else %}
+
+{% elif active_tab == 'members' %}
 <section>
   <h2>Members</h2>
+  <p class="muted">People with a team role binding. Manage groups and advanced bindings under <a href="{{ url_for('team_detail', team_id=team.id, tab='access') if is_admin else '#' }}">Access</a>.</p>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('add_team_member', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>User email
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="e.g. alice@example.com" autocomplete="off">
+    </label>
+    <label>Role
+      <select name="role">
+        <option value="member">member</option>
+        <option value="viewer">viewer</option>
+        <option value="admin">admin</option>
+        {% if my_role == 'owner' %}
+        <option value="owner">owner</option>
+        {% endif %}
+      </select>
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  {% endif %}
   {% if members %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Subject</th><th>Role</th><th>Created</th></tr></thead>
+      <thead><tr><th>User</th><th>Role</th><th>Created</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
       <tbody>
       {% for b in members %}
         <tr>
           <td>
-            <span class="badge">{{ b.subject_kind }}</span>
-            {% if b.subject_email %}{{ b.subject_email }}
-            {% elif b.group_name %}{{ b.group_name }}
-            {% else %}<code>{{ b.subject_id }}</code>{% endif %}
+            {{ b.subject_email or b.subject_id }}
           </td>
           <td>
             {% if b.role_short and b.role_short != b.role_name %}
             <span class="badge" data-variant="secondary">{{ b.role_short }}</span>
-            <code class="muted" style="font-size:.75rem">{{ b.role_name }}</code>
             {% else %}
             <code>{{ b.role_name }}</code>
             {% endif %}
           </td>
           <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
+          {% if is_admin %}
+          <td class="acts">
+            <form method="post"
+                  action="{{ url_for('remove_team_member', team_id=team.id, user_id=b.subject_id) }}"
+                  class="inline"
+                  onsubmit="return confirm('Remove this member?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Remove</button>
+            </form>
+          </td>
+          {% endif %}
         </tr>
       {% endfor %}
       </tbody>
@@ -146,9 +178,8 @@
   <p class="empty">No members yet.</p>
   {% endif %}
 </section>
-{% endif %}
 
-{% if is_admin %}
+{% if is_admin and active_tab == 'members' %}
 <section>
   <h2>Invites &amp; join requests</h2>
   <p class="muted">Share an invite link. Recipients must be signed in; they request to join and wait for approval.</p>
@@ -238,7 +269,7 @@
   <p class="muted">
     Groups are named collections of users (RBAC <strong>Group</strong> subjects).
     Manage who is in the group here; grant team access on
-    <a href="{{ url_for('team_detail', team_id=team.id, tab='members') }}">Members</a>
+    <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}">Access</a>
     (add binding → subject kind Group), or project Access / secret Permissions.
     Map LDAP/OIDC via an external key (sync on login).
   </p>

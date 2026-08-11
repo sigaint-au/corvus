@@ -78,9 +78,13 @@ DECLARE
   rid uuid;
 BEGIN
   -- helper: upsert role + replace rules
-  -- cluster-admin
+  -- Rename legacy cluster-admin → global-admin (start-fresh safe)
+  UPDATE rbac.roles SET name = 'global-admin',
+    description = 'Full access to all resources at every scope'
+    WHERE name = 'cluster-admin';
+  -- global-admin
   INSERT INTO rbac.roles (name, description, built_in)
-  VALUES ('cluster-admin', 'Full access to all resources at every scope', true)
+  VALUES ('global-admin', 'Full access to all resources at every scope', true)
   ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
   RETURNING id INTO rid;
   DELETE FROM rbac.role_rules WHERE role_id = rid;
@@ -96,7 +100,7 @@ BEGIN
   INSERT INTO rbac.role_rules (role_id, resources, verbs)
   VALUES (rid, ARRAY['audit'], ARRAY['get', 'list']);
 
-  -- team-owner (scoped — not wildcard; cluster-admin is the only * / * role)
+  -- team-owner (scoped — not wildcard; global-admin is the only * / * built-in role)
   INSERT INTO rbac.roles (name, description, built_in)
   VALUES ('team-owner', 'Full control of a team and its projects/secrets', true)
   ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, built_in = true
@@ -343,7 +347,7 @@ BEGIN
   IF uid IS NULL OR v_verb = '' OR v_res = '' THEN
     RETURN false;
   END IF;
-  -- Global admin short-circuit (cluster-admin equivalent)
+  -- Global admin short-circuit (global-admin equivalent)
   IF EXISTS (
     SELECT 1 FROM private.users WHERE id = uid AND is_global_admin
   ) THEN

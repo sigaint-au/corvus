@@ -111,10 +111,7 @@ def register(app):
         """
         session["team_id"] = str(team_id)
         tab = (request.args.get("tab") or "projects").strip().lower()
-        # Merge legacy "access" tab into "members" (single unified access UI)
-        if tab == "access":
-            tab = "members"
-        if tab not in ("projects", "members", "groups", "activity", "settings"):
+        if tab not in ("projects", "members", "groups", "activity", "access", "settings"):
             tab = "projects"
         q = (request.args.get("q") or "").strip()
         members, projects, ldap_maps, oidc_maps = [], [], [], []
@@ -161,25 +158,17 @@ def register(app):
                     )
                 projects = cur.fetchall()
             elif tab == "members":
-                # Read members from rbac.bindings (not legacy team_members)
+                # User subjects only (people + invites)
                 import rbac_sync
 
-                access_bindings = rbac_sync.list_scope_bindings(
-                    cur, "team", team_id
-                )
-                rbac_sync.enrich_binding_emails(access_bindings)
-                # Filter to user+group team-role bindings for the members list
+                all_b = rbac_sync.list_scope_bindings(cur, "team", team_id)
+                rbac_sync.enrich_binding_emails(all_b)
                 members = [
-                    b for b in access_bindings
-                    if b.get("role_name", "").startswith("team-")
+                    b
+                    for b in all_b
+                    if b.get("subject_kind") == "User"
+                    and str(b.get("role_name") or "").startswith("team-")
                 ]
-                # Load groups for the binding form
-                cur.execute(
-                    "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
-                    (str(team_id),),
-                )
-                access_groups = list(cur.fetchall() or [])
-                can_edit_access = bool(can_edit_access or is_admin)
                 if is_admin:
                     cur.execute(
                         """
@@ -202,6 +191,18 @@ def register(app):
                         (str(team_id),),
                     )
                     join_requests = cur.fetchall() or []
+            elif tab == "access" and is_admin:
+                import rbac_sync
+
+                # All team-scope bindings (users, groups, service accounts)
+                access_bindings = rbac_sync.list_scope_bindings(cur, "team", team_id)
+                rbac_sync.enrich_binding_emails(access_bindings)
+                cur.execute(
+                    "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
+                    (str(team_id),),
+                )
+                access_groups = list(cur.fetchall() or [])
+                can_edit_access = True
             elif tab == "groups":
                 try:
                     cur.execute(
@@ -303,7 +304,7 @@ def register(app):
     @authz.login_required
     def team_access_binding_create(team_id):
         """Create a team-scope role binding (team admin)."""
-        access_url = url_for("team_detail", team_id=team_id, tab="members")
+        access_url = url_for("team_detail", team_id=team_id, tab="access")
         role_name = (request.form.get("role_name") or "").strip()
         subject_kind = (request.form.get("subject_kind") or "User").strip()
         subject_email = (request.form.get("subject_email") or "").strip().lower()
@@ -379,7 +380,7 @@ def register(app):
     @authz.login_required
     def team_access_binding_delete(team_id, binding_id):
         """Remove a team-scope role binding (team admin)."""
-        access_url = url_for("team_detail", team_id=team_id, tab="members")
+        access_url = url_for("team_detail", team_id=team_id, tab="access")
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",

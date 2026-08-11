@@ -25,7 +25,7 @@ A binding at an ancestor applies to descendants. Evaluation uses
 
 | Role | Typical scope | Intent |
 |------|---------------|--------|
-| `cluster-admin` | cluster | Full access (`*` / `*`) — only role with wildcard |
+| `global-admin` | cluster | Full access (`*` / `*`) — only role with wildcard |
 | `audit-viewer` | cluster | Read all audit logs |
 | `team-owner` | team | Full control of team tree (scoped, not wildcard) |
 | `team-admin` | team | Admin without ownership transfer; can read roles |

@@ -155,7 +155,7 @@ RBAC_RESOURCES = (
 )
 # Built-in role names (seeded in db/rbac.sql) — keep in sync with rbac.ensure_builtin_roles
 RBAC_BUILTIN_ROLES = (
-    "cluster-admin",
+    "global-admin",
     "audit-viewer",
     "team-owner",
     "team-admin",
@@ -192,7 +192,7 @@ RBAC_SECRET_ROLE_DROPDOWN = (
     ("secret-read", "Read"),
 )
 RBAC_CLUSTER_ROLE_DROPDOWN = (
-    ("cluster-admin", "Cluster admin"),
+    ("global-admin", "Global admin"),
     ("audit-viewer", "Audit viewer"),
 )
 RBAC_SERVICE_ROLE_DROPDOWN = (
