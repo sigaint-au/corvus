@@ -5,8 +5,8 @@
 #}
 {% set pref = form_id_prefix|default('access') %}
 <section class="access-rbac-panel">
-  <div class="section-head" style="display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.5rem">
-    <h2 style="margin:0">{{ panel_title|default('Role bindings') }}</h2>
+  <div class="section-head">
+    <h2>{{ panel_title|default('Role bindings') }}</h2>
     {% if full_bindings_url %}
     <a class="button ghost small" href="{{ full_bindings_url }}">All scopes</a>
     {% endif %}
@@ -16,9 +16,8 @@
   {% endif %}
 
   {% if can_edit_access %}
-  <div class="card access-bind-card" style="margin:1rem 0 1.25rem;padding:1rem 1.1rem">
-    <h3 style="margin:0 0 .75rem;font-size:1rem">Add binding</h3>
-    <form method="post" action="{{ create_url }}" class="settings-form" id="{{ pref }}-bind-form">
+  <h3>Add binding</h3>
+  <form method="post" action="{{ create_url }}" class="settings-form" id="{{ pref }}-bind-form">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
       <fieldset class="field-group">
@@ -60,17 +59,16 @@
             </select>
           </label>
         </div>
-        <p class="field-hint muted" style="margin:.4rem 0 0;font-size:var(--text-7)">
+        <p class="field-hint muted">
           Grants apply at this scope and flow downward (team → project → secret).
           Hover a role name for its permissions.
         </p>
       </fieldset>
 
-      <p class="form-actions" style="margin:0">
+      <p class="form-actions">
         <button type="submit" class="button">Add binding</button>
       </p>
     </form>
-  </div>
   <script>
   (function () {
     var pref = {{ pref|tojson }};
@@ -92,7 +90,7 @@
   {% endif %}
 
   {% if access_bindings %}
-  <div class="table-wrap">
+  <div class="table">
     <table>
       <thead>
         <tr>
@@ -112,12 +110,8 @@
             {% else %}<code>{{ b.subject_id }}</code>{% endif %}
           </td>
           <td>
-            {% if b.role_short and b.role_short != b.role_name %}
-            <span class="badge" data-variant="secondary">{{ b.role_short }}</span>
-            <code class="muted" style="font-size:.75rem">{{ b.role_name }}</code>
-            {% else %}
-            <code>{{ b.role_name }}</code>
-            {% endif %}
+            <span class="badge" data-variant="secondary"
+                  title="{{ b.role_name }}">{{ b.role_short if b.role_short and b.role_short != b.role_name else b.role_name }}</span>
           </td>
           <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
           <td class="acts">

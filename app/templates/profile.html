@@ -156,10 +156,10 @@
     <label>Expires (days)
       <input type="number" name="expires_days" min="1" max="3650" placeholder="never">
     </label>
-    <button type="submit">Create machine account</button>
+    <button type="submit">Create token</button>
   </form>
   {% if personal_tokens %}
-  <table class="table-spaced">
+  <div class="table"><table class="table-spaced">
     <thead>
       <tr>
         <th>Name</th>
@@ -190,7 +190,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">None yet.</p>
   {% endif %}
@@ -277,7 +277,7 @@
   </div>
   <p class="muted">Signed-in devices.</p>
   {% if active_sessions %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Device / browser</th>
@@ -313,7 +313,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No active sessions recorded for this account.</p>
   {% endif %}
@@ -326,7 +326,7 @@
     <a href="{{ url_for('teams') }}" class="muted">All teams →</a>
   </div>
   {% if teams %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Team</th>
@@ -345,7 +345,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">You are not a member of any teams yet.</p>
   {% endif %}
@@ -355,7 +355,7 @@
 <section>
   <h2>Pending join requests</h2>
   <p class="muted">Waiting for a team owner or admin to approve.</p>
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Team</th>
@@ -372,7 +372,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </section>
 {% endif %}
 
@@ -383,7 +383,7 @@
     <a href="{{ url_for('projects_list') }}" class="muted">All projects →</a>
   </div>
   {% if projects %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Project</th>
@@ -412,7 +412,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No projects available to you yet.</p>
   {% endif %}
@@ -422,7 +422,7 @@
 <section>
   <h2>Pinned secrets</h2>
   {% if pins %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Key</th>
@@ -443,7 +443,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No pinned secrets. Pin keys from a project secrets list to keep them handy.</p>
   {% endif %}
@@ -452,7 +452,7 @@
 <section>
   <h2>Recently accessed</h2>
   {% if recent %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Key</th>
@@ -475,7 +475,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No recent secret access yet.</p>
   {% endif %}

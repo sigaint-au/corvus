@@ -26,8 +26,16 @@
     width: 100%;
     box-sizing: border-box;
   }
-  .role-create .tabs.role-mode-tabs { margin: 0 0 1rem; }
-  .role-create .tabs.role-mode-tabs .tab {
+  .role-create .role-mode-tabs { margin: 0 0 1rem; }
+  .role-create .role-mode-tabs [role="tablist"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .15rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    padding: 0;
+    margin: 0;
+  }
+  .role-create .role-mode-tabs [role="tablist"] .tab {
     cursor: pointer;
     appearance: none;
     -webkit-appearance: none;
@@ -42,15 +50,16 @@
     font-size: .925rem;
     font-weight: 500;
   }
-  .role-create .tabs.role-mode-tabs .tab:hover {
+  .role-create .role-mode-tabs [role="tablist"] .tab:hover {
     color: var(--foreground);
     background: transparent;
   }
-  .role-create .tabs.role-mode-tabs .tab.active {
+  .role-create .role-mode-tabs [role="tablist"] .tab.active {
     color: var(--foreground);
     border-bottom-color: var(--foreground);
   }
   .role-create-panel { min-height: min(40vh, 22rem); }
+  .role-panel-hint { font-size: .85rem; }
   .role-create-cols {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -126,11 +135,11 @@
 
 {% if active_tab == 'builtin' %}
 <section>
-  <p class="muted" style="margin-top:0">
+  <p class="muted mt-0">
     Shipped roles used by team, project, and secret Access dropdowns. Rules cannot be edited.
   </p>
   {% if builtin_roles %}
-  <div class="table-wrap">
+  <div class="table">
     <table>
       <thead>
         <tr>
@@ -168,7 +177,7 @@
   <p class="muted">Only global admins can create or delete custom roles.</p>
   {% endif %}
   {% if custom_roles %}
-  <div class="table-wrap">
+  <div class="table">
     <table>
       <thead>
         <tr>
@@ -191,12 +200,12 @@
             {% else %}—{% endif %}
           </td>
           {% if can_edit %}
-          <td>
+          <td class="acts">
             <form method="post" action="{{ url_for('rbac_roles_delete', role_id=r.id) }}" class="inline"
                   onsubmit="return confirm('Delete role {{ r.name }}?');">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">
               <input type="hidden" name="tab" value="custom">
-              <button type="submit" class="button ghost small danger">Delete</button>
+              <button type="submit" class="link danger">Delete</button>
             </form>
           </td>
           {% endif %}
@@ -218,7 +227,7 @@
 
 {% if active_tab == 'create' and can_edit %}
 <section class="role-create-section">
-  <form method="post" action="{{ url_for('rbac_roles_create') }}" class="card role-create" id="role-create-form">
+  <form method="post" action="{{ url_for('rbac_roles_create') }}" class="role-create" id="role-create-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="tab" value="custom">
     <input type="hidden" name="mode" id="create-mode" value="form">
@@ -236,15 +245,16 @@
       </label>
     </div>
 
-    <nav class="tabs role-mode-tabs" role="tablist" aria-label="Rule editor mode">
+    <ot-tabs class="role-mode-tabs">
+    <div role="tablist">
       <button type="button" class="tab active" data-mode="form" id="mode-form-btn"
-              role="tab" aria-selected="true" aria-controls="mode-form-panel">Form</button>
+              role="tab" aria-selected="true">Form</button>
       <button type="button" class="tab" data-mode="yaml" id="mode-yaml-btn"
-              role="tab" aria-selected="false" aria-controls="mode-yaml-panel">YAML</button>
-    </nav>
+              role="tab" aria-selected="false">YAML</button>
+    </div>
 
     <div id="mode-form-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-form-btn">
-      <p class="muted" style="margin-top:0;font-size:.85rem">
+      <p class="muted mt-0 role-panel-hint">
         Pick resources and verbs for a single rule. Switch to YAML for multiple rules.
       </p>
       <div class="role-create-cols">
@@ -274,7 +284,7 @@
     </div>
 
     <div id="mode-yaml-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-yaml-btn" hidden>
-      <p class="muted" style="margin-top:0;font-size:.85rem">
+      <p class="muted mt-0 role-panel-hint">
         One or more rules. Blank line between rules. Lines starting with <code>#</code> are ignored.
       </p>
       <label class="visually-hidden" for="rules_yaml">Rules YAML</label>
@@ -293,6 +303,7 @@ verbs: *
 # valid verbs: {{ verbs|join(', ') }}</pre>
       </details>
     </div>
+  </ot-tabs>
 
     <p class="form-actions">
       <button type="submit" class="button">Create role</button>

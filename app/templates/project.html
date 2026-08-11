@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<h1>{{ project.name }}</h1>
+<div class="page-head"><h1>{{ project.name }}</h1></div>
 {% if project.description %}
 <p class="page-desc">{{ project.description }}</p>
 {% elif can_admin or can_settings %}
@@ -14,7 +14,7 @@
 
 {% if new_token %}
 <div class="token-once">
-  <div class="section-head tight" style="margin-bottom:.5rem">
+  <div class="section-head tight">
     <strong>Machine token (copy now — shown once)</strong>
     <button type="button" class="link copy-btn" data-copy-target="new-token-pre" data-clear-seconds="60">Copy token</button>
   </div>
@@ -73,7 +73,7 @@
     </div>
     {% endif %}
   </div>
-  <table>
+  <div class="table"><table>
     <thead><tr><th>Key</th><th>Status</th><th>Expires</th><th></th></tr></thead>
     <tbody>
     {% for s in due_overdue %}
@@ -101,7 +101,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </section>
 {% endif %}
 <section>
@@ -356,7 +356,7 @@
   </div>
   <p class="muted">Pending and recent reveal-approval requests for this project.</p>
   {% if access_requests %}
-  <div class="access-requests-wrap">
+  <div class="table">
   <table class="access-requests-table">
     <thead>
       <tr>
@@ -479,7 +479,7 @@
     </div>
   </form>
   {% if audit_log %}
-  <table class="audit-table">
+  <div class="table"><table class="audit-table">
     <thead>
       <tr>
         <th>What happened</th>
@@ -497,7 +497,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% with pager=audit_pager %}
     {% include "partials/pager.html" %}
   {% endwith %}
@@ -532,7 +532,7 @@
   <section class="token-list-section list-panel">
     <h3 class="token-list-title">Active tokens</h3>
     {% if tokens %}
-    <div class="table-wrap">
+    <div class="table">
     <table>
       <thead>
         <tr>

@@ -1,20 +1,16 @@
 {% extends "base.html" %}
 {% block title %}{{ team.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<nav aria-label="Breadcrumb">
-  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
-    <li><a href="{{ url_for('teams') }}" class="unstyled">Teams</a></li>
-    <li aria-hidden="true">/</li>
-    <li aria-current="page"><strong>{{ team.name }}</strong></li>
-  </ol>
-</nav>
-<h1>{{ team.name }}</h1>
+<div class="page-head"><h1>{{ team.name }}</h1></div>
 <p class="page-desc muted">Your role: <span class="badge" data-variant="secondary">{{ my_role }}</span></p>
 
 {% if new_invite_url %}
 <div class="token-once">
-  <strong>Invite link (copy now — shown once)</strong>
-  <pre>{{ new_invite_url }}</pre>
+  <div class="section-head tight">
+    <strong>Invite link (copy now — shown once)</strong>
+    <button type="button" class="link copy-btn" data-copy-target="new-invite-pre" data-clear-seconds="60">Copy link</button>
+  </div>
+  <pre id="new-invite-pre">{{ new_invite_url }}</pre>
 </div>
 {% endif %}
 
@@ -71,7 +67,7 @@
   </form>
   {% endif %}
   {% if projects %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>Name</th><th>Description</th><th>ID</th>{% if my_role in ('owner', 'admin') %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for p in projects %}
@@ -93,7 +89,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">{% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}</p>
   {% endif %}
@@ -136,7 +132,7 @@
   </form>
   {% endif %}
   {% if members %}
-  <div class="table-wrap">
+  <div class="table">
     <table>
       <thead><tr><th>User</th><th>Role</th><th>Created</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
       <tbody>
@@ -146,11 +142,8 @@
             {{ b.subject_email or b.subject_id }}
           </td>
           <td>
-            {% if b.role_short and b.role_short != b.role_name %}
-            <span class="badge" data-variant="secondary">{{ b.role_short }}</span>
-            {% else %}
-            <code>{{ b.role_name }}</code>
-            {% endif %}
+            <span class="badge" data-variant="secondary"
+                  title="{{ b.role_name }}">{{ b.role_short if b.role_short and b.role_short != b.role_name else b.role_name }}</span>
           </td>
           <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
           {% if is_admin %}
@@ -191,7 +184,7 @@
     <button type="submit">Create invite link</button>
   </form>
   {% if invites %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>Role</th><th>Expires</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for i in invites %}
@@ -211,12 +204,12 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% endif %}
 
   <h3>Pending requests</h3>
   {% if join_requests %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>User</th><th>Role</th><th>Requested</th><th></th></tr></thead>
     <tbody>
     {% for r in join_requests %}
@@ -237,7 +230,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No pending join requests.</p>
   {% endif %}
@@ -287,7 +280,7 @@
   </form>
   {% endif %}
   {% if groups %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>Name</th><th>Source</th><th>External</th><th>Members</th><th></th></tr></thead>
     <tbody>
     {% for g in groups %}
@@ -308,7 +301,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">{% if search_q %}No groups match “{{ search_q }}”.{% else %}No groups yet.{% endif %}</p>
   {% endif %}
@@ -319,19 +312,19 @@
   <h2>Access activity</h2>
   <p class="muted">Membership, invites, LDAP maps, and team settings changes.</p>
   {% if org_events %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
     <tbody>
     {% for e in org_events %}
       <tr>
         <td class="muted">{{ e.created_at }}</td>
         <td>{{ e.actor_email or 'unknown' }}</td>
-        <td><span class="audit-action">{{ e.action }}</span></td>
+        <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
         <td class="muted">{{ e.detail }}</td>
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No activity yet.</p>
   {% endif %}
@@ -469,7 +462,7 @@
     {% if not ldap_enabled %}<strong>LDAP is currently disabled</strong> in server settings.{% endif %}
   </p>
   {% if ldap_maps %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>LDAP group</th><th>Team role</th><th></th></tr></thead>
     <tbody>
     {% for m in ldap_maps %}
@@ -488,7 +481,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No LDAP group maps for this team.</p>
   {% endif %}
@@ -518,7 +511,7 @@
     {% if not oidc_enabled %}<strong>OIDC is currently disabled</strong> in server settings.{% endif %}
   </p>
   {% if oidc_maps %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>OIDC group</th><th>Team role</th><th></th></tr></thead>
     <tbody>
     {% for m in oidc_maps %}
@@ -537,7 +530,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No OIDC group maps for this team.</p>
   {% endif %}

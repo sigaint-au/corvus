@@ -69,8 +69,8 @@ class TestUIShell:
         # Accessibility: a keyboard-first skip link must render on app pages.
         assert b'class="skip-link"' in r.data
         assert b'Skip to content' in r.data
-        # Responsive tables: the .table-wrap scroll container must exist.
-        assert b'.table-wrap ' in r.data
+        # Responsive tables: the oat .table scroll container must exist.
+        assert b'.table {' in r.data
         assert b'overflow-x: auto' in r.data
 
     def test_machines_template_shows_last_used(self):
@@ -83,7 +83,7 @@ class TestUIShell:
         with store.app.test_request_context('/machines'):
             html = render_template('machines.html', team=team, tokens=[token])
         assert 'never' in html                 # unused token reports "never"
-        assert 'table-wrap' in html            # machine table is scrollable/responsive
+        assert 'class="table"' in html    # machine table is scrollable/responsive
 
     def test_project_tabs_use_nav_links_not_tablist_role(self):
         # Server-side page tabs are plain navigation links (no fake tablist),

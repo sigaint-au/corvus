@@ -2,15 +2,12 @@
 {% block title %}Role bindings — {{ app_name }}{% endblock %}
 {% block body %}
 {% if back_team_id %}
-<nav aria-label="Breadcrumb">
-  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
-    <li><a href="{{ url_for('teams') }}" class="unstyled">Teams</a></li>
-    <li aria-hidden="true">/</li>
-    <li><a href="{{ url_for('team_detail', team_id=back_team_id) }}" class="unstyled">Team</a></li>
-    <li aria-hidden="true">/</li>
-    <li aria-current="page"><strong>Role bindings</strong></li>
-  </ol>
-</nav>
+{% set breadcrumbs = [
+  ('Teams', url_for('teams')),
+  ('Team', url_for('team_detail', team_id=back_team_id)),
+  ('Role bindings', none),
+] %}
+{% include "partials/breadcrumb.html" %}
 {% endif %}
 
 <div class="page-head">
@@ -64,15 +61,15 @@
 </form>
 
 {% if scope_label %}
-<p class="muted" style="margin:.25rem 0 1rem">Scope: <strong>{{ scope_kind }}</strong> · {{ scope_label }}</p>
+<p class="muted scope-note">Scope: <strong>{{ scope_kind }}</strong> · {{ scope_label }}</p>
 {% endif %}
 
-<div class="card" style="margin-bottom:1.25rem">
-  <h2 style="margin-top:0;font-size:1rem">Bindings at this scope</h2>
+<section>
+  <h2>Bindings at this scope</h2>
   {% if not scope_id and scope_kind != 'cluster' %}
   <p class="muted">Select a scope above to list bindings.</p>
   {% else %}
-  <div class="table-wrap">
+  <div class="table">
     <table>
       <thead>
         <tr>
@@ -92,36 +89,37 @@
             {% elif b.group_name %}{{ b.group_name }}
             {% else %}<code>{{ b.subject_id }}</code>{% endif %}
           </td>
-          <td><code>{{ b.role_name }}</code></td>
+          <td><span class="badge" data-variant="secondary">{{ b.role_name }}</span></td>
           <td class="muted">{{ b.scope_kind }}</td>
           <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
-          <td>
+          <td class="acts">
             {% if can_edit %}
             <form method="post" action="{{ url_for('rbac_bindings_delete', binding_id=b.id) }}" class="inline"
                   onsubmit="return confirm('Remove this binding?');">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">
               <input type="hidden" name="scope" value="{{ scope_kind }}">
               <input type="hidden" name="scope_id" value="{{ scope_id or '' }}">
-              <button type="submit" class="button ghost small danger">Remove</button>
+              <button type="submit" class="link danger">Remove</button>
             </form>
             {% endif %}
           </td>
         </tr>
-        {% else %}
-        <tr><td colspan="5" class="muted">No bindings at this scope.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% if bindings|length == 0 %}
+  <p class="empty">No bindings at this scope.</p>
+  {% endif %}
   {% if not can_edit and (scope_id or scope_kind == 'cluster') %}
-  <p class="muted" style="margin-top:.75rem">View only — team/project admins can add or remove bindings here.</p>
+  <p class="muted mt-1">View only — team/project admins can add or remove bindings here.</p>
   {% endif %}
   {% endif %}
-</div>
+</section>
 
 {% if can_edit and (scope_id or scope_kind == 'cluster') %}
-<div class="card access-bind-card" style="padding:1rem 1.1rem">
-  <h2 style="margin-top:0;font-size:1rem">Add binding</h2>
+<section>
+  <h2>Add binding</h2>
   <form method="post" action="{{ url_for('rbac_bindings_create') }}" class="settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="scope_kind" value="{{ scope_kind }}">
@@ -178,11 +176,11 @@
       </div>
     </fieldset>
 
-    <p class="form-actions" style="margin:0">
+    <p class="form-actions">
       <button type="submit" class="button">Create binding</button>
     </p>
   </form>
-</div>
+</section>
 <script>
 (function () {
   var sel = document.getElementById('rbac-subject-kind');

@@ -6,8 +6,8 @@
   <p class="muted">Who can perform a verb on a resource at a given scope (uses <code>api.can</code>).</p>
 </div>
 
-<form method="get" action="{{ url_for('rbac_access_review') }}" class="toolbar card" style="display:grid;gap:.75rem;padding:1rem">
-  <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:end">
+<form method="get" action="{{ url_for('rbac_access_review') }}" class="list-panel review-form" role="search">
+  <div class="review-form-row">
     <label>Verb
       <select name="verb">
         {% for v in verbs %}
@@ -55,19 +55,19 @@
     </label>
     <button type="submit" class="button">Review</button>
   </div>
-  <p class="muted" style="margin:0;font-size:.85rem">
+  <p class="muted review-form-hint">
     Query: <code>can({{ verb }}, {{ resource }}, {{ scope_kind }}, {{ scope_id or 'null' }})</code>
   </p>
 </form>
 
-<div class="card" style="margin-top:1rem">
-  <h2 style="margin-top:0;font-size:1rem">Subjects with access</h2>
+<section>
+  <h2>Subjects with access</h2>
   {% if not scope_id and scope_kind != 'cluster' %}
   <p class="muted">Choose a team or project scope and run Review.</p>
   {% elif not results %}
   <p class="muted">No users matched (start-fresh RBAC may have no bindings yet; global admins always match).</p>
   {% else %}
-  <div class="table-wrap">
+  <div class="table">
     <table>
       <thead>
         <tr><th>Email</th><th>Name</th><th>Flags</th></tr>
@@ -84,7 +84,7 @@
     </table>
   </div>
   {% endif %}
-</div>
+</section>
 <script>
 (function () {
   var scope = document.getElementById('rev-scope');

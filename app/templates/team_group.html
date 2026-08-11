@@ -1,17 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ group.name }} — {{ team.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<nav aria-label="Breadcrumb">
-  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
-    <li><a href="{{ url_for('teams') }}" class="unstyled">Teams</a></li>
-    <li aria-hidden="true">/</li>
-    <li><a href="{{ url_for('team_detail', team_id=team.id) }}" class="unstyled">{{ team.name }}</a></li>
-    <li aria-hidden="true">/</li>
-    <li><a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}" class="unstyled">Groups</a></li>
-    <li aria-hidden="true">/</li>
-    <li aria-current="page"><strong>{{ group.name }}</strong></li>
-  </ol>
-</nav>
+{% set breadcrumbs = [
+  ('Teams', url_for('teams')),
+  (team.name, url_for('team_detail', team_id=team.id)),
+  ('Groups', url_for('team_detail', team_id=team.id, tab='groups')),
+  (group.name, none),
+] %}
+{% include "partials/breadcrumb.html" %}
 <div class="page-head">
   <div class="section-head-main">
     <h1>{{ group.name }}</h1>
@@ -71,7 +67,7 @@
   </form>
   {% endif %}
   {% if group_members %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>User</th><th>Source</th><th></th></tr></thead>
     <tbody>
     {% for m in group_members %}
@@ -92,7 +88,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">{% if search_q %}No members match “{{ search_q }}”.{% else %}No members in this group yet.{% endif %}</p>
   {% endif %}

@@ -1,13 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Import preview — {{ project.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<nav aria-label="Breadcrumb">
-  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
-    <li><a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}" class="unstyled">{{ project.name }}</a></li>
-    <li aria-hidden="true">/</li>
-    <li aria-current="page"><strong>Import preview</strong></li>
-  </ol>
-</nav>
+{% set breadcrumbs = [
+  (project.name, url_for('project_detail', project_id=project.id, tab='import')),
+  ('Import preview', none),
+] %}
+{% include "partials/breadcrumb.html" %}
 <h1>Import preview</h1>
 <p class="page-desc muted">
   Project <strong>{{ project.name }}</strong>:
@@ -19,7 +17,7 @@
 <form method="post" action="{{ url_for('import_commit', project_id=project.id) }}" class="import-preview-form">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
-  <table class="import-preview-table">
+  <div class="table"><table class="import-preview-table">
     <thead>
       <tr>
         <th>Key</th>
@@ -70,7 +68,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 
   <p class="form-actions">
     <button type="submit">Commit import</button>

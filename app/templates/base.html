@@ -1006,6 +1006,23 @@
     .mt-0 { margin-top: 0 !important; }
     .mt-1 { margin-top: 1rem !important; }
     .mb-1 { margin-bottom: 1rem !important; }
+    .scope-note { margin: .25rem 0 1rem; }
+    /* RBAC access-review filter form: card grid layout (M4/L7) */
+    .review-form.list-panel {
+      display: grid;
+      gap: .75rem;
+      align-items: end;
+    }
+    .review-form-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .75rem;
+      align-items: end;
+    }
+    .review-form-hint {
+      margin: 0;
+      font-size: .85rem;
+    }
     .row.row-end { align-items: end; }
     .row .flex-2,
     .row > .grow { flex: 2 1 12rem; min-width: 10rem; }
@@ -1117,12 +1134,6 @@
       width: 100%;
       box-sizing: border-box;
     }
-    .access-requests-wrap {
-      width: 100%;
-      max-width: 100%;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }
     .access-requests-table {
       width: 100%;
       min-width: 0;
@@ -1200,9 +1211,12 @@
     /* Pagination: oat menu.buttons; disabled ends use native <button disabled> */
     .pager {
       margin-top: 1rem;
+      margin-bottom: 0;
       font-size: .875rem;
       color: var(--muted-foreground);
       align-items: center;
+      gap: var(--space-4);
+      flex-wrap: wrap;
     }
     .pager menu.buttons {
       margin: 0;
@@ -1836,18 +1850,17 @@
     table { width: 100%; border-collapse: collapse; font-size: .925rem; table-layout: auto; }
     th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
     th { color: var(--muted-foreground); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
-    /* Responsive table container: horizontal scroll on narrow screens instead of
-       overflowing the card/viewport. Also supports sticky key/action columns. */
-    .table-wrap,
-    .access-requests-wrap {
+    /* Responsive table container (oat .table): horizontal scroll on narrow
+       screens instead of overflowing the card/viewport. Also supports sticky
+       key/action columns on wide tables. */
+    .table {
       width: 100%;
       max-width: 100%;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
       -ms-overflow-style: -ms-autohiding-scrollbar;
     }
-    .table-wrap > table,
-    .access-requests-wrap > table {
+    .table > table {
       min-width: 0;
       width: 100%;
     }
@@ -1953,6 +1966,9 @@
       padding: 1rem;
       margin: 1rem 0;
       word-break: break-all;
+    }
+    .token-once .section-head {
+      margin-bottom: .5rem;
     }
     code.k { font-size: .9em; }
     td.secret-cell {
@@ -2164,23 +2180,30 @@
       /* Keep the Key and Actions columns pinned while a wide table scrolls,
          so context is never lost on phones. Cards/panels use --card as the
          opaque backing so scrolled rows hide underneath. */
-      .table-wrap td.col-key,
-      .table-wrap th:first-child {
+      .table td.col-key,
+      .table th:first-child {
         position: sticky;
         left: 0;
         z-index: 1;
         background: var(--card);
         box-shadow: 1px 0 0 var(--border);
       }
-      .table-wrap tr:nth-child(odd) td.col-key {
+      .table tr:nth-child(odd) td.col-key {
         background: var(--card);
       }
-      .table-wrap td.acts-menu {
+      .table td.acts-menu {
         position: sticky;
         right: 0;
         z-index: 1;
         background: var(--card);
         box-shadow: -1px 0 0 var(--border);
+      }
+      /* Tables that start with pin/select checkbox columns: pinned key column
+         would overlap the checkboxes, so skip the left-pinning there. */
+      .table.pin-table td.col-key,
+      .table.pin-table th:first-child {
+        position: static;
+        box-shadow: none;
       }
       /* Expanded inline reveal: let the cell take full available width and
          scroll, so multi-line/structured values don't blow out the row. */

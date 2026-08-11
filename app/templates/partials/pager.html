@@ -14,7 +14,7 @@
   'scope': pager.scope if pager else none,
 } %}
 {% if pager and pager.total > pager.per_page %}
-<nav class="pager hstack" aria-label="Pagination" style="gap: var(--space-4); flex-wrap: wrap; margin: 1rem 0;">
+<nav class="pager hstack" aria-label="Pagination">
   <span class="muted pager-summary" style="font-size: var(--text-7);">
     Showing {{ pager.start }}–{{ pager.end }} of {{ pager.total }}
   </span>

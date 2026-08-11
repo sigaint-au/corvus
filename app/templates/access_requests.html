@@ -6,11 +6,11 @@
 </div>
 <p class="page-desc muted">
   Pending secret-reveal approvals for projects you administer.
-  Showing pending only — open a project’s <strong>Access</strong> tab for full history.
+  Showing pending only — open a project’s <strong>Requests</strong> tab for full history.
 </p>
 
 {% if requests %}
-<div class="access-requests-wrap">
+<div class="table">
 <table class="access-requests-table">
   <thead>
     <tr>
@@ -26,7 +26,7 @@
   {% for r in requests %}
     <tr>
       <td>
-        <a href="{{ url_for('project_detail', project_id=r.project_id, tab='access') }}">
+        <a href="{{ url_for('project_detail', project_id=r.project_id, tab='requests') }}">
           {{ r.project_name }}
         </a>
       </td>
