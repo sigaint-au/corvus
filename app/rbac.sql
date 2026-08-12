@@ -842,8 +842,8 @@ BEGIN
 
   RETURN QUERY
   WITH chain AS (
-    SELECT scope_kind::text, scope_id
-    FROM api.rbac_scope_chain(p_scope_kind, p_scope_id)
+    SELECT c.scope_kind::text, c.scope_id
+    FROM api.rbac_scope_chain(p_scope_kind, p_scope_id) AS c
   ),
   labels AS (
     SELECT 'cluster'::text AS scope_kind, NULL::uuid AS scope_id, 'Global'::text AS scope_label
@@ -895,7 +895,7 @@ BEGIN
          'Global', 'global-admin', 'Global admin', u.email::text, true
     FROM private.users u
    WHERE u.disabled_at IS NULL AND u.is_global_admin
-  ORDER BY 1 NULLS LAST, scope_kind, role_name;
+  ORDER BY 1 NULLS LAST, 4, 6;
 END;
 $$;
 GRANT EXECUTE ON FUNCTION api.effective_access_rows TO authenticator, authenticated;

@@ -508,6 +508,7 @@ def register(app):
                     )
                     effective_access = list(cur.fetchall() or [])
                 except Exception:
+                    conn.rollback()
                     effective_access = []
                 try:
                     cur.execute(

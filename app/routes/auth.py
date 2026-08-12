@@ -1126,6 +1126,7 @@ def register(app):
                         cur.execute("SELECT * FROM api.my_access_rows()")
                         my_access = list(cur.fetchall() or [])
                     except Exception:
+                        conn.rollback()
                         log.exception("profile: my access rows failed")
                         my_access = []
         except Exception:

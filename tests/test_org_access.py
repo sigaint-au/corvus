@@ -167,6 +167,11 @@ class TestOrgAccess:
             assert 'FUNCTION api.effective_access_rows(' in sql
             assert 'FROM api.rbac_subjects(' in sql
             assert 'JOIN api.rbac_scope_chain(' in sql
+            # chain CTE columns are the same names as the function's OUT params;
+            # they must be qualified or PL/pgSQL raises an ambiguity error.
+            assert 'FROM api.rbac_scope_chain(p_scope_kind, p_scope_id) AS c' in sql
+            assert 'SELECT c.scope_kind::text, c.scope_id' in sql
+            assert "ORDER BY 1 NULLS LAST, 4, 6;" in sql
             assert "GRANT EXECUTE ON FUNCTION api.my_access_rows" in sql
             assert "GRANT EXECUTE ON FUNCTION api.effective_access_rows" in sql
 
