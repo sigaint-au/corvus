@@ -109,7 +109,110 @@
     <a class="button outline small" href="{{ url_for('secret_new', project_id=project.id) }}">Create secret</a>
     {% endif %}
   </div>
-  <div class="section-tools">
+  {% if can_write %}
+  <details class="quick-add">
+    <summary>Quick add plain secret</summary>
+    <form method="post"
+          action="{{ url_for('create_secret', project_id=project.id, page=secrets_pager.page if secrets_pager else 1, q=search_q or none) }}"
+          hx-post="{{ url_for('create_secret', project_id=project.id) }}"
+          hx-target="#secrets-list"
+          hx-swap="innerHTML"
+          hx-indicator="#secrets-list"
+          hx-disabled-elt="find button[type=submit]"
+          class="row secret-create" id="secret-form">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      {# Preserve list filters across HTMX create round-trips #}
+      <input type="hidden" name="page" value="{{ secrets_pager.page if secrets_pager else 1 }}">
+      <input type="hidden" name="q" value="{{ search_q or '' }}">
+      {# Quick-add only creates plain secrets; use Advanced create for structured types. #}
+      <input type="hidden" name="kind" value="plain">
+      <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
+      <label class="value-label">Value
+        <span class="input-with-btn">
+          <input type="password" name="value" id="secret-value" required placeholder="••••••••" autocomplete="off">
+          <button type="button" class="icon-btn" id="gen-btn"
+                  title="Generate random value" aria-label="Generate random value">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
+              <path d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </span>
+      </label>
+      <label>Note
+        <input type="text" name="note" placeholder="optional label">
+      </label>
+      <label>Expires
+        <input type="date" name="expires_at" id="secret-expires">
+      </label>
+      <label>Access
+        <select name="access_mode" title="Who may see this secret">
+          {% for m in access_modes|default(['inherit']) %}
+          <option value="{{ m }}" {% if m == 'inherit' %}selected{% endif %}>
+            {{ access_mode_labels.get(m, m) if access_mode_labels is defined else m }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Approval
+        <select name="requires_approval" title="Override project default for reveal approval">
+          <option value="inherit" selected>
+            Project default{% if require_reveal_approval %} (require){% else %} (open){% endif %}
+          </option>
+          <option value="require">Require approval</option>
+          <option value="exempt">No approval</option>
+        </select>
+      </label>
+      <button type="submit">Create</button>
+    </form>
+    <script>
+    (function () {
+      var form = document.getElementById('secret-form');
+      var btn = document.getElementById('gen-btn');
+      var inp = document.getElementById('secret-value');
+      if (!btn || !inp) return;
+      function maskValue() {
+        inp.type = 'password';
+      }
+      btn.addEventListener('click', function () {
+        var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*_-+=';
+        var len = 32;
+        var buf = new Uint8Array(len);
+        crypto.getRandomValues(buf);
+        var out = '';
+        for (var i = 0; i < len; i++) out += chars[buf[i] % chars.length];
+        inp.type = 'text';
+        inp.value = out;
+        inp.focus();
+        inp.select();
+      });
+      if (form) {
+        form.addEventListener('htmx:afterRequest', function (e) {
+          if (e.detail && e.detail.successful) {
+            form.reset();
+            maskValue();
+          }
+        });
+      }
+    })();
+    </script>
+  </details>
+  {% endif %}
+  <div class="secrets-toolbar">
+    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="secrets">
+      <label class="search-field">
+        <span class="visually-hidden">Search secrets</span>
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search…" autocomplete="off" aria-label="Search secrets">
+      </label>
+      <button type="submit">Search</button>
+      {% if search_q %}
+      <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+      {% endif %}
+    </form>
     <div class="bulk-toolbar" id="bulk-toolbar" hidden>
       <label class="bulk-select" title="Select all on this page">
         <input type="checkbox" id="bulk-select-all" aria-label="Select all secrets">
@@ -132,107 +235,7 @@
       </select>
       <button type="button" id="bulk-apply" class="bulk-apply" disabled>Apply</button>
     </div>
-    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
-      <input type="hidden" name="tab" value="secrets">
-      <label class="search-field">
-        <span class="visually-hidden">Search secrets</span>
-        <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search secrets">
-      </label>
-      <button type="submit">Search</button>
-      {% if search_q %}
-      <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
-      {% endif %}
-    </form>
   </div>
-  {% if can_write %}
-  <form method="post"
-        action="{{ url_for('create_secret', project_id=project.id, page=secrets_pager.page if secrets_pager else 1, q=search_q or none) }}"
-        hx-post="{{ url_for('create_secret', project_id=project.id) }}"
-        hx-target="#secrets-list"
-        hx-swap="innerHTML"
-        hx-indicator="#secrets-list"
-        hx-disabled-elt="find button[type=submit]"
-        class="row secret-create" id="secret-form">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    {# Preserve list filters across HTMX create round-trips #}
-    <input type="hidden" name="page" value="{{ secrets_pager.page if secrets_pager else 1 }}">
-    <input type="hidden" name="q" value="{{ search_q or '' }}">
-    {# Quick-add only creates plain secrets; use Advanced create for structured types. #}
-    <input type="hidden" name="kind" value="plain">
-    <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
-    <label class="value-label">Value
-      <span class="input-with-btn">
-        <input type="password" name="value" id="secret-value" required placeholder="••••••••" autocomplete="off">
-        <button type="button" class="icon-btn" id="gen-btn"
-                title="Generate random value" aria-label="Generate random value">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
-            <path d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-        </button>
-      </span>
-    </label>
-    <label>Note
-      <input type="text" name="note" placeholder="optional label">
-    </label>
-    <label>Expires
-      <input type="date" name="expires_at" id="secret-expires">
-    </label>
-    <label>Access
-      <select name="access_mode" title="Who may see this secret">
-        {% for m in access_modes|default(['inherit']) %}
-        <option value="{{ m }}" {% if m == 'inherit' %}selected{% endif %}>
-          {{ access_mode_labels.get(m, m) if access_mode_labels is defined else m }}
-        </option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Approval
-      <select name="requires_approval" title="Override project default for reveal approval">
-        <option value="inherit" selected>
-          Project default{% if require_reveal_approval %} (require){% else %} (open){% endif %}
-        </option>
-        <option value="require">Require approval</option>
-        <option value="exempt">No approval</option>
-      </select>
-    </label>
-    <button type="submit">Create</button>
-  </form>
-  <script>
-  (function () {
-    var form = document.getElementById('secret-form');
-    var btn = document.getElementById('gen-btn');
-    var inp = document.getElementById('secret-value');
-    if (!btn || !inp) return;
-    function maskValue() {
-      inp.type = 'password';
-    }
-    btn.addEventListener('click', function () {
-      var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*_-+=';
-      var len = 32;
-      var buf = new Uint8Array(len);
-      crypto.getRandomValues(buf);
-      var out = '';
-      for (var i = 0; i < len; i++) out += chars[buf[i] % chars.length];
-      inp.type = 'text';
-      inp.value = out;
-      inp.focus();
-      inp.select();
-    });
-    if (form) {
-      form.addEventListener('htmx:afterRequest', function (e) {
-        if (e.detail && e.detail.successful) {
-          form.reset();
-          maskValue();
-        }
-      });
-    }
-  })();
-  </script>
-  {% endif %}
   <div id="secrets-list" class="secrets-list">
     {% include "partials/secrets.html" %}
   </div>
