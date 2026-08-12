@@ -584,6 +584,12 @@ def register(app):
             >>> html = _reveal_toggle_html(project_id, secret_id, revealed=True)
         """
         cell_id, toggle_id = _reveal_cell_ids(secret_id, cell, version_id)
+        # The list-row toggle lives inside the secret kebab ot-dropdown; history
+        # toggles sit in the acts cell. Pass the popover id so the swapped-in
+        # Hide control renders as a proper menu item.
+        menu = None
+        if version_id is None and (cell or "").strip().lower() != "current":
+            menu = f"secret-menu-{secret_id}"
         if version_id is not None:
             reveal_url = url_for(
                 "reveal_secret_version",
@@ -611,6 +617,7 @@ def register(app):
             hide_url=hide_url,
             revealed=revealed,
             oob=True,
+            menu=menu,
         )
 
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/reveal")

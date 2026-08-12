@@ -199,8 +199,13 @@ class TestSecrets:
         assert b'/value' in r.data
         assert b'Copy' in r.data
         assert b'Open full view' in r.data
-        assert b'>Hide</a>' in r.data
+        assert b'>Hide</button>' in r.data
         assert b'/hide' in r.data
+        assert b'<button type="button"' in r.data
+        # OOB toggle must be an oat menu item (button, not anchor) that closes
+        # the kebab popover after clicking.
+        assert b'role="menuitem"' in r.data
+        assert b'popovertarget="secret-menu-' + str(sid).encode() + b'"' in r.data
         assert b'name="expires_at"' not in r.data
 
     def test_reveal_secret_requires_access_request(self):
@@ -349,7 +354,7 @@ class TestSecrets:
         r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/hide', headers={'HX-Request': 'true'})
         assert r.status_code == 200
         assert b'*******' in r.data
-        assert b'>Reveal</a>' in r.data
+        assert b'>Reveal</button>' in r.data
         assert b'/reveal' in r.data
 
     def test_update_secret_value(self):
@@ -363,7 +368,7 @@ class TestSecrets:
         assert b'new-secret' not in r.data
         assert b'*******' in r.data
         assert b'Updated' in r.data
-        assert b'>Reveal</a>' in r.data
+        assert b'>Reveal</button>' in r.data
         conn.commit.assert_called()
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
         assert 'expires_at' in sql

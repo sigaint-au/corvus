@@ -1,12 +1,14 @@
-{# Reveal / Hide control. Set revealed=true for Hide state. oob=true for out-of-band swap.
-   When approved_until is set, show a countdown for the grant window. #}
-<a id="{{ toggle_id }}"
-   href="#"
-   class="reveal-toggle{% if approved_until is defined and approved_until and not revealed %} reveal-granted{% endif %}"
-   role="menuitem"
-   hx-get="{% if revealed %}{{ hide_url }}{% else %}{{ reveal_url }}{% endif %}"
-   hx-target="#{{ cell_id }}"
-   hx-swap="innerHTML"{% if oob %}
-   hx-swap-oob="true"{% endif %}
-   {% if approved_until is defined and approved_until and not revealed %}data-grant-until="{{ approved_until }}"{% endif %}
-   {% if not revealed %}data-close-menu="1"{% endif %}>{% if revealed %}Hide{% else %}Reveal{% if approved_until is defined and approved_until %} <span class="grant-countdown" data-grant-until="{{ approved_until }}"></span>{% endif %}{% endif %}</a>
+{# Reveal / Hide control. Set revealed=true for the Hide state; oob=true for an
+   out-of-band swap. Set menu=<popover id> to render as an oat dropdown menu item
+   (ghost button that closes the popover on click). When approved_until is set,
+   show a countdown for the grant window. #}
+{% set _grant = approved_until is defined and approved_until and not revealed %}
+<button type="button"
+        id="{{ toggle_id }}"
+        class="reveal-toggle{% if _grant %} reveal-granted{% endif %}{% if menu %} ghost{% endif %}"
+        {% if menu %}role="menuitem" popovertarget="{{ menu }}" popovertargetaction="hide"{% endif %}
+        hx-get="{% if revealed %}{{ hide_url }}{% else %}{{ reveal_url }}{% endif %}"
+        hx-target="#{{ cell_id }}"
+        hx-swap="innerHTML"{% if oob %}
+        hx-swap-oob="true"{% endif %}
+        {% if _grant %}data-grant-until="{{ approved_until }}"{% endif %}>{% if revealed %}Hide{% else %}Reveal{% if _grant %} <span class="grant-countdown" data-grant-until="{{ approved_until }}"></span>{% endif %}{% endif %}</button>
