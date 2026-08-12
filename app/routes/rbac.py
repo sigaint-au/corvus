@@ -322,6 +322,7 @@ def register(app):
         dropdown = []
         scope_label = None
         back_team_id = None
+        back_team_name = None
         can_edit = False
 
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -370,6 +371,12 @@ def register(app):
                     picker_team_id = str(srow["team_id"])
                     back_team_id = picker_team_id
                     scope_label = f"{srow['project_name']} / {srow['name']}"
+
+            if back_team_id:
+                for t in teams:
+                    if str(t["id"]) == str(back_team_id):
+                        back_team_name = t["name"]
+                        break
 
             if picker_team_id:
                 cur.execute(
@@ -515,6 +522,7 @@ def register(app):
             scope_id=scope_id,
             scope_label=scope_label,
             back_team_id=back_team_id,
+            back_team_name=back_team_name,
             can_edit=can_edit,
             subject_kinds=config.RBAC_SUBJECT_KINDS,
             scope_kinds=config.RBAC_SCOPE_KINDS,

@@ -1,12 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Role bindings — {{ app_name }}{% endblock %}
 {% block body %}
-{% if back_team_id %}
-{% set breadcrumbs = [
-  ('Teams', url_for('teams')),
-  ('Team', url_for('team_detail', team_id=back_team_id)),
-  ('Role bindings', none),
-] %}
+{# Scope-aware breadcrumb: show the team (and project/secret) you are binding
+   within whenever a scope is selected, even without an explicit back link. #}
+{% if scope_label or scope_kind == 'cluster' %}
+{% set crumbs = [('Teams', url_for('teams'))] %}
+{% if back_team_id and back_team_name %}
+{% set crumbs = crumbs + [(back_team_name, url_for('team_detail', team_id=back_team_id))] %}
+{% endif %}
+{% if scope_kind in ('project', 'secret') and scope_label %}
+{% set crumbs = crumbs + [(scope_label, none)] %}
+{% endif %}
+{% set breadcrumbs = crumbs + [('Role bindings', none)] %}
 {% include "partials/breadcrumb.html" %}
 {% endif %}
 

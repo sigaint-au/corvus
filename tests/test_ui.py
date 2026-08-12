@@ -88,6 +88,28 @@ class TestUIShell:
                 last_accessed_by_email='', clipboard_clear_seconds=30)
         assert 'title="See the secret value"' in sv
 
+    def test_rbac_bindings_breadcrumb_shows_scope(self):
+        # RBAC bindings accessed from the sidebar (no back_team_id / no active
+        # team) must still show context about the team/project being bound.
+        from flask import render_template
+        tid, pid = str(uuid4()), str(uuid4())
+        base = dict(scope_kinds=['cluster', 'team', 'project', 'secret'],
+                    teams=[{'id': tid, 'name': 'Acme'}], projects=[], secrets=[],
+                    groups=[], bindings=[], all_roles=[], dropdown=[],
+                    role_descriptions={}, can_edit=True,
+                    subject_kinds=['User', 'Group', 'ServiceAccount'])
+        with store.app.test_request_context('/rbac/bindings'):
+            # Team scope via sidebar default: no explicit back link
+            t = render_template('rbac_bindings.html', **base, scope_kind='team',
+                                scope_id=tid, scope_label='Acme',
+                                back_team_id=None, back_team_name=None)
+            assert 'Teams' in t and 'Acme' in t and 'Role bindings' in t
+            # Project scope: team + project names in the crumb
+            p = render_template('rbac_bindings.html', **base, scope_kind='project',
+                                scope_id=pid, scope_label='App',
+                                back_team_id=tid, back_team_name='Acme')
+            assert 'Acme' in p and 'App' in p and 'Role bindings' in p
+
     def test_app_has_skip_link_and_responsive_table_css(self):
         c = store.app.test_client()
         with c.session_transaction() as s:
