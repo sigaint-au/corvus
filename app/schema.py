@@ -100,102 +100,11 @@ def ensure_schema():
           );
         $$
         """,
-        """
-        CREATE OR REPLACE FUNCTION api.is_team_member(tid uuid) RETURNS boolean
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT api.is_global_admin() OR EXISTS (
-            SELECT 1 FROM api.team_members
-            WHERE team_id = tid AND user_id = api.current_user_id()
-          );
-        $$
-        """,
-        """
-        CREATE OR REPLACE FUNCTION api.team_role(tid uuid) RETURNS text
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT CASE
-            WHEN api.is_global_admin() THEN 'owner'
-            ELSE (SELECT role FROM api.team_members
-                  WHERE team_id = tid AND user_id = api.current_user_id())
-          END;
-        $$
-        """,
-        """
-        CREATE OR REPLACE FUNCTION api.can_read_project(pid uuid) RETURNS boolean
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT api.is_global_admin()
-            OR EXISTS (
-              SELECT 1 FROM api.project_members
-              WHERE project_id = pid AND user_id = api.current_user_id()
-            )
-            OR (
-              NOT EXISTS (
-                SELECT 1 FROM api.project_members
-                WHERE project_id = pid AND user_id = api.current_user_id()
-              )
-              AND EXISTS (
-                SELECT 1 FROM api.projects p
-                JOIN api.team_members tm ON tm.team_id = p.team_id
-                WHERE p.id = pid AND tm.user_id = api.current_user_id()
-              )
-            );
-        $$
-        """,
-        """
-        CREATE OR REPLACE FUNCTION api.can_write_project(pid uuid) RETURNS boolean
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT api.is_global_admin()
-            OR EXISTS (
-              SELECT 1 FROM api.projects p
-              JOIN api.team_members tm ON tm.team_id = p.team_id
-              WHERE p.id = pid AND tm.user_id = api.current_user_id()
-                AND tm.role IN ('owner', 'admin')
-            )
-            OR EXISTS (
-              SELECT 1 FROM api.project_members
-              WHERE project_id = pid AND user_id = api.current_user_id()
-                AND role IN ('admin', 'write')
-            )
-            OR (
-              NOT EXISTS (
-                SELECT 1 FROM api.project_members
-                WHERE project_id = pid AND user_id = api.current_user_id()
-              )
-              AND EXISTS (
-                SELECT 1 FROM api.projects p
-                JOIN api.team_members tm ON tm.team_id = p.team_id
-                WHERE p.id = pid AND tm.user_id = api.current_user_id()
-                  AND tm.role = 'member'
-              )
-            );
-        $$
-        """,
-        """
-        CREATE OR REPLACE FUNCTION api.can_admin_project(pid uuid) RETURNS boolean
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT api.is_global_admin()
-            OR EXISTS (
-              SELECT 1 FROM api.projects p
-              JOIN api.team_members tm ON tm.team_id = p.team_id
-              WHERE p.id = pid AND tm.user_id = api.current_user_id()
-                AND tm.role IN ('owner', 'admin')
-            )
-            OR EXISTS (
-              SELECT 1 FROM api.project_members
-              WHERE project_id = pid AND user_id = api.current_user_id()
-                AND role = 'admin'
-            );
-        $$
-        """,
+        
+        
+        
+        
+        
         "GRANT EXECUTE ON FUNCTION api.can_read_project TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_write_project TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_admin_project TO authenticated, anon",
@@ -1830,57 +1739,8 @@ def ensure_schema():
         $$
         """,
         # Row-based ACL (INSERT RETURNING cannot re-query the new secrets row)
-        """
-        CREATE OR REPLACE FUNCTION api.can_access_secret_row(
-          sid uuid,
-          pid uuid,
-          mode text,
-          need text DEFAULT 'read',
-          deleted_at timestamptz DEFAULT NULL
-        ) RETURNS boolean
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT CASE
-            WHEN sid IS NULL OR pid IS NULL THEN false
-            WHEN deleted_at IS NOT NULL THEN false
-            WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
-            WHEN NOT api.can_read_project(pid) THEN false
-            WHEN api.can_admin_project(pid) THEN true
-            WHEN COALESCE(mode, 'inherit') = 'inherit' THEN (
-              CASE need
-                WHEN 'write' THEN api.can_write_project(pid)
-                ELSE true
-              END
-            )
-            WHEN mode = 'writers' THEN api.can_write_project(pid)
-            WHEN mode = 'admins' THEN false
-            WHEN mode = 'owners' THEN (
-              api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
-            )
-            WHEN mode IN ('custom', 'restricted') THEN false
-            ELSE false
-          END;
-        $$
-        """,
-        """
-        CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
-        RETURNS boolean
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT COALESCE(
-            (
-              SELECT api.can_access_secret_row(
-                s.id, s.project_id, s.access_mode, need, s.deleted_at
-              )
-              FROM api.secrets s
-              WHERE s.id = sid
-            ),
-            false
-          );
-        $$
-        """,
+        
+        
         "GRANT EXECUTE ON FUNCTION api._perm_rank TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon",
@@ -1965,57 +1825,8 @@ def ensure_schema():
         = 'admin';
         $$
         """,
-        """
-        CREATE OR REPLACE FUNCTION api.can_access_secret_row(
-          sid uuid,
-          pid uuid,
-          mode text,
-          need text DEFAULT 'read',
-          deleted_at timestamptz DEFAULT NULL
-        ) RETURNS boolean
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT CASE
-            WHEN sid IS NULL OR pid IS NULL THEN false
-            WHEN deleted_at IS NOT NULL THEN false
-            WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
-            WHEN NOT api.can_read_project(pid) THEN false
-            WHEN api.can_admin_project(pid) THEN true
-            WHEN COALESCE(mode, 'inherit') = 'inherit' THEN (
-              CASE need
-                WHEN 'write' THEN api.can_write_project(pid)
-                ELSE true
-              END
-            )
-            WHEN mode = 'writers' THEN api.can_write_project(pid)
-            WHEN mode = 'admins' THEN false
-            WHEN mode = 'owners' THEN (
-              api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
-            )
-            WHEN mode IN ('custom', 'restricted') THEN false
-            ELSE false
-          END;
-        $$
-        """,
-        """
-        CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
-        RETURNS boolean
-        LANGUAGE sql STABLE SECURITY DEFINER
-        SET search_path = api, private
-        SET row_security = off AS $$
-          SELECT COALESCE(
-            (
-              SELECT api.can_access_secret_row(
-                s.id, s.project_id, s.access_mode, need, s.deleted_at
-              )
-              FROM api.secrets s
-              WHERE s.id = sid
-            ),
-            false
-          );
-        $$
-        """,
+        
+        
         # Re-apply secrets policies after org RBAC (row-based INSERT RETURNING fix)
         "DROP POLICY IF EXISTS secrets_insert ON api.secrets",
         """
