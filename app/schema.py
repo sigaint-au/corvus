@@ -1885,25 +1885,31 @@ def ensure_schema():
         "GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon",
         # Secrets RLS: row-based ACL (safe for INSERT … RETURNING)
+        "DROP POLICY IF EXISTS secrets_insert ON api.secrets",
+        """
+        CREATE POLICY secrets_insert ON api.secrets FOR INSERT TO authenticated
+          WITH CHECK (api.can_write_project(project_id))
+        """,
         "DROP POLICY IF EXISTS secrets_select ON api.secrets",
         """
         CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
           USING (
-            api.can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)
+            (deleted_at IS NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'read', NULL))
+            OR (deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
           )
         """,
         "DROP POLICY IF EXISTS secrets_update ON api.secrets",
         """
         CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
-          USING (
-            api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at)
-          )
+          USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
+          WITH CHECK (api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
         """,
         "DROP POLICY IF EXISTS secrets_delete ON api.secrets",
         """
         CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
           USING (
-            api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at)
+            deleted_at IS NOT NULL
+            AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL)
           )
         """,
         "DROP POLICY IF EXISTS secret_versions_select ON api.secret_versions",
@@ -2160,25 +2166,31 @@ def ensure_schema():
         $$
         """,
         # Re-apply secrets policies after org RBAC (row-based INSERT RETURNING fix)
+        "DROP POLICY IF EXISTS secrets_insert ON api.secrets",
+        """
+        CREATE POLICY secrets_insert ON api.secrets FOR INSERT TO authenticated
+          WITH CHECK (api.can_write_project(project_id))
+        """,
         "DROP POLICY IF EXISTS secrets_select ON api.secrets",
         """
         CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
           USING (
-            api.can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)
+            (deleted_at IS NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'read', NULL))
+            OR (deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
           )
         """,
         "DROP POLICY IF EXISTS secrets_update ON api.secrets",
         """
         CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
-          USING (
-            api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at)
-          )
+          USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
+          WITH CHECK (api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
         """,
         "DROP POLICY IF EXISTS secrets_delete ON api.secrets",
         """
         CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
           USING (
-            api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at)
+            deleted_at IS NOT NULL
+            AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL)
           )
         """,
         "GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon",

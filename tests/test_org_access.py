@@ -125,7 +125,10 @@ class TestOrgAccess:
         assert 'CREATE TABLE api.secret_acl' not in init
         assert 'api.can_access_secret' in init
         assert 'api.can_access_secret_row' in init
-        assert "can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)" in init
+        # RLS policies pass deleted_at=NULL explicitly so the deleted_at guard
+        # in can_access_secret_row does not reject soft-deletes/trash.
+        assert "can_access_secret_row(id, project_id, acl_mode, 'read', NULL)" in init
+        assert "deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL)" in init
         rev = init[init.index('FUNCTION api.can_reveal_secret'):]
         rev = rev[:rev.index('$$;') + 3]
         assert "can_access_secret(sid, 'reveal')" in rev
@@ -156,6 +159,25 @@ class TestOrgAccess:
 
     def test_export_filters_reveal_permission(self):
         """Plain export SQL must filter by can_access_secret reveal + can_reveal."""
+
+    def test_secrets_policies_allow_soft_delete(self):
+        """Soft-delete must not trip RLS: the UPDATE policy needs an explicit
+        WITH CHECK (not the implicit USING default) gated on write access, and
+        SELECT must expose trash rows to writers. Regression for
+        'new row violates row-level security policy for table secrets'."""
+        from pathlib import Path
+        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        upd = init[init.index('CREATE POLICY secrets_update ON api.secrets'):]
+        upd = upd[:upd.index(';')]
+        assert 'WITH CHECK (api.can_access_secret_row(id, project_id, acl_mode, \'write\', NULL))' in upd
+        sel = init[init.index('CREATE POLICY secrets_select ON api.secrets'):]
+        sel = sel[:sel.index(';')]
+        assert 'deleted_at IS NOT NULL' in sel
+        delf = init[init.index('CREATE POLICY secrets_delete ON api.secrets'):]
+        delf = delf[:delf.index(';')]
+        assert 'deleted_at IS NOT NULL' in delf
+        src = Path(schema_mod.__file__).read_text()
+        assert 'WITH CHECK (api.can_access_secret_row(id, project_id, acl_mode, \'write\', NULL))' in src
         from pathlib import Path
         src = (APP_ROOT / 'routes' / 'project_io.py').read_text()
         assert "can_access_secret(id, 'reveal')" in src

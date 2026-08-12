@@ -804,13 +804,20 @@ CREATE POLICY secret_recent_delete ON api.secret_recent FOR DELETE TO authentica
   USING (user_id = api.current_user_id());
 
 CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
-  USING (api.can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at));
+  USING (
+    (deleted_at IS NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'read', NULL))
+    OR (deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
+  );
 CREATE POLICY secrets_insert ON api.secrets FOR INSERT TO authenticated
   WITH CHECK (api.can_write_project(project_id));
 CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
-  USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at));
+  USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
+  WITH CHECK (api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL));
 CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
-  USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at));
+  USING (
+    deleted_at IS NOT NULL
+    AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL)
+  );
 
 CREATE POLICY secret_meta_select ON api.secret_meta FOR SELECT TO authenticated
   USING (api.can_access_secret(secret_id, 'read'));
