@@ -1465,14 +1465,17 @@ def ensure_schema():
         """
         CREATE OR REPLACE FUNCTION private.secret_meta_rows(p_secret uuid)
         RETURNS TABLE (key text, value text, updated_at timestamptz)
-        LANGUAGE sql STABLE SECURITY DEFINER
+        LANGUAGE plpgsql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
+        BEGIN
+          RETURN QUERY
           SELECT m.key, m.value, m.updated_at
           FROM api.secret_meta m
           WHERE m.secret_id = p_secret
             AND api.can_access_secret(p_secret, 'read')
           ORDER BY m.key;
+        END;
         $$
         """,
         """
@@ -1614,9 +1617,11 @@ def ensure_schema():
           approved_until timestamptz,
           resolver_email text
         )
-        LANGUAGE sql STABLE SECURITY DEFINER
+        LANGUAGE plpgsql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
+        BEGIN
+          RETURN QUERY
           SELECT r.id, r.secret_id, COALESCE(s.key, ''), r.user_id,
                  u.email, u.name, r.status, r.reason, r.created_at,
                  r.resolved_at, r.approved_until,
@@ -1634,6 +1639,7 @@ def ensure_schema():
             CASE r.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
             r.created_at DESC
           LIMIT 200;
+        END;
         $$
         """,
         "GRANT EXECUTE ON FUNCTION private.secret_access_request_rows TO authenticator, authenticated",
@@ -1651,9 +1657,11 @@ def ensure_schema():
           reason text,
           created_at timestamptz
         )
-        LANGUAGE sql STABLE SECURITY DEFINER
+        LANGUAGE plpgsql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
+        BEGIN
+          RETURN QUERY
           SELECT r.id, r.project_id, p.name, r.secret_id, COALESCE(s.key, ''),
                  r.user_id, u.email, u.name, r.reason, r.created_at
           FROM api.secret_access_requests r
@@ -1664,6 +1672,7 @@ def ensure_schema():
             AND api.can_admin_project(r.project_id)
           ORDER BY r.created_at ASC
           LIMIT 100;
+        END;
         $$
         """,
         "GRANT EXECUTE ON FUNCTION private.pending_access_requests_for_admin TO authenticator, authenticated",
@@ -1903,29 +1912,35 @@ def ensure_schema():
           id uuid, name text, source text, external_key text,
           member_count bigint, created_at timestamptz
         )
-        LANGUAGE sql STABLE SECURITY DEFINER
+        LANGUAGE plpgsql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
+        BEGIN
+          RETURN QUERY
           SELECT g.id, g.name, g.source, g.external_key,
                  (SELECT count(*) FROM api.group_members gm WHERE gm.group_id = g.id),
                  g.created_at
           FROM api.groups g
           WHERE g.team_id = p_team AND api.is_team_member(p_team)
           ORDER BY g.name;
+        END;
         $$
         """,
         """
         CREATE OR REPLACE FUNCTION private.group_member_rows(p_group uuid)
         RETURNS TABLE (user_id uuid, email text, name text, source text)
-        LANGUAGE sql STABLE SECURITY DEFINER
+        LANGUAGE plpgsql STABLE SECURITY DEFINER
         SET search_path = api, private
         SET row_security = off AS $$
+        BEGIN
+          RETURN QUERY
           SELECT u.id, u.email, u.name, gm.source
           FROM api.group_members gm
           JOIN private.users u ON u.id = gm.user_id
           JOIN api.groups g ON g.id = gm.group_id
           WHERE gm.group_id = p_group AND api.is_team_member(g.team_id)
           ORDER BY u.email;
+        END;
         $$
         """,
 
@@ -2438,7 +2453,23 @@ def _split_sql_statements(sql: str) -> list[str]:
 
 
 def _apply_rbac_sql(cur) -> None:
-    """Apply Kubernetes-style RBAC schema (db/rbac.sql), start-fresh (no data migrate)."""
+    """Apply Kubernetes-style RBAC schema from app/rbac.sql.
+
+    Reads app/rbac.sql, splits it into statements (respecting dollar-quoted
+    bodies), and executes each statement. Creates/replaces RBAC functions,
+    RLS policies, and the rbac.roles/role_rules/bindings tables.
+
+    Called after migration statements in ensure_schema(). On fresh databases,
+    02-rbac.sql has already been applied by the DB container; this re-applies
+    to keep existing databases in sync.
+
+    Args:
+        cur: Open admin cursor (autocommit, advisory lock held).
+
+    Example:
+        with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:
+            _apply_rbac_sql(cur)
+    """
     path = Path(__file__).resolve().parent / "rbac.sql"
     if not path.is_file():
         log.warning("RBAC SQL not found at %s; skipping RBAC ensure", path)

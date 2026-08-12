@@ -7,13 +7,29 @@ enforce access control.
 
 ## Schema management
 
-- **Fresh installs** use `db/init.sql` (creates roles, schemas, tables, RLS,
-  functions).
+- **Fresh installs** use two SQL scripts applied in order:
+  1. `db/init.sql` (as `01-init.sql`) — creates roles, schemas, tables, non-RBAC
+     functions, `ENABLE/FORCE ROW LEVEL SECURITY`, grants.
+  2. `db/rbac.sql` (as `02-rbac.sql`) — creates RBAC tables, functions, all
+     RLS policies, and legacy data migration.
 - **Existing databases** are upgraded by `ensure_schema()` in `app/schema.py`
-  at app startup (requires `DATABASE_ADMIN_URL`). It is idempotent and must
-  mirror `init.sql`.
+  at app startup (requires `DATABASE_ADMIN_URL`). It runs migration statements,
+  then applies `app/rbac.sql` via `_apply_rbac_sql()`.
 
 > Do **not** re-run `init.sql` over an existing database — use `schema.py`.
+
+### init.sql vs rbac.sql split
+
+| File | Contains | Does NOT contain |
+|------|----------|------------------|
+| `db/init.sql` | Tables, non-RBAC functions, `ENABLE/FORCE RLS`, grants | RLS policies, RBAC auth functions |
+| `db/rbac.sql` | RBAC schema, auth functions, RLS policies, legacy migration | Table creation |
+
+Functions in `init.sql` that call RBAC auth functions (e.g.
+`private.team_group_rows` calls `api.is_team_member()`) are `LANGUAGE plpgsql`
+so PostgreSQL defers body validation to execution time. `LANGUAGE sql`
+functions are validated at creation time and must only reference objects that
+already exist.
 
 ---
 
@@ -36,90 +52,140 @@ The app connects as `authenticator`, then `SET ROLE authenticated` and sets
 |--------|----------|
 | `api` | Public tables, views, RLS policies, access helpers (PostgREST surface) |
 | `private` | Users, sessions, tokens, settings, SECURITY DEFINER helpers (not exposed to PostgREST) |
+| `rbac` | RBAC tables: `roles`, `role_rules`, `bindings` |
 
 ---
 
 ## Core tables
 
-| Table | Purpose |
-|-------|---------|
-| `api.teams` | Teams and settings |
-| `api.projects` | Projects and settings |
-| `api.groups` / `api.group_members` | Team-scoped groups + membership |
-| `rbac.roles` / `rbac.role_rules` / `rbac.bindings` | User, group, and machine-account access at cluster/team/project/secret scopes |
-| `api.secrets` | Secret rows (`value_enc` = Fernet ciphertext) |
-| `api.secret_versions` | Archived prior ciphertext on update |
-| `api.secret_meta` | Custom searchable metadata |
-| `rbac.roles` / `rbac.role_rules` / `rbac.bindings` | K8s-style RBAC (incl. secret-scope grants) |
-| `api.secret_access_requests` | Reveal-approval requests + grants |
-| `api.secret_audit` / `api.org_audit` | Append-only audit |
-| `api.machine_tokens` | Machine tokens (hash only) |
-| `api.machine_token_scope` | Per-token key allow-lists |
-| `api.secret_pins` / `api.secret_recent` | User pins / recent |
-| `private.users` | Users (not exposed) |
-| `private.user_sessions` | Server-side sessions |
-| `private.personal_access_tokens` | PATs (hash only) |
+| Table | Schema | Purpose |
+|-------|--------|---------|
+| `teams` | api | Teams and settings |
+| `projects` | api | Projects and settings |
+| `groups` / `group_members` | api | Team-scoped groups + membership |
+| `secrets` | api | Secret rows (`value_enc` = Fernet ciphertext) |
+| `secret_versions` | api | Archived prior ciphertext on update |
+| `secret_meta` | api | Custom searchable metadata |
+| `secret_access_requests` | api | Reveal-approval requests + grants |
+| `secret_audit` / `org_audit` | api | Append-only audit |
+| `machine_tokens` | api | Machine tokens (hash only) |
+| `machine_token_scope` | api | Per-token key allow-lists |
+| `secret_pins` / `secret_recent` | api | User pins / recent |
+| `roles` / `role_rules` / `bindings` | rbac | K8s-style RBAC |
+| `users` | private | Users (not exposed) |
+| `user_sessions` | private | Server-side sessions |
+| `personal_access_tokens` | private | PATs (hash only) |
+
+---
+
+## RBAC tables
+
+### `rbac.roles`
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | uuid PK | Role id |
+| `name` | text UNIQUE | Role name (e.g. `team-owner`, `project-write`) |
+| `description` | text | Human-readable description |
+
+### `rbac.role_rules`
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `role_id` | uuid FK → roles | Role this rule belongs to |
+| `resources` | text[] | Resource types (e.g. `['secrets']`, `['*']`) |
+| `verbs` | text[] | Allowed verbs (e.g. `['get','list','reveal']`) |
+
+### `rbac.bindings`
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | uuid PK | Binding id |
+| `role_id` | uuid FK → roles | Role granted |
+| `subject_kind` | text | `User`, `Group`, or `ServiceAccount` |
+| `subject_id` | uuid | User/group id |
+| `scope_kind` | text | `cluster`, `team`, `project`, or `secret` |
+| `scope_id` | uuid | Scope id (null for cluster) |
+| `source` | text | `manual`, `ldap`, or `oidc` |
+| `updated_at` | timestamptz | Last update |
+| `updated_by` | uuid | Who last updated |
+
+Unique index on `(role_id, subject_kind, subject_id, scope_kind, scope_id)`.
 
 ---
 
 ## RLS helpers (SECURITY DEFINER)
 
-All helpers set `SET search_path = api, private` and `SET row_security = off`
-(to avoid RLS recursion), and are granted to `authenticated`/`anon`.
+All helpers set `SET search_path = api, private` and `SET row_security = off`.
+Defined in `rbac.sql`.
 
 | Function | Returns |
 |----------|---------|
 | `api.current_user_id()` | User id from JWT `sub` claim |
 | `api.is_global_admin()` | Whether current user is a global admin |
 | `api.is_team_member(tid)` | Direct member OR in a group with a team role |
-| `api.team_role(tid)` | Highest team role (owner/admin/member/viewer) |
-| `api.project_role(pid)` | Highest project role (admin/write/read) or null |
+| `api.team_role(tid)` | Highest team role (`team-owner`/`team-admin`/`team-member`/`team-viewer`) |
+| `api.project_role(pid)` | Highest project role or null |
 | `api.can_read_project(pid)` | Read access |
 | `api.can_write_project(pid)` | Write access |
 | `api.can_admin_project(pid)` | Admin access |
-| `api.can_access_secret_row(sid,pid,mode,need,deleted_at)` | Secret access using inherited or restricted RBAC bindings (safe for INSERT…RETURNING) |
+| `api.can_manage_rbac(scope_kind, scope_id)` | Can manage bindings at scope |
+| `api.can_access_secret_row(sid,pid,mode,need,deleted_at)` | Secret access (safe for INSERT…RETURNING) |
 | `api.can_access_secret(sid,need)` | Loads row then applies `can_access_secret_row` |
-| `api.can_reveal_secret(sid)` | Can reveal now (ACL + approval + grant) |
+| `api.can_reveal_secret(sid)` | Can reveal now (RBAC + approval + grant) |
 | `api.secret_requires_approval(sid)` | Effective approval policy |
+| `api.can(verb, resource, scope_kind, scope_id)` | Core RBAC check via scope chain |
+| `api.rbac_scope_chain(scope_kind, scope_id)` | Returns scope chain CTE |
+| `api.rbac_subjects(user_id)` | Returns subject rows for a user |
+| `api.my_access_rows()` | User's own bindings across scopes |
+| `api.effective_access_rows(scope_kind, scope_id)` | Who can access a resource and why |
 
 ---
 
 ## RLS policies
 
-Every `api` table has `ENABLE` (and sensitive tables `FORCE`) ROW LEVEL
-SECURITY with `USING`/`WITH CHECK` policies for `authenticated`. Key ones:
+All RLS policies are defined in `rbac.sql` (not `init.sql`). Every `api` table
+has `ENABLE` (and sensitive tables `FORCE`) ROW LEVEL SECURITY with
+`USING`/`WITH CHECK` policies for `authenticated`.
 
 | Table | Policy highlights |
 |-------|-------------------|
-| `teams` | select: member/admin; update: owner/admin; delete: owner |
-| `projects` | select: RBAC-readable; update: `can_admin_project`; delete: owner/admin |
+| `teams` | select: team member; insert: creator/global-admin; update: team-owner/team-admin; delete: team-owner |
+| `projects` | select: `can_read_project`; update: `can_admin_project`; delete: team-owner/team-admin |
 | `rbac.bindings` | select: scope manager or subject; write: `can_manage_rbac` |
-| `groups` / `group_members` | owner/admin manage; members select |
+| `rbac.roles` / `role_rules` | select: all authenticated; write: global admin |
+| `groups` / `group_members` | team-owner/team-admin manage; members select |
 | `secrets` | select/update/delete: `can_access_secret_row`; insert: `can_write_project` |
 | `secret_versions` | select: parent readable; **no client insert** (trigger-only) |
-| `rbac.bindings` | select: manage scope or self subject; write: `can_manage_rbac` |
-| `secret_access_requests` | select: admin or self; insert: self + can_read; update: admin |
+| `secret_access_requests` | select: project-admin or self; insert: self + can_read; update: project-admin |
 | `secret_audit` / `org_audit` | select only; no client insert |
 | `machine_tokens` | select: can_read; insert/delete: can_write |
-| `machine_token_scope` | admin manages; members select |
+| `machine_token_scope` | project-admin manages; members select |
 
 ---
 
 ## SECURITY DEFINER functions (private)
 
-Machine / auth helpers run as the function owner and bypass RLS; they are
-gated on the token hash and granted only to `authenticator` (not
-`authenticated`), so users cannot call them directly via PostgREST.
+Machine/auth helpers run as the function owner and bypass RLS. Gated on token
+hash and granted only to `authenticator` (not `authenticated`).
 
 | Function | Purpose |
 |----------|---------|
 | `private.auth_machine(project, hash)` | Validate machine token (hash + expiry) |
-| `private.machine_role(project, hash)` | Machine-account role (read/reveal/write) |
+| `private.machine_role(project, hash)` | Machine role (`service-read`/`service-reveal`/`service-write`) |
 | `private.machine_get_row` / `machine_list_enc` / `machine_list_meta` | Read secrets (respects token scope) |
-| `private.machine_delete` / `machine_upsert_enc` | Write secrets (write role) |
-| `private.audit_secret` / `audit_org` | Append-only audit (actor from JWT, never caller) |
+| `private.machine_delete` / `machine_upsert_enc` | Write secrets (service-write role) |
+| `private.audit_secret` / `audit_org` | Append-only audit (actor from JWT) |
 | `private.register_user` / `verify_user` / `change_password` | Auth |
 | `private.lookup_user` | Email → user id (app only) |
+| `private.team_group_rows` / `group_member_rows` | Group listing (calls `is_team_member`) |
+| `private.secret_meta_rows` | Secret metadata (calls `can_access_secret`) |
+| `private.secret_access_request_rows` | Access requests (calls `can_admin_project`) |
+| `private.pending_access_requests_for_admin` | Pending requests for admin |
+
+> Functions that call RBAC auth helpers are `LANGUAGE plpgsql` (deferred
+> validation) so they can be created in `init.sql` before `rbac.sql` defines
+> the auth functions.
 
 ---
 
@@ -141,8 +207,7 @@ INSERT INTO api.machine_token_scope (token_id, key_pattern) VALUES (tok, 'prod/*
 - `api.secret_audit` / `api.org_audit` have **no client INSERT** policy and
   `REVOKE INSERT` from `authenticated`.
 - Writes go through `private.audit_secret` / `private.audit_org`, which derive
-  the actor from JWT claims and ignore caller-supplied `user_id` (defense
-  against forged attribution).
+  the actor from JWT claims and ignore caller-supplied `user_id`.
 
 ---
 
@@ -150,4 +215,5 @@ INSERT INTO api.machine_token_scope (token_id, key_pattern) VALUES (tok, 'prod/*
 
 - [architecture.md](architecture.md) — request flow
 - [rbac.md](../admin/rbac.md) — access rules in plain terms
+- [rbac-k8s.md](../admin/rbac-k8s.md) — K8s RBAC model
 - [api.md](api.md) — API reference

@@ -137,9 +137,9 @@ Create a token on a project under **Integrations** (or **Tokens**). Roles:
 
 | Role | Metadata | Reveal values | Write |
 |------|----------|---------------|-------|
-| `read` | yes | no | no |
-| `reveal` | yes | yes | no |
-| `write` | yes | yes | yes |
+| `service-read` | yes | no | no |
+| `service-reveal` | yes | yes | no |
+| `service-write` | yes | yes | yes |
 
 Raw `ss_…` tokens are stored only as SHA-256 hashes; the raw value is shown
 once at creation.
@@ -166,7 +166,7 @@ curl -s "${AUTH[@]}" \
   "note": "",
   "kind": "plain",
   "expires_at": null,
-  "acl_mode": "inherit",
+  "access_mode": "inherit",
   "created_at": "…",
   "updated_at": "…",
   "last_accessed_at": "…",
@@ -179,8 +179,8 @@ ESO continues to use `jsonPath: $.value` (extra fields are additive). A
 successful **PAT** get updates `last_accessed_*`.
 
 **403 on get (PAT):** `{"error":"approval_required",…}` if reveal approval is
-required; `{"error":"forbidden"}` if per-secret ACL denies reveal. Machine
-tokens (`ss_…`) skip human ACL and approval.
+required; `{"error":"forbidden"}` if per-secret access mode denies reveal. Machine
+tokens (`ss_…`) skip human access mode and approval.
 
 ### Fetch all secrets (bulk value map)
 
@@ -193,8 +193,8 @@ curl -s "${AUTH[@]}" \
 {"secrets": {"DATABASE_URL": "...", "API_KEY": "..."}}
 ```
 
-PAT bulk list with values only includes secrets the caller may reveal (ACL +
-approval). Machine tokens return all live keys in the project.
+PAT bulk list with values only includes secrets the caller may reveal (access
+mode + approval). Machine tokens return all live keys in the project.
 
 ### List metadata only (CLI — no plaintext)
 

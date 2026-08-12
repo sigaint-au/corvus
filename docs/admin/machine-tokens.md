@@ -9,12 +9,12 @@ Operator) read and write secrets without a browser session.
 
 | Role | Metadata | Reveal values | Write |
 |------|----------|---------------|-------|
-| `read` | yes | no | no |
-| `reveal` | yes | yes | no |
-| `write` | yes | yes | yes |
+| `service-read` | yes | no | no |
+| `service-reveal` | yes | yes | no |
+| `service-write` | yes | yes | yes |
 
-- Prefer **`reveal`** for ESO pull and reveal automation that needs values.
-- Use **`write`** only if automation must create, rotate, or delete secrets.
+- Prefer **`service-reveal`** for ESO pull and automation that needs values.
+- Use **`service-write`** only if automation must create, rotate, or delete.
 
 Tokens are **project-scoped** (a token only ever sees one project). The raw
 `ss_…` value is shown once at creation; only a SHA-256 hash is stored.
@@ -27,8 +27,8 @@ Project → **Integrations** (or **Machine accounts**):
 
 ```text
 Name: openshift-prod
-Role: reveal           (or write)
-Expires (days): 90     (optional)
+Role: service-reveal    (or service-write)
+Expires (days): 90      (optional)
 [Create machine account]
 ```
 
@@ -65,9 +65,9 @@ body `scope: ["API_KEY", "prod/*"]`.
 
 The machine API powers the External Secrets Operator webhook provider.
 
-### 1. Create a reveal machine token
+### 1. Create a service-reveal machine token
 
-Project → **Integrations** → create a **reveal** token for the cluster.
+Project → **Integrations** → create a **service-reveal** token for the cluster.
 
 ### 2. Generate the manifests
 

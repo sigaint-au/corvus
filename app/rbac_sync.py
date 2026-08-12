@@ -111,7 +111,19 @@ def group_team_roles_map(cur, team_id) -> dict[str, str]:
 
 
 def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, created_by=None):
-    """Upsert or clear Group→team binding. ``team_role`` is an rbac role name."""
+    """Upsert or clear Group→team binding. ``team_role`` is an rbac role name.
+
+    Args:
+        cur: Open DB cursor (authenticated, under RLS).
+        group_id: UUID of the group to bind.
+        team_id: UUID of the team scope.
+        team_role: RBAC role name (e.g. ``team-member``) or None to remove.
+        created_by: UUID of the acting user (audit).
+
+    Example:
+        sync_group_team_binding(cur, group_id=gid, team_id=tid,
+                                team_role="team-viewer", created_by=actor_id)
+    """
     ensure_not_last_team_owner(
         cur,
         team_id,
@@ -150,7 +162,19 @@ def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, cr
 def sync_group_project_binding(
     cur, *, group_id, project_id, role: str | None, created_by=None
 ):
-    """Upsert or clear a Group→project RBAC binding. ``role`` is an rbac name."""
+    """Upsert or clear a Group→project RBAC binding. ``role`` is an rbac name.
+
+    Args:
+        cur: Open DB cursor (authenticated, under RLS).
+        group_id: UUID of the group to bind.
+        project_id: UUID of the project scope.
+        role: RBAC role name (e.g. ``project-write``) or None to remove.
+        created_by: UUID of the acting user (audit).
+
+    Example:
+        sync_group_project_binding(cur, group_id=gid, project_id=pid,
+                                   role="project-admin", created_by=actor_id)
+    """
     cur.execute(
         """
         DELETE FROM rbac.bindings
@@ -182,7 +206,20 @@ def sync_group_project_binding(
 def sync_user_team_binding(
     cur, *, user_id, team_id, role: str | None, created_by=None, source="manual"
 ):
-    """Upsert User→team binding. ``role`` is an rbac role name or None to clear."""
+    """Upsert User→team binding. ``role`` is an rbac role name or None to clear.
+
+    Args:
+        cur: Open DB cursor (authenticated, under RLS).
+        user_id: UUID of the user to bind.
+        team_id: UUID of the team scope.
+        role: RBAC role name (e.g. ``team-member``) or None to remove binding.
+        created_by: UUID of the acting user (audit).
+        source: ``manual``, ``ldap``, or ``oidc``.
+
+    Example:
+        sync_user_team_binding(cur, user_id=uid, team_id=tid, role="team-admin",
+                               created_by=actor_id)
+    """
     ensure_not_last_team_owner(
         cur,
         team_id,
@@ -221,7 +258,19 @@ def sync_user_team_binding(
 def sync_user_project_binding(
     cur, *, user_id, project_id, role: str | None, created_by=None
 ):
-    """Upsert User→project binding. ``role`` is an rbac role name or None."""
+    """Upsert User→project binding. ``role`` is an rbac role name or None.
+
+    Args:
+        cur: Open DB cursor (authenticated, under RLS).
+        user_id: UUID of the user to bind.
+        project_id: UUID of the project scope.
+        role: RBAC role name (e.g. ``project-write``) or None to remove.
+        created_by: UUID of the acting user (audit).
+
+    Example:
+        sync_user_project_binding(cur, user_id=uid, project_id=pid,
+                                   role="project-read", created_by=actor_id)
+    """
     cur.execute(
         """
         DELETE FROM rbac.bindings

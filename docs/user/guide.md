@@ -34,7 +34,7 @@ Sidebar → **Account → Teams → New team**.
 Name: Platform
 ```
 
-You become the **owner** of any team you create.
+You become the **team-owner** of any team you create.
 
 ### Team tabs
 
@@ -50,26 +50,26 @@ You become the **owner** of any team you create.
 
 | Role | Can |
 |------|-----|
-| **owner** | Everything; delete team; always project admin/write |
-| **admin** | Manage members, groups, settings; always project admin/write |
-| **member** | Create projects; write secrets (unless a project demotes them) |
-| **viewer** | Read-only |
+| **team-owner** | Everything; delete team; always project admin/write |
+| **team-admin** | Manage members, groups, settings; always project admin/write |
+| **team-member** | Create projects; write secrets (no reveal — grant separately) |
+| **team-viewer** | Read-only (metadata, no plaintext) |
 
-Only **owners** can assign the `owner` role.
+Only **team-owners** can assign the `team-owner` role.
 
 ### Add a member
 
-**Members → Add** (owner/admin only):
+**Members → Add** (team-owner/team-admin only):
 
 ```text
 User email: alice@example.com
-Role: member
+Role: team-member
 ```
 
 ### Invite a member (self-service)
 
 **Members → Invites & join requests → Create invite link**. Share the link.
-The recipient signs in and requests to join; an owner/admin approves.
+The recipient signs in and requests to join; a team-owner/team-admin approves.
 
 ---
 
@@ -89,12 +89,13 @@ Description: optional purpose
 | Tab | Purpose |
 |-----|---------|
 | **Secrets** | List, search, create, reveal, pin, bulk actions |
-| **Access** | Reveal-approval request queue (approve/deny) |
+| **Access** | Project-scope role bindings (project admins) |
+| **Requests** | Reveal-approval request queue (approve/deny) |
 | **Audit log** | Who did what to secrets in this project |
 | **Machine accounts** | Tokens for ESO / CI / CLI |
 | **Import / Export** | Bulk `.env` / JSON / CSV |
 | **Integrations** | ESO manifest generator |
-| **Settings** | Reveal-approval default, members, group roles, danger zone |
+| **Settings** | Reveal-approval default, members, danger zone |
 
 ---
 
@@ -110,8 +111,8 @@ Type:  Plain
 Value: postgres://user:pass@host/db
 Note:  optional label
 Expires: (optional date)
-Access: Project access        (access mode)
-Approval: Default (project)   (reveal approval override)
+Access: Inherit project access  (access mode)
+Approval: Default (project)     (reveal approval override)
 ```
 
 Click **Create**.
@@ -146,7 +147,7 @@ Why do you need access?
 ### Access requests (approval workflow)
 
 - **Requester:** click **Reveal** → **Request access…** → enter a reason.
-- **Approver (project admin / team owner):** open the project **Access** tab
+- **Approver (project admin / team owner):** open the project **Requests** tab
   (or the global **Access requests** inbox in the sidebar), choose a grant
   duration, then **Approve** or **Deny**.
 
@@ -183,14 +184,15 @@ Open a secret → **History**. You can view and roll back to a previous version.
 On a secret, the **Metadata** tab shows system fields (created, updated, last
 accessed) and lets writers add custom searchable key/value labels.
 
-### Permissions (project admins)
+### Access (project admins)
 
-The **Permissions** tab on a secret controls:
+The **Access** tab on a secret controls:
 
-- **Access mode** — who may access the secret:
-  `inherit` / `writers` / `admins` / `owners` / `custom`.
+- **Access mode** — `inherit` (project/team bindings apply) or `restricted`
+  (only secret-scope bindings + project admins).
 - **Reveal approval** — override the project default (require / exempt).
-- **Custom access list** — user or group grants (only when mode is `custom`).
+- **Secret role bindings** — bind users/groups to `secret-read`,
+  `secret-reveal`, or `secret-write` roles.
 
 ---
 
@@ -226,3 +228,11 @@ of creates vs updates before anything is written. Requires write access.
 - Use the **sidebar search** to jump straight to a secret across all teams.
 - Use the **team switcher** at the top of the sidebar to change teams.
 - Pinned secrets appear in the sidebar for quick access.
+
+---
+
+## Related docs
+
+- [cli.md](cli.md) — CLI guide
+- [../admin/rbac.md](../admin/rbac.md) — RBAC access model
+- [../admin/machine-tokens.md](../admin/machine-tokens.md) — machine accounts

@@ -222,6 +222,7 @@ manifest [openshift-eso.yaml](../openshift-eso.yaml).
 |------|------|
 | `Dockerfile` | App image (build context = repo root) |
 | `compose.yml` | Postgres + PostgREST + app |
-| `db/init.sql` | Schema + RLS (first DB init only) |
+| `db/init.sql` | Tables + `ENABLE/FORCE RLS` (first DB init only, applied as `01-init.sql`) |
+| `db/rbac.sql` | RBAC functions + all RLS policies (applied as `02-rbac.sql`) |
 | `app/` | Flask app; `schema.py` upgrades existing volumes |
 | `docs/` | This documentation set |
