@@ -180,10 +180,11 @@ CUSTOM_BINDINGS = [
 ]
 
 # Machine accounts (ServiceAccount subjects): (team, project, name, role, scope keys|None)
+# role must match api.machine_tokens CHECK: service-read | service-reveal | service-write
 # None scope keys = full project access; otherwise a key allow-list.
 MACHINE_TOKENS = [
-    ("Platform", "demo-api", "ci-demo", "reveal", ["API_KEY", "DATABASE_URL"]),
-    ("Payments", "billing-api", "eso-billing", "reveal", None),
+    ("Platform", "demo-api", "ci-demo", "service-reveal", ["API_KEY", "DATABASE_URL"]),
+    ("Payments", "billing-api", "eso-billing", "service-reveal", None),
 ]
 
 # Secret-scope bindings: (team, project, secret_key, user_email|None, group_name|None, role)
@@ -207,10 +208,11 @@ PROJECT_ROLE_MAP = {
     "reveal": "project-reveal",
     "read": "project-read",
 }
+# Machine token / ServiceAccount role names (api.machine_tokens CHECK).
 SERVICE_ROLE_MAP = {
-    "read": "service-read",
-    "reveal": "service-reveal",
-    "write": "service-write",
+    "service-read": "service-read",
+    "service-reveal": "service-reveal",
+    "service-write": "service-write",
 }
 
 
