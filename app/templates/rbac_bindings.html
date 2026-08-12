@@ -75,6 +75,9 @@
 <section>
   <div class="section-head">
     <h2>Bindings{% if scope_label %} <span class="muted">· {{ scope_label }}{% if bindings %} ({{ bindings|length }}){% endif %}</span>{% endif %}</h2>
+    {% if can_edit and (scope_id or scope_kind == 'cluster') %}
+    <a class="button outline small" href="#add-binding">+ Add binding</a>
+    {% endif %}
   </div>
   {% if not scope_id and scope_kind != 'cluster' %}
   <p class="empty">Select a scope above to view its role bindings.</p>
@@ -117,7 +120,12 @@
     </table>
   </div>
   {% else %}
-  <p class="empty">No {{ scope_kind }} bindings at this scope yet.</p>
+  <p class="empty">
+    No {{ scope_kind }} bindings at this scope yet.
+    {% if can_edit and (scope_id or scope_kind == 'cluster') %}
+    <a href="#add-binding">Add the first binding</a>.
+    {% endif %}
+  </p>
   {% endif %}
   {% if not can_edit and (scope_id or scope_kind == 'cluster') %}
   <p class="muted mt-1">View only. Team or project admins can add or remove bindings here.</p>
@@ -125,7 +133,7 @@
 </section>
 
 {% if can_edit and (scope_id or scope_kind == 'cluster') %}
-<section>
+<section id="add-binding">
   <h2>Add binding</h2>
   <form method="post" action="{{ url_for('rbac_bindings_create') }}" class="settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">

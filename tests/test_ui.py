@@ -110,6 +110,26 @@ class TestUIShell:
                                 back_team_id=tid, back_team_name='Acme')
             assert 'Acme' in p and 'App' in p and 'Role bindings' in p
 
+    def test_empty_binding_table_offers_add_binding(self):
+        # An empty bindings table must not dead-end: give a direct route to the
+        # add-binding form, which may be below the fold on long pages.
+        from flask import render_template
+        tid = str(uuid4())
+        base = dict(scope_kinds=['cluster', 'team', 'project', 'secret'],
+                    teams=[{'id': tid, 'name': 'Acme'}], projects=[], secrets=[],
+                    groups=[], all_roles=[], dropdown=[], role_descriptions={},
+                    subject_kinds=['User', 'Group', 'ServiceAccount'],
+                    scope_kind='team', scope_id=tid, scope_label='Acme',
+                    back_team_id=tid, back_team_name='Acme')
+        with store.app.test_request_context('/rbac/bindings'):
+            html = render_template('rbac_bindings.html', **base, bindings=[], can_edit=True)
+        assert 'href="#add-binding">+ Add binding' in html
+        assert 'Add the first binding' in html
+        assert '<section id="add-binding">' in html
+        with store.app.test_request_context('/rbac/bindings'):
+            ro = render_template('rbac_bindings.html', **base, bindings=[], can_edit=False)
+        assert 'Add the first binding' not in ro
+
     def test_app_has_skip_link_and_responsive_table_css(self):
         c = store.app.test_client()
         with c.session_transaction() as s:
