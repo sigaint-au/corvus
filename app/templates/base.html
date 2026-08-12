@@ -1782,33 +1782,6 @@
       text-decoration: none;
     }
     .secret-create { margin-bottom: 1rem; }
-    .quick-add { margin-bottom: .75rem; }
-    .quick-add > summary {
-      cursor: pointer;
-      font-size: .8rem;
-      font-weight: 500;
-      color: var(--muted-foreground);
-      padding: .35rem .5rem;
-      border: 1px dashed var(--border);
-      border-radius: var(--radius);
-      list-style: none;
-      display: inline-flex;
-      align-items: center;
-      gap: .35rem;
-    }
-    .quick-add > summary::-webkit-details-marker { display: none; }
-    .quick-add > summary::before {
-      content: "▸";
-      font-size: .65rem;
-      transition: transform .15s ease;
-    }
-    .quick-add[open] > summary::before { transform: rotate(90deg); }
-    .quick-add[open] > summary {
-      border-style: solid;
-      border-color: var(--input);
-      margin-bottom: .75rem;
-    }
-    .quick-add .secret-create { margin-bottom: 0; }
     .secrets-toolbar {
       display: flex;
       flex-wrap: wrap;
