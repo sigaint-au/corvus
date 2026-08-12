@@ -48,8 +48,10 @@ def test_rbac_sql_ships_can_and_tables():
     assert "updated_by uuid" in sql
     # Deleted secret check in can()
     assert "deleted_at IS NOT NULL" in sql
-    # 'restricted' accepted alongside legacy 'custom'
+    # Access modes: inherit / restricted only (no legacy custom alias)
     assert "'restricted'" in sql
+    assert "IN ('restricted', 'custom')" not in sql
+    assert "IN ('custom', 'restricted')" not in sql
 
 
 def test_schema_applies_rbac_sql():
@@ -138,7 +140,23 @@ def test_parse_access_mode_accepts_rbac_modes():
     assert _parse_access_mode("") == "inherit"
     assert _parse_access_mode("unknown") == "inherit"
     assert _parse_access_mode({"access_mode": "restricted"}) == "restricted"
-    # Legacy 'custom' meant secret-scope-bindings-only → must map to restricted
-    # (never broaden to inherit).
-    assert _parse_access_mode("custom") == "restricted"
-    assert _parse_access_mode({"access_mode": "custom"}) == "restricted"
+    # No aliases: legacy mode names are rejected (default to inherit).
+    # Stored rows are scrubbed by ensure_schema, not by the form parser.
+    assert _parse_access_mode("custom") == "inherit"
+    assert _parse_access_mode({"access_mode": "custom"}) == "inherit"
+    assert _parse_access_mode("writers") == "inherit"
+    assert _parse_access_mode("admins") == "inherit"
+    assert _parse_access_mode("owners") == "inherit"
+
+
+def test_schema_scrubs_legacy_access_modes():
+    """ensure_schema rewrites custom/writers/… then enforces inherit|restricted."""
+    import schema as schema_mod
+
+    src = Path(schema_mod.__file__).read_text()
+    assert "WHERE access_mode = 'custom'" in src
+    assert "WHERE access_mode NOT IN ('inherit', 'restricted')" in src
+    assert "WHERE default_access_mode = 'custom'" in src
+    assert "DROP COLUMN IF EXISTS acl_mode" in src
+    assert "DROP TABLE IF EXISTS api.secret_acl" in src
+    assert "CHECK (access_mode IN ('inherit', 'restricted'))" in src

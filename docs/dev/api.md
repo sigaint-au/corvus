@@ -255,7 +255,7 @@ via UI or PAT API body `scope: ["API_KEY", "prod/*"]`. Scoped tokens get
 **PAT bulk list with values** only includes secrets the caller may
 `can_access_secret(…, 'reveal')` and `can_reveal_secret` (approval).
 
-**Permissions on custom grants:** `read` (metadata) < `reveal` (value) <
+**Permissions on secret-scope bindings:** `read` (metadata) < `reveal` (value) <
 `write` (edit/delete). Higher permissions include lower ones.
 
 ---

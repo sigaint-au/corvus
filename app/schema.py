@@ -1715,14 +1715,32 @@ def ensure_schema():
         $$
         """,
         "GRANT EXECUTE ON FUNCTION private.pending_access_requests_for_admin TO authenticator, authenticated",
-        # Per-secret ACLs (tighter than project membership)
+        # Per-secret access modes: inherit | restricted only (no legacy aliases)
         """
         ALTER TABLE api.secrets
           ADD COLUMN IF NOT EXISTS access_mode text NOT NULL DEFAULT 'inherit'
         """,
+        # Drop renamed/legacy column if present from older builds
+        "ALTER TABLE api.secrets DROP COLUMN IF EXISTS acl_mode",
         """
         DO $$ BEGIN
           ALTER TABLE api.secrets DROP CONSTRAINT IF EXISTS secrets_access_mode_check;
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        # Scrub leftover values so the tight CHECK can apply on upgrades.
+        # custom was exclusive (secret-scope only) → restricted;
+        # writers/admins/owners were min-role modes → inherit.
+        """
+        UPDATE api.secrets SET access_mode = 'restricted'
+         WHERE access_mode = 'custom'
+        """,
+        """
+        UPDATE api.secrets SET access_mode = 'inherit'
+         WHERE access_mode NOT IN ('inherit', 'restricted')
+        """,
+        """
+        DO $$ BEGIN
           ALTER TABLE api.secrets
             ADD CONSTRAINT secrets_access_mode_check
             CHECK (access_mode IN ('inherit', 'restricted'));
@@ -1737,9 +1755,23 @@ def ensure_schema():
         ALTER TABLE api.projects
           ADD COLUMN IF NOT EXISTS default_access_mode text NOT NULL DEFAULT 'inherit'
         """,
+        "ALTER TABLE api.projects DROP COLUMN IF EXISTS default_acl_mode",
         """
         DO $$ BEGIN
           ALTER TABLE api.projects DROP CONSTRAINT IF EXISTS projects_default_access_mode_check;
+        EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
+        UPDATE api.projects SET default_access_mode = 'restricted'
+         WHERE default_access_mode = 'custom'
+        """,
+        """
+        UPDATE api.projects SET default_access_mode = 'inherit'
+         WHERE default_access_mode NOT IN ('inherit', 'restricted')
+        """,
+        """
+        DO $$ BEGIN
           ALTER TABLE api.projects
             ADD CONSTRAINT projects_default_access_mode_check
             CHECK (default_access_mode IN ('inherit', 'restricted'));
@@ -2416,6 +2448,27 @@ EXCEPTION WHEN duplicate_object THEN NULL;
                       LOOP
                         EXECUTE format('ALTER TABLE api.secrets DROP CONSTRAINT %I', c.conname);
                       END LOOP;
+                    END $$
+                    """
+                )
+                # Scrub any leftover legacy access_mode rows before tight CHECK
+                cur.execute(
+                    """
+                    UPDATE api.secrets SET access_mode = 'restricted'
+                     WHERE access_mode = 'custom'
+                    """
+                )
+                cur.execute(
+                    """
+                    UPDATE api.secrets SET access_mode = 'inherit'
+                     WHERE access_mode NOT IN ('inherit', 'restricted')
+                    """
+                )
+                cur.execute("ALTER TABLE api.secrets DROP COLUMN IF EXISTS acl_mode")
+                cur.execute(
+                    """
+                    DO $$
+                    BEGIN
                       ALTER TABLE api.secrets
                         ADD CONSTRAINT secrets_access_mode_check
                         CHECK (access_mode IN ('inherit', 'restricted'));

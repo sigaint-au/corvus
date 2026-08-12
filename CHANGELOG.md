@@ -20,6 +20,9 @@ tagged releases.
 
 - Legacy `api.secret_acl` table and `private.secret_acl_rows` (per-secret grants
   are secret-scope `rbac.bindings` only; dropped on schema ensure)
+- Legacy secret access-mode values and aliases (`custom`, `writers`, `admins`,
+  `owners`): only `inherit` / `restricted` remain; `ensure_schema` scrubs old
+  rows and drops leftover `acl_mode` columns
 
 ### Changed
 

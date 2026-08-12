@@ -309,7 +309,12 @@ def _parse_requires_approval(form_or_value) -> bool | None:
 
 
 def _parse_access_mode(form_or_value) -> str:
-    """Parse the secret access mode; default to inherited project access."""
+    """Parse the secret access mode; default to inherited project access.
+
+    Only values in ``config.ACCESS_MODES`` (``inherit``, ``restricted``) are
+    accepted. Unknown / legacy names (``custom``, ``writers``, …) fall back to
+    ``inherit``. Stored DB rows are scrubbed by ``ensure_schema``, not here.
+    """
     if isinstance(form_or_value, dict) or (
         hasattr(form_or_value, "get") and not isinstance(form_or_value, (str, bytes))
     ):
