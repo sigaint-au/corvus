@@ -100,11 +100,11 @@ def ensure_schema():
           );
         $$
         """,
-        
-        
-        
-        
-        
+
+
+
+
+
         "GRANT EXECUTE ON FUNCTION api.can_read_project TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_write_project TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_admin_project TO authenticated, anon",
@@ -1739,8 +1739,8 @@ def ensure_schema():
         $$
         """,
         # Row-based ACL (INSERT RETURNING cannot re-query the new secrets row)
-        
-        
+
+
         "GRANT EXECUTE ON FUNCTION api._perm_rank TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon",
@@ -1825,8 +1825,8 @@ def ensure_schema():
         = 'admin';
         $$
         """,
-        
-        
+
+
         # Re-apply secrets policies after org RBAC (row-based INSERT RETURNING fix)
         "DROP POLICY IF EXISTS secrets_insert ON api.secrets",
         """
@@ -1963,7 +1963,7 @@ def ensure_schema():
         "GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION private.team_group_rows TO authenticator, authenticated",
         "GRANT EXECUTE ON FUNCTION private.group_member_rows TO authenticator, authenticated",
-        
+
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.groups TO authenticated",
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.group_members TO authenticated",
                 "GRANT ALL ON api.groups TO authenticator",
