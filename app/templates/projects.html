@@ -22,7 +22,7 @@
 <p class="empty">Select a team in the sidebar.</p>
 {% else %}
 <p class="page-desc muted">Team: <strong>{{ team.name }}</strong>
-  · <a href="{{ url_for('team_detail', team_id=team.id) }}">Manage members</a>
+  · <a href="{{ url_for('team_detail', team_id=team.id) }}">Manage access</a>
 </p>
 <section class="list-panel">
   <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">

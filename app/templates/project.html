@@ -29,8 +29,6 @@
   {% if can_admin %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}"
      class="tab {% if active_tab == 'access' %}active{% endif %}"
-    
-    
      title="Role bindings for this project">Access</a>
   {% endif %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='requests') }}"

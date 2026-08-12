@@ -396,3 +396,29 @@ class TestSecrets:
         data = r.get_json()
         assert data[0]['email'] == 'alice@ex.com'
 
+    def test_add_secret_access_binding_service_account(self):
+        sid, sa_id, role_id, pid = uuid4(), uuid4(), uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'a': True},
+            {'id': sid, 'key': 'KEY', 'acl_mode': 'inherit', 'team_id': uuid4()},
+            {'id': role_id},
+            {'id': sa_id},
+        ]
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/projects/{pid}/secrets/{sid}/access/bindings',
+                data={'subject_kind': 'ServiceAccount', 'subject_sa': str(sa_id),
+                      'role_name': 'secret-reveal'},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        assert f'/projects/{pid}/secrets/{sid}/view?tab=access' in r.location
+        conn.commit.assert_called()
+        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        assert 'INSERT INTO rbac.bindings' in all_args
+        assert 'ServiceAccount' in all_args
+        assert str(sa_id) in all_args
+        assert 'secret-reveal' in all_args
+

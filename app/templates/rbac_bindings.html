@@ -32,7 +32,7 @@
     </label>
     {% if scope_kind == 'team' %}
     <label>Team
-      <select name="scope_id">
+      <select name="scope_id" onchange="this.form.submit()">
         <option value="">Choose a team…</option>
         {% for t in teams %}
         <option value="{{ t.id }}" {% if scope_id and scope_id|string == t.id|string %}selected{% endif %}>{{ t.name }}</option>
@@ -41,7 +41,7 @@
     </label>
     {% elif scope_kind == 'project' %}
     <label>Project
-      <select name="scope_id">
+      <select name="scope_id" onchange="this.form.submit()">
         <option value="">Choose a project…</option>
         {% for p in projects %}
         <option value="{{ p.id }}" {% if scope_id and scope_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
@@ -50,7 +50,7 @@
     </label>
     {% elif scope_kind == 'secret' %}
     <label>Secret
-      <select name="scope_id">
+      <select name="scope_id" onchange="this.form.submit()">
         <option value="">Choose a secret…</option>
         {% for s in secrets %}
         <option value="{{ s.id }}" {% if scope_id and scope_id|string == s.id|string %}selected{% endif %}>
@@ -60,7 +60,6 @@
       </select>
     </label>
     {% endif %}
-    <button type="submit" class="button">Update</button>
   </div>
   <p class="muted review-form-hint">
     Bind a user, group, or service account to a role at this scope. Grants flow

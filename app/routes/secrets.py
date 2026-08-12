@@ -810,6 +810,8 @@ def register(app):
                 acl_mode_labels=config.SECRET_ACCESS_MODE_LABELS,
                 acl_permissions=config.SECRET_ACCESS_PERMISSIONS,
                 acl_perm_labels=config.SECRET_ACCESS_PERM_LABELS,
+                secret_perm_to_role=config.SECRET_ACCESS_PERM_TO_ROLE,
+                subject_kinds=config.RBAC_SUBJECT_KINDS,
                 secret_bindings=secret_bindings or [],
                 team_groups=team_groups or [],
                 active_tab=tab,
@@ -2417,24 +2419,45 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access/bindings")
     @authz.login_required
     def add_secret_access_binding(project_id, secret_id):
-        """Bind a user/group to a secret-* role at secret scope (project admin)."""
-        email = (request.form.get("email") or "").strip().lower()
-        group_id = (request.form.get("group_id") or "").strip()
-        perm = (request.form.get("permission") or "reveal").strip().lower()
-        if perm not in config.SECRET_ACCESS_PERMISSIONS:
-            perm = "reveal"
-        role_name = config.SECRET_ACCESS_PERM_TO_ROLE.get(perm, "secret-reveal")
+        """Bind a user, group, or service account to a secret role (project admin).
+
+        Uses the same subject/role vocabulary as every other binding form:
+        ``subject_kind`` + ``subject_email`` / ``subject_group`` / ``subject_sa``
+        and a ``role_name`` (``secret-*``). Legacy ``email`` / ``group_id`` /
+        ``permission`` fields are still accepted.
+        """
+        subject_kind = (request.form.get("subject_kind") or "User").strip()
+        if subject_kind not in ("User", "Group", "ServiceAccount"):
+            subject_kind = "User"
+        email = (
+            request.form.get("subject_email") or request.form.get("email") or ""
+        ).strip().lower()
+        group_id = (
+            request.form.get("subject_group")
+            or request.form.get("group_id")
+            or ""
+        ).strip()
+        sa_id = (request.form.get("subject_sa") or "").strip()
+        role_name = (request.form.get("role_name") or "").strip()
+        if not role_name:
+            perm = (request.form.get("permission") or "reveal").strip().lower()
+            if perm not in config.SECRET_ACCESS_PERMISSIONS:
+                perm = "reveal"
+            role_name = config.SECRET_ACCESS_PERM_TO_ROLE.get(perm, "secret-reveal")
         access_url = url_for(
             "secret_view",
             project_id=project_id,
             secret_id=secret_id,
             tab="access",
         )
-        if email and group_id:
-            flash("Choose either a user or a group, not both", "error")
+        if subject_kind == "User" and not email:
+            flash("User email required", "error")
             return redirect(access_url)
-        if not email and not group_id:
-            flash("Email or group required", "error")
+        if subject_kind == "Group" and not group_id:
+            flash("Select a group", "error")
+            return redirect(access_url)
+        if subject_kind == "ServiceAccount" and not sa_id:
+            flash("Enter a machine account ID", "error")
             return redirect(access_url)
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
@@ -2464,7 +2487,17 @@ def register(app):
                 flash(f"Built-in role {role_name} missing — run schema ensure", "error")
                 return redirect(access_url)
             try:
-                if group_id:
+                if subject_kind == "User":
+                    cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
+                    u = cur.fetchone()
+                    if not u or not u.get("id"):
+                        flash(
+                            "User not found — they must register or sign in first",
+                            "error",
+                        )
+                        return redirect(access_url)
+                    subject_id, who = str(u["id"]), email
+                elif subject_kind == "Group":
                     cur.execute(
                         """
                         SELECT id, name FROM api.groups
@@ -2476,17 +2509,22 @@ def register(app):
                     if not g:
                         flash("Group not found on this team", "error")
                         return redirect(access_url)
-                    subject_kind, subject_id, who = "Group", str(g["id"]), f"group {g['name']}"
+                    subject_id, who = str(g["id"]), f"group {g['name']}"
                 else:
-                    cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
-                    u = cur.fetchone()
-                    if not u or not u.get("id"):
-                        flash(
-                            "User not found — they must register or sign in first",
-                            "error",
-                        )
+                    cur.execute(
+                        """
+                        SELECT mt.id
+                        FROM api.machine_tokens mt
+                        WHERE mt.id = %s::uuid
+                          AND mt.project_id = %s
+                        """,
+                        (sa_id, str(project_id)),
+                    )
+                    sa = cur.fetchone()
+                    if not sa:
+                        flash("Machine account not found in this project", "error")
                         return redirect(access_url)
-                    subject_kind, subject_id, who = "User", str(u["id"]), email
+                    subject_id, who = str(sa["id"]), f"machine account {sa_id[:8]}"
                 # Replace any existing secret-scope binding for this subject
                 cur.execute(
                     """

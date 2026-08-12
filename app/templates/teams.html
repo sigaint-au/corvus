@@ -15,7 +15,7 @@
     {% endif %}
   </form>
 </div>
-<p class="page-desc muted">Teams own projects. Access is by team membership (Bitwarden-style).</p>
+<p class="page-desc muted">Teams own projects. Access is managed via role bindings.</p>
 
 {% if can_create_team %}
 <form method="post" action="{{ url_for('create_team') }}" class="row">
