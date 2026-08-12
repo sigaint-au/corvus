@@ -104,48 +104,46 @@
 {% endif %}
 <section>
   <div class="section-head">
-    <div class="section-head-main">
-      <h2>Secrets</h2>
-      {% if can_write %}
-      <a class="button outline small" href="{{ url_for('secret_new', project_id=project.id) }}">Create secret</a>
-      {% endif %}
-    </div>
-    <div class="section-tools">
-      <div class="bulk-toolbar" id="bulk-toolbar" hidden>
-        <label class="bulk-select" title="Select all on this page">
-          <input type="checkbox" id="bulk-select-all" aria-label="Select all secrets">
-          <span id="bulk-count" class="bulk-count">0</span>
-        </label>
-        <label class="visually-hidden" for="bulk-action">Bulk action</label>
-        <select id="bulk-action" class="bulk-action" aria-label="Bulk action">
-          <option value="">Action…</option>
-           <option value="export_env"
-                   data-url="{{ url_for('bulk_export', project_id=project.id, format='env') }}"
-                   data-confirm="Download {n} plaintext secret(s) for this project?">Export .env</option>
-           <option value="export_json"
-                   data-url="{{ url_for('bulk_export', project_id=project.id, format='json') }}"
-                   data-confirm="Download {n} plaintext secret(s) for this project?">Export JSON</option>
-          {% if can_write %}
-          <option value="delete"
-                  data-url="{{ url_for('bulk_secrets', project_id=project.id) }}"
-                  data-confirm="Move {n} selected secret(s) to trash?">Delete</option>
-          {% endif %}
-        </select>
-        <button type="button" id="bulk-apply" class="bulk-apply" disabled>Apply</button>
-      </div>
-      <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
-        <input type="hidden" name="tab" value="secrets">
-        <label class="search-field">
-          <span class="visually-hidden">Search secrets</span>
-          <input type="search" name="q" value="{{ search_q or '' }}"
-                 placeholder="Search…" autocomplete="off" aria-label="Search secrets">
-        </label>
-        <button type="submit">Search</button>
-        {% if search_q %}
-        <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+    <h2>Secrets</h2>
+    {% if can_write %}
+    <a class="button outline small" href="{{ url_for('secret_new', project_id=project.id) }}">Create secret</a>
+    {% endif %}
+  </div>
+  <div class="section-tools">
+    <div class="bulk-toolbar" id="bulk-toolbar" hidden>
+      <label class="bulk-select" title="Select all on this page">
+        <input type="checkbox" id="bulk-select-all" aria-label="Select all secrets">
+        <span id="bulk-count" class="bulk-count">0</span>
+      </label>
+      <label class="visually-hidden" for="bulk-action">Bulk action</label>
+      <select id="bulk-action" class="bulk-action" aria-label="Bulk action">
+        <option value="">Action…</option>
+         <option value="export_env"
+                 data-url="{{ url_for('bulk_export', project_id=project.id, format='env') }}"
+                 data-confirm="Download {n} plaintext secret(s) for this project?">Export .env</option>
+         <option value="export_json"
+                 data-url="{{ url_for('bulk_export', project_id=project.id, format='json') }}"
+                 data-confirm="Download {n} plaintext secret(s) for this project?">Export JSON</option>
+        {% if can_write %}
+        <option value="delete"
+                data-url="{{ url_for('bulk_secrets', project_id=project.id) }}"
+                data-confirm="Move {n} selected secret(s) to trash?">Delete</option>
         {% endif %}
-      </form>
+      </select>
+      <button type="button" id="bulk-apply" class="bulk-apply" disabled>Apply</button>
     </div>
+    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="secrets">
+      <label class="search-field">
+        <span class="visually-hidden">Search secrets</span>
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search…" autocomplete="off" aria-label="Search secrets">
+      </label>
+      <button type="submit">Search</button>
+      {% if search_q %}
+      <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+      {% endif %}
+    </form>
   </div>
   {% if can_write %}
   <form method="post"
