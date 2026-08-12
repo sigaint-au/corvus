@@ -375,6 +375,8 @@ class TestAuth:
             r_teams = self.client.get('/profile?tab=teams')
         assert r_teams.status_code == 200
         assert b'Platform' in r_teams.data
+        assert b'Your role' in r_teams.data
+        assert b'owner' in r_teams.data
         with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn):
             r_proj = self.client.get('/profile?tab=projects')
         assert r_proj.status_code == 200

@@ -394,8 +394,20 @@
     {% for t in teams %}
       <tr>
         <td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td>
-        <td><span class="badge" data-variant="secondary">{{ t.role }}</span></td>
-        <td class="muted">{{ t.source or 'manual' }}</td>
+        <td>
+        {% set role_help = {
+          'owner': 'Full control of the team',
+          'admin': 'Administer team projects and members',
+          'member': 'Create and update secrets in team projects',
+          'viewer': 'Read-only access',
+        } %}
+        {% if t.role %}
+        <span class="badge" data-variant="secondary" title="{{ role_help.get(t.role, '') }}">{{ t.role }}</span>
+        {% else %}
+        <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td class="muted">{{ t.source or 'manual' }}</td>
         <td>{{ t.project_count }}</td>
       </tr>
     {% endfor %}
