@@ -236,6 +236,13 @@ def ensure_schema():
         END $$
         """,
         """
+        -- Register a new local-auth user. Never auto-promotes to admin.
+        --
+        -- Input:  p_email    (text: email, case-insensitive),
+        --         p_password (text: plaintext, hashed with bcrypt),
+        --         p_name     (text: display name; '' if NULL)
+        -- Output: uuid — new user id
+        -- Example: SELECT private.register_user('alice@example.com', 's3cret', 'Alice');
         CREATE OR REPLACE FUNCTION private.register_user(p_email text, p_password text, p_name text)
         RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
         DECLARE uid uuid;
@@ -249,6 +256,12 @@ def ensure_schema():
         """,
         "DROP FUNCTION IF EXISTS private.verify_user(text, text)",
         """
+        -- Verify a local-account password; returns user row on success.
+        --
+        -- Input:  p_email    (text: email, case-insensitive),
+        --         p_password (text: plaintext password to check)
+        -- Output: TABLE(id, email, name, is_global_admin) — empty if invalid
+        -- Example: SELECT * FROM private.verify_user('alice@example.com', 's3cret');
         CREATE OR REPLACE FUNCTION private.verify_user(p_email text, p_password text)
         RETURNS TABLE (id uuid, email text, name text, is_global_admin boolean)
         LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
@@ -264,6 +277,12 @@ def ensure_schema():
         """,
         "GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator",
         """
+        -- Provision or refresh an LDAP user (no password stored).
+        --
+        -- Input:  p_email (text: email, case-insensitive),
+        --         p_name  (text: display name from LDAP; '' preserves existing)
+        -- Output: uuid — user id (existing or new)
+        -- Example: SELECT private.upsert_ldap_user('bob@example.com', 'Bob Smith');
         CREATE OR REPLACE FUNCTION private.upsert_ldap_user(p_email text, p_name text)
         RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
         DECLARE uid uuid;
@@ -285,6 +304,13 @@ def ensure_schema():
         """,
         "GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator",
         """
+        -- Provision or refresh an OIDC SSO user (no password stored).
+        -- Keeps auth_source 'local' if user has a local password.
+        --
+        -- Input:  p_email (text: email, case-insensitive),
+        --         p_name  (text: display name from OIDC; '' preserves existing)
+        -- Output: uuid — user id (existing or new)
+        -- Example: SELECT private.upsert_oidc_user('carol@example.com', 'Carol Jones');
         CREATE OR REPLACE FUNCTION private.upsert_oidc_user(p_email text, p_name text)
         RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
         DECLARE uid uuid;
@@ -1306,6 +1332,13 @@ def ensure_schema():
         "GRANT ALL ON api.secret_recent TO authenticator",
         # Password change / reset + server-side sessions
         """
+        -- Change password (local accounts only; requires current password).
+        --
+        -- Input:  p_user (uuid: user id),
+        --         p_old  (text: current plaintext password),
+        --         p_new  (text: new plaintext password, min 8 chars)
+        -- Output: boolean — true if changed, false if old password wrong
+        -- Example: SELECT private.change_password('<user-uuid>', 'oldpass', 'newpass123');
         CREATE OR REPLACE FUNCTION private.change_password(
           p_user uuid, p_old text, p_new text
         ) RETURNS boolean
@@ -1325,6 +1358,12 @@ def ensure_schema():
         $$
         """,
         """
+        -- Set password after verified reset (local accounts only).
+        --
+        -- Input:  p_user (uuid: user id),
+        --         p_new  (text: new plaintext password, min 8 chars)
+        -- Output: boolean — true if set, false if user not found / not local
+        -- Example: SELECT private.set_local_password('<user-uuid>', 'newpass123');
         CREATE OR REPLACE FUNCTION private.set_local_password(p_user uuid, p_new text)
         RETURNS boolean
         LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
@@ -2090,6 +2129,11 @@ def ensure_schema():
         "GRANT SELECT, INSERT, DELETE ON api.machine_token_scope TO authenticated",
         "GRANT ALL ON api.machine_token_scope TO authenticator",
         """
+        -- Shell-style glob (* ?) → SQL LIKE pattern (escape % and _).
+        --
+        -- Input:  p_glob (text: shell-style glob, e.g. 'API_*')
+        -- Output: text — SQL LIKE pattern, e.g. 'API\_%'
+        -- Example: SELECT private.glob_to_like('API_*');
         CREATE OR REPLACE FUNCTION private.glob_to_like(p_glob text)
         RETURNS text LANGUAGE plpgsql IMMUTABLE STRICT
         SET search_path = pg_catalog AS $$

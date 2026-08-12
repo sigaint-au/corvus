@@ -72,6 +72,13 @@ ALTER TABLE rbac.bindings FORCE ROW LEVEL SECURITY;
 -- Policies recreated after can() exists (see bottom)
 
 -- ── Seed built-in roles (idempotent by name) ─────────────────────────
+-- Inserts/replaces all built-in roles and their role_rules.
+-- Called once at the end of this script (SELECT rbac.ensure_builtin_roles()).
+-- Idempotent: safe to re-run; replaces rules each time.
+--
+-- Input:  none
+-- Output: void
+-- Example: SELECT rbac.ensure_builtin_roles();
 CREATE OR REPLACE FUNCTION rbac.ensure_builtin_roles() RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = rbac, pg_catalog
@@ -303,6 +310,17 @@ BEGIN
 EXCEPTION WHEN others THEN NULL;
 END $$;
 -- ── Scope ancestry: secret → project → team → cluster ────────────────
+-- Returns the scope chain from the given scope up to cluster.
+-- For a secret: secret → project → team → cluster.
+-- For a project: project → team → cluster.
+-- For a team:    team → cluster.
+-- For cluster:  cluster.
+--
+-- Input:  p_scope_kind (text: 'cluster'|'team'|'project'|'secret'),
+--         p_scope_id  (uuid: scope id, NULL for cluster)
+-- Output: TABLE(scope_kind text, scope_id uuid) — ancestor scopes
+-- Example: SELECT * FROM api.rbac_scope_chain('secret', '<secret-uuid>');
+--          → ('secret', <sid>), ('project', <pid>), ('team', <tid>), ('cluster', NULL)
 CREATE OR REPLACE FUNCTION api.rbac_scope_chain(
   p_scope_kind text,
   p_scope_id uuid
@@ -351,7 +369,14 @@ BEGIN
 END;
 $$;
 
--- Subjects for the current (or given) user: self + group memberships
+-- Subjects for the current (or given) user: self + group memberships.
+-- Returns one row for the user ('User', user_id) plus one row per group
+-- membership ('Group', group_id).
+--
+-- Input:  p_user (uuid: user id; NULL = current user from JWT)
+-- Output: TABLE(subject_kind text, subject_id uuid)
+-- Example: SELECT * FROM api.rbac_subjects();
+--          → ('User', <uid>), ('Group', <gid1>), ('Group', <gid2>)
 CREATE OR REPLACE FUNCTION api.rbac_subjects(p_user uuid DEFAULT NULL)
 RETURNS TABLE(subject_kind text, subject_id uuid)
 LANGUAGE sql STABLE SECURITY DEFINER
@@ -367,7 +392,17 @@ SET row_security = off AS $$
   JOIN api.group_members gm ON gm.user_id = u.id;
 $$;
 
--- Rule match: resource/verb against role_rules (wildcard *)
+-- Rule match: resource/verb against role_rules (wildcard *).
+-- Returns true if the resource and verb match any entry in the arrays,
+-- case-insensitive. '*' in resources or verbs matches anything.
+--
+-- Input:  p_resources (text[]: e.g. ['secrets']),
+--         p_verbs    (text[]: e.g. ['get','list','reveal']),
+--         p_resource (text:  e.g. 'secrets'),
+--         p_verb     (text:  e.g. 'reveal')
+-- Output: boolean — true if match
+-- Example: SELECT api.rbac_rule_matches(ARRAY['secrets'], ARRAY['reveal'], 'secrets', 'reveal');
+--          → true
 CREATE OR REPLACE FUNCTION api.rbac_rule_matches(
   p_resources text[],
   p_verbs text[],
@@ -386,7 +421,19 @@ LANGUAGE sql IMMUTABLE AS $$
     );
 $$;
 
--- Core authorizer
+-- Core authorizer. Checks whether the current (or given) subject has a
+-- binding whose role rules match the verb+resource at the given scope
+-- (or any ancestor scope via rbac_scope_chain). Global admins short-circuit
+-- to true. Deleted secrets are rejected at the authorizer level.
+--
+-- Input:  p_verb       (text: 'get'|'list'|'create'|'update'|'delete'|'reveal'|'admin'|'*'),
+--         p_resource   (text: 'teams'|'projects'|'secrets'|'bindings'|'roles'|'audit'|'*'),
+--         p_scope_kind (text: 'cluster'|'team'|'project'|'secret'; default 'cluster'),
+--         p_scope_id   (uuid: scope id; NULL for cluster; default NULL),
+--         p_subject    (uuid: override user; NULL = current JWT user; default NULL)
+-- Output: boolean — true if access allowed
+-- Example: SELECT api.can('reveal', 'secrets', 'secret', '<secret-uuid>');
+--          SELECT api.can('admin', 'projects', 'project', '<project-uuid>');
 CREATE OR REPLACE FUNCTION api.can(
   p_verb text,
   p_resource text,
@@ -450,7 +497,14 @@ GRANT EXECUTE ON FUNCTION rbac.ensure_builtin_roles TO authenticator;
 
 -- ── Compatibility helpers rewritten over can() ───────────────────────
 -- Membership and access now resolve exclusively through rbac.bindings.
+-- These wrap api.can() so existing RLS policies and app code work unchanged.
 
+-- Check if the current user is a member of the given team (direct or via group).
+-- Returns true for global admins.
+--
+-- Input:  tid (uuid: team id)
+-- Output: boolean
+-- Example: SELECT api.is_team_member('<team-uuid>');
 CREATE OR REPLACE FUNCTION api.is_team_member(tid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -462,6 +516,14 @@ SET row_security = off AS $$
     OR api.can('list', 'secrets', 'team', tid);
 $$;
 
+-- Return the highest team role for the current user: 'team-owner',
+-- 'team-admin', 'team-member', 'team-viewer', or NULL.
+-- Global admins return 'team-owner'. Checks direct and group bindings.
+--
+-- Input:  tid (uuid: team id)
+-- Output: text — role name or NULL
+-- Example: SELECT api.team_role('<team-uuid>');
+--          → 'team-admin'
 CREATE OR REPLACE FUNCTION api.team_role(tid uuid) RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, rbac, private
@@ -498,6 +560,13 @@ SET row_security = off AS $$
   END;
 $$;
 
+-- Return the highest project role for the current user: 'project-admin',
+-- 'project-write', 'project-read', or NULL. Does not fall back to team role.
+--
+-- Input:  pid (uuid: project id)
+-- Output: text — role name or NULL
+-- Example: SELECT api.project_role('<project-uuid>');
+--          → 'project-write'
 CREATE OR REPLACE FUNCTION api.project_role(pid uuid) RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, rbac, private
@@ -513,6 +582,11 @@ SET row_security = off AS $$
   END;
 $$;
 
+-- Check if the current user can read the given project (list secrets, view metadata).
+--
+-- Input:  pid (uuid: project id)
+-- Output: boolean
+-- Example: SELECT api.can_read_project('<project-uuid>');
 CREATE OR REPLACE FUNCTION api.can_read_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -523,6 +597,12 @@ SET row_security = off AS $$
     OR api.can('get', 'secrets', 'project', pid);
 $$;
 
+-- Check if the current user can write secrets in the given project
+-- (create, update, or admin).
+--
+-- Input:  pid (uuid: project id)
+-- Output: boolean
+-- Example: SELECT api.can_write_project('<project-uuid>');
 CREATE OR REPLACE FUNCTION api.can_write_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -533,8 +613,13 @@ SET row_security = off AS $$
     OR api.can('*', '*', 'project', pid);
 $$;
 
--- Admin floor: anyone who can admin the project has full access to every secret
--- in it (see can_access_secret_row). Bindings cannot remove that floor.
+-- Check if the current user can administer the given project.
+-- Admin floor: anyone who can admin the project has full access to every
+-- secret in it (see can_access_secret_row). Bindings cannot remove that floor.
+--
+-- Input:  pid (uuid: project id)
+-- Output: boolean
+-- Example: SELECT api.can_admin_project('<project-uuid>');
 CREATE OR REPLACE FUNCTION api.can_admin_project(pid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -544,8 +629,15 @@ SET row_security = off AS $$
     OR api.can('admin', 'bindings', 'project', pid);
 $$;
 
--- Does the subject have a secret-scoped binding that covers this need?
--- (Does not walk project/team ancestors — used for restricted secrets.)
+-- Check if the current (or given) subject has a secret-scoped binding that
+-- covers the requested need. Does NOT walk project/team ancestors — used
+-- for restricted secrets where only secret-scope bindings apply.
+--
+-- Input:  p_sid     (uuid: secret id),
+--         p_need    (text: 'read'|'reveal'|'write'),
+--         p_subject (uuid: override user; NULL = current user; default NULL)
+-- Output: boolean — true if a secret-scope binding grants the need
+-- Example: SELECT api.rbac_secret_binding_allows('<secret-uuid>', 'reveal');
 CREATE OR REPLACE FUNCTION api.rbac_secret_binding_allows(
   p_sid uuid,
   p_need text,
@@ -589,9 +681,18 @@ $$;
 
 GRANT EXECUTE ON FUNCTION api.rbac_secret_binding_allows TO authenticator, authenticated, anon;
 
--- Secret access: RBAC on scope chain, or restricted = secret bindings only.
--- access_mode 'restricted' is the exclusive / "deny broader grants" mode: team and project
--- bindings do NOT apply — only secret-scope bindings + project admins (admin floor).
+-- Secret access check: RBAC on scope chain, or restricted = secret bindings only.
+-- access_mode 'restricted' is the exclusive / "deny broader grants" mode: team
+-- and project bindings do NOT apply — only secret-scope bindings + project
+-- admins (admin floor). Safe for INSERT…RETURNING (takes row values as params).
+--
+-- Input:  sid        (uuid: secret id),
+--         pid        (uuid: project id),
+--         mode       (text: 'inherit'|'restricted' — from secrets.access_mode),
+--         need       (text: 'read'|'reveal'|'write'; default 'read'),
+--         deleted_at (timestamptz: secret.deleted_at; NULL = live)
+-- Output: boolean — true if access allowed
+-- Example: SELECT api.can_access_secret_row('<sid>', '<pid>', 'inherit', 'reveal', NULL);
 CREATE OR REPLACE FUNCTION api.can_access_secret_row(
   sid uuid,
   pid uuid,
@@ -635,6 +736,13 @@ SET row_security = off AS $$
   END;
 $$;
 
+-- Wrapper for can_access_secret_row that loads the secret row from the DB.
+-- Use this when you have only the secret id (not the full row).
+--
+-- Input:  sid  (uuid: secret id),
+--         need (text: 'read'|'reveal'|'write'; default 'read')
+-- Output: boolean — true if access allowed (false if secret not found)
+-- Example: SELECT api.can_access_secret('<secret-uuid>', 'reveal');
 CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
@@ -652,7 +760,16 @@ SET row_security = off AS $$
   );
 $$;
 
--- can_reveal_secret: RBAC reveal + approval layer (unchanged approval logic)
+-- Check if the current user can reveal the secret value NOW.
+-- Combines RBAC reveal permission with the approval layer:
+--   1. Must have 'reveal' via can_access_secret.
+--   2. Global admins and project admins always pass.
+--   3. If secret_requires_approval is false, pass.
+--   4. Otherwise, must have an approved access request with approved_until > now().
+--
+-- Input:  sid (uuid: secret id)
+-- Output: boolean — true if reveal allowed now
+-- Example: SELECT api.can_reveal_secret('<secret-uuid>');
 CREATE OR REPLACE FUNCTION api.can_reveal_secret(sid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -676,7 +793,13 @@ SET row_security = off AS $$
   END;
 $$;
 
--- Bind creator as team-owner when a team is created
+-- Create a team and bind the creator as team-owner via rbac.bindings.
+-- Called by the Flask app when a user creates a new team.
+--
+-- Input:  p_user (uuid: creator user id),
+--         p_name (text: team name)
+-- Output: uuid — new team id
+-- Example: SELECT private.create_team('<user-uuid>', 'Platform');
 CREATE OR REPLACE FUNCTION private.create_team(p_user uuid, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = api, private, rbac
@@ -696,7 +819,12 @@ BEGIN
 END;
 $$;
 
--- Team member listing via rbac.bindings (replaces legacy team_members queries)
+-- List team members via rbac.bindings (replaces legacy team_members queries).
+-- Returns one row per User-scope binding at team scope.
+--
+-- Input:  p_team (uuid: team id)
+-- Output: TABLE(role text, source text, user_id uuid, email text, name text)
+-- Example: SELECT * FROM private.team_member_rows('<team-uuid>');
 CREATE OR REPLACE FUNCTION private.team_member_rows(p_team uuid)
 RETURNS TABLE (role text, source text, user_id uuid, email text, name text)
 LANGUAGE sql STABLE SECURITY DEFINER
@@ -714,7 +842,12 @@ SET row_security = off AS $$
 $$;
 GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated;
 
--- Project member listing via rbac.bindings
+-- List project members via rbac.bindings.
+-- Returns one row per User-scope binding at project scope.
+--
+-- Input:  p_project (uuid: project id)
+-- Output: TABLE(role text, user_id uuid, email text, name text)
+-- Example: SELECT * FROM private.project_member_rows('<project-uuid>');
 CREATE OR REPLACE FUNCTION private.project_member_rows(p_project uuid)
 RETURNS TABLE (role text, user_id uuid, email text, name text)
 LANGUAGE sql STABLE SECURITY DEFINER
@@ -731,7 +864,12 @@ SET row_security = off AS $$
 $$;
 GRANT EXECUTE ON FUNCTION private.project_member_rows TO authenticator, authenticated;
 
--- Project group role listing via rbac.bindings
+-- List project group bindings via rbac.bindings.
+-- Returns one row per Group-scope binding at project scope.
+--
+-- Input:  p_project (uuid: project id)
+-- Output: TABLE(group_id uuid, group_name text, role text, source text)
+-- Example: SELECT * FROM private.project_group_role_rows('<project-uuid>');
 CREATE OR REPLACE FUNCTION private.project_group_role_rows(p_project uuid)
 RETURNS TABLE (
   group_id uuid,
@@ -754,7 +892,15 @@ SET row_security = off AS $$
 $$;
 GRANT EXECUTE ON FUNCTION private.project_group_role_rows TO authenticator, authenticated;
 
--- Who can manage RBAC at a scope?
+-- Check if the current user can manage RBAC bindings at the given scope.
+-- True for global admins, anyone with 'admin' on 'bindings' at the scope,
+-- team-owner/team-admin for team scope, project-admin for project scope,
+-- or project-admin for secret scope.
+--
+-- Input:  p_scope_kind (text: 'cluster'|'team'|'project'|'secret'),
+--         p_scope_id  (uuid: scope id; NULL for cluster; default NULL)
+-- Output: boolean
+-- Example: SELECT api.can_manage_rbac('team', '<team-uuid>');
 CREATE OR REPLACE FUNCTION api.can_manage_rbac(
   p_scope_kind text,
   p_scope_id uuid DEFAULT NULL
@@ -786,7 +932,9 @@ $$;
 
 GRANT EXECUTE ON FUNCTION api.can_manage_rbac TO authenticator, authenticated;
 
--- RLS on rbac tables
+-- ── RLS on rbac tables: roles (all read, global admin write),
+--    role_rules (all read, global admin write),
+--    bindings (scope manager or self read, can_manage_rbac write)
 DROP POLICY IF EXISTS rbac_roles_select ON rbac.roles;
 CREATE POLICY rbac_roles_select ON rbac.roles FOR SELECT TO authenticated
   USING (true);
@@ -817,7 +965,13 @@ CREATE POLICY rbac_bindings_write ON rbac.bindings FOR ALL TO authenticated
   USING (api.can_manage_rbac(scope_kind, scope_id))
   WITH CHECK (api.can_manage_rbac(scope_kind, scope_id));
 
--- Prevent removing the last team-owner binding (User or Group subject)
+-- Trigger: prevent removing the last team-owner binding.
+-- Fires BEFORE UPDATE OR DELETE on rbac.bindings. If the operation would
+-- leave a team with zero team-owner bindings, raises an exception.
+--
+-- Input:  Trigger (OLD/NEW row from rbac.bindings)
+-- Output: trigger — OLD or NEW row (or raises exception)
+-- Example: (trigger — not called directly)
 CREATE OR REPLACE FUNCTION rbac.guard_last_team_owner_binding()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
@@ -873,6 +1027,13 @@ DROP TABLE IF EXISTS api.secret_acl CASCADE;
 
 
 -- ── Self-service: a user's own bindings across scopes (Profile → My access) ──
+-- Returns all bindings for the current user, with friendly scope labels.
+-- Used by the Profile → My access tab.
+--
+-- Input:  none (uses current user from JWT)
+-- Output: TABLE(scope_kind, scope_label, role_name, role_description,
+--               grant_kind, grant_subject, created_at)
+-- Example: SELECT * FROM api.my_access_rows();
 CREATE OR REPLACE FUNCTION api.my_access_rows()
 RETURNS TABLE(
   scope_kind text,
@@ -930,8 +1091,16 @@ $$;
 GRANT EXECUTE ON FUNCTION api.my_access_rows TO authenticator, authenticated, anon;
 
 -- ── Resource perspective: who can access a scope and why ────────────────
+-- Returns everyone who can access the given scope and why — including direct
+-- bindings, group members expanded, service accounts, and global admins.
 -- Admin/manager-gated. Walks the scope inheritance chain (secret → project →
 -- team → cluster) and expands groups to members; appends global admins.
+--
+-- Input:  p_scope_kind (text: 'cluster'|'team'|'project'|'secret'),
+--         p_scope_id  (uuid: scope id; NULL for cluster; default NULL)
+-- Output: TABLE(subject_email, subject_name, subject_kind, scope_kind,
+--               scope_label, role_name, grant_kind, grant_subject, is_global_admin)
+-- Example: SELECT * FROM api.effective_access_rows('project', '<project-uuid>');
 CREATE OR REPLACE FUNCTION api.effective_access_rows(
   p_scope_kind text,
   p_scope_id uuid DEFAULT NULL
@@ -1016,6 +1185,14 @@ $$;
 GRANT EXECUTE ON FUNCTION api.effective_access_rows TO authenticator, authenticated;
 
 -- ── RLS Policies (created after auth functions exist) ──────────────────
+-- All RLS policies are defined here (not in init.sql) because they reference
+-- RBAC auth functions defined above. Each policy uses DROP POLICY IF EXISTS
+-- before CREATE POLICY for idempotency.
+--
+-- Convention: policies use the `authenticated` role (SET ROLE from JWT).
+-- Global admins short-circuit via api.is_global_admin() in helpers.
+
+-- Grant execute on auth functions to authenticated and anon (PostgREST)
 GRANT EXECUTE ON FUNCTION api.is_team_member TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION api.team_role TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION api.project_role TO authenticated, anon;
@@ -1025,7 +1202,7 @@ GRANT EXECUTE ON FUNCTION api.can_admin_project TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon;
 GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon;
 
--- teams
+-- ── teams: select (member), insert (creator/admin), update (owner/admin), delete (owner)
 DROP POLICY IF EXISTS teams_select ON api.teams;
 CREATE POLICY teams_select ON api.teams FOR SELECT TO authenticated
   USING (api.is_global_admin() OR api.is_team_member(id));
@@ -1039,7 +1216,7 @@ DROP POLICY IF EXISTS teams_delete ON api.teams;
 CREATE POLICY teams_delete ON api.teams FOR DELETE TO authenticated
   USING (api.team_role(id) = 'team-owner');
 
--- team_ldap_maps
+-- ── team_ldap_maps: select (member), write (team-owner/admin)
 DROP POLICY IF EXISTS tlm_select ON api.team_ldap_maps;
 CREATE POLICY tlm_select ON api.team_ldap_maps FOR SELECT TO authenticated
   USING (api.is_team_member(team_id));
@@ -1053,7 +1230,7 @@ DROP POLICY IF EXISTS tlm_delete ON api.team_ldap_maps;
 CREATE POLICY tlm_delete ON api.team_ldap_maps FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
 
--- team_oidc_maps
+-- ── team_oidc_maps: select (member), write (team-owner/admin)
 DROP POLICY IF EXISTS tom_select ON api.team_oidc_maps;
 CREATE POLICY tom_select ON api.team_oidc_maps FOR SELECT TO authenticated
   USING (api.is_team_member(team_id));
@@ -1067,7 +1244,7 @@ DROP POLICY IF EXISTS tom_delete ON api.team_oidc_maps;
 CREATE POLICY tom_delete ON api.team_oidc_maps FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
 
--- team_invites
+-- ── team_invites: select/insert/update/delete (team-owner/admin only)
 DROP POLICY IF EXISTS team_invites_select ON api.team_invites;
 CREATE POLICY team_invites_select ON api.team_invites FOR SELECT TO authenticated
   USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
@@ -1081,7 +1258,7 @@ DROP POLICY IF EXISTS team_invites_delete ON api.team_invites;
 CREATE POLICY team_invites_delete ON api.team_invites FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
 
--- team_join_requests
+-- ── team_join_requests: select (admin or self), insert (self), update (admin)
 DROP POLICY IF EXISTS team_join_requests_select ON api.team_join_requests;
 CREATE POLICY team_join_requests_select ON api.team_join_requests FOR SELECT TO authenticated
   USING (
@@ -1095,7 +1272,7 @@ DROP POLICY IF EXISTS team_join_requests_update ON api.team_join_requests;
 CREATE POLICY team_join_requests_update ON api.team_join_requests FOR UPDATE TO authenticated
   USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
 
--- org_audit
+-- ── org_audit: select (team member or project reader)
 DROP POLICY IF EXISTS org_audit_select ON api.org_audit;
 CREATE POLICY org_audit_select ON api.org_audit FOR SELECT TO authenticated
   USING (
@@ -1103,7 +1280,8 @@ CREATE POLICY org_audit_select ON api.org_audit FOR SELECT TO authenticated
     OR (project_id IS NOT NULL AND api.can_read_project(project_id))
   );
 
--- projects
+-- ── projects: select (team member), insert (team-owner/admin/member),
+--    update (can_admin_project), delete (team-owner/admin)
 DROP POLICY IF EXISTS projects_select ON api.projects;
 CREATE POLICY projects_select ON api.projects FOR SELECT TO authenticated
   USING (api.is_team_member(team_id));
@@ -1117,7 +1295,7 @@ DROP POLICY IF EXISTS projects_delete ON api.projects;
 CREATE POLICY projects_delete ON api.projects FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
 
--- secret_pins
+-- ── secret_pins: select/insert/delete (self only, secret must be readable)
 DROP POLICY IF EXISTS secret_pins_select ON api.secret_pins;
 CREATE POLICY secret_pins_select ON api.secret_pins FOR SELECT TO authenticated
   USING (
@@ -1142,7 +1320,7 @@ DROP POLICY IF EXISTS secret_pins_delete ON api.secret_pins;
 CREATE POLICY secret_pins_delete ON api.secret_pins FOR DELETE TO authenticated
   USING (user_id = api.current_user_id());
 
--- secret_recent
+-- ── secret_recent: select/insert/update/delete (self only, secret must be readable)
 DROP POLICY IF EXISTS secret_recent_select ON api.secret_recent;
 CREATE POLICY secret_recent_select ON api.secret_recent FOR SELECT TO authenticated
   USING (
@@ -1170,7 +1348,8 @@ DROP POLICY IF EXISTS secret_recent_delete ON api.secret_recent;
 CREATE POLICY secret_recent_delete ON api.secret_recent FOR DELETE TO authenticated
   USING (user_id = api.current_user_id());
 
--- secrets
+-- ── secrets: select (can_access_secret_row read/write), insert (can_write_project),
+--    update (can_access_secret_row write), delete (soft-deleted + write)
 DROP POLICY IF EXISTS secrets_select ON api.secrets;
 CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
   USING (
@@ -1191,7 +1370,7 @@ CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
     AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)
   );
 
--- secret_meta
+-- ── secret_meta: select/insert/update/delete (can_access_secret read/write)
 DROP POLICY IF EXISTS secret_meta_select ON api.secret_meta;
 CREATE POLICY secret_meta_select ON api.secret_meta FOR SELECT TO authenticated
   USING (api.can_access_secret(secret_id, 'read'));
@@ -1205,7 +1384,7 @@ DROP POLICY IF EXISTS secret_meta_delete ON api.secret_meta;
 CREATE POLICY secret_meta_delete ON api.secret_meta FOR DELETE TO authenticated
   USING (api.can_access_secret(secret_id, 'write'));
 
--- secret_versions
+-- ── secret_versions: select (parent secret readable), no client insert (trigger-only)
 DROP POLICY IF EXISTS secret_versions_select ON api.secret_versions;
 CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authenticated
   USING (
@@ -1218,12 +1397,12 @@ CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authen
     )
   );
 
--- secret_audit
+-- ── secret_audit: select (can_read_project), no client insert (SECURITY DEFINER only)
 DROP POLICY IF EXISTS secret_audit_select ON api.secret_audit;
 CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
   USING (api.can_read_project(project_id));
 
--- groups
+-- ── groups: select (team member), write (team-owner/admin)
 DROP POLICY IF EXISTS groups_select ON api.groups;
 CREATE POLICY groups_select ON api.groups FOR SELECT TO authenticated
   USING (api.is_team_member(team_id));
@@ -1237,7 +1416,8 @@ DROP POLICY IF EXISTS groups_delete ON api.groups;
 CREATE POLICY groups_delete ON api.groups FOR DELETE TO authenticated
   USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
 
--- group_members
+-- ── group_members: select (team member), write (team-owner/admin),
+--    delete (team-owner/admin or self)
 DROP POLICY IF EXISTS gm_select ON api.group_members;
 CREATE POLICY gm_select ON api.group_members FOR SELECT TO authenticated
   USING (
@@ -1272,7 +1452,8 @@ CREATE POLICY gm_delete ON api.group_members FOR DELETE TO authenticated
     OR user_id = api.current_user_id()
   );
 
--- secret_access_requests
+-- ── secret_access_requests: select (admin or self), insert (self + can_read),
+--    update (admin only — approve/deny)
 DROP POLICY IF EXISTS secret_access_requests_select ON api.secret_access_requests;
 CREATE POLICY secret_access_requests_select ON api.secret_access_requests
   FOR SELECT TO authenticated
@@ -1292,7 +1473,7 @@ CREATE POLICY secret_access_requests_update ON api.secret_access_requests
   FOR UPDATE TO authenticated
   USING (api.can_admin_project(project_id));
 
--- machine_tokens
+-- ── machine_tokens: select (can_read_project), insert/delete (can_write_project)
 DROP POLICY IF EXISTS mt_select ON api.machine_tokens;
 CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated
   USING (api.can_read_project(project_id));
@@ -1303,7 +1484,7 @@ DROP POLICY IF EXISTS mt_delete ON api.machine_tokens;
 CREATE POLICY mt_delete ON api.machine_tokens FOR DELETE TO authenticated
   USING (api.can_write_project(project_id));
 
--- machine_token_scope
+-- ── machine_token_scope: select (can_read_project), insert/delete (can_write_project)
 DROP POLICY IF EXISTS mts_select ON api.machine_token_scope;
 CREATE POLICY mts_select ON api.machine_token_scope FOR SELECT TO authenticated
   USING (

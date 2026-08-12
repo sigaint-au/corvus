@@ -288,7 +288,13 @@ CREATE TRIGGER secrets_touch_updated_at
   BEFORE UPDATE ON api.secrets
   FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at();
 
--- Archive previous ciphertext when value changes (DEFINER: writers cannot forge history)
+-- Archive previous ciphertext when value changes (DEFINER: writers cannot forge history).
+-- Trigger fires BEFORE UPDATE on api.secrets. If value_enc changed, inserts
+-- the old row into secret_versions.
+--
+-- Input:  Trigger (OLD/NEW row from api.secrets)
+-- Output: trigger — NEW row
+-- Example: (trigger — not called directly)
 CREATE OR REPLACE FUNCTION api.archive_secret_version()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, api, private
@@ -390,13 +396,23 @@ CREATE TABLE private.login_failures (
 CREATE INDEX login_failures_email_created_idx
   ON private.login_failures (email, created_at);
 
--- Helpers: current user from JWT claim
+-- ── Helpers: current user from JWT claim ──
+-- Extracts the user id (sub claim) from the PostgREST JWT.
+--
+-- Input:  none (reads request.jwt.claims setting)
+-- Output: uuid — user id or NULL
+-- Example: SELECT api.current_user_id();
 CREATE OR REPLACE FUNCTION api.current_user_id() RETURNS uuid
 LANGUAGE sql STABLE AS $$
   SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
 $$;
 
--- Global admin: full access across teams/projects
+-- Global admin: full access across teams/projects.
+-- Checks the is_global_admin flag on the user row.
+--
+-- Input:  none (uses current user from JWT)
+-- Output: boolean
+-- Example: SELECT api.is_global_admin();
 CREATE OR REPLACE FUNCTION api.is_global_admin() RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -452,6 +468,12 @@ ALTER TABLE api.group_members FORCE ROW LEVEL SECURITY;
 
 -- Auth helpers (SECURITY DEFINER; Flask/anon only)
 -- Never auto-promote first registrant; GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL does that in app.
+--
+-- Input:  p_email    (text: email address, case-insensitive),
+--         p_password (text: plaintext password, hashed with bcrypt),
+--         p_name     (text: display name; defaults to '' if NULL)
+-- Output: uuid — new user id
+-- Example: SELECT private.register_user('alice@example.com', 's3cret', 'Alice');
 CREATE OR REPLACE FUNCTION private.register_user(p_email text, p_password text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 DECLARE uid uuid;
@@ -463,6 +485,13 @@ BEGIN
 END;
 $$;
 
+-- Verify a local-account password and return the user row on success.
+-- Only matches users with a non-null password_hash and disabled_at IS NULL.
+--
+-- Input:  p_email    (text: email address, case-insensitive),
+--         p_password (text: plaintext password to check)
+-- Output: TABLE(id uuid, email text, name text, is_global_admin boolean) — empty if invalid
+-- Example: SELECT * FROM private.verify_user('alice@example.com', 's3cret');
 CREATE OR REPLACE FUNCTION private.verify_user(p_email text, p_password text)
 RETURNS TABLE (id uuid, email text, name text, is_global_admin boolean)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
@@ -476,7 +505,14 @@ BEGIN
 END;
 $$;
 
--- Change password (local accounts only; requires current password)
+-- Change password (local accounts only; requires current password).
+-- Password must be at least 8 characters. Returns false if old password is wrong.
+--
+-- Input:  p_user (uuid: user id),
+--         p_old  (text: current plaintext password),
+--         p_new  (text: new plaintext password, min 8 chars)
+-- Output: boolean — true if password was changed, false if old password didn't match
+-- Example: SELECT private.change_password('<user-uuid>', 'oldpass', 'newpass123');
 CREATE OR REPLACE FUNCTION private.change_password(
   p_user uuid, p_old text, p_new text
 ) RETURNS boolean
@@ -495,7 +531,14 @@ BEGIN
 END;
 $$;
 
--- Set password after verified reset (local accounts only)
+-- Set password after verified reset (local accounts only).
+-- Does not require the old password; caller must have verified the reset token.
+-- Password must be at least 8 characters.
+--
+-- Input:  p_user (uuid: user id),
+--         p_new  (text: new plaintext password, min 8 chars)
+-- Output: boolean — true if password was set, false if user not found / not local
+-- Example: SELECT private.set_local_password('<user-uuid>', 'newpass123');
 CREATE OR REPLACE FUNCTION private.set_local_password(p_user uuid, p_new text)
 RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
@@ -540,7 +583,13 @@ CREATE INDEX password_reset_tokens_user_idx
   ON private.password_reset_tokens (user_id)
   WHERE used_at IS NULL;
 
--- Provision / refresh LDAP user (no password stored; never auto-promote admin)
+-- Provision / refresh LDAP user (no password stored; never auto-promote admin).
+-- Creates the user if not found, otherwise updates name and sets auth_source to 'ldap'.
+--
+-- Input:  p_email (text: email address, case-insensitive),
+--         p_name  (text: display name from LDAP; empty string preserves existing)
+-- Output: uuid — user id (existing or newly created)
+-- Example: SELECT private.upsert_ldap_user('bob@example.com', 'Bob Smith');
 CREATE OR REPLACE FUNCTION private.upsert_ldap_user(p_email text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 DECLARE uid uuid;
@@ -560,7 +609,14 @@ BEGIN
 END;
 $$;
 
--- Provision / refresh OIDC SSO user (no password stored)
+-- Provision / refresh OIDC SSO user (no password stored).
+-- Creates the user if not found. If user exists with a local password, keeps
+-- auth_source 'local' so they can still use password login; otherwise sets 'oidc'.
+--
+-- Input:  p_email (text: email address, case-insensitive),
+--         p_name  (text: display name from OIDC; empty string preserves existing)
+-- Output: uuid — user id (existing or newly created)
+-- Example: SELECT private.upsert_oidc_user('carol@example.com', 'Carol Jones');
 CREATE OR REPLACE FUNCTION private.upsert_oidc_user(p_email text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 DECLARE uid uuid;
@@ -628,7 +684,11 @@ CREATE OR REPLACE VIEW api.user_directory AS
 -- Global admin / app admin path only
 GRANT SELECT ON api.user_directory TO authenticator;
 
--- Lookup by email for add-member (does not list all users)
+-- Lookup user by email for add-member (does not list all users).
+--
+-- Input:  p_email (text: email address, case-insensitive)
+-- Output: uuid — user id or NULL
+-- Example: SELECT private.lookup_user('alice@example.com');
 CREATE OR REPLACE FUNCTION private.lookup_user(p_email text)
 RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = private
@@ -639,7 +699,19 @@ $$;
 -- private.team_member_rows and private.project_member_rows defined in 02-rbac.sql
 -- (query rbac.bindings instead of legacy team_members/project_members)
 
+-- ── Functions that call RBAC auth helpers (defined in 02-rbac.sql) ──
+-- These functions are LANGUAGE plpgsql (not LANGUAGE sql) because PostgreSQL
+-- validates LANGUAGE sql bodies at creation time. Since the RBAC auth
+-- functions (is_team_member, can_access_secret, can_admin_project) are defined
+-- in 02-rbac.sql (applied after this file), LANGUAGE sql would fail.
+-- LANGUAGE plpgsql defers body validation to execution time.
+
 -- Team groups listing (group team roles live in rbac.bindings, not api.groups)
+-- Calls api.is_team_member() — defined in 02-rbac.sql.
+--
+-- Input:  p_team (uuid: team id)
+-- Output: TABLE(id, name, source, external_key, member_count, created_at)
+-- Example: SELECT * FROM private.team_group_rows('<team-uuid>');
 CREATE OR REPLACE FUNCTION private.team_group_rows(p_team uuid)
 RETURNS TABLE (
   id uuid,
@@ -664,6 +736,12 @@ BEGIN
 END;
 $$;
 
+-- List group members for a team group. Calls api.is_team_member() — defined
+-- in 02-rbac.sql.
+--
+-- Input:  p_group (uuid: group id)
+-- Output: TABLE(user_id, email, name, source)
+-- Example: SELECT * FROM private.group_member_rows('<group-uuid>');
 CREATE OR REPLACE FUNCTION private.group_member_rows(p_group uuid)
 RETURNS TABLE (user_id uuid, email text, name text, source text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -683,7 +761,12 @@ $$;
 
 -- private.project_group_role_rows defined in 02-rbac.sql (queries rbac.bindings)
 
--- Custom metadata rows for a secret
+-- Custom metadata rows for a secret. Calls api.can_access_secret() —
+-- defined in 02-rbac.sql.
+--
+-- Input:  p_secret (uuid: secret id)
+-- Output: TABLE(key, value, updated_at)
+-- Example: SELECT * FROM private.secret_meta_rows('<secret-uuid>');
 CREATE OR REPLACE FUNCTION private.secret_meta_rows(p_secret uuid)
 RETURNS TABLE (key text, value text, updated_at timestamptz)
 LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -700,7 +783,12 @@ BEGIN
 END;
 $$;
 
--- Record last reveal access (does not change updated_at of secret value)
+-- Record last reveal access (does not change updated_at of secret value).
+-- Calls api.can_access_secret() — defined in 02-rbac.sql.
+--
+-- Input:  p_secret (uuid: secret id)
+-- Output: void
+-- Example: SELECT private.touch_secret_access('<secret-uuid>');
 CREATE OR REPLACE FUNCTION private.touch_secret_access(p_secret uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = api, private
@@ -719,7 +807,13 @@ BEGIN
 END;
 $$;
 
--- Org / membership audit insert (JWT actor only)
+-- Org / membership audit insert (JWT actor only).
+-- Actor is always derived from JWT claims; p_user_id is ignored.
+--
+-- Input:  p_team (uuid, nullable), p_project (uuid, nullable),
+--         p_action (text), p_detail (text, default ''), p_actor_email (text, nullable)
+-- Output: void
+-- Example: SELECT private.audit_org('<team-uuid>', NULL, 'member_added', 'alice@example.com');
 CREATE OR REPLACE FUNCTION private.audit_org(
   p_team uuid,
   p_project uuid,
@@ -749,7 +843,11 @@ BEGIN
 END;
 $$;
 
--- Resolve invite token → team (SECURITY DEFINER; hash is the gate)
+-- Resolve invite token → team (SECURITY DEFINER; hash is the gate).
+--
+-- Input:  p_hash (text: SHA-256 hash of the invite token)
+-- Output: TABLE(invite_id, team_id, team_name, role, expires_at) or empty
+-- Example: SELECT * FROM private.lookup_invite('<sha256-hash>');
 CREATE OR REPLACE FUNCTION private.lookup_invite(p_hash text)
 RETURNS TABLE (
   invite_id uuid, team_id uuid, team_name text, role text, expires_at timestamptz
@@ -766,10 +864,14 @@ SET row_security = off AS $$
   LIMIT 1;
 $$;
 
--- Audit insert only via this function (not direct table INSERT for authenticated).
--- p_user_id is ignored: actor is always taken from JWT claims (defense-in-depth
--- against forged attribution if this function is ever exposed). Machine/system
--- callers with no JWT leave user_id NULL and may set p_actor_email (e.g. 'machine').
+-- Audit insert for secret actions (JWT actor only).
+-- p_user_id is ignored: actor is always taken from JWT claims (defense-in-depth).
+-- Machine/system callers with no JWT leave user_id NULL and set p_actor_email.
+--
+-- Input:  p_project (uuid), p_secret_id (uuid, nullable), p_secret_key (text),
+--         p_action (text), p_user_id (uuid, ignored), p_actor_email (text, nullable)
+-- Output: void
+-- Example: SELECT private.audit_secret('<project-uuid>', '<secret-uuid>', 'API_KEY', 'revealed');
 CREATE OR REPLACE FUNCTION private.audit_secret(
   p_project uuid,
   p_secret_id uuid,
@@ -805,7 +907,18 @@ BEGIN
 END;
 $$;
 
--- Machine/ESO helpers (bypass RLS; token hash is the gate)
+-- ── Machine/ESO helpers (bypass RLS; token hash is the gate) ──
+-- These SECURITY DEFINER functions validate machine tokens and read/write
+-- secrets on behalf of automation. Gated on token hash + expiry, not RLS.
+-- Granted to authenticator only (not authenticated) so users cannot call
+-- them directly via PostgREST.
+
+-- Validate a machine token (hash + expiry) for a project.
+--
+-- Input:  p_project (uuid: project id),
+--         p_hash    (text: SHA-256 hash of the token)
+-- Output: boolean — true if token is valid and not expired
+-- Example: SELECT private.auth_machine('<project-uuid>', '<sha256-hash>');
 CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
@@ -817,6 +930,12 @@ SET row_security = off AS $$
   );
 $$;
 
+-- Return the machine token role: 'service-read', 'service-reveal', or 'service-write'.
+--
+-- Input:  p_project (uuid: project id),
+--         p_hash    (text: SHA-256 hash of the token)
+-- Output: text — role name or NULL if token not found
+-- Example: SELECT private.machine_role('<project-uuid>', '<sha256-hash>');
 CREATE OR REPLACE FUNCTION private.machine_role(p_project uuid, p_hash text)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
@@ -827,7 +946,12 @@ SET row_security = off AS $$
   LIMIT 1;
 $$;
 
--- Label for audit actor_email (e.g. "eso-pull:ss_abc12xyz")
+-- Label for audit actor_email (e.g. "eso-pull:ss_abc12xyz").
+--
+-- Input:  p_project (uuid: project id),
+--         p_hash    (text: SHA-256 hash of the token)
+-- Output: text — "<token-name>:<token-prefix>" or "token:<prefix>"
+-- Example: SELECT private.machine_token_label('<project-uuid>', '<sha256-hash>');
 CREATE OR REPLACE FUNCTION private.machine_token_label(p_project uuid, p_hash text)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
@@ -839,7 +963,12 @@ SET row_security = off AS $$
   LIMIT 1;
 $$;
 
--- Shell-style gl-- Shell-style glob (* ?) → SQL LIKE pattern (escape % and _)
+-- Shell-style glob (* ?) → SQL LIKE pattern (escape % and _).
+-- Backslash, % and _ are escaped; * becomes % and ? becomes _.
+--
+-- Input:  p_glob (text: shell-style glob pattern, e.g. 'API_*')
+-- Output: text — SQL LIKE pattern, e.g. 'API\_%'
+-- Example: SELECT private.glob_to_like('API_*');  → 'API\_%'
 CREATE OR REPLACE FUNCTION private.glob_to_like(p_glob text)
 RETURNS text LANGUAGE plpgsql IMMUTABLE STRICT
 SET search_path = pg_catalog AS $$
@@ -854,6 +983,15 @@ BEGIN
 END;
 $$;
 
+-- Check if a machine token is allowed to access a specific secret key.
+-- If no scope rows exist for the token, all keys are allowed.
+-- If scope rows exist, the key must match an exact secret_key or a key_pattern.
+--
+-- Input:  p_project (uuid: project id),
+--         p_hash    (text: SHA-256 hash of the token),
+--         p_key     (text: secret key to check)
+-- Output: boolean — true if the key is allowed
+-- Example: SELECT private.machine_key_allowed('<project-uuid>', '<hash>', 'API_KEY');
 CREATE OR REPLACE FUNCTION private.machine_key_allowed(
   p_project uuid, p_hash text, p_key text
 ) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
@@ -891,6 +1029,12 @@ $$;
 
 GRANT EXECUTE ON FUNCTION private.glob_to_like TO authenticator;
 
+-- Get a single secret's encrypted value (ciphertext) for a machine token.
+-- Respects key allow-list. Does not decrypt.
+--
+-- Input:  p_project (uuid), p_hash (text), p_key (text: secret key)
+-- Output: text — value_enc (Fernet ciphertext) or NULL if not allowed/found
+-- Example: SELECT private.machine_get_enc('<project-uuid>', '<hash>', 'API_KEY');
 CREATE OR REPLACE FUNCTION private.machine_get_enc(p_project uuid, p_hash text, p_key text)
 RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
@@ -906,6 +1050,12 @@ BEGIN
 END;
 $$;
 
+-- Get a single secret row (metadata + ciphertext) for a machine token.
+-- Respects key allow-list.
+--
+-- Input:  p_project (uuid), p_hash (text), p_key (text: secret key)
+-- Output: TABLE(id, key, value_enc, note, kind, expires_at, created_at, updated_at)
+-- Example: SELECT * FROM private.machine_get_row('<project-uuid>', '<hash>', 'API_KEY');
 CREATE OR REPLACE FUNCTION private.machine_get_row(p_project uuid, p_hash text, p_key text)
 RETURNS TABLE (
   id uuid,
@@ -931,6 +1081,12 @@ BEGIN
 END;
 $$;
 
+-- List all secret key+ciphertext pairs for a machine token.
+-- Respects key allow-list.
+--
+-- Input:  p_project (uuid), p_hash (text)
+-- Output: TABLE(key, value_enc)
+-- Example: SELECT * FROM private.machine_list_enc('<project-uuid>', '<hash>');
 CREATE OR REPLACE FUNCTION private.machine_list_enc(p_project uuid, p_hash text)
 RETURNS TABLE (key text, value_enc text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -947,6 +1103,12 @@ BEGIN
 END;
 $$;
 
+-- List secret metadata (no ciphertext) for a machine token.
+-- Optional q filter matches key, note, or custom metadata.
+--
+-- Input:  p_project (uuid), p_hash (text), p_q (text: optional search; default NULL)
+-- Output: TABLE(id, key, note, kind, expires_at, created_at, updated_at)
+-- Example: SELECT * FROM private.machine_list_meta('<project-uuid>', '<hash>', 'api');
 CREATE OR REPLACE FUNCTION private.machine_list_meta(p_project uuid, p_hash text, p_q text DEFAULT NULL)
 RETURNS TABLE (
   id uuid,
@@ -985,6 +1147,12 @@ BEGIN
 END;
 $$;
 
+-- Soft-delete a secret via machine token (service-write role only).
+-- Respects key allow-list.
+--
+-- Input:  p_project (uuid), p_hash (text), p_key (text: secret key)
+-- Output: uuid — deleted secret id, or NULL if not allowed/not found
+-- Example: SELECT private.machine_delete('<project-uuid>', '<hash>', 'API_KEY');
 CREATE OR REPLACE FUNCTION private.machine_delete(
   p_project uuid, p_hash text, p_key text
 )
@@ -1012,6 +1180,13 @@ BEGIN
 END;
 $$;
 
+-- Create or update a secret via machine token (service-write role only).
+-- Respects key allow-list. Archives previous ciphertext on value change.
+--
+-- Input:  p_project (uuid), p_hash (text), p_key (text),
+--         p_value_enc (text: Fernet-encrypted value), p_note (text: optional)
+-- Output: uuid — secret id
+-- Example: SELECT private.machine_upsert_enc('<project-uuid>', '<hash>', 'API_KEY', '<enc>', 'rotated');
 DROP FUNCTION IF EXISTS private.machine_upsert_enc(uuid, text, text, text, text);
 CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
   p_project uuid,
@@ -1099,7 +1274,13 @@ GRANT EXECUTE ON FUNCTION private.machine_upsert_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon;
 -- Authorization function grants in 02-rbac.sql
 
--- Effective policy: secret.requires_approval overrides project default
+-- Effective policy: secret.requires_approval overrides project default.
+-- NULL on secret → inherit project.require_reveal_approval.
+-- true/false on secret → override.
+--
+-- Input:  sid (uuid: secret id)
+-- Output: boolean — true if reveal requires admin approval
+-- Example: SELECT api.secret_requires_approval('<secret-uuid>');
 CREATE OR REPLACE FUNCTION api.secret_requires_approval(sid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -1117,6 +1298,13 @@ GRANT EXECUTE ON FUNCTION api.secret_requires_approval TO authenticated, anon;
 
 -- api.can_reveal_secret defined in 02-rbac.sql (RBAC reveal + approval layer)
 
+-- List reveal access requests for a project. Calls api.can_admin_project()
+-- and api.current_user_id() — can_admin_project is defined in 02-rbac.sql.
+--
+-- Input:  p_project (uuid: project id)
+-- Output: TABLE(id, secret_id, secret_key, user_id, email, name, status,
+--               reason, created_at, resolved_at, approved_until, resolver_email)
+-- Example: SELECT * FROM private.secret_access_request_rows('<project-uuid>');
 CREATE OR REPLACE FUNCTION private.secret_access_request_rows(p_project uuid)
 RETURNS TABLE (
   id uuid,
@@ -1158,6 +1346,13 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION private.secret_access_request_rows TO authenticator, authenticated;
 
+-- List pending access requests for all projects the current user can admin.
+-- Calls api.can_admin_project() — defined in 02-rbac.sql.
+--
+-- Input:  none (uses current user from JWT)
+-- Output: TABLE(id, project_id, project_name, secret_id, secret_key,
+--               user_id, email, name, reason, created_at)
+-- Example: SELECT * FROM private.pending_access_requests_for_admin();
 CREATE OR REPLACE FUNCTION private.pending_access_requests_for_admin()
 RETURNS TABLE (
   id uuid,
