@@ -464,13 +464,6 @@ SET row_security = off AS $$
     OR EXISTS (
       SELECT 1 FROM api.team_members
       WHERE team_id = tid AND user_id = api.current_user_id()
-    )
-    OR EXISTS (
-      SELECT 1 FROM api.group_members gm
-      JOIN api.groups g ON g.id = gm.group_id
-      WHERE g.team_id = tid
-        AND gm.user_id = api.current_user_id()
-        AND g.team_role IS NOT NULL
     );
 $$;
 
@@ -485,13 +478,6 @@ SET row_security = off AS $$
         SELECT tm.role AS r, api._role_rank(tm.role) AS rank
         FROM api.team_members tm
         WHERE tm.team_id = tid AND tm.user_id = api.current_user_id()
-        UNION ALL
-        SELECT g.team_role, api._role_rank(g.team_role)
-        FROM api.group_members gm
-        JOIN api.groups g ON g.id = gm.group_id
-        WHERE g.team_id = tid
-          AND gm.user_id = api.current_user_id()
-          AND g.team_role IS NOT NULL
       ) x
       ORDER BY rank DESC
       LIMIT 1
@@ -1192,21 +1178,20 @@ SET row_security = off AS $$
   ORDER BY pm.role, u.email;
 $$;
 
--- Team groups listing
+-- Team groups listing (group team roles live in rbac.bindings, not api.groups)
 CREATE OR REPLACE FUNCTION private.team_group_rows(p_team uuid)
 RETURNS TABLE (
   id uuid,
   name text,
   source text,
   external_key text,
-  team_role text,
   member_count bigint,
   created_at timestamptz
 )
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
-  SELECT g.id, g.name, g.source, g.external_key, g.team_role,
+  SELECT g.id, g.name, g.source, g.external_key,
          (SELECT count(*) FROM api.group_members gm WHERE gm.group_id = g.id),
          g.created_at
   FROM api.groups g

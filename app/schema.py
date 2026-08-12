@@ -1769,11 +1769,6 @@ def ensure_schema():
         CREATE INDEX IF NOT EXISTS group_members_user_idx
           ON api.group_members (user_id)
         """,
-        """
-        = 'admin';
-        $$
-        """,
-
 
         # Re-apply secrets policies after org RBAC (row-based INSERT RETURNING fix)
         "DROP POLICY IF EXISTS secrets_insert ON api.secrets",
