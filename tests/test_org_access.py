@@ -27,8 +27,10 @@ class TestOrgAccess:
         assert 'CREATE TABLE api.team_invites' in init
         assert 'CREATE TABLE api.team_join_requests' in init
         assert 'CREATE TABLE api.org_audit' in init
-        assert 'guard_last_team_owner' in init
-        assert 'NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id)' in init
+        # guard_last_team_owner moved to rbac.sql as guard_last_team_owner_binding
+        rbac_sql = (root / 'db' / 'rbac.sql').read_text()
+        assert 'guard_last_team_owner' in rbac_sql
+        assert 'guard_last_team_owner' not in init
         assert 'NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id)' in Path(schema_mod.__file__).read_text()
         assert 'private.project_member_rows' in init
         assert 'private.audit_org' in init
@@ -103,10 +105,11 @@ class TestOrgAccess:
         from pathlib import Path
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         src = Path(schema_mod.__file__).read_text()
-        assert 'USING (api.can_admin_project(id))' in init
+        # RLS policies moved from init.sql to rbac.sql
+        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'USING (api.can_admin_project(id))' in rbac_sql
         assert 'USING (api.can_admin_project(id))' in src
         # Legacy tm_insert policy removed from init.sql; RBAC bindings write policy in rbac.sql
-        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
         assert 'rbac_bindings_write' in rbac_sql
         assert 'can_manage_rbac' in rbac_sql
         assert 'CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT' not in init
@@ -131,13 +134,15 @@ class TestOrgAccess:
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         assert 'access_mode' in init
         assert 'CREATE TABLE api.secret_acl' not in init
-        assert 'api.can_access_secret' in init
-        assert 'api.can_access_secret_row' in init
+        assert 'api.can_access_secret' in init  # referenced in private functions (comment + calls)
+        # can_access_secret_row and can_reveal_secret defined in rbac.sql (moved from init.sql)
+        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'api.can_access_secret_row' in rbac
         # RLS policies pass deleted_at=NULL explicitly so the deleted_at guard
         # in can_access_secret_row does not reject soft-deletes/trash.
-        assert "can_access_secret_row(id, project_id, access_mode, 'read', NULL)" in init
-        assert "deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)" in init
-        rev = init[init.index('FUNCTION api.can_reveal_secret'):]
+        assert "can_access_secret_row(id, project_id, access_mode, 'read', NULL)" in rbac
+        assert "deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)" in rbac
+        rev = rbac[rbac.index('FUNCTION api.can_reveal_secret'):]
         rev = rev[:rev.index('$$;') + 3]
         assert "can_access_secret(sid, 'reveal')" in rev
         src = Path(schema_mod.__file__).read_text()
@@ -145,21 +150,19 @@ class TestOrgAccess:
         assert 'can_access_secret_row' in src
         assert 'DROP TABLE IF EXISTS api.secret_acl' in src
         assert "NOT api.can_access_secret(sid, 'reveal')" in src
-        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
         assert 'DROP TABLE IF EXISTS api.secret_acl' in rbac
         assert 'rbac_secret_binding_allows' in rbac
 
     def test_can_access_secret_row_modes_in_sql(self):
-        """Bootstrap init keeps mode branches; k8s rbac rewrites custom to bindings."""
+        """rbac.sql defines can_access_secret_row with mode branches and k8s bindings."""
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        start = init.index('FUNCTION api.can_access_secret_row')
-        body = init[start:start + 2500]
+        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        start = rbac.index('FUNCTION api.can_access_secret_row')
+        body = rbac[start:start + 2500]
         for mode in ('inherit', 'restricted'):
             assert mode in body, f'mode {mode} missing from can_access_secret_row'
         for need in ("'read'", "'reveal'", "'write'"):
             assert need in body
-        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
         rstart = rbac.index('FUNCTION api.can_access_secret_row')
         rbody = rbac[rstart:rstart + 2500]
         assert 'rbac_secret_binding_allows' in rbody
@@ -192,14 +195,14 @@ class TestOrgAccess:
         SELECT must expose trash rows to writers. Regression for
         'new row violates row-level security policy for table secrets'."""
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        upd = init[init.index('CREATE POLICY secrets_update ON api.secrets'):]
+        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        upd = rbac[rbac.index('CREATE POLICY secrets_update ON api.secrets'):]
         upd = upd[:upd.index(';')]
         assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in upd
-        sel = init[init.index('CREATE POLICY secrets_select ON api.secrets'):]
+        sel = rbac[rbac.index('CREATE POLICY secrets_select ON api.secrets'):]
         sel = sel[:sel.index(';')]
         assert 'deleted_at IS NOT NULL' in sel
-        delf = init[init.index('CREATE POLICY secrets_delete ON api.secrets'):]
+        delf = rbac[rbac.index('CREATE POLICY secrets_delete ON api.secrets'):]
         delf = delf[:delf.index(';')]
         assert 'deleted_at IS NOT NULL' in delf
         src = Path(schema_mod.__file__).read_text()

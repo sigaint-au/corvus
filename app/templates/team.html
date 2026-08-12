@@ -54,7 +54,7 @@
       {% endif %}
     </form>
   </div>
-  {% if my_role in ('owner', 'admin', 'member') %}
+  {% if my_role in ('team-owner', 'team-admin', 'team-member') %}
   <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
@@ -66,14 +66,14 @@
   {% endif %}
   {% if projects %}
   <div class="table"><table>
-    <thead><tr><th>Name</th><th>Description</th><th>ID</th>{% if my_role in ('owner', 'admin') %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>Name</th><th>Description</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for p in projects %}
       <tr>
         <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
         <td class="muted col-note">{{ p.description or '—' }}</td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
-        {% if my_role in ('owner', 'admin') %}
+        {% if my_role in ('team-owner', 'team-admin') %}
         <td class="acts">
           <form method="post"
                 action="{{ url_for('delete_project_from_team', team_id=team.id, project_id=p.id) }}"
@@ -119,7 +119,7 @@
     <label>Role
       <select name="role">
         {% for rname, label in team_role_dropdown|default([]) %}
-        {% if rname != 'team-owner' or my_role == 'owner' %}
+        {% if rname != 'team-owner' or my_role == 'team-owner' %}
         <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
         {% endif %}
         {% endfor %}
@@ -549,7 +549,7 @@
   </form>
 </section>
 
-{% if my_role == 'owner' %}
+{% if my_role == 'team-owner' %}
 <section>
   <h2>Transfer ownership</h2>
   <p class="muted">Promotes the user to owner and demotes you to admin. Prevents an ownerless team.</p>

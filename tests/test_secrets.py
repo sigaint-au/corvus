@@ -102,7 +102,7 @@ class TestSecrets:
 
     def test_delete_project_route_viewer_denied(self):
         tid = uuid4()
-        conn, _ = _conn(fetchone={'team_id': tid, 'r': 'viewer'})
+        conn, _ = _conn(fetchone={'team_id': tid, 'r': 'team-viewer'})
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/delete', follow_redirects=False)
         assert r.status_code == 302

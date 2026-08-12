@@ -145,12 +145,12 @@ class TestLDAPMaps:
     def test_add_team_ldap_map(self):
         conn, _ = _conn()
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/teams/{self.tid}/ldap-maps', data={'ldap_group': 'eng-secrets', 'role': 'member'}, follow_redirects=False)
+            r = self.client.post(f'/teams/{self.tid}/ldap-maps', data={'ldap_group': 'eng-secrets', 'role': 'team-member'}, follow_redirects=False)
         assert r.status_code == 302
         assert str(self.tid) in r.location
 
     def test_add_team_ldap_map_empty_group(self):
-        r = self.client.post(f'/teams/{self.tid}/ldap-maps', data={'ldap_group': '  ', 'role': 'member'}, follow_redirects=False)
+        r = self.client.post(f'/teams/{self.tid}/ldap-maps', data={'ldap_group': '  ', 'role': 'team-member'}, follow_redirects=False)
         assert r.status_code == 302
 
     def test_delete_team_ldap_map(self):

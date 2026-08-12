@@ -174,7 +174,7 @@ def test_load_team_secrets_page_applies_filters():
     ]
     tid = str(uuid4())
     rows, pager, projects = _load_team_secrets_page(
-        cur, tid, page=1, q="db", kind="database", due=None, acl="inherit"
+        cur, tid, page=1, q="db", kind="database", due=None, access_mode="inherit"
     )
     assert pager["total"] == 2
     assert pager["endpoint"] == "secrets_list"

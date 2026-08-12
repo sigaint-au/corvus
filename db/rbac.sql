@@ -1014,3 +1014,317 @@ BEGIN
 END;
 $$;
 GRANT EXECUTE ON FUNCTION api.effective_access_rows TO authenticator, authenticated;
+
+-- ── RLS Policies (created after auth functions exist) ──────────────────
+GRANT EXECUTE ON FUNCTION api.is_team_member TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.team_role TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.project_role TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.can_read_project TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.can_write_project TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.can_admin_project TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon;
+
+-- teams
+DROP POLICY IF EXISTS teams_select ON api.teams;
+CREATE POLICY teams_select ON api.teams FOR SELECT TO authenticated
+  USING (api.is_global_admin() OR api.is_team_member(id));
+DROP POLICY IF EXISTS teams_insert ON api.teams;
+CREATE POLICY teams_insert ON api.teams FOR INSERT TO authenticated
+  WITH CHECK (created_by = api.current_user_id() OR api.is_global_admin());
+DROP POLICY IF EXISTS teams_update ON api.teams;
+CREATE POLICY teams_update ON api.teams FOR UPDATE TO authenticated
+  USING (api.team_role(id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS teams_delete ON api.teams;
+CREATE POLICY teams_delete ON api.teams FOR DELETE TO authenticated
+  USING (api.team_role(id) = 'team-owner');
+
+-- team_ldap_maps
+DROP POLICY IF EXISTS tlm_select ON api.team_ldap_maps;
+CREATE POLICY tlm_select ON api.team_ldap_maps FOR SELECT TO authenticated
+  USING (api.is_team_member(team_id));
+DROP POLICY IF EXISTS tlm_insert ON api.team_ldap_maps;
+CREATE POLICY tlm_insert ON api.team_ldap_maps FOR INSERT TO authenticated
+  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS tlm_update ON api.team_ldap_maps;
+CREATE POLICY tlm_update ON api.team_ldap_maps FOR UPDATE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS tlm_delete ON api.team_ldap_maps;
+CREATE POLICY tlm_delete ON api.team_ldap_maps FOR DELETE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+
+-- team_oidc_maps
+DROP POLICY IF EXISTS tom_select ON api.team_oidc_maps;
+CREATE POLICY tom_select ON api.team_oidc_maps FOR SELECT TO authenticated
+  USING (api.is_team_member(team_id));
+DROP POLICY IF EXISTS tom_insert ON api.team_oidc_maps;
+CREATE POLICY tom_insert ON api.team_oidc_maps FOR INSERT TO authenticated
+  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS tom_update ON api.team_oidc_maps;
+CREATE POLICY tom_update ON api.team_oidc_maps FOR UPDATE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS tom_delete ON api.team_oidc_maps;
+CREATE POLICY tom_delete ON api.team_oidc_maps FOR DELETE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+
+-- team_invites
+DROP POLICY IF EXISTS team_invites_select ON api.team_invites;
+CREATE POLICY team_invites_select ON api.team_invites FOR SELECT TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS team_invites_insert ON api.team_invites;
+CREATE POLICY team_invites_insert ON api.team_invites FOR INSERT TO authenticated
+  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS team_invites_update ON api.team_invites;
+CREATE POLICY team_invites_update ON api.team_invites FOR UPDATE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS team_invites_delete ON api.team_invites;
+CREATE POLICY team_invites_delete ON api.team_invites FOR DELETE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+
+-- team_join_requests
+DROP POLICY IF EXISTS team_join_requests_select ON api.team_join_requests;
+CREATE POLICY team_join_requests_select ON api.team_join_requests FOR SELECT TO authenticated
+  USING (
+    api.team_role(team_id) IN ('team-owner', 'team-admin')
+    OR user_id = api.current_user_id()
+  );
+DROP POLICY IF EXISTS team_join_requests_insert ON api.team_join_requests;
+CREATE POLICY team_join_requests_insert ON api.team_join_requests FOR INSERT TO authenticated
+  WITH CHECK (user_id = api.current_user_id());
+DROP POLICY IF EXISTS team_join_requests_update ON api.team_join_requests;
+CREATE POLICY team_join_requests_update ON api.team_join_requests FOR UPDATE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+
+-- org_audit
+DROP POLICY IF EXISTS org_audit_select ON api.org_audit;
+CREATE POLICY org_audit_select ON api.org_audit FOR SELECT TO authenticated
+  USING (
+    (team_id IS NOT NULL AND api.is_team_member(team_id))
+    OR (project_id IS NOT NULL AND api.can_read_project(project_id))
+  );
+
+-- projects
+DROP POLICY IF EXISTS projects_select ON api.projects;
+CREATE POLICY projects_select ON api.projects FOR SELECT TO authenticated
+  USING (api.is_team_member(team_id));
+DROP POLICY IF EXISTS projects_insert ON api.projects;
+CREATE POLICY projects_insert ON api.projects FOR INSERT TO authenticated
+  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin', 'team-member'));
+DROP POLICY IF EXISTS projects_update ON api.projects;
+CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
+  USING (api.can_admin_project(id));
+DROP POLICY IF EXISTS projects_delete ON api.projects;
+CREATE POLICY projects_delete ON api.projects FOR DELETE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+
+-- secret_pins
+DROP POLICY IF EXISTS secret_pins_select ON api.secret_pins;
+CREATE POLICY secret_pins_select ON api.secret_pins FOR SELECT TO authenticated
+  USING (
+    user_id = api.current_user_id()
+    AND EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND s.deleted_at IS NULL
+        AND api.can_read_project(s.project_id)
+    )
+  );
+DROP POLICY IF EXISTS secret_pins_insert ON api.secret_pins;
+CREATE POLICY secret_pins_insert ON api.secret_pins FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = api.current_user_id()
+    AND EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND s.deleted_at IS NULL
+        AND api.can_read_project(s.project_id)
+    )
+  );
+DROP POLICY IF EXISTS secret_pins_delete ON api.secret_pins;
+CREATE POLICY secret_pins_delete ON api.secret_pins FOR DELETE TO authenticated
+  USING (user_id = api.current_user_id());
+
+-- secret_recent
+DROP POLICY IF EXISTS secret_recent_select ON api.secret_recent;
+CREATE POLICY secret_recent_select ON api.secret_recent FOR SELECT TO authenticated
+  USING (
+    user_id = api.current_user_id()
+    AND EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND s.deleted_at IS NULL
+        AND api.can_read_project(s.project_id)
+    )
+  );
+DROP POLICY IF EXISTS secret_recent_insert ON api.secret_recent;
+CREATE POLICY secret_recent_insert ON api.secret_recent FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = api.current_user_id()
+    AND EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id AND s.deleted_at IS NULL
+        AND api.can_read_project(s.project_id)
+    )
+  );
+DROP POLICY IF EXISTS secret_recent_update ON api.secret_recent;
+CREATE POLICY secret_recent_update ON api.secret_recent FOR UPDATE TO authenticated
+  USING (user_id = api.current_user_id());
+DROP POLICY IF EXISTS secret_recent_delete ON api.secret_recent;
+CREATE POLICY secret_recent_delete ON api.secret_recent FOR DELETE TO authenticated
+  USING (user_id = api.current_user_id());
+
+-- secrets
+DROP POLICY IF EXISTS secrets_select ON api.secrets;
+CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
+  USING (
+    (deleted_at IS NULL AND api.can_access_secret_row(id, project_id, access_mode, 'read', NULL))
+    OR (deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL))
+  );
+DROP POLICY IF EXISTS secrets_insert ON api.secrets;
+CREATE POLICY secrets_insert ON api.secrets FOR INSERT TO authenticated
+  WITH CHECK (api.can_write_project(project_id));
+DROP POLICY IF EXISTS secrets_update ON api.secrets;
+CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
+  USING (api.can_access_secret_row(id, project_id, access_mode, 'write', NULL))
+  WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, 'write', NULL));
+DROP POLICY IF EXISTS secrets_delete ON api.secrets;
+CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
+  USING (
+    deleted_at IS NOT NULL
+    AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)
+  );
+
+-- secret_meta
+DROP POLICY IF EXISTS secret_meta_select ON api.secret_meta;
+CREATE POLICY secret_meta_select ON api.secret_meta FOR SELECT TO authenticated
+  USING (api.can_access_secret(secret_id, 'read'));
+DROP POLICY IF EXISTS secret_meta_insert ON api.secret_meta;
+CREATE POLICY secret_meta_insert ON api.secret_meta FOR INSERT TO authenticated
+  WITH CHECK (api.can_access_secret(secret_id, 'write'));
+DROP POLICY IF EXISTS secret_meta_update ON api.secret_meta;
+CREATE POLICY secret_meta_update ON api.secret_meta FOR UPDATE TO authenticated
+  USING (api.can_access_secret(secret_id, 'write'));
+DROP POLICY IF EXISTS secret_meta_delete ON api.secret_meta;
+CREATE POLICY secret_meta_delete ON api.secret_meta FOR DELETE TO authenticated
+  USING (api.can_access_secret(secret_id, 'write'));
+
+-- secret_versions
+DROP POLICY IF EXISTS secret_versions_select ON api.secret_versions;
+CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = secret_id
+        AND api.can_access_secret_row(
+          s.id, s.project_id, s.access_mode, 'read', s.deleted_at
+        )
+    )
+  );
+
+-- secret_audit
+DROP POLICY IF EXISTS secret_audit_select ON api.secret_audit;
+CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
+  USING (api.can_read_project(project_id));
+
+-- groups
+DROP POLICY IF EXISTS groups_select ON api.groups;
+CREATE POLICY groups_select ON api.groups FOR SELECT TO authenticated
+  USING (api.is_team_member(team_id));
+DROP POLICY IF EXISTS groups_insert ON api.groups;
+CREATE POLICY groups_insert ON api.groups FOR INSERT TO authenticated
+  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS groups_update ON api.groups;
+CREATE POLICY groups_update ON api.groups FOR UPDATE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+DROP POLICY IF EXISTS groups_delete ON api.groups;
+CREATE POLICY groups_delete ON api.groups FOR DELETE TO authenticated
+  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
+
+-- group_members
+DROP POLICY IF EXISTS gm_select ON api.group_members;
+CREATE POLICY gm_select ON api.group_members FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.groups g
+      WHERE g.id = group_id AND api.is_team_member(g.team_id)
+    )
+  );
+DROP POLICY IF EXISTS gm_insert ON api.group_members;
+CREATE POLICY gm_insert ON api.group_members FOR INSERT TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM api.groups g
+      WHERE g.id = group_id AND api.team_role(g.team_id) IN ('team-owner', 'team-admin')
+    )
+  );
+DROP POLICY IF EXISTS gm_update ON api.group_members;
+CREATE POLICY gm_update ON api.group_members FOR UPDATE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.groups g
+      WHERE g.id = group_id AND api.team_role(g.team_id) IN ('team-owner', 'team-admin')
+    )
+  );
+DROP POLICY IF EXISTS gm_delete ON api.group_members;
+CREATE POLICY gm_delete ON api.group_members FOR DELETE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.groups g
+      WHERE g.id = group_id AND api.team_role(g.team_id) IN ('team-owner', 'team-admin')
+    )
+    OR user_id = api.current_user_id()
+  );
+
+-- secret_access_requests
+DROP POLICY IF EXISTS secret_access_requests_select ON api.secret_access_requests;
+CREATE POLICY secret_access_requests_select ON api.secret_access_requests
+  FOR SELECT TO authenticated
+  USING (
+    api.can_admin_project(project_id)
+    OR user_id = api.current_user_id()
+  );
+DROP POLICY IF EXISTS secret_access_requests_insert ON api.secret_access_requests;
+CREATE POLICY secret_access_requests_insert ON api.secret_access_requests
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = api.current_user_id()
+    AND api.can_read_project(project_id)
+  );
+DROP POLICY IF EXISTS secret_access_requests_update ON api.secret_access_requests;
+CREATE POLICY secret_access_requests_update ON api.secret_access_requests
+  FOR UPDATE TO authenticated
+  USING (api.can_admin_project(project_id));
+
+-- machine_tokens
+DROP POLICY IF EXISTS mt_select ON api.machine_tokens;
+CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated
+  USING (api.can_read_project(project_id));
+DROP POLICY IF EXISTS mt_insert ON api.machine_tokens;
+CREATE POLICY mt_insert ON api.machine_tokens FOR INSERT TO authenticated
+  WITH CHECK (api.can_write_project(project_id));
+DROP POLICY IF EXISTS mt_delete ON api.machine_tokens;
+CREATE POLICY mt_delete ON api.machine_tokens FOR DELETE TO authenticated
+  USING (api.can_write_project(project_id));
+
+-- machine_token_scope
+DROP POLICY IF EXISTS mts_select ON api.machine_token_scope;
+CREATE POLICY mts_select ON api.machine_token_scope FOR SELECT TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.machine_tokens t
+      WHERE t.id = token_id AND api.can_read_project(t.project_id)
+    )
+  );
+DROP POLICY IF EXISTS mts_insert ON api.machine_token_scope;
+CREATE POLICY mts_insert ON api.machine_token_scope FOR INSERT TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM api.machine_tokens t
+      WHERE t.id = token_id AND api.can_write_project(t.project_id)
+    )
+  );
+DROP POLICY IF EXISTS mts_delete ON api.machine_token_scope;
+CREATE POLICY mts_delete ON api.machine_token_scope FOR DELETE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM api.machine_tokens t
+      WHERE t.id = token_id AND api.can_write_project(t.project_id)
+    )
+  );

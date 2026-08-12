@@ -36,7 +36,7 @@ class TestTeams:
 
     def test_list_teams(self):
         tid = uuid4()
-        conn, _ = _conn(fetchall=[{'id': tid, 'name': 'Platform', 'role': 'owner', 'project_count': 2}])
+        conn, _ = _conn(fetchall=[{'id': tid, 'name': 'Platform', 'role': 'team-owner', 'project_count': 2}])
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get('/teams')
         assert r.status_code == 200
@@ -176,7 +176,7 @@ class TestTeams:
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(
                 f'/teams/{tid}/members',
-                data={'email': 'u@ex.com', 'role': 'member'},
+                data={'email': 'u@ex.com', 'role': 'team-member'},
                 follow_redirects=False,
             )
         assert r.status_code == 302
@@ -218,7 +218,7 @@ class TestTeams:
 
     def test_delete_team_owner_ok(self):
         tid = uuid4()
-        conn, cur = _conn(fetchone={'r': 'owner'})
+        conn, cur = _conn(fetchone={'r': 'team-owner'})
         cur.rowcount = 1
         with self.client.session_transaction() as s:
             s['team_id'] = str(tid)
@@ -233,7 +233,7 @@ class TestTeams:
 
     def test_delete_team_non_owner_denied(self):
         tid = uuid4()
-        for role in ('admin', 'member', 'viewer'):
+        for role in ('team-admin', 'team-member', 'team-viewer'):
             conn, cur = _conn(fetchone={'r': role})
             with patch.object(db, 'as_user', return_value=conn):
                 r = self.client.post(f'/teams/{tid}/delete', follow_redirects=False)

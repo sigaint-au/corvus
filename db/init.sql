@@ -407,15 +407,7 @@ SET row_security = off AS $$
   );
 $$;
 
--- Legacy _role_rank and _perm_rank removed: rbac.sql provides RBAC-based authorization
-
--- Legacy authorization functions (is_team_member, team_role, project_role,
--- can_read_project, can_write_project, can_admin_project, can_access_secret_row,
--- can_access_secret) are defined in 02-rbac.sql over rbac.bindings.
-
--- guard_last_team_owner trigger removed: rbac.sql provides guard_last_team_owner_binding()
-
--- RLS (authorization functions defined in 02-rbac.sql)
+-- RLS: tables enabled here; policies defined in 02-rbac.sql (after auth functions exist)
 ALTER TABLE api.teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.team_ldap_maps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.team_invites ENABLE ROW LEVEL SECURITY;
@@ -434,234 +426,7 @@ ALTER TABLE api.secret_access_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_token_scope ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY teams_select ON api.teams FOR SELECT TO authenticated
-  USING (api.is_global_admin() OR api.is_team_member(id));
-CREATE POLICY teams_insert ON api.teams FOR INSERT TO authenticated
-  WITH CHECK (created_by = api.current_user_id() OR api.is_global_admin());
-CREATE POLICY teams_update ON api.teams FOR UPDATE TO authenticated
-  USING (api.team_role(id) IN ('team-owner', 'team-admin'));
-CREATE POLICY teams_delete ON api.teams FOR DELETE TO authenticated
-  USING (api.team_role(id) = 'team-owner');
-
-CREATE POLICY tlm_select ON api.team_ldap_maps FOR SELECT TO authenticated
-  USING (api.is_team_member(team_id));
-CREATE POLICY tlm_insert ON api.team_ldap_maps FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-CREATE POLICY tlm_update ON api.team_ldap_maps FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-CREATE POLICY tlm_delete ON api.team_ldap_maps FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-
-CREATE POLICY team_invites_select ON api.team_invites FOR SELECT TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-CREATE POLICY team_invites_insert ON api.team_invites FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-CREATE POLICY team_invites_update ON api.team_invites FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-CREATE POLICY team_invites_delete ON api.team_invites FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-
-CREATE POLICY team_join_requests_select ON api.team_join_requests FOR SELECT TO authenticated
-  USING (
-    api.team_role(team_id) IN ('team-owner', 'team-admin')
-    OR user_id = api.current_user_id()
-  );
-CREATE POLICY team_join_requests_insert ON api.team_join_requests FOR INSERT TO authenticated
-  WITH CHECK (user_id = api.current_user_id());
-CREATE POLICY team_join_requests_update ON api.team_join_requests FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-
-CREATE POLICY org_audit_select ON api.org_audit FOR SELECT TO authenticated
-  USING (
-    (team_id IS NOT NULL AND api.is_team_member(team_id))
-    OR (project_id IS NOT NULL AND api.can_read_project(project_id))
-  );
--- INSERT only via private.audit_org
-
--- Use team_id on the row (not can_read_project(id)) so INSERT … RETURNING works
-CREATE POLICY projects_select ON api.projects FOR SELECT TO authenticated
-  USING (api.is_team_member(team_id));
-CREATE POLICY projects_insert ON api.projects FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin', 'team-member'));
-CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
-  USING (api.can_admin_project(id));
-CREATE POLICY projects_delete ON api.projects FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-
--- Pins / recent: own rows only, and only if secret is still readable
-CREATE POLICY secret_pins_select ON api.secret_pins FOR SELECT TO authenticated
-  USING (
-    user_id = api.current_user_id()
-    AND EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND s.deleted_at IS NULL
-        AND api.can_read_project(s.project_id)
-    )
-  );
-CREATE POLICY secret_pins_insert ON api.secret_pins FOR INSERT TO authenticated
-  WITH CHECK (
-    user_id = api.current_user_id()
-    AND EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND s.deleted_at IS NULL
-        AND api.can_read_project(s.project_id)
-    )
-  );
-CREATE POLICY secret_pins_delete ON api.secret_pins FOR DELETE TO authenticated
-  USING (user_id = api.current_user_id());
-
-CREATE POLICY secret_recent_select ON api.secret_recent FOR SELECT TO authenticated
-  USING (
-    user_id = api.current_user_id()
-    AND EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND s.deleted_at IS NULL
-        AND api.can_read_project(s.project_id)
-    )
-  );
-CREATE POLICY secret_recent_insert ON api.secret_recent FOR INSERT TO authenticated
-  WITH CHECK (
-    user_id = api.current_user_id()
-    AND EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND s.deleted_at IS NULL
-        AND api.can_read_project(s.project_id)
-    )
-  );
-CREATE POLICY secret_recent_update ON api.secret_recent FOR UPDATE TO authenticated
-  USING (user_id = api.current_user_id());
-CREATE POLICY secret_recent_delete ON api.secret_recent FOR DELETE TO authenticated
-  USING (user_id = api.current_user_id());
-
-CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
-  USING (
-    (deleted_at IS NULL AND api.can_access_secret_row(id, project_id, access_mode, 'read', NULL))
-    OR (deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL))
-  );
-CREATE POLICY secrets_insert ON api.secrets FOR INSERT TO authenticated
-  WITH CHECK (api.can_write_project(project_id));
-CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
-  USING (api.can_access_secret_row(id, project_id, access_mode, 'write', NULL))
-  WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, 'write', NULL));
-CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
-  USING (
-    deleted_at IS NOT NULL
-    AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)
-  );
-
-CREATE POLICY secret_meta_select ON api.secret_meta FOR SELECT TO authenticated
-  USING (api.can_access_secret(secret_id, 'read'));
-CREATE POLICY secret_meta_insert ON api.secret_meta FOR INSERT TO authenticated
-  WITH CHECK (api.can_access_secret(secret_id, 'write'));
-CREATE POLICY secret_meta_update ON api.secret_meta FOR UPDATE TO authenticated
-  USING (api.can_access_secret(secret_id, 'write'));
-CREATE POLICY secret_meta_delete ON api.secret_meta FOR DELETE TO authenticated
-  USING (api.can_access_secret(secret_id, 'write'));
-
--- Versions inherit access from parent secret's project
-CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id
-        AND api.can_access_secret_row(
-          s.id, s.project_id, s.access_mode, 'read', s.deleted_at
-        )
-    )
-  );
--- L1: no client INSERT — versions only via archive_secret_version() trigger
--- No direct UPDATE/DELETE for authenticated (purge via secret CASCADE)
-
-CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
-  USING (api.can_read_project(project_id));
--- INSERT only via private.audit_secret (SECURITY DEFINER); no direct client insert
-
-CREATE POLICY groups_select ON api.groups FOR SELECT TO authenticated
-  USING (api.is_team_member(team_id));
-CREATE POLICY groups_insert ON api.groups FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-CREATE POLICY groups_update ON api.groups FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-CREATE POLICY groups_delete ON api.groups FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-
-CREATE POLICY gm_select ON api.group_members FOR SELECT TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.groups g
-      WHERE g.id = group_id AND api.is_team_member(g.team_id)
-    )
-  );
-CREATE POLICY gm_insert ON api.group_members FOR INSERT TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.groups g
-      WHERE g.id = group_id AND api.team_role(g.team_id) IN ('team-owner', 'team-admin')
-    )
-  );
-CREATE POLICY gm_update ON api.group_members FOR UPDATE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.groups g
-      WHERE g.id = group_id AND api.team_role(g.team_id) IN ('team-owner', 'team-admin')
-    )
-  );
-CREATE POLICY gm_delete ON api.group_members FOR DELETE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.groups g
-      WHERE g.id = group_id AND api.team_role(g.team_id) IN ('team-owner', 'team-admin')
-    )
-    OR user_id = api.current_user_id()
-  );
-
-CREATE POLICY secret_access_requests_select ON api.secret_access_requests
-  FOR SELECT TO authenticated
-  USING (
-    api.can_admin_project(project_id)
-    OR user_id = api.current_user_id()
-  );
-CREATE POLICY secret_access_requests_insert ON api.secret_access_requests
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    user_id = api.current_user_id()
-    AND api.can_read_project(project_id)
-  );
-CREATE POLICY secret_access_requests_update ON api.secret_access_requests
-  FOR UPDATE TO authenticated
-  USING (api.can_admin_project(project_id));
-
--- read-only may list tokens (name/prefix/expiry); only writers create/revoke
-CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated
-  USING (api.can_read_project(project_id));
-CREATE POLICY mt_insert ON api.machine_tokens FOR INSERT TO authenticated
-  WITH CHECK (api.can_write_project(project_id));
-CREATE POLICY mt_delete ON api.machine_tokens FOR DELETE TO authenticated
-  USING (api.can_write_project(project_id));
-
-CREATE POLICY mts_select ON api.machine_token_scope FOR SELECT TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.machine_tokens t
-      WHERE t.id = token_id AND api.can_read_project(t.project_id)
-    )
-  );
-CREATE POLICY mts_insert ON api.machine_token_scope FOR INSERT TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.machine_tokens t
-      WHERE t.id = token_id AND api.can_write_project(t.project_id)
-    )
-  );
-CREATE POLICY mts_delete ON api.machine_token_scope FOR DELETE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.machine_tokens t
-      WHERE t.id = token_id AND api.can_write_project(t.project_id)
-    )
-  );
-
--- Grants
+-- Grants (table-level; function grants in 02-rbac.sql)
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA api TO authenticated;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO authenticated;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA api TO authenticated, anon;
@@ -837,14 +602,7 @@ CREATE TABLE api.team_oidc_maps (
   UNIQUE (team_id, oidc_group)
 );
 ALTER TABLE api.team_oidc_maps ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tom_select ON api.team_oidc_maps FOR SELECT TO authenticated
-  USING (api.is_team_member(team_id));
-CREATE POLICY tom_insert ON api.team_oidc_maps FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-CREATE POLICY tom_update ON api.team_oidc_maps FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'));
-CREATE POLICY tom_delete ON api.team_oidc_maps FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
+-- Policies for team_oidc_maps defined in 02-rbac.sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_oidc_maps TO authenticated;
 GRANT ALL ON api.team_oidc_maps TO authenticator;
 
@@ -1330,9 +1088,7 @@ GRANT EXECUTE ON FUNCTION private.machine_list_meta TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_delete TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_upsert_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon;
--- Authorization functions (is_team_member, team_role, project_role, can_read_project,
--- can_write_project, can_admin_project, can_access_secret_row, can_access_secret)
--- are granted in 02-rbac.sql
+-- Authorization function grants in 02-rbac.sql
 
 -- Effective policy: secret.requires_approval overrides project default
 CREATE OR REPLACE FUNCTION api.secret_requires_approval(sid uuid) RETURNS boolean
