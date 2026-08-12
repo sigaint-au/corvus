@@ -54,7 +54,8 @@
           <label class="span-2">Grant
             <select name="role_name" required>
               {% for name, label in role_dropdown|default([]) %}
-              <option value="{{ name }}">{{ label }} — <code>{{ name }}</code></option>
+              <option value="{{ name }}"
+                      {% if role_descriptions is defined and role_descriptions.get(name) %} title="{{ role_descriptions.get(name) }}"{% endif %}>{{ label }} — <code>{{ name }}</code></option>
               {% endfor %}
             </select>
           </label>

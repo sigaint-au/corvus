@@ -491,6 +491,16 @@ def register(app):
 
             dropdown = _role_dropdown_for_scope(scope_kind)
 
+            role_descriptions = {}
+            try:
+                cur.execute("SELECT name, description FROM rbac.roles")
+                role_descriptions = {
+                    r["name"]: (r.get("description") or "")
+                    for r in (cur.fetchall() or [])
+                }
+            except Exception:
+                role_descriptions = {}
+
         return render_template(
             "rbac_bindings.html",
             bindings=bindings,
@@ -500,6 +510,7 @@ def register(app):
             groups=groups,
             all_roles=all_roles,
             dropdown=dropdown,
+            role_descriptions=role_descriptions,
             scope_kind=scope_kind,
             scope_id=scope_id,
             scope_label=scope_label,

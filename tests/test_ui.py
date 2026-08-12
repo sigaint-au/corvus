@@ -58,6 +58,36 @@ class TestUIShell:
         assert b'Server settings' in r.data
         assert b'Global admin' in r.data
 
+    def test_binding_role_options_have_tooltips(self):
+        # Role dropdowns must explain what each role grants (mention in the
+        # panel hint "Hover a role name for its permissions").
+        from flask import render_template
+        tid = str(uuid4())
+        desc = {'team-owner': 'Full control of a team and its projects/secrets'}
+        with store.app.test_request_context(f'/teams/{tid}'):
+            panel = render_template(
+                'partials/access_bindings_panel.html',
+                role_dropdown=[('team-owner', 'Owner')], role_descriptions=desc,
+                access_bindings=[], can_edit_access=True,
+                subject_kinds=['User', 'Group', 'ServiceAccount'], access_groups=[],
+                create_url='/x', panel_title='Access', empty_message='',
+                full_bindings_url='', form_id_prefix='t')
+        assert 'title="Full control of a team and its projects/secrets"' in panel
+        # Secret permission select explains read/reveal/write
+        sid = str(uuid4())
+        with store.app.test_request_context(f'/projects/{tid}/secrets/{sid}'):
+            sv = render_template(
+                'secret_view.html', project_id=tid, secret_id=sid, secret_key='K',
+                kind='plain', project_name='P', active_tab='access', can_admin=True,
+                can_write=False, can_reveal=True, access_blocked=False, is_version=False,
+                value='', acl_mode='inherit', acl_modes=['inherit', 'restricted'],
+                acl_mode_labels={}, acl_permissions=['reveal'],
+                acl_perm_labels={'reveal': 'Reveal value'}, team_groups=[],
+                secret_bindings=[], effective_access=[], custom_meta=[], note='',
+                expires_at='', created_at='', updated_at='', last_accessed_at=None,
+                last_accessed_by_email='', clipboard_clear_seconds=30)
+        assert 'title="See the secret value"' in sv
+
     def test_app_has_skip_link_and_responsive_table_css(self):
         c = store.app.test_client()
         with c.session_transaction() as s:

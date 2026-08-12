@@ -355,6 +355,7 @@ def register(app):
         access_bindings = []
         access_groups = []
         effective_access = []
+        role_descriptions = {}
         can_edit_access = False
         default_token_days = None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -519,6 +520,14 @@ def register(app):
                     access_groups = list(cur.fetchall() or [])
                 except Exception:
                     access_groups = []
+                try:
+                    cur.execute("SELECT name, description FROM rbac.roles")
+                    role_descriptions = {
+                        r["name"]: (r.get("description") or "")
+                        for r in (cur.fetchall() or [])
+                    }
+                except Exception:
+                    role_descriptions = {}
             elif tab == "requests":
                 cur.execute(
                     "SELECT * FROM private.secret_access_request_rows(%s::uuid)",
@@ -570,6 +579,7 @@ def register(app):
             effective_access=effective_access,
             can_edit_access=can_edit_access,
             project_role_dropdown=config.RBAC_PROJECT_ROLE_DROPDOWN,
+            role_descriptions=role_descriptions,
             subject_kinds=config.RBAC_SUBJECT_KINDS,
             secrets_pager=secrets_pager,
             audit_pager=audit_pager,

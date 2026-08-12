@@ -120,6 +120,7 @@ def register(app):
         invites, join_requests, org_events = [], [], []
         access_bindings = []
         access_groups = []
+        role_descriptions = {}
         can_edit_access = False
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
@@ -202,6 +203,14 @@ def register(app):
                 )
                 access_groups = list(cur.fetchall() or [])
                 can_edit_access = True
+                try:
+                    cur.execute("SELECT name, description FROM rbac.roles")
+                    role_descriptions = {
+                        r["name"]: (r.get("description") or "")
+                        for r in (cur.fetchall() or [])
+                    }
+                except Exception:
+                    role_descriptions = {}
             elif tab == "groups":
                 try:
                     cur.execute(
@@ -287,6 +296,7 @@ def register(app):
             access_groups=access_groups,
             can_edit_access=can_edit_access or is_admin,
             team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
+            role_descriptions=role_descriptions,
             subject_kinds=config.RBAC_SUBJECT_KINDS,
             invite_roles=config.INVITE_ROLES,
             new_invite_url=session.pop("new_invite_url", None),
