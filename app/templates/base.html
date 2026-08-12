@@ -2079,7 +2079,9 @@
       border-color: var(--border);
       text-decoration: none;
     }
-    .acts .reveal-toggle {
+    /* Link-style Reveal/Hide for the history acts cell. The kebab-menu items
+       use .ghost and must keep oat's menu-item padding, so exclude them. */
+    .acts .reveal-toggle:not(.ghost) {
       font-size: .875rem;
       text-decoration: none;
       color: inherit;
@@ -2091,7 +2093,7 @@
       cursor: pointer;
       line-height: inherit;
     }
-    .acts .reveal-toggle:hover { text-decoration: underline; }
+    .acts .reveal-toggle:not(.ghost):hover { text-decoration: underline; }
     .pager-count { margin-top: 1rem; }
     .table-spaced { margin-top: 1rem; }
     .swatch-row { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
