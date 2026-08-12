@@ -298,7 +298,6 @@ def register(app):
             team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
             role_descriptions=role_descriptions,
             subject_kinds=config.RBAC_SUBJECT_KINDS,
-            invite_roles=config.INVITE_ROLES,
             new_invite_url=session.pop("new_invite_url", None),
             ldap_enabled=settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled")),
             oidc_enabled=settings_svc.truthy(
@@ -579,14 +578,14 @@ def register(app):
                     cur,
                     user_id=new_uid,
                     team_id=team_id,
-                    role="owner",
+                    role="team-owner",
                     created_by=session["user_id"],
                 )
                 rbac_sync.sync_user_team_binding(
                     cur,
                     user_id=session["user_id"],
                     team_id=team_id,
-                    role="admin",
+                    role="team-admin",
                     created_by=session["user_id"],
                 )
                 audit.log_org(
@@ -617,9 +616,9 @@ def register(app):
         Example:
             POST /teams/<team_id>/invites with role and expires_days form fields
         """
-        role = request.form.get("role", "member")
+        role = request.form.get("role", "team-member")
         if role not in config.INVITE_ROLES:
-            role = "member"
+            role = "team-member"
         days = 7
         raw_days = (request.form.get("expires_days") or "7").strip()
         try:
@@ -1000,9 +999,10 @@ def register(app):
             POST /teams/<team_id>/ldap-maps with ldap_group and role form fields
         """
         ldap_group = (request.form.get("ldap_group") or "").strip()
-        role = request.form.get("role", "member")
-        if role not in config.TEAM_ROLES:
-            role = "member"
+        role = request.form.get("role", "team-member")
+        team_role_names = [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        if role not in team_role_names:
+            role = "team-member"
         if not ldap_group:
             flash("LDAP group required", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
@@ -1074,9 +1074,10 @@ def register(app):
             POST /teams/<team_id>/oidc-maps with oidc_group and role form fields
         """
         oidc_group = (request.form.get("oidc_group") or "").strip()
-        role = request.form.get("role", "member")
-        if role not in config.TEAM_ROLES:
-            role = "member"
+        role = request.form.get("role", "team-member")
+        team_role_names = [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        if role not in team_role_names:
+            role = "team-member"
         if not oidc_group:
             flash("OIDC group required", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))

@@ -339,7 +339,7 @@ def ensure_schema():
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
           ldap_group text NOT NULL,
-          role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+          role text NOT NULL CHECK (role IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')),
           created_at timestamptz NOT NULL DEFAULT now(),
           UNIQUE (team_id, ldap_group)
         )
@@ -381,7 +381,7 @@ def ensure_schema():
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
           oidc_group text NOT NULL,
-          role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+          role text NOT NULL CHECK (role IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')),
           created_at timestamptz NOT NULL DEFAULT now(),
           UNIQUE (team_id, oidc_group)
         )
@@ -958,8 +958,8 @@ def ensure_schema():
           id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
           team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
           token_hash text NOT NULL UNIQUE,
-          role text NOT NULL DEFAULT 'member'
-            CHECK (role IN ('admin', 'member', 'viewer')),
+          role text NOT NULL DEFAULT 'team-member'
+            CHECK (role IN ('team-admin', 'team-member', 'team-viewer')),
           expires_at timestamptz NOT NULL,
           created_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
           created_at timestamptz NOT NULL DEFAULT now(),
@@ -976,8 +976,8 @@ def ensure_schema():
           team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
           invite_id uuid REFERENCES api.team_invites(id) ON DELETE SET NULL,
           user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
-          role text NOT NULL DEFAULT 'member'
-            CHECK (role IN ('admin', 'member', 'viewer')),
+          role text NOT NULL DEFAULT 'team-member'
+            CHECK (role IN ('team-admin', 'team-member', 'team-viewer')),
           status text NOT NULL DEFAULT 'pending'
             CHECK (status IN ('pending', 'approved', 'rejected')),
           created_at timestamptz NOT NULL DEFAULT now(),
@@ -1683,17 +1683,9 @@ def ensure_schema():
           ALTER TABLE api.secrets DROP CONSTRAINT IF EXISTS secrets_access_mode_check;
           ALTER TABLE api.secrets
             ADD CONSTRAINT secrets_access_mode_check
-            CHECK (access_mode IN ('inherit', 'restricted', 'custom', 'writers', 'admins', 'owners'));
+            CHECK (access_mode IN ('inherit', 'restricted'));
         EXCEPTION WHEN others THEN NULL;
         END $$
-        """,
-        # Migrate legacy access_mode values: custom → restricted; writers/admins/owners → inherit
-        """
-        UPDATE api.secrets SET access_mode = 'restricted' WHERE access_mode = 'custom'
-        """,
-        """
-        UPDATE api.secrets SET access_mode = 'inherit'
-        WHERE access_mode IN ('writers', 'admins', 'owners')
         """,
         # Legacy api.secret_acl removed — use secret-scope rbac.bindings
         "DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid)",
@@ -2368,18 +2360,8 @@ def ensure_schema():
                       ALTER TABLE rbac.bindings
                         ADD CONSTRAINT bindings_source_check
                         CHECK (source IN ('manual', 'ldap', 'oidc'));
-                    EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
                     END $$
-                    """
-                )
-                cur.execute(
-                    """
-                    UPDATE api.secrets
-                    SET access_mode = CASE
-                      WHEN access_mode = 'custom' THEN 'restricted'
-                      ELSE 'inherit'
-                    END
-                    WHERE access_mode NOT IN ('inherit', 'restricted')
                     """
                 )
                 cur.execute(

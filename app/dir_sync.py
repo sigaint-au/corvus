@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-# Directory team maps store short roles (owner/admin/member/viewer); translate
-# them to rbac.roles names and rank by RBAC role name.
-TEAM_MAP_ROLE_TO_RBAC = {
-    "owner": "team-owner",
-    "admin": "team-admin",
-    "member": "team-member",
-    "viewer": "team-viewer",
-}
+# Directory team maps store rbac.roles names (team-owner/admin/member/viewer);
+# rank by RBAC role name so the highest wins.
 TEAM_RBAC_RANK = {
     "team-owner": 4,
     "team-admin": 3,
@@ -91,8 +85,8 @@ def apply_team_membership_maps(
         if not group_matches(m[group_key], groups):
             continue
         tid = str(m["team_id"])
-        rname = TEAM_MAP_ROLE_TO_RBAC.get(m["role"])
-        if not rname:
+        rname = m["role"]
+        if rname not in TEAM_RBAC_RANK:
             continue
         if (
             tid not in desired

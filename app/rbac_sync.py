@@ -22,36 +22,6 @@ log = logging.getLogger(__name__)
 TEAM_ROLE_NAMES = tuple(name for name, _ in RBAC_TEAM_ROLE_DROPDOWN)
 PROJECT_ROLE_NAMES = tuple(name for name, _ in RBAC_PROJECT_ROLE_DROPDOWN)
 
-# Legacy short role vocabulary still used by invites/join-requests/LDAP-OIDC maps.
-TEAM_SHORT_ROLES = {
-    "owner": "team-owner",
-    "admin": "team-admin",
-    "member": "team-member",
-    "viewer": "team-viewer",
-}
-PROJECT_SHORT_ROLES = {
-    "admin": "project-admin",
-    "write": "project-write",
-    "read": "project-read",
-}
-
-
-def _team_role_name(role: str | None) -> str | None:
-    """Normalize a value to an rbac team role name (accepts full or short)."""
-    if not role:
-        return None
-    if role in TEAM_ROLE_NAMES:
-        return role
-    return TEAM_SHORT_ROLES.get(role)
-
-
-def _project_role_name(role: str | None) -> str | None:
-    """Normalize a value to an rbac project role name (accepts full or short)."""
-    if not role:
-        return None
-    if role in PROJECT_ROLE_NAMES:
-        return role
-    return PROJECT_SHORT_ROLES.get(role)
 
 # steep dropdowns → friendly label for list badges / tooltips
 ROLE_LABELS = dict(
@@ -112,7 +82,7 @@ def ensure_not_last_team_owner(
     row = cur.fetchone()
     if not row or row.get("role_name") != "team-owner":
         return
-    if _team_role_name(new_role) == "team-owner":
+    if new_role == "team-owner":
         return
     if count_team_owner_bindings(cur, team_id) <= 1:
         raise ValueError(
@@ -160,8 +130,7 @@ def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, cr
         """,
         (str(group_id), str(team_id)),
     )
-    team_role = _team_role_name(team_role)
-    if not team_role:
+    if team_role not in TEAM_ROLE_NAMES:
         return
     rid = _role_id(cur, team_role)
     if not rid:
@@ -193,8 +162,7 @@ def sync_group_project_binding(
         """,
         (str(group_id), str(project_id)),
     )
-    role = _project_role_name(role)
-    if not role:
+    if role not in PROJECT_ROLE_NAMES:
         return
     rid = _role_id(cur, role)
     if not rid:
@@ -234,8 +202,7 @@ def sync_user_team_binding(
         """,
         (str(user_id), str(team_id), source),
     )
-    role = _team_role_name(role)
-    if not role:
+    if role not in TEAM_ROLE_NAMES:
         return
     rid = _role_id(cur, role)
     if not rid:
@@ -266,8 +233,7 @@ def sync_user_project_binding(
         """,
         (str(user_id), str(project_id)),
     )
-    role = _project_role_name(role)
-    if not role:
+    if role not in PROJECT_ROLE_NAMES:
         return
     rid = _role_id(cur, role)
     if not rid:

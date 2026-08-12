@@ -911,11 +911,11 @@ def register(app):
                 "SELECT api.can_access_secret(%s, 'reveal') AS r",
                 (str(secret_id),),
             )
-            can_reveal_acl = bool((cur.fetchone() or {}).get("r"))
+            can_reveal_perm = bool((cur.fetchone() or {}).get("r"))
             access_state, access_row = _reveal_access_state(
                 cur, project_id, secret_id, session["user_id"]
             )
-            can_reveal = can_reveal_acl and access_state == "allowed"
+            can_reveal = can_reveal_perm and access_state == "allowed"
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             can_admin = bool((cur.fetchone() or {}).get("a"))
             custom_meta = []
@@ -1088,7 +1088,7 @@ def register(app):
                     team_groups=team_groups,
                     effective_access=effective_access,
                     active_tab=active_tab,
-                    access_blocked=can_reveal_acl and access_state != "allowed",
+                    access_blocked=can_reveal_perm and access_state != "allowed",
                     access_state=access_state,
                     access_request=access_row,
                     custom_meta=custom_meta,
@@ -1111,7 +1111,7 @@ def register(app):
                     team_groups=team_groups if can_admin else [],
                     effective_access=effective_access,
                     active_tab="meta" if active_tab == "meta" else "secret",
-                    access_blocked=can_reveal_acl and access_state != "allowed",
+                    access_blocked=can_reveal_perm and access_state != "allowed",
                     access_state=access_state,
                     access_request=access_row,
                     custom_meta=custom_meta,
@@ -2349,7 +2349,7 @@ def register(app):
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access")
     @authz.login_required
     def update_secret_access(project_id, secret_id):
-        """Set per-secret ACL mode and reveal-approval override (project admin only)."""
+        """Set per-secret access mode and reveal-approval override (project admin only)."""
         mode = _parse_access_mode(request.form)
         req_appr = _parse_requires_approval(request.form)
         access_url = url_for(
@@ -2396,32 +2396,17 @@ def register(app):
 
         Uses the same subject/role vocabulary as every other binding form:
         ``subject_kind`` + ``subject_email`` / ``subject_group`` / ``subject_sa``
-        and a ``role_name`` (``secret-*``). Legacy ``email`` / ``group_id`` /
-        ``permission`` fields are still accepted.
+        and a ``role_name`` (``secret-*`` or a custom role).
         """
         subject_kind = (request.form.get("subject_kind") or "User").strip()
         if subject_kind not in ("User", "Group", "ServiceAccount"):
             subject_kind = "User"
-        email = (
-            request.form.get("subject_email") or request.form.get("email") or ""
-        ).strip().lower()
-        group_id = (
-            request.form.get("subject_group")
-            or request.form.get("group_id")
-            or ""
-        ).strip()
+        email = (request.form.get("subject_email") or "").strip().lower()
+        group_id = (request.form.get("subject_group") or "").strip()
         sa_id = (request.form.get("subject_sa") or "").strip()
-        secret_role_names = [name for name, _ in config.RBAC_SECRET_ROLE_DROPDOWN]
         role_name = (request.form.get("role_name") or "").strip()
-        if role_name not in secret_role_names:
-            # Legacy permission (read/reveal/write) fallback
-            legacy = {
-                "read": "secret-read",
-                "reveal": "secret-reveal",
-                "write": "secret-write",
-            }
-            perm = (request.form.get("permission") or "reveal").strip().lower()
-            role_name = legacy.get(perm, "secret-reveal")
+        if not role_name:
+            role_name = "secret-reveal"
         access_url = url_for(
             "secret_view",
             project_id=project_id,

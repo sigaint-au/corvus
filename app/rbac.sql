@@ -533,7 +533,6 @@ GRANT EXECUTE ON FUNCTION api.rbac_secret_binding_allows TO authenticator, authe
 -- Secret access: RBAC on scope chain, or restricted = secret bindings only.
 -- access_mode 'restricted' is the exclusive / "deny broader grants" mode: team and project
 -- bindings do NOT apply — only secret-scope bindings + project admins (admin floor).
--- Legacy 'custom' value is treated as 'restricted' for backward compat.
 CREATE OR REPLACE FUNCTION api.can_access_secret_row(
   sid uuid,
   pid uuid,
@@ -551,10 +550,9 @@ SET row_security = off AS $$
     -- Project admins always full
     WHEN api.can_admin_project(pid) THEN true
     -- Restricted: secret-scope bindings only
-    WHEN COALESCE(mode, 'inherit') IN ('restricted', 'custom') THEN
+    WHEN COALESCE(mode, 'inherit') = 'restricted' THEN
       api.rbac_secret_binding_allows(sid, need)
-    -- inherit / writers / admins / owners → project/team RBAC via scope chain
-    -- (writers/admins/owners treated as inherit under k8s RBAC; use restricted to restrict)
+    -- inherit → project/team RBAC via the scope chain
     WHEN need = 'write' THEN (
       api.can('update', 'secrets', 'secret', sid)
       OR api.can('create', 'secrets', 'secret', sid)

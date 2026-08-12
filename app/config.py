@@ -125,9 +125,8 @@ DEFAULT_SETTINGS = {
     # Require email_verified claim before linking/creating accounts (recommended)
     "oidc_require_email_verified": "true",
 }
-TEAM_ROLES = ("owner", "admin", "member", "viewer")
-# Invite / join-request roles (cannot self-invite as owner)
-INVITE_ROLES = ("admin", "member", "viewer")
+# Invite / join-request roles (cannot self-invite as owner) — rbac.roles names
+INVITE_ROLES = ("team-admin", "team-member", "team-viewer")
 # Machine accounts / ESO tokens: read (metadata), reveal (metadata + plaintext), write (read + write)
 MACHINE_TOKEN_ROLES = ("read", "reveal", "write")
 

@@ -137,3 +137,7 @@ def test_parse_access_mode_accepts_rbac_modes():
     assert _parse_access_mode("") == "inherit"
     assert _parse_access_mode("unknown") == "inherit"
     assert _parse_access_mode({"access_mode": "restricted"}) == "restricted"
+    # Legacy 'custom' meant secret-scope-bindings-only → must map to restricted
+    # (never broaden to inherit).
+    assert _parse_access_mode("custom") == "restricted"
+    assert _parse_access_mode({"access_mode": "custom"}) == "restricted"

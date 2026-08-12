@@ -204,9 +204,9 @@ class TestTeams:
         assert 'user_id = api.current_user_id()' not in ensure_chunk
 
     def test_team_roles_include_viewer(self):
-        assert 'viewer' in config.TEAM_ROLES
         assert 'team-viewer' in [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
-        assert not hasattr(config, 'ROLE_RANK')
+        assert not hasattr(config, 'TEAM_ROLES')
+        assert 'team-member' in config.INVITE_ROLES
 
     def test_add_member_viewer_role(self):
         tid, uid = (uuid4(), uuid4())

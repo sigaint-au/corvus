@@ -172,8 +172,10 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Role
       <select name="role">
-        {% for r in invite_roles %}
-        <option value="{{ r }}" {% if r == 'member' %}selected{% endif %}>{{ r }}</option>
+        {% for rname, label in team_role_dropdown|default([]) %}
+        {% if rname != 'team-owner' %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endif %}
         {% endfor %}
       </select>
     </label>
@@ -490,10 +492,9 @@
     </label>
     <label>Team role
       <select name="role">
-        <option value="member">member</option>
-        <option value="viewer">viewer</option>
-        <option value="admin">admin</option>
-        <option value="owner">owner</option>
+        {% for rname, label in team_role_dropdown|default([]) %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
       </select>
     </label>
     <button type="submit">Add map</button>
@@ -539,10 +540,9 @@
     </label>
     <label>Team role
       <select name="role">
-        <option value="member">member</option>
-        <option value="viewer">viewer</option>
-        <option value="admin">admin</option>
-        <option value="owner">owner</option>
+        {% for rname, label in team_role_dropdown|default([]) %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
       </select>
     </label>
     <button type="submit">Add map</button>

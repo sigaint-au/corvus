@@ -317,6 +317,9 @@ def _parse_access_mode(form_or_value) -> str:
     else:
         raw = form_or_value
     mode = (raw or "inherit").strip().lower()
+    if mode == "custom":
+        # Legacy value: custom meant "secret-scope bindings only" → restricted.
+        return "restricted"
     if mode not in config.ACCESS_MODES:
         return "inherit"
     return mode
