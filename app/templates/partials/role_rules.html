@@ -1,0 +1,15 @@
+{# Renders a role's rules as resource/verb chips.
+   Expects `r.rules` = list of {"resources": [...], "verbs": [...]}. #}
+{% if r.rules %}
+<div class="role-rules">
+  {% for rule in r.rules %}
+  <span class="role-rule">
+    <span class="badge outline">{{ rule.resources|join(', ') }}</span>
+    <span class="role-arrow" aria-hidden="true">→</span>
+    <span class="badge outline">{{ rule.verbs|join(', ') }}</span>
+  </span>
+  {% endfor %}
+</div>
+{% else %}
+<span class="muted">—</span>
+{% endif %}

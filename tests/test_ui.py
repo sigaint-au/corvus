@@ -87,7 +87,10 @@ class TestUIShell:
 
     def test_project_tabs_use_nav_links_not_tablist_role(self):
         # Server-side page tabs are plain navigation links (no fake tablist),
-        # so screen readers announce them as links, not broken tabs.
+        # so screen readers announce them as links, not broken tabs. Scope the
+        # check to the actual <nav class="tabs"> markup (not the shared <style>
+        # block, whose `.role-mode-tabs [role=tablist]` selector legitimately
+        # contains `role=` text).
         from flask import render_template
         project = {
             'id': str(uuid4()), 'name': 'App', 'team_id': str(uuid4()),
@@ -95,8 +98,11 @@ class TestUIShell:
         }
         with store.app.test_request_context('/projects/p?tab=secrets'):
             html = render_template('project.html', project=project, active_tab='secrets')
-        assert 'role="tablist"' not in html
-        assert 'role="tab"' not in html
-        assert 'class="tabs"' in html
-        assert 'tab active' in html
+        i = html.find('<nav class="tabs"')
+        j = html.find('</nav>', i)
+        tabs = html[i:j] if i != -1 and j != -1 else ''
+        assert 'role="tablist"' not in tabs
+        assert 'role="tab"' not in tabs
+        assert 'class="tab ' in tabs
+        assert 'tab active' in tabs
 

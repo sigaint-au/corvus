@@ -1,118 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Roles — {{ app_name }}{% endblock %}
 {% block body %}
-<style>
-  .role-create {
-    padding: 1.15rem 1.25rem 1.35rem;
-    max-width: none;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .role-create-grid {
-    display: grid;
-    grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 2fr);
-    gap: .85rem 1.25rem;
-    margin-bottom: 1.15rem;
-  }
-  @media (max-width: 40rem) {
-    .role-create-grid { grid-template-columns: 1fr; }
-  }
-  .role-create-grid label {
-    display: flex;
-    flex-direction: column;
-    gap: .35rem;
-  }
-  .role-create-grid input[type="text"] {
-    width: 100%;
-    box-sizing: border-box;
-  }
-  .role-create .role-mode-tabs { margin: 0 0 1rem; }
-  .role-create .role-mode-tabs [role="tablist"] {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .15rem 1.1rem;
-    border-bottom: 1px solid var(--border);
-    padding: 0;
-    margin: 0;
-  }
-  .role-create .role-mode-tabs [role="tablist"] .tab {
-    cursor: pointer;
-    appearance: none;
-    -webkit-appearance: none;
-    color: var(--muted-foreground);
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    padding: .55rem 0 .65rem;
-    margin: 0;
-    font: inherit;
-    font-size: .925rem;
-    font-weight: 500;
-  }
-  .role-create .role-mode-tabs [role="tablist"] .tab:hover {
-    color: var(--foreground);
-    background: transparent;
-  }
-  .role-create .role-mode-tabs [role="tablist"] .tab.active {
-    color: var(--foreground);
-    border-bottom-color: var(--foreground);
-  }
-  .role-create-panel { min-height: min(40vh, 22rem); }
-  .role-panel-hint { font-size: .85rem; }
-  .role-create-cols {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem 1.25rem;
-  }
-  @media (max-width: 40rem) {
-    .role-create-cols { grid-template-columns: 1fr; }
-  }
-  .role-check-set {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm, 4px);
-    padding: .75rem 1rem 1rem;
-    margin: 0;
-    box-sizing: border-box;
-  }
-  .role-check-set legend {
-    padding: 0 .4rem;
-    font-size: .8rem;
-    font-weight: 600;
-  }
-  .role-check-set .check-row {
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-    padding: .28rem 0;
-  }
-  .role-yaml {
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: .875rem;
-    line-height: 1.5;
-    min-height: min(40vh, 22rem);
-    resize: vertical;
-    padding: .75rem .9rem;
-  }
-  .role-create .form-actions {
-    margin-top: 1.25rem;
-    display: flex;
-    flex-wrap: wrap;
-    gap: .5rem;
-    align-items: center;
-  }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-</style>
-
 <div class="page-head">
   <h1>Roles</h1>
 </div>
 <p class="page-desc muted">
-  Named sets of permissions (verbs × resources). Assign them to subjects under
-  Role bindings.
+  Named sets of permissions (verbs on resources). Assign them to subjects under
+  <a href="{{ url_for('rbac_bindings') }}">Role bindings</a> at a scope.
 </p>
 
 <nav class="tabs" aria-label="Roles sections">
@@ -126,18 +20,17 @@
 >Custom
     <span class="tab-badge">{{ custom_roles|length }}</span>
   </a>
-  {% if can_edit %}
-  <a href="{{ url_for('rbac_roles', tab='create') }}"
-     class="tab {% if active_tab == 'create' %}active{% endif %}"
->Create</a>
-  {% endif %}
 </nav>
 
 {% if active_tab == 'builtin' %}
 <section>
-  <p class="muted mt-0">
-    Shipped roles used by team, project, and secret Access dropdowns. Rules cannot be edited.
-  </p>
+  <div class="section-head">
+    <h2>Built-in roles</h2>
+    {% if can_edit %}
+    <a class="button outline small" href="{{ url_for('rbac_roles', tab='create') }}">+ New role</a>
+    {% endif %}
+  </div>
+  <p class="muted mt-0">Shipped roles used by team, project, and secret Access dropdowns. Their rules cannot be edited.</p>
   {% if builtin_roles %}
   <div class="table">
     <table>
@@ -152,14 +45,8 @@
         {% for r in builtin_roles %}
         <tr>
           <td><code>{{ r.name }}</code></td>
-          <td>{{ r.description or "—" }}</td>
-          <td class="muted" style="font-size:.85rem">
-            {% if r.rules %}
-              {% for rule in r.rules %}
-              <div>{{ rule.resources|join(', ') }} → {{ rule.verbs|join(', ') }}</div>
-              {% endfor %}
-            {% else %}—{% endif %}
-          </td>
+          <td class="col-note">{{ r.description or "—" }}</td>
+          <td class="col-note">{% include "partials/role_rules.html" %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -173,8 +60,14 @@
 
 {% if active_tab == 'custom' %}
 <section>
+  <div class="section-head">
+    <h2>Custom roles</h2>
+    {% if can_edit %}
+    <a class="button outline small" href="{{ url_for('rbac_roles', tab='create') }}">+ New role</a>
+    {% endif %}
+  </div>
   {% if not can_edit %}
-  <p class="muted">Only global admins can create or delete custom roles.</p>
+  <p class="muted mt-0">Only global admins can create or delete custom roles.</p>
   {% endif %}
   {% if custom_roles %}
   <div class="table">
@@ -191,14 +84,8 @@
         {% for r in custom_roles %}
         <tr>
           <td><code>{{ r.name }}</code></td>
-          <td>{{ r.description or "—" }}</td>
-          <td class="muted" style="font-size:.85rem">
-            {% if r.rules %}
-              {% for rule in r.rules %}
-              <div>{{ rule.resources|join(', ') }} → {{ rule.verbs|join(', ') }}</div>
-              {% endfor %}
-            {% else %}—{% endif %}
-          </td>
+          <td class="col-note">{{ r.description or "—" }}</td>
+          <td class="col-note">{% include "partials/role_rules.html" %}</td>
           {% if can_edit %}
           <td class="acts">
             <form method="post" action="{{ url_for('rbac_roles_delete', role_id=r.id) }}" class="inline"
@@ -215,85 +102,91 @@
     </table>
   </div>
   {% else %}
-  <p class="empty">
-    No custom roles yet.
-    {% if can_edit %}
-    <a href="{{ url_for('rbac_roles', tab='create') }}">Create one</a>.
-    {% endif %}
-  </p>
+  <p class="empty">No custom roles yet.{% if can_edit %} <a href="{{ url_for('rbac_roles', tab='create') }}">Create one</a>.{% endif %}</p>
   {% endif %}
 </section>
 {% endif %}
 
 {% if active_tab == 'create' and can_edit %}
 <section class="role-create-section">
-  <form method="post" action="{{ url_for('rbac_roles_create') }}" class="role-create" id="role-create-form">
+  <div class="section-head">
+    <h2>New custom role</h2>
+    <a class="button ghost small" href="{{ url_for('rbac_roles', tab='custom') }}">Back to roles</a>
+  </div>
+  <form method="post" action="{{ url_for('rbac_roles_create') }}" class="settings-form role-create" id="role-create-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="tab" value="custom">
     <input type="hidden" name="mode" id="create-mode" value="form">
 
-    <div class="role-create-grid">
-      <label>Name
-        <input type="text" name="name" required
-               placeholder="secrets-operator"
-               pattern="[a-z0-9][a-z0-9\-]*"
-               title="Lowercase letters, numbers, hyphens"
-               autocomplete="off">
-      </label>
-      <label>Description
-        <input type="text" name="description" placeholder="Optional summary" autocomplete="off">
-      </label>
-    </div>
+    <fieldset class="field-group">
+      <legend>Details</legend>
+      <div class="field-grid">
+        <label>Name
+          <input type="text" name="name" required
+                 placeholder="secrets-operator"
+                 pattern="[a-z0-9][a-z0-9\-]*"
+                 title="Lowercase letters, numbers, hyphens"
+                 autocomplete="off">
+        </label>
+        <label>Description
+          <input type="text" name="description" placeholder="Optional summary" autocomplete="off">
+        </label>
+      </div>
+    </fieldset>
 
     <ot-tabs class="role-mode-tabs">
-    <div role="tablist">
-      <button type="button" class="tab active" data-mode="form" id="mode-form-btn"
-              role="tab" aria-selected="true">Form</button>
-      <button type="button" class="tab" data-mode="yaml" id="mode-yaml-btn"
-              role="tab" aria-selected="false">YAML</button>
-    </div>
-
-    <div id="mode-form-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-form-btn">
-      <p class="muted mt-0 role-panel-hint">
-        Pick resources and verbs for a single rule. Switch to YAML for multiple rules.
-      </p>
-      <div class="role-create-cols">
-        <fieldset class="role-check-set">
-          <legend>Resources</legend>
-          {% for res in resources %}
-          <label class="check-row">
-            <input type="checkbox" name="resources" value="{{ res }}"
-                   class="form-resource"
-                   {% if res == 'secrets' %}checked{% endif %}>
-            <code>{{ res }}</code>
-          </label>
-          {% endfor %}
-        </fieldset>
-        <fieldset class="role-check-set">
-          <legend>Verbs</legend>
-          {% for v in verbs %}
-          <label class="check-row">
-            <input type="checkbox" name="verbs" value="{{ v }}"
-                   class="form-verb"
-                   {% if v in ('get', 'list') %}checked{% endif %}>
-            <code>{{ v }}</code>
-          </label>
-          {% endfor %}
-        </fieldset>
+      <div role="tablist">
+        <button type="button" class="tab active" data-mode="form" id="mode-form-btn"
+                role="tab" aria-selected="true">Form</button>
+        <button type="button" class="tab" data-mode="yaml" id="mode-yaml-btn"
+                role="tab" aria-selected="false">YAML</button>
       </div>
-    </div>
 
-    <div id="mode-yaml-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-yaml-btn" hidden>
-      <p class="muted mt-0 role-panel-hint">
-        One or more rules. Blank line between rules. Lines starting with <code>#</code> are ignored.
-      </p>
-      <label class="visually-hidden" for="rules_yaml">Rules YAML</label>
-      <textarea name="rules_yaml" id="rules_yaml" rows="16" class="role-yaml mono"
-                spellcheck="false">resources: secrets
+      <div id="mode-form-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-form-btn">
+        <p class="muted role-panel-hint">
+          Pick a resource and the verbs it allows for a single rule. Switch to YAML for multiple rules.
+        </p>
+        <div class="role-create-cols">
+          <fieldset class="field-group">
+            <legend>Resource</legend>
+            <div class="field-grid">
+              {% for res in resources %}
+              <label class="check-row">
+                <input type="checkbox" name="resources" value="{{ res }}"
+                       class="form-resource"
+                       {% if res == 'secrets' %}checked{% endif %}>
+                <code>{{ res }}</code>
+              </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+          <fieldset class="field-group">
+            <legend>Verbs</legend>
+            <div class="field-grid">
+              {% for v in verbs %}
+              <label class="check-row">
+                <input type="checkbox" name="verbs" value="{{ v }}"
+                       class="form-verb"
+                       {% if v in ('get', 'list') %}checked{% endif %}>
+                <code>{{ v }}</code>
+              </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+        </div>
+      </div>
+
+      <div id="mode-yaml-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-yaml-btn" hidden>
+        <p class="muted role-panel-hint">
+          One or more rules. Leave a blank line between rules; lines starting with <code>#</code> are ignored.
+        </p>
+        <label class="visually-hidden" for="rules_yaml">Rules YAML</label>
+        <textarea name="rules_yaml" id="rules_yaml" rows="16" class="role-yaml mono"
+                  spellcheck="false">resources: secrets
 verbs: get, list, reveal</textarea>
-      <details class="role-yaml-help">
-        <summary class="muted">Format reference</summary>
-        <pre class="mono muted" style="font-size:.8rem;white-space:pre-wrap">resources: secrets, projects
+        <details class="role-yaml-help">
+          <summary class="muted">Format reference</summary>
+          <pre class="mono muted role-yaml-ref">resources: secrets, projects
 verbs: get, list, reveal
 
 resources: *
@@ -301,9 +194,9 @@ verbs: *
 
 # valid resources: {{ resources|join(', ') }}
 # valid verbs: {{ verbs|join(', ') }}</pre>
-      </details>
-    </div>
-  </ot-tabs>
+        </details>
+      </div>
+    </ot-tabs>
 
     <p class="form-actions">
       <button type="submit" class="button">Create role</button>

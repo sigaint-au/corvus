@@ -13,51 +13,54 @@
 <div class="page-head">
   <h1>Role bindings</h1>
 </div>
-<p class="page-desc muted">
-  Bind a user, group, or service account to a role at a scope
-  (team → project → secret). Grants flow downward.
-</p>
 
-<form method="get" action="{{ url_for('rbac_bindings') }}" class="toolbar" role="search">
-  <label>Scope
-    <select name="scope" onchange="this.form.submit()">
-      {% for sk in scope_kinds %}
-      {% if sk != 'cluster' or session.get('is_global_admin') %}
-      <option value="{{ sk }}" {% if sk == scope_kind %}selected{% endif %}>{{ sk }}</option>
-      {% endif %}
-      {% endfor %}
-    </select>
-  </label>
-  {% if scope_kind == 'team' %}
-  <label>Team
-    <select name="scope_id" onchange="this.form.submit()">
-      <option value="">— select —</option>
-      {% for t in teams %}
-      <option value="{{ t.id }}" {% if scope_id and scope_id|string == t.id|string %}selected{% endif %}>{{ t.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  {% elif scope_kind == 'project' %}
-  <label>Project
-    <select name="scope_id" onchange="this.form.submit()">
-      <option value="">— select —</option>
-      {% for p in projects %}
-      <option value="{{ p.id }}" {% if scope_id and scope_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  {% elif scope_kind == 'secret' %}
-  <label>Secret
-    <select name="scope_id" onchange="this.form.submit()">
-      <option value="">— select —</option>
-      {% for s in secrets %}
-      <option value="{{ s.id }}" {% if scope_id and scope_id|string == s.id|string %}selected{% endif %}>
-        {% if s.project_name %}{{ s.project_name }} / {% endif %}{{ s.name }}
-      </option>
-      {% endfor %}
-    </select>
-  </label>
-  {% endif %}
+<form method="get" action="{{ url_for('rbac_bindings') }}" class="list-panel review-form">
+  <div class="review-form-row">
+    <label>Scope
+      <select name="scope" id="bind-scope" onchange="this.form.submit()">
+        {% for sk in scope_kinds %}
+        {% if sk != 'cluster' or session.get('is_global_admin') %}
+        <option value="{{ sk }}" {% if sk == scope_kind %}selected{% endif %}>{{ sk|capitalize }}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    {% if scope_kind == 'team' %}
+    <label>Team
+      <select name="scope_id">
+        <option value="">Choose a team…</option>
+        {% for t in teams %}
+        <option value="{{ t.id }}" {% if scope_id and scope_id|string == t.id|string %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% elif scope_kind == 'project' %}
+    <label>Project
+      <select name="scope_id">
+        <option value="">Choose a project…</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}" {% if scope_id and scope_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% elif scope_kind == 'secret' %}
+    <label>Secret
+      <select name="scope_id">
+        <option value="">Choose a secret…</option>
+        {% for s in secrets %}
+        <option value="{{ s.id }}" {% if scope_id and scope_id|string == s.id|string %}selected{% endif %}>
+          {% if s.project_name %}{{ s.project_name }} / {% endif %}{{ s.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <button type="submit" class="button">Update</button>
+  </div>
+  <p class="muted review-form-hint">
+    Bind a user, group, or service account to a role at this scope. Grants flow
+    downward (team → project → secret).
+  </p>
 </form>
 
 {% if scope_label %}
@@ -65,17 +68,18 @@
 {% endif %}
 
 <section>
-  <h2>Bindings at this scope</h2>
+  <div class="section-head">
+    <h2>Bindings{% if scope_label %} <span class="muted">· {{ scope_label }}{% if bindings %} ({{ bindings|length }}){% endif %}</span>{% endif %}</h2>
+  </div>
   {% if not scope_id and scope_kind != 'cluster' %}
-  <p class="muted">Select a scope above to list bindings.</p>
-  {% else %}
+  <p class="empty">Select a scope above to view its role bindings.</p>
+  {% elif bindings %}
   <div class="table">
     <table>
       <thead>
         <tr>
           <th>Subject</th>
           <th>Role</th>
-          <th>Scope</th>
           <th>Created</th>
           <th></th>
         </tr>
@@ -90,7 +94,6 @@
             {% else %}<code>{{ b.subject_id }}</code>{% endif %}
           </td>
           <td><span class="badge" data-variant="secondary">{{ b.role_name }}</span></td>
-          <td class="muted">{{ b.scope_kind }}</td>
           <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
           <td class="acts">
             {% if can_edit %}
@@ -108,12 +111,11 @@
       </tbody>
     </table>
   </div>
-  {% if bindings|length == 0 %}
-  <p class="empty">No bindings at this scope.</p>
+  {% else %}
+  <p class="empty">No {{ scope_kind }} bindings at this scope yet.</p>
   {% endif %}
   {% if not can_edit and (scope_id or scope_kind == 'cluster') %}
-  <p class="muted mt-1">View only — team/project admins can add or remove bindings here.</p>
-  {% endif %}
+  <p class="muted mt-1">View only. Team or project admins can add or remove bindings here.</p>
   {% endif %}
 </section>
 
@@ -128,7 +130,7 @@
     <fieldset class="field-group">
       <legend>Who</legend>
       <div class="field-grid">
-        <label>Subject type
+        <label class="span-2">Subject type
           <select name="subject_kind" id="rbac-subject-kind">
             {% for sk in subject_kinds %}
             <option value="{{ sk }}">{{ sk }}</option>
@@ -136,18 +138,19 @@
           </select>
         </label>
         <label id="rbac-field-user" class="span-2">User email
-          <input type="email" name="subject_email" placeholder="user@example.com" autocomplete="off">
+          <input type="email" name="subject_email" class="user-suggest"
+                 list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
         </label>
         <label id="rbac-field-group" class="span-2" hidden>Group
           <select name="subject_group">
-            <option value="">— select group —</option>
+            <option value="">Choose a group…</option>
             {% for g in groups %}
             <option value="{{ g.id }}">{{ g.name }}</option>
             {% endfor %}
           </select>
         </label>
         <label id="rbac-field-sa" class="span-2" hidden>Machine account ID
-          <input type="text" name="subject_sa" placeholder="machine account UUID" autocomplete="off">
+          <input type="text" name="subject_sa" placeholder="Machine account UUID" autocomplete="off">
         </label>
       </div>
     </fieldset>
@@ -158,11 +161,12 @@
         <label class="span-2">Grant
           <select name="role_name" required>
             {% if dropdown %}
+              {% set dropdown_names = dropdown|map(attribute=0)|list %}
               {% for name, label in dropdown %}
               <option value="{{ name }}">{{ label }} ({{ name }})</option>
               {% endfor %}
-              <optgroup label="All roles">
-                {% for r in all_roles %}
+              <optgroup label="Other roles">
+                {% for r in all_roles if r.name not in dropdown_names %}
                 <option value="{{ r.name }}">{{ r.name }}</option>
                 {% endfor %}
               </optgroup>

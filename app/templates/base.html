@@ -2217,6 +2217,79 @@
         max-height: 12rem;
       }
     }
+    /* ── RBAC Roles: rule chips + custom-role editor ── */
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .role-create-panel { min-height: min(40vh, 22rem); }
+    .role-rules {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem .9rem;
+      font-size: .85rem;
+    }
+    .role-rule {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      white-space: nowrap;
+    }
+    .role-rule .badge { font-weight: 550; }
+    .role-arrow { color: var(--muted-foreground); }
+    .role-create-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem 1.25rem;
+      align-items: start;
+    }
+    @media (max-width: 720px) {
+      .role-create-cols { grid-template-columns: 1fr; }
+    }
+    .role-panel-hint { font-size: .85rem; }
+    .role-yaml {
+      min-height: min(40vh, 22rem);
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .875rem;
+      line-height: 1.5;
+      width: 100%;
+      box-sizing: border-box;
+      padding: .75rem .9rem;
+    }
+    .role-yaml-ref {
+      font-size: .8rem;
+      white-space: pre-wrap;
+    }
+    .role-mode-tabs { margin: 0 0 .5rem; }
+    .role-mode-tabs [role="tablist"] {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .15rem 1.1rem;
+      border-bottom: 1px solid var(--border);
+      padding: 0;
+      margin: 0;
+    }
+    .role-mode-tabs [role="tablist"] .tab {
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      color: var(--muted-foreground);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      padding: .55rem 0 .65rem;
+      margin: 0;
+      font: inherit;
+      font-size: .925rem;
+      font-weight: 500;
+    }
+    .role-mode-tabs [role="tablist"] .tab:hover {
+      color: var(--foreground);
+      background: transparent;
+    }
+    .role-mode-tabs [role="tablist"] .tab.active {
+      color: var(--foreground);
+      border-bottom-color: var(--foreground);
+    }
     /* ── Machine account create + scope chips ── */
     .machine-accounts .token-create-card,
     .eso-token-create .token-create-card {
