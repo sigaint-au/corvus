@@ -215,6 +215,45 @@ def branding() -> dict:
     }
 
 
+def team_classification(row) -> dict:
+    """Build classification banner display settings for a team override row.
+
+    ``classification_enabled`` None means "no override" (disabled banner); True
+    shows the banner only when text is present; False hides it even if the
+    server banner is on. Invalid hex colors fall back to defaults.
+
+    Args:
+        row: Team row with classification_enabled / _text / _color / _fg.
+
+    Returns:
+        Dict with keys enabled (bool), text (str), color (hex bg), fg (hex).
+
+    Example:
+        >>> c = team_classification({"classification_enabled": True,
+        ...                          "classification_text": "OFFICIAL",
+        ...                          "classification_color": "#000000",
+        ...                          "classification_fg": "#ffffff"})
+        >>> c["enabled"]
+        True
+    """
+    en = row.get("classification_enabled") if row else None
+    if en is None:
+        return {"enabled": False, "text": "", "color": "#677381", "fg": "#ffffff"}
+    text = (row.get("classification_text") or "").strip()
+    color = (row.get("classification_color") or "").strip() or "#677381"
+    fg = (row.get("classification_fg") or "").strip() or "#ffffff"
+    if not HEX.match(color):
+        color = "#677381"
+    if not HEX.match(fg):
+        fg = "#ffffff"
+    return {
+        "enabled": bool(en) and bool(text),
+        "text": text if en else "",
+        "color": color,
+        "fg": fg,
+    }
+
+
 def classification():
     """Build classification banner display settings.
 

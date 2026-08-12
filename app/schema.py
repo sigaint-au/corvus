@@ -143,8 +143,6 @@ def ensure_schema():
           END LOOP;
         END $$
         """,
-        "UPDATE api.team_members SET role = 'viewer' WHERE role = 'read-only'",
-        "UPDATE api.team_ldap_maps SET role = 'viewer' WHERE role = 'read-only'",
         """
         DO $$ BEGIN
           ALTER TABLE api.team_members
@@ -717,13 +715,9 @@ def ensure_schema():
           ALTER TABLE api.machine_tokens DROP CONSTRAINT IF EXISTS machine_tokens_role_check;
           ALTER TABLE api.machine_tokens
             ADD CONSTRAINT machine_tokens_role_check
-            CHECK (role IN ('read', 'reveal', 'write', 'read-only'));
+            CHECK (role IN ('read', 'reveal', 'write'));
         EXCEPTION WHEN others THEN NULL;
         END $$
-        """,
-        # Migrate legacy machine token roles: read-only → reveal
-        """
-        UPDATE api.machine_tokens SET role = 'reveal' WHERE role = 'read-only'
         """,
         """
         CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
@@ -984,44 +978,6 @@ def ensure_schema():
           resolved_at timestamptz,
           resolved_by uuid REFERENCES private.users(id) ON DELETE SET NULL
         )
-        """,
-        # Migrate invite/join role read-only → viewer after tables exist
-        """
-        DO $$
-        DECLARE r record;
-        BEGIN
-          FOR r IN
-            SELECT t.relname AS tbl, c.conname
-            FROM pg_constraint c
-            JOIN pg_class t ON c.conrelid = t.oid
-            JOIN pg_namespace n ON t.relnamespace = n.oid
-            WHERE n.nspname = 'api'
-              AND t.relname IN ('team_invites', 'team_join_requests')
-              AND c.contype = 'c'
-              AND pg_get_constraintdef(c.oid) ILIKE '%role%'
-              AND pg_get_constraintdef(c.oid) NOT ILIKE '%status%'
-          LOOP
-            EXECUTE format('ALTER TABLE api.%I DROP CONSTRAINT %I', r.tbl, r.conname);
-          END LOOP;
-        END $$
-        """,
-        "UPDATE api.team_invites SET role = 'viewer' WHERE role = 'read-only'",
-        "UPDATE api.team_join_requests SET role = 'viewer' WHERE role = 'read-only'",
-        """
-        DO $$ BEGIN
-          ALTER TABLE api.team_invites
-            ADD CONSTRAINT team_invites_role_check
-            CHECK (role IN ('admin', 'member', 'viewer'));
-        EXCEPTION WHEN others THEN NULL;
-        END $$
-        """,
-        """
-        DO $$ BEGIN
-          ALTER TABLE api.team_join_requests
-            ADD CONSTRAINT team_join_requests_role_check
-            CHECK (role IN ('admin', 'member', 'viewer'));
-        EXCEPTION WHEN others THEN NULL;
-        END $$
         """,
         """
         CREATE UNIQUE INDEX IF NOT EXISTS team_join_requests_pending_uidx
@@ -2392,7 +2348,7 @@ EXCEPTION WHEN duplicate_object THEN NULL;
                         "UPDATE private.users SET is_global_admin = true WHERE email = %s",
                         (boot,),
                     )
-                _backfill_secret_kinds(cur)
+
 
 
             finally:
@@ -2473,72 +2429,3 @@ def _apply_rbac_sql(cur) -> None:
             continue
         cur.execute(stmt)
     log.info("RBAC schema ensure complete (rbac.roles / bindings / api.can)")
-
-
-def _backfill_secret_kinds(cur) -> None:
-    """Backfill api.secrets.kind from legacy note tags or value heuristics.
-
-    One-shot migration helper: set kind from legacy note type: tags / value
-    heuristics, then strip tags from notes. Safe to re-run — after the first
-    pass only rows still matching type: (or empty kind) are candidates.
-
-    Args:
-        cur: Open admin DB cursor used to SELECT/UPDATE api.secrets.
-
-    Returns:
-        None. Logs how many rows were updated when any change was made.
-
-    Example:
-        >>> # with db.connect_admin(autocommit=True) as conn, conn.cursor() as cur:
-        ... #     _backfill_secret_kinds(cur)
-    """
-    from secret_kinds import (
-        detect_secret_kind,
-        kind_from_legacy_note,
-        normalize_kind,
-        strip_legacy_type_tags,
-    )
-    import crypto
-
-    try:
-        cur.execute(
-            """
-            SELECT id, note, value_enc, kind
-            FROM api.secrets
-            WHERE note ~* 'type:'
-               OR kind IS NULL
-               OR kind = ''
-            """
-        )
-    except Exception:
-        # Column missing mid-migration (shouldn't happen after ADD COLUMN)
-        return
-    rows = cur.fetchall() or []
-    if not rows:
-        return
-    updated = 0
-    for row in rows:
-        note = row.get("note") or ""
-        kind = normalize_kind(row.get("kind") or "plain")
-        legacy = kind_from_legacy_note(note)
-        if legacy:
-            kind = legacy
-        elif kind == "plain":
-            try:
-                plain = crypto.decrypt(row["value_enc"])
-            except Exception:
-                plain = ""
-            kind = detect_secret_kind(plain)
-        clean = strip_legacy_type_tags(note)
-        if kind != (row.get("kind") or "plain") or clean != note:
-            cur.execute(
-                """
-                UPDATE api.secrets
-                SET kind = %s, note = %s
-                WHERE id = %s
-                """,
-                (kind, clean, str(row["id"])),
-            )
-            updated += 1
-    if updated:
-        log.info("backfilled kind/note for %s secret row(s)", updated)

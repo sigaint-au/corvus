@@ -13,22 +13,6 @@ MAX_NAME_LEN = 80
 MAX_TOKENS_PER_USER = 50
 
 
-def _hash(raw: str) -> str:
-    """Hash a raw PAT for storage and lookup.
-
-    Args:
-        raw: Full plaintext personal access token.
-
-    Returns:
-        Hex SHA-256 digest of ``raw``.
-
-    Example:
-        >>> _hash("pat_xxxxx") == sha256_hex("pat_xxxxx")
-        True
-    """
-    return sha256_hex(raw)
-
-
 def mint_raw() -> tuple[str, str, str]:
     """Generate a new personal access token and its stored metadata.
 
@@ -49,7 +33,7 @@ def mint_raw() -> tuple[str, str, str]:
         64
     """
     raw = PREFIX + secrets.token_urlsafe(32)
-    thash = _hash(raw)
+    thash = sha256_hex(raw)
     return raw, thash, raw[:12]
 
 
@@ -192,7 +176,7 @@ def resolve(raw: str) -> str | None:
     raw = (raw or "").strip()
     if not raw.startswith(PREFIX) or len(raw) < 20:
         return None
-    thash = _hash(raw)
+    thash = sha256_hex(raw)
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -224,5 +208,5 @@ if __name__ == "__main__":
     assert raw.startswith("pat_")
     assert len(thash) == 64
     assert prefix == raw[:12]
-    assert _hash(raw) == thash
+    assert sha256_hex(raw) == thash
     print("ok")

@@ -12,7 +12,7 @@ from config import (
 )
 import db
 import pins
-from settings_svc import branding, classification
+from settings_svc import branding, classification, team_classification
 
 
 def nav_teams(user_id: str):
@@ -273,27 +273,9 @@ def inject_nav():
         base["nav_access_pending"] = 0
     # Team-level classification: NULL enabled = use server banner; True/False = override
     if active is not None:
-        try:
-            en = active.get("classification_enabled")
-            if en is not None:
-                from config import HEX
-
-                text = (active.get("classification_text") or "").strip()
-                color = (active.get("classification_color") or "").strip() or "#677381"
-                fg = (active.get("classification_fg") or "").strip() or "#ffffff"
-                if not HEX.match(color):
-                    color = "#677381"
-                if not HEX.match(fg):
-                    fg = "#ffffff"
-                # en is True → show if text present; False → hide (even if server banner on)
-                base["classification"] = {
-                    "enabled": bool(en) and bool(text),
-                    "text": text if en else "",
-                    "color": color,
-                    "fg": fg,
-                }
-        except (KeyError, TypeError, AttributeError):
-            pass
+        if active is not None and active.get("classification_enabled") is not None:
+            # Normalize the team override once, in settings_svc (color fallback etc.)
+            base["classification"] = team_classification(active)
     try:
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             base["nav_pins"] = pins.list_pins(cur, session["user_id"])

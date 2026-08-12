@@ -52,6 +52,14 @@ _ACTION_VERB = {
     "access_denied": "denied access to",
 }
 
+# Special per-action sentence shapes for describe_event.
+_EVENT_FORMATS = {
+    "exported": lambda who, verb, key: f"{who} {verb}" + (f" ({key})" if key else ""),
+    "machine_upsert": lambda who, verb, key: (
+        f"{who} {verb} “{key}”" if key else f"{who} {verb} a secret"
+    ),
+}
+
 
 def log_secret(
     cur,
@@ -778,15 +786,10 @@ def describe_event(row) -> str:
     action = row.get("action") or ""
     key = (row.get("secret_key") or "").strip()
     verb = _ACTION_VERB.get(action, action or "acted on")
-    if action == "exported":
-        detail = f" ({key})" if key else ""
-        return f"{who} {verb}{detail}"
-    if action == "machine_upsert":
-        target = f" “{key}”" if key else " a secret"
-        return f"{who} {verb}{target}"
-    if key:
-        return f"{who} {verb} “{key}”"
-    return f"{who} {verb} a secret"
+    formatter = _EVENT_FORMATS.get(action)
+    if formatter:
+        return formatter(who, verb, key)
+    return f"{who} {verb} " + (f"“{key}”" if key else "a secret")
 
 
 def _as_utc_dt(dt):

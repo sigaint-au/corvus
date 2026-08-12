@@ -64,8 +64,6 @@ class TestSecretLifecycle:
         import secret_kinds as sk
         assert sk.detect_secret_kind('secret', 'type:ssh') == 'plain'
         assert sk.detect_secret_kind('postgresql://u:p@h/db') == 'database'
-        assert sk.kind_from_legacy_note('prod (type:ssh)') == 'ssh'
-        assert sk.strip_legacy_type_tags('prod (type:ssh)') == 'prod'
         assert sk.normalize_kind('KV') == 'kv'
         assert sk.normalize_kind('nope') == 'plain'
 

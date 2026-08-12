@@ -22,8 +22,6 @@ _DB_URL = re.compile(
 )
 STRUCTURED_VIEW_KINDS = frozenset({"kv", "certificate", "ssh", "database"})
 VALID_KINDS = frozenset({"plain", "database", "certificate", "ssh", "kv"})
-_TYPE_TAG_RE = re.compile(r"\s*\(\s*type:[a-z]+\s*\)\s*", re.I)
-_TYPE_BARE_RE = re.compile(r"\btype:([a-z]+)\b", re.I)
 
 
 def env_line_match(line: str, *, allow_dots: bool = False):
@@ -89,45 +87,6 @@ def detect_secret_kind(value: str, note: str = "") -> str:
     if len(lines) == 1 and env_line_match(lines[0], allow_dots=True) and "\n" in v:
         return "kv"
     return "plain"
-
-
-def kind_from_legacy_note(note: str) -> str | None:
-    """Read legacy type: tag from note (migration backfill only).
-
-    Args:
-        note: Historical secret note that may contain type:kind markers.
-
-    Returns:
-        The matching kind string if a type: tag is found, else None.
-
-    Example:
-        >>> kind_from_legacy_note("prod (type:ssh)")
-        'ssh'
-    """
-    note_l = (note or "").lower()
-    for kind in ("certificate", "kv", "ssh", "database", "plain"):
-        if f"type:{kind}" in note_l:
-            return kind
-    return None
-
-
-def strip_legacy_type_tags(note: str) -> str:
-    """Remove legacy type: tags from a note (migration / display cleanup).
-
-    Args:
-        note: Note text possibly containing parenthesized or bare type: tags.
-
-    Returns:
-        Cleaned note with type tags removed and excess whitespace collapsed.
-
-    Example:
-        >>> strip_legacy_type_tags("prod (type:kv)")
-        'prod'
-    """
-    note = (note or "").strip()
-    note = _TYPE_TAG_RE.sub(" ", note)
-    note = _TYPE_BARE_RE.sub("", note)
-    return re.sub(r"\s{2,}", " ", note).strip(" -|,")
 
 
 def normalize_kind(kind: str | None, default: str = "plain") -> str:

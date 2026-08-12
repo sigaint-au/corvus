@@ -15,23 +15,6 @@ MIN_PASSWORD_LEN = 8
 RESET_TOKEN_HOURS = 1
 
 
-def hash_token(token: str) -> str:
-    """Hash a password-reset token for storage (SHA-256 hex).
-
-    Args:
-        token: Plaintext reset token (never stored as-is).
-
-    Returns:
-        Hex SHA-256 digest of the token.
-
-    Example:
-        >>> h = hash_token("abc123")
-        >>> len(h)
-        64
-    """
-    return sha256_hex(token)
-
-
 def change_password(user_id: str, old_password: str, new_password: str) -> tuple[bool, str]:
     """Change password for a local user after verifying the current password.
 
@@ -172,7 +155,7 @@ def _insert_reset_token(cur, user_id: str) -> str | None:
         ...     # email token; store only hash in DB
     """
     token = secrets.token_urlsafe(32)
-    th = hash_token(token)
+    th = sha256_hex(token)
     expires = datetime.now(timezone.utc) + timedelta(hours=RESET_TOKEN_HOURS)
     cur.execute(
         """
@@ -216,7 +199,7 @@ def consume_reset_token(token: str, new_password: str) -> tuple[bool, str]:
         return False, f"Password must be at least {MIN_PASSWORD_LEN} characters"
     if not token:
         return False, "Invalid or expired reset link"
-    th = hash_token(token)
+    th = sha256_hex(token)
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(

@@ -7,9 +7,11 @@ import hashlib
 import hmac
 import io
 import logging
+import os
 import re
 import secrets
-import pyotp
+import struct
+import time
 import qrcode
 import qrcode.image.svg
 
@@ -129,21 +131,35 @@ def needs_challenge(user_id: str, is_global_admin: bool) -> str | None:
     return None
 
 
+def _b32decode(secret: str) -> bytes:
+    """Decode a base32 TOTP secret, tolerating missing padding."""
+    raw = (secret or "").upper().rstrip("=")
+    return base64.b32decode(raw + "=" * ((8 - len(raw) % 8) % 8))
+
+
+def _totp_code(secret: str, counter: int) -> str:
+    """RFC 6238 TOTP code (SHA-1, 6 digits, 30s period)."""
+    digest = hmac.new(_b32decode(secret), struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    code = (struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 1_000_000
+    return f"{code:06d}"
+
+
 def new_secret() -> str:
-    """Generate a new random base32 TOTP secret.
+    """Generate a new random base32 TOTP secret (32 chars).
 
     Args:
         None.
 
     Returns:
-        Base32-encoded secret string suitable for pyotp.TOTP.
+        Base32-encoded secret string for authenticator apps.
 
     Example:
         >>> s = new_secret()
         >>> len(s) >= 16
         True
     """
-    return pyotp.random_base32()
+    return base64.b32encode(os.urandom(20)).decode("ascii").rstrip("=")
 
 
 def provisioning_uri(secret: str, email: str) -> str:
@@ -161,9 +177,14 @@ def provisioning_uri(secret: str, email: str) -> str:
         >>> uri.startswith("otpauth://")
         True
     """
-    totp = pyotp.TOTP(secret)
+    from urllib.parse import quote
+
     issuer = branding().get("app_name") or APP_NAME
-    return totp.provisioning_uri(name=email or "user", issuer_name=issuer)
+    label = quote(f"{issuer}:{email or 'user'}", safe="")
+    return (
+        f"otpauth://totp/{label}?secret={secret}"
+        f"&issuer={quote(issuer, safe='')}"
+    )
 
 
 def qr_data_uri(uri: str) -> str:
@@ -211,9 +232,13 @@ def verify_code(secret: str, code: str) -> bool:
     if not secret or not code or len(code) != 6 or not code.isdigit():
         return False
     try:
-        return pyotp.TOTP(secret).verify(code, valid_window=1)
+        step = int(time.time()) // 30
+        for counter in (step - 1, step, step + 1):
+            if hmac.compare_digest(_totp_code(secret, counter), code):
+                return True
     except Exception:
         return False
+    return False
 
 
 def _normalize_totp(code: str) -> str:
@@ -229,7 +254,7 @@ def _normalize_totp(code: str) -> str:
         >>> _normalize_totp("12 34 56")
         '123456'
     """
-    return re.sub(r"\s+", "", code or "")
+    return "".join(ch for ch in (code or "") if not ch.isspace())
 
 
 def _normalize_recovery(code: str) -> str:
