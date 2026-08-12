@@ -380,7 +380,7 @@ def register(app):
             cur.execute("SELECT api.team_role(%s) AS r", (str(project["team_id"]),))
             team_role = (cur.fetchone() or {}).get("r")
             # Project delete: team owner/admin (matches projects_delete RLS)
-            can_delete = team_role in ("owner", "admin")
+            can_delete = team_role in ("team-owner", "team-admin")
             # Settings: project admins manage members; team owner/admin also see danger zone
             can_settings = bool(can_admin or can_delete)
 
@@ -643,7 +643,7 @@ def register(app):
                 flash("Project not found", "error")
                 return redirect(url_for("projects_list"))
             team_id = row["team_id"]
-            if row["r"] not in ("owner", "admin"):
+            if row["r"] not in ("team-owner", "team-admin"):
                 flash("Only team owners or admins can delete projects", "error")
                 return redirect(url_for("project_detail", project_id=project_id))
             cur.execute("DELETE FROM api.projects WHERE id = %s", (str(project_id),))

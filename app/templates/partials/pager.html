@@ -10,7 +10,7 @@
   'project': pager.project if pager else none,
   'kind': pager.kind if pager else none,
   'due': pager.due if pager else none,
-  'acl': pager.acl if pager else none,
+  'access_mode': pager.access_mode if pager else none,
   'scope': pager.scope if pager else none,
 } %}
 {% if pager and pager.total > pager.per_page %}
@@ -60,5 +60,5 @@
   </menu>
 </nav>
 {% elif pager and pager.total > 0 %}
-<p class="muted pager-count">Showing {{ pager.start }}–{{ pager.end }} of {{ pager.total }}{% if pager.q or pager.project or pager.kind or pager.due or pager.acl or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>
+<p class="muted pager-count">Showing {{ pager.start }}–{{ pager.end }} of {{ pager.total }}{% if pager.q or pager.project or pager.kind or pager.due or pager.access_mode or pager.actor or pager.action or pager.since or pager.until %} matching filters{% endif %}</p>
 {% endif %}

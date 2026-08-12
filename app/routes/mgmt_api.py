@@ -160,7 +160,7 @@ def register(app):
         with db.as_user(uid) as conn, conn.cursor() as cur:
             sql = """
                 SELECT t.id, t.name, t.created_at,
-                  COALESCE(api.team_role(t.id), 'owner') AS role,
+                  COALESCE(api.team_role(t.id), 'team-owner') AS role,
                   (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
                 FROM api.teams t
                 WHERE (%s OR api.is_team_member(t.id))
@@ -294,7 +294,7 @@ def register(app):
             # M1: only team owners may assign owner
             cur.execute("SELECT api.team_role(%s::uuid) AS r", (tid,))
             my_role = (cur.fetchone() or {}).get("r")
-            if role == "team-owner" and my_role != "owner":
+            if role == "team-owner" and my_role != "team-owner":
                 return jsonify({"error": "only a team owner can grant owner"}), 403
             mid = _lookup_user_id(cur, email)
             if not mid:
@@ -751,9 +751,9 @@ def register(app):
             return err
         body = request.get_json(silent=True) or {}
         name = (body.get("name") or "machine").strip() or "machine"
-        role = (body.get("role") or "reveal").strip()
+        role = (body.get("role") or "service-reveal").strip()
         if role not in config.MACHINE_TOKEN_ROLES:
-            role = "reveal"
+            role = "service-reveal"
         expires_at = None
         days = body.get("expires_days")
         if days is not None:

@@ -181,7 +181,7 @@ class TestLDAPMaps:
                     'id': uuid4(),
                     'team_id': tid,
                     'ldap_group': 'admins',
-                    'role': 'admin',
+                    'role': 'team-admin',
                 }
             ],
             [],  # api.groups with external_key

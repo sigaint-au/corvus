@@ -82,7 +82,7 @@ class TestTeams:
             if 'from api.teams' in s and 'where id' in s:
                 return {'id': tid, 'name': 'T'}
             if 'api.team_role' in s or 'select role from api.team_members' in s:
-                return {'r': 'owner', 'role': 'owner'}
+                return {'r': 'team-owner', 'role': 'team-owner'}
             return None
         conn, cur = _conn(fetchone=fetchone, fetchall=[])
         cur.execute.side_effect = execute
@@ -96,7 +96,6 @@ class TestTeams:
         assert b'?tab=settings' in r.data
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
         assert 'from api.projects' in sql
-        assert 'team_member_rows' not in sql
 
     def test_team_detail_members_tab(self):
         tid = uuid4()
@@ -110,7 +109,7 @@ class TestTeams:
             if 'from api.teams' in s and 'where id' in s:
                 return {'id': tid, 'name': 'T'}
             if 'api.team_role' in s or 'select role from api.team_members' in s:
-                return {'r': 'owner', 'role': 'owner'}
+                return {'r': 'team-owner', 'role': 'team-owner'}
             return None
         conn, cur = _conn(fetchone=fetchone, fetchall=[])
         cur.execute.side_effect = execute
@@ -145,7 +144,7 @@ class TestTeams:
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         assert 'GRANT SELECT ON api.user_directory TO authenticated' not in init
         assert 'private.lookup_user' in init
-        assert 'private.team_member_rows' in init
+        assert 'private.team_member_rows' in (REPO_ROOT / 'db' / 'rbac.sql').read_text()
 
     def test_non_member_cannot_self_join(self):
         """RLS must reject binding insert when the actor cannot manage team RBAC."""
@@ -164,7 +163,7 @@ class TestTeams:
         def fetchone():
             s = last['s']
             if 'team_role' in s:
-                return {'r': 'member'}
+                return {'r': 'team-member'}
             if 'lookup_user' in s:
                 return {'id': self.uid}
             if 'from rbac.roles' in s:
@@ -188,20 +187,12 @@ class TestTeams:
         assert any('row-level security' in msg for _cat, msg in flashes)
 
     def test_tm_insert_policy_forbids_self_join(self):
-        """Policy must require owner/admin — no user_id = current_user escape hatch."""
+        """RBAC bindings write policy must require can_manage_rbac — no self-join escape hatch."""
         from pathlib import Path
-        init_sql = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        start = init_sql.index('CREATE POLICY tm_insert ON api.team_members')
-        end = init_sql.index(';', start)
-        policy = init_sql[start:end]
-        assert "api.team_role(team_id) IN ('owner', 'admin')" in policy
-        assert 'user_id = api.current_user_id()' not in policy
-        src = Path(schema_mod.__file__).read_text()
-        assert 'DROP POLICY IF EXISTS tm_insert ON api.team_members' in src
-        ensure_start = src.index('DROP POLICY IF EXISTS tm_insert ON api.team_members')
-        ensure_chunk = src[ensure_start:ensure_start + 280]
-        assert "api.team_role(team_id) IN ('owner', 'admin')" in ensure_chunk
-        assert 'user_id = api.current_user_id()' not in ensure_chunk
+        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'rbac_bindings_write' in rbac_sql
+        assert 'can_manage_rbac' in rbac_sql
+        assert 'user_id = api.current_user_id()' not in rbac_sql.split('rbac_bindings_write')[1].split('CREATE POLICY')[0]
 
     def test_team_roles_include_viewer(self):
         assert 'team-viewer' in [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
@@ -255,7 +246,7 @@ class TestTeams:
 
     def test_delete_project_admin_ok(self):
         tid, pid = (uuid4(), uuid4())
-        conn, cur = _conn(fetchone={'r': 'admin'})
+        conn, cur = _conn(fetchone={'r': 'team-admin'})
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/teams/{tid}/projects/{pid}/delete', follow_redirects=False)
@@ -265,7 +256,7 @@ class TestTeams:
 
     def test_delete_project_member_denied(self):
         tid, pid = (uuid4(), uuid4())
-        conn, _ = _conn(fetchone={'r': 'member'})
+        conn, _ = _conn(fetchone={'r': 'team-member'})
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/teams/{tid}/projects/{pid}/delete', follow_redirects=False)
         assert r.status_code == 302

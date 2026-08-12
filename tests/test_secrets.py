@@ -27,11 +27,11 @@ class TestSecrets:
             s['user_id'] = self.uid
             s['email'] = 'u@ex.com'
 
-    def _project_conn(self, tab='secrets', can_write=True, can_admin=None, team_role='owner', secrets=None, tokens=None, audit_log=None, access_requests=None, total=None, pending_count=0):
+    def _project_conn(self, tab='secrets', can_write=True, can_admin=None, team_role='team-owner', secrets=None, tokens=None, audit_log=None, access_requests=None, total=None, pending_count=0):
         """as_user used by project_detail (tab-scoped queries)."""
         project = {'id': self.pid, 'name': 'prod', 'team_name': 'Ops', 'team_id': uuid4()}
         if can_admin is None:
-            can_admin = team_role in ('owner', 'admin')
+            can_admin = team_role in ('team-owner', 'team-admin')
         rows = secrets or [] if tab == 'secrets' else audit_log or [] if tab == 'audit' else tokens or []
         if total is None:
             total = len(rows)
@@ -92,7 +92,7 @@ class TestSecrets:
 
     def test_delete_project_route_owner_ok(self):
         tid = uuid4()
-        conn, cur = _conn(fetchone={'team_id': tid, 'r': 'owner'})
+        conn, cur = _conn(fetchone={'team_id': tid, 'r': 'team-owner'})
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/delete', follow_redirects=False)
@@ -110,7 +110,7 @@ class TestSecrets:
         conn.commit.assert_not_called()
 
     def test_project_settings_tab_shows_members_and_delete_for_owner(self):
-        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='owner')):
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='team-owner')):
             r = self.client.get(f'/projects/{self.pid}?tab=settings')
         assert r.status_code == 200
         assert b'Settings' in r.data
@@ -121,14 +121,14 @@ class TestSecrets:
 
     def test_project_settings_hidden_for_writer_without_admin(self):
         """Project write without admin cannot manage members; Settings tab hidden."""
-        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='member', can_write=True, can_admin=False)):
+        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='team-member', can_write=True, can_admin=False)):
             r = self.client.get(f'/projects/{self.pid}')
         assert r.status_code == 200
         assert b'?tab=settings' not in r.data
         assert b'Delete project' not in r.data
 
     def test_project_settings_tab_hidden_for_viewer(self):
-        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='viewer', can_write=False, can_admin=False)):
+        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='team-viewer', can_write=False, can_admin=False)):
             r = self.client.get(f'/projects/{self.pid}')
         assert r.status_code == 200
         assert b'?tab=settings' not in r.data
@@ -136,14 +136,14 @@ class TestSecrets:
 
     def test_project_admin_settings_members_without_delete(self):
         """Project admin can manage members; team member cannot delete project."""
-        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='member', can_write=True, can_admin=True)):
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='team-member', can_write=True, can_admin=True)):
             r = self.client.get(f'/projects/{self.pid}?tab=settings')
         assert r.status_code == 200
         assert b'Settings' in r.data
         assert b'Delete project' not in r.data
 
     def test_project_secrets_tab_no_danger_zone(self):
-        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='owner')):
+        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='team-owner')):
             r = self.client.get(f'/projects/{self.pid}?tab=secrets')
         assert r.status_code == 200
         assert b'Settings' in r.data

@@ -136,7 +136,7 @@ def register(app):
             can_edit_access = bool((cur.fetchone() or {}).get("ok"))
             # Team owner/admin, global admin, or anyone who can manage bindings
             is_admin = (
-                my_role in ("owner", "admin")
+                my_role in ("team-owner", "team-admin")
                 or bool(session.get("is_global_admin"))
                 or can_edit_access
             )
@@ -441,7 +441,7 @@ def register(app):
             # M1: only team owners may assign owner (admins cannot self-promote)
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             my_role = (cur.fetchone() or {}).get("r")
-            if role == "team-owner" and my_role != "owner":
+            if role == "team-owner" and my_role != "team-owner":
                 flash("Only a team owner can grant the owner role", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
@@ -560,7 +560,7 @@ def register(app):
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-            if (cur.fetchone() or {}).get("r") != "owner":
+            if (cur.fetchone() or {}).get("r") != "team-owner":
                 flash("Only owners can transfer ownership", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
@@ -798,7 +798,7 @@ def register(app):
         """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-            if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
+            if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
                 flash("Only owners or admins can approve join requests", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute(
@@ -869,7 +869,7 @@ def register(app):
         """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-            if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
+            if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
                 flash("Only owners or admins can reject join requests", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute(
@@ -910,7 +910,7 @@ def register(app):
         """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-            if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
+            if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
                 flash("Only owners or admins can change team settings", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             default_token_days = None
@@ -1199,7 +1199,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             row = cur.fetchone()
-            if not row or row["r"] != "owner":
+            if not row or row["r"] != "team-owner":
                 flash("Only team owners can delete a team", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             try:
@@ -1238,7 +1238,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             row = cur.fetchone()
-            if not row or row["r"] not in ("owner", "admin"):
+            if not row or row["r"] not in ("team-owner", "team-admin"):
                 flash("Only team owners or admins can delete projects", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
             cur.execute(
@@ -1271,7 +1271,7 @@ def register(app):
                 return "Not found", 404
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             my_role = (cur.fetchone() or {}).get("r")
-            is_admin = my_role in ("owner", "admin") or bool(
+            is_admin = my_role in ("team-owner", "team-admin") or bool(
                 session.get("is_global_admin")
             )
             cur.execute(

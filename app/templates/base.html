@@ -2666,7 +2666,7 @@
       }
       function syncRole() {
         if (!writeWarn || !roleSel) return;
-        writeWarn.hidden = roleSel.value !== 'write';
+        writeWarn.hidden = roleSel.value !== 'service-write';
       }
       if (toggle) toggle.addEventListener('change', syncScope);
       if (roleSel) roleSel.addEventListener('change', syncRole);

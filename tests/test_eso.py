@@ -228,7 +228,7 @@ class TestESO:
         conn, cur = _conn()
         cur.fetchone.side_effect = [
             {'id': tid},     # _resolve_team by uuid
-            {'r': 'admin'},  # api.team_role -> requestor is only an admin
+            {'r': 'team-admin'},  # api.team_role -> requestor is only a team-admin
             {'id': str(mid)},  # would-be user lookup (must not be reached)
         ]
         with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
@@ -301,9 +301,9 @@ class TestESO:
         assert inserts == []
 
     def test_machine_token_roles_config(self):
-        assert 'reveal' in config.MACHINE_TOKEN_ROLES
-        assert 'write' in config.MACHINE_TOKEN_ROLES
-        assert 'read' in config.MACHINE_TOKEN_ROLES
+        assert 'service-reveal' in config.MACHINE_TOKEN_ROLES
+        assert 'service-write' in config.MACHINE_TOKEN_ROLES
+        assert 'service-read' in config.MACHINE_TOKEN_ROLES
         assert config.MAX_EXPIRY_DAYS == 3650
         assert config.MAX_CONTENT_LENGTH >= 64 * 1024
         assert store.app.config.get('MAX_CONTENT_LENGTH') == config.MAX_CONTENT_LENGTH

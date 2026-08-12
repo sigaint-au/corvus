@@ -155,14 +155,42 @@ def ensure_schema():
         DO $$ BEGIN
           ALTER TABLE api.team_ldap_maps
             ADD CONSTRAINT team_ldap_maps_role_check
-            CHECK (role IN ('owner', 'admin', 'member', 'viewer'));
+            CHECK (role IN ('team-owner', 'team-admin', 'team-member', 'team-viewer'));
         EXCEPTION WHEN others THEN NULL;
+        END $$
+        """,
+        """
+        -- Migrate legacy role values to RBAC role names
+        DO $$
+        BEGIN
+          IF to_regclass('api.team_ldap_maps') IS NOT NULL THEN
+            UPDATE api.team_ldap_maps SET role = 'team-owner' WHERE role = 'owner';
+            UPDATE api.team_ldap_maps SET role = 'team-admin' WHERE role = 'admin';
+            UPDATE api.team_ldap_maps SET role = 'team-member' WHERE role = 'member';
+            UPDATE api.team_ldap_maps SET role = 'team-viewer' WHERE role = 'viewer';
+          END IF;
+          IF to_regclass('api.team_oidc_maps') IS NOT NULL THEN
+            UPDATE api.team_oidc_maps SET role = 'team-owner' WHERE role = 'owner';
+            UPDATE api.team_oidc_maps SET role = 'team-admin' WHERE role = 'admin';
+            UPDATE api.team_oidc_maps SET role = 'team-member' WHERE role = 'member';
+            UPDATE api.team_oidc_maps SET role = 'team-viewer' WHERE role = 'viewer';
+          END IF;
+          IF to_regclass('api.team_invites') IS NOT NULL THEN
+            UPDATE api.team_invites SET role = 'team-admin' WHERE role = 'admin';
+            UPDATE api.team_invites SET role = 'team-member' WHERE role = 'member';
+            UPDATE api.team_invites SET role = 'team-viewer' WHERE role = 'viewer';
+          END IF;
+          IF to_regclass('api.team_join_requests') IS NOT NULL THEN
+            UPDATE api.team_join_requests SET role = 'team-admin' WHERE role = 'admin';
+            UPDATE api.team_join_requests SET role = 'team-member' WHERE role = 'member';
+            UPDATE api.team_join_requests SET role = 'team-viewer' WHERE role = 'viewer';
+          END IF;
         END $$
         """,
         "DROP POLICY IF EXISTS projects_insert ON api.projects",
         """
         CREATE POLICY projects_insert ON api.projects FOR INSERT TO authenticated
-          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin', 'member'))
+          WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin', 'team-member'))
         """,
         "DROP POLICY IF EXISTS projects_update ON api.projects",
         """
@@ -351,17 +379,17 @@ def ensure_schema():
         "DROP POLICY IF EXISTS tlm_insert ON api.team_ldap_maps",
         """
         CREATE POLICY tlm_insert ON api.team_ldap_maps FOR INSERT TO authenticated
-          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+          WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS tlm_update ON api.team_ldap_maps",
         """
         CREATE POLICY tlm_update ON api.team_ldap_maps FOR UPDATE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS tlm_delete ON api.team_ldap_maps",
         """
         CREATE POLICY tlm_delete ON api.team_ldap_maps FOR DELETE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_ldap_maps TO authenticated",
         "GRANT ALL ON api.team_ldap_maps TO authenticator",
@@ -393,17 +421,17 @@ def ensure_schema():
         "DROP POLICY IF EXISTS tom_insert ON api.team_oidc_maps",
         """
         CREATE POLICY tom_insert ON api.team_oidc_maps FOR INSERT TO authenticated
-          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+          WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS tom_update ON api.team_oidc_maps",
         """
         CREATE POLICY tom_update ON api.team_oidc_maps FOR UPDATE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS tom_delete ON api.team_oidc_maps",
         """
         CREATE POLICY tom_delete ON api.team_oidc_maps FOR DELETE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_oidc_maps TO authenticated",
         "GRANT ALL ON api.team_oidc_maps TO authenticator",
@@ -584,7 +612,7 @@ def ensure_schema():
         RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api AS $$
         DECLARE sid uuid;
         BEGIN
-          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
             RETURN NULL;
           END IF;
           IF p_key IS NULL OR btrim(p_key) = '' THEN
@@ -697,7 +725,7 @@ def ensure_schema():
         """,
         """
         ALTER TABLE api.machine_tokens
-          ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'reveal'
+          ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'service-reveal'
         """,
         """
         ALTER TABLE api.machine_tokens
@@ -715,9 +743,19 @@ def ensure_schema():
           ALTER TABLE api.machine_tokens DROP CONSTRAINT IF EXISTS machine_tokens_role_check;
           ALTER TABLE api.machine_tokens
             ADD CONSTRAINT machine_tokens_role_check
-            CHECK (role IN ('read', 'reveal', 'write'));
+            CHECK (role IN ('service-read', 'service-reveal', 'service-write'));
         EXCEPTION WHEN others THEN NULL;
         END $$
+        """,
+        """
+        -- Migrate machine token roles to RBAC service role names
+        UPDATE api.machine_tokens SET role = 'service-read' WHERE role IN ('read', 'read-only')
+        """,
+        """
+        UPDATE api.machine_tokens SET role = 'service-reveal' WHERE role = 'reveal'
+        """,
+        """
+        UPDATE api.machine_tokens SET role = 'service-write' WHERE role = 'write'
         """,
         """
         CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
@@ -779,7 +817,7 @@ def ensure_schema():
           sid uuid;
           k text := COALESCE(NULLIF(btrim(p_kind), ''), 'plain');
         BEGIN
-          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
             RETURN NULL;
           END IF;
           IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
@@ -1047,28 +1085,28 @@ def ensure_schema():
         "DROP POLICY IF EXISTS team_invites_select ON api.team_invites",
         """
         CREATE POLICY team_invites_select ON api.team_invites FOR SELECT TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS team_invites_insert ON api.team_invites",
         """
         CREATE POLICY team_invites_insert ON api.team_invites FOR INSERT TO authenticated
-          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+          WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS team_invites_update ON api.team_invites",
         """
         CREATE POLICY team_invites_update ON api.team_invites FOR UPDATE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS team_invites_delete ON api.team_invites",
         """
         CREATE POLICY team_invites_delete ON api.team_invites FOR DELETE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS team_join_requests_select ON api.team_join_requests",
         """
         CREATE POLICY team_join_requests_select ON api.team_join_requests FOR SELECT TO authenticated
           USING (
-            api.team_role(team_id) IN ('owner', 'admin')
+            api.team_role(team_id) IN ('team-owner', 'team-admin')
             OR user_id = api.current_user_id()
           )
         """,
@@ -1080,7 +1118,7 @@ def ensure_schema():
         "DROP POLICY IF EXISTS team_join_requests_update ON api.team_join_requests",
         """
         CREATE POLICY team_join_requests_update ON api.team_join_requests FOR UPDATE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS org_audit_select ON api.org_audit",
         """
@@ -1676,20 +1714,11 @@ def ensure_schema():
                            COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid))
         """,
         """
-        CREATE OR REPLACE FUNCTION api._perm_rank(p text) RETURNS int
-        LANGUAGE sql IMMUTABLE AS $$
-          SELECT CASE p
-            WHEN 'read' THEN 1
-            WHEN 'reveal' THEN 2
-            WHEN 'write' THEN 3
-            ELSE 0
-          END;
-        $$
+        -- _perm_rank removed: rbac.sql provides RBAC-based authorization
         """,
         # Row-based ACL (INSERT RETURNING cannot re-query the new secrets row)
 
 
-        "GRANT EXECUTE ON FUNCTION api._perm_rank TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon",
         "GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon",
         # Secrets RLS: row-based ACL (safe for INSERT … RETURNING)
@@ -1811,17 +1840,17 @@ def ensure_schema():
         "DROP POLICY IF EXISTS groups_insert ON api.groups",
         """
         CREATE POLICY groups_insert ON api.groups FOR INSERT TO authenticated
-          WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'))
+          WITH CHECK (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS groups_update ON api.groups",
         """
         CREATE POLICY groups_update ON api.groups FOR UPDATE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS groups_delete ON api.groups",
         """
         CREATE POLICY groups_delete ON api.groups FOR DELETE TO authenticated
-          USING (api.team_role(team_id) IN ('owner', 'admin'))
+          USING (api.team_role(team_id) IN ('team-owner', 'team-admin'))
         """,
         "DROP POLICY IF EXISTS gm_select ON api.group_members",
         """
@@ -1839,7 +1868,7 @@ def ensure_schema():
           WITH CHECK (
             EXISTS (
               SELECT 1 FROM api.groups g
-              WHERE g.id = group_id AND api.team_role(g.team_id) IN ('owner', 'admin')
+              WHERE g.id = group_id AND api.team_role(g.team_id) IN ('team-owner', 'team-admin')
             )
           )
         """,
@@ -1849,7 +1878,7 @@ def ensure_schema():
           USING (
             EXISTS (
               SELECT 1 FROM api.groups g
-              WHERE g.id = group_id AND api.team_role(g.team_id) IN ('owner', 'admin')
+              WHERE g.id = group_id AND api.team_role(g.team_id) IN ('team-owner', 'team-admin')
             )
           )
         """,
@@ -1859,7 +1888,7 @@ def ensure_schema():
           USING (
             EXISTS (
               SELECT 1 FROM api.groups g
-              WHERE g.id = group_id AND api.team_role(g.team_id) IN ('owner', 'admin')
+              WHERE g.id = group_id AND api.team_role(g.team_id) IN ('team-owner', 'team-admin')
             )
             OR user_id = api.current_user_id()
           )
@@ -2197,7 +2226,7 @@ def ensure_schema():
         SET row_security = off AS $$
         DECLARE sid uuid;
         BEGIN
-          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
             RETURN NULL;
           END IF;
           IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
@@ -2207,7 +2236,7 @@ def ensure_schema():
             RETURN NULL;
           END IF;
           UPDATE api.secrets
-          SET deleted_at = now()
+          SET deleted_at = now
           WHERE project_id = p_project AND key = p_key AND deleted_at IS NULL
           RETURNING id INTO sid;
           RETURN sid;
@@ -2232,7 +2261,7 @@ def ensure_schema():
           sid uuid;
           k text := COALESCE(NULLIF(btrim(p_kind), ''), 'plain');
         BEGIN
-          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
             RETURN NULL;
           END IF;
           IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN

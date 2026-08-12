@@ -122,9 +122,9 @@ def register(app):
             POST /projects/<project_id>/tokens with name, role, expires_days form fields
         """
         name = request.form.get("name", "machine").strip() or "machine"
-        role = (request.form.get("role") or "reveal").strip()
+        role = (request.form.get("role") or "service-reveal").strip()
         if role not in config.MACHINE_TOKEN_ROLES:
-            role = "reveal"
+            role = "service-reveal"
         return_tab = (request.form.get("return_tab") or "tokens").strip().lower()
         if return_tab not in (
             "secrets",

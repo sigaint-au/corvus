@@ -332,9 +332,9 @@ class TestAuth:
                      'grant_subject': 'platform-ops', 'created_at': '2026-01-03'},
                 ]
             if 'from api.teams t' in s:
-                return [{'id': tid, 'name': 'Platform', 'role': 'owner', 'source': 'manual', 'created_at': '2026-01-02', 'project_count': 1}]
+                return [{'id': tid, 'name': 'Platform', 'role': 'team-owner', 'source': 'manual', 'created_at': '2026-01-02', 'project_count': 1}]
             if 'from api.projects p' in s:
-                return [{'id': pid, 'name': 'API', 'created_at': '2026-01-03', 'team_id': tid, 'team_name': 'Platform', 'team_role': 'owner', 'project_role': None, 'secret_count': 3}]
+                return [{'id': pid, 'name': 'API', 'created_at': '2026-01-03', 'team_id': tid, 'team_name': 'Platform', 'team_role': 'team-owner', 'project_role': None, 'secret_count': 3}]
             if 'team_join_requests' in s:
                 return []
             if 'secret_pins pin' in s or 'from api.secret_pins pin' in s:
@@ -376,7 +376,7 @@ class TestAuth:
         assert r_teams.status_code == 200
         assert b'Platform' in r_teams.data
         assert b'Your role' in r_teams.data
-        assert b'owner' in r_teams.data
+        assert b'team-owner' in r_teams.data
         with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn):
             r_proj = self.client.get('/profile?tab=projects')
         assert r_proj.status_code == 200

@@ -90,9 +90,10 @@ def test_service_dropdown_has_new_roles():
 
 
 def test_machine_token_roles_updated():
-    assert "read" in config.MACHINE_TOKEN_ROLES
-    assert "reveal" in config.MACHINE_TOKEN_ROLES
-    assert "write" in config.MACHINE_TOKEN_ROLES
+    assert "service-read" in config.MACHINE_TOKEN_ROLES
+    assert "service-reveal" in config.MACHINE_TOKEN_ROLES
+    assert "service-write" in config.MACHINE_TOKEN_ROLES
+    assert "read" not in config.MACHINE_TOKEN_ROLES
     assert "read-only" not in config.MACHINE_TOKEN_ROLES
 
 

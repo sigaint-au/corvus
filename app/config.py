@@ -127,8 +127,8 @@ DEFAULT_SETTINGS = {
 }
 # Invite / join-request roles (cannot self-invite as owner) — rbac.roles names
 INVITE_ROLES = ("team-admin", "team-member", "team-viewer")
-# Machine accounts / ESO tokens: read (metadata), reveal (metadata + plaintext), write (read + write)
-MACHINE_TOKEN_ROLES = ("read", "reveal", "write")
+# Machine accounts / ESO tokens: service-read (metadata), service-reveal (metadata + plaintext), service-write (read + write)
+MACHINE_TOKEN_ROLES = ("service-read", "service-reveal", "service-write")
 
 # ── Kubernetes-style RBAC (Subjects + Roles + Bindings) ───────────────
 # Familiar dropdown labels map to built-in rbac.roles names.

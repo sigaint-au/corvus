@@ -105,8 +105,10 @@ class TestOrgAccess:
         src = Path(schema_mod.__file__).read_text()
         assert 'USING (api.can_admin_project(id))' in init
         assert 'USING (api.can_admin_project(id))' in src
-        assert "role IS DISTINCT FROM 'owner'" in init
-        assert "role IS DISTINCT FROM 'owner'" in src
+        # Legacy tm_insert policy removed from init.sql; RBAC bindings write policy in rbac.sql
+        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'rbac_bindings_write' in rbac_sql
+        assert 'can_manage_rbac' in rbac_sql
         assert 'CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT' not in init
         assert 'REVOKE INSERT, UPDATE, DELETE ON api.secret_versions FROM authenticated' in init
         assert 'SECURITY DEFINER' in init.split('archive_secret_version')[1][:400]
@@ -252,14 +254,14 @@ class TestOrgAccess:
         assert 'team_role' not in init[gstart:gend]
 
     def test_can_access_secret_row_behavioral_matrix(self):
-        """Expected outcomes for can_access_secret_row (mirrors SQL CASE).
+        """Expected outcomes for can_access_secret_row (mirrors rbac.sql CASE).
 
         Pure-Python stand-in of the SECURITY DEFINER helper so we can assert
-        mode × need without a live Postgres. Keep in sync with init.sql.
+        mode × need without a live Postgres. Keep in sync with rbac.sql.
         """
         perm_rank = {'read': 1, 'reveal': 2, 'write': 3}
 
-        def row_access(*, mode, need, deleted=False, can_read=True, can_write=False, can_admin=False, is_global=False, team_role=None, grants=None):
+        def row_access(*, mode, need, deleted=False, can_read=True, can_write=False, can_admin=False, is_global=False, grants=None):
             if deleted or not need or need not in perm_rank:
                 return False
             if not can_read and (not is_global):
@@ -269,13 +271,7 @@ class TestOrgAccess:
             mode = mode or 'inherit'
             if mode == 'inherit':
                 return can_write if need == 'write' else True
-            if mode == 'writers':
-                return can_write
-            if mode == 'admins':
-                return False
-            if mode == 'owners':
-                return team_role == 'owner'
-            if mode in ('custom', 'restricted'):
+            if mode == 'restricted':
                 grants = grants or []
                 need_r = perm_rank[need]
                 return any((perm_rank.get(g, 0) >= need_r for g in grants))
@@ -284,38 +280,28 @@ class TestOrgAccess:
         assert row_access(mode='inherit', need='reveal', can_read=True)
         assert not row_access(mode='inherit', need='write', can_read=True, can_write=False)
         assert row_access(mode='inherit', need='write', can_read=True, can_write=True)
-        assert not row_access(mode='writers', need='read', can_read=True, can_write=False)
-        assert row_access(mode='writers', need='read', can_read=True, can_write=True)
-        assert not row_access(mode='admins', need='reveal', can_read=True, can_write=True)
-        assert row_access(mode='admins', need='reveal', can_admin=True)
-        assert not row_access(mode='owners', need='read', can_read=True, team_role='admin')
-        assert row_access(mode='owners', need='read', can_read=True, team_role='owner')
         assert not row_access(mode='restricted', need='reveal', can_read=True, grants=['read'])
         assert row_access(mode='restricted', need='reveal', can_read=True, grants=['reveal'])
         assert row_access(mode='restricted', need='read', can_read=True, grants=['write'])
         assert not row_access(mode='restricted', need='write', can_read=True, grants=['reveal'])
-        # Legacy 'custom' alias works the same as 'restricted'
-        assert not row_access(mode='custom', need='reveal', can_read=True, grants=['read'])
-        assert row_access(mode='custom', need='reveal', can_read=True, grants=['reveal'])
         assert not row_access(mode='inherit', need='read', deleted=True)
         assert not row_access(mode='inherit', need='read', can_read=False)
 
     def test_org_groups_rbac_schema(self):
-        """Groups tables, group-aware RBAC helpers, secret ACL group grants."""
+        """Groups tables and group-aware RBAC helpers."""
         from pathlib import Path
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         assert 'CREATE TABLE api.groups' in init
         assert 'CREATE TABLE api.group_members' in init
-        assert 'CREATE TABLE api.project_group_roles' in init
         assert 'external_key' in init
-        assert 'api.project_role' in init
-        assert 'api._role_rank' in init
-        assert 'group_id' in init
         assert 'group_members gm' in init
-        assert 'g.team_role IS NOT NULL' in init
+        # Legacy tables removed from init.sql
+        assert 'CREATE TABLE api.project_group_roles' not in init
+        assert 'api._role_rank' not in init
+        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'api.project_role' in rbac_sql
         src = Path(schema_mod.__file__).read_text()
         assert 'CREATE TABLE IF NOT EXISTS api.groups' in src
-        assert 'project_group_roles' in src
         assert 'team_group_rows' in src
         assert 'DROP TABLE IF EXISTS api.secret_acl' in src
         teams_src = (APP_ROOT / 'routes' / 'teams.py').read_text()

@@ -286,6 +286,22 @@ DROP TABLE IF EXISTS api.project_group_roles CASCADE;
 DROP TABLE IF EXISTS api.project_members CASCADE;
 DROP TABLE IF EXISTS api.team_members CASCADE;
 ALTER TABLE api.groups DROP COLUMN IF EXISTS team_role;
+
+-- Migrate machine token roles to RBAC service role names
+DO $$
+BEGIN
+  IF to_regclass('api.machine_tokens') IS NOT NULL THEN
+    UPDATE api.machine_tokens SET role = 'service-read' WHERE role IN ('read', 'read-only');
+    UPDATE api.machine_tokens SET role = 'service-reveal' WHERE role = 'reveal';
+    UPDATE api.machine_tokens SET role = 'service-write' WHERE role = 'write';
+    -- Drop old CHECK and add new one
+    ALTER TABLE api.machine_tokens DROP CONSTRAINT IF EXISTS machine_tokens_role_check;
+    ALTER TABLE api.machine_tokens
+      ADD CONSTRAINT machine_tokens_role_check
+      CHECK (role IN ('service-read', 'service-reveal', 'service-write'));
+  END IF;
+EXCEPTION WHEN others THEN NULL;
+END $$;
 -- ── Scope ancestry: secret → project → team → cluster ────────────────
 CREATE OR REPLACE FUNCTION api.rbac_scope_chain(
   p_scope_kind text,
@@ -451,7 +467,7 @@ LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, rbac, private
 SET row_security = off AS $$
   SELECT CASE
-    WHEN api.is_global_admin() THEN 'owner'
+    WHEN api.is_global_admin() THEN 'team-owner'
     WHEN api.can('*', '*', 'team', tid)
       OR EXISTS (
         SELECT 1 FROM rbac.bindings b
@@ -459,7 +475,7 @@ SET row_security = off AS $$
         JOIN api.rbac_subjects(api.current_user_id()) s
           ON s.subject_kind = b.subject_kind AND s.subject_id = b.subject_id
         WHERE b.scope_kind = 'team' AND b.scope_id = tid AND r.name = 'team-owner'
-      ) THEN 'owner'
+      ) THEN 'team-owner'
     WHEN api.can('admin', 'projects', 'team', tid)
       OR EXISTS (
         SELECT 1 FROM rbac.bindings b
@@ -467,7 +483,7 @@ SET row_security = off AS $$
         JOIN api.rbac_subjects(api.current_user_id()) s
           ON s.subject_kind = b.subject_kind AND s.subject_id = b.subject_id
         WHERE b.scope_kind = 'team' AND b.scope_id = tid AND r.name = 'team-admin'
-      ) THEN 'admin'
+      ) THEN 'team-admin'
     WHEN api.can('create', 'secrets', 'team', tid)
       OR EXISTS (
         SELECT 1 FROM rbac.bindings b
@@ -475,9 +491,9 @@ SET row_security = off AS $$
         JOIN api.rbac_subjects(api.current_user_id()) s
           ON s.subject_kind = b.subject_kind AND s.subject_id = b.subject_id
         WHERE b.scope_kind = 'team' AND b.scope_id = tid AND r.name = 'team-member'
-      ) THEN 'member'
+      ) THEN 'team-member'
     WHEN api.can('get', 'projects', 'team', tid)
-      OR api.can('list', 'secrets', 'team', tid) THEN 'viewer'
+      OR api.can('list', 'secrets', 'team', tid) THEN 'team-viewer'
     ELSE NULL
   END;
 $$;
@@ -488,11 +504,11 @@ SET search_path = api, rbac, private
 SET row_security = off AS $$
   SELECT CASE
     WHEN api.can('admin', 'projects', 'project', pid)
-      OR api.can('*', '*', 'project', pid) THEN 'admin'
+      OR api.can('*', '*', 'project', pid) THEN 'project-admin'
     WHEN api.can('create', 'secrets', 'project', pid)
-      OR api.can('update', 'secrets', 'project', pid) THEN 'write'
+      OR api.can('update', 'secrets', 'project', pid) THEN 'project-write'
     WHEN api.can('get', 'projects', 'project', pid)
-      OR api.can('list', 'secrets', 'project', pid) THEN 'read'
+      OR api.can('list', 'secrets', 'project', pid) THEN 'project-read'
     ELSE NULL
   END;
 $$;
@@ -680,6 +696,64 @@ BEGIN
 END;
 $$;
 
+-- Team member listing via rbac.bindings (replaces legacy team_members queries)
+CREATE OR REPLACE FUNCTION private.team_member_rows(p_team uuid)
+RETURNS TABLE (role text, source text, user_id uuid, email text, name text)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private, rbac
+SET row_security = off AS $$
+  SELECT r.name AS role, COALESCE(b.source, 'manual') AS source,
+         u.id, u.email, u.name
+  FROM rbac.bindings b
+  JOIN rbac.roles r ON r.id = b.role_id
+  JOIN private.users u ON u.id = b.subject_id
+  WHERE b.scope_kind = 'team' AND b.scope_id = p_team
+    AND b.subject_kind = 'User'
+    AND api.is_team_member(p_team)
+  ORDER BY r.name, u.email;
+$$;
+GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated;
+
+-- Project member listing via rbac.bindings
+CREATE OR REPLACE FUNCTION private.project_member_rows(p_project uuid)
+RETURNS TABLE (role text, user_id uuid, email text, name text)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private, rbac
+SET row_security = off AS $$
+  SELECT r.name AS role, u.id, u.email, u.name
+  FROM rbac.bindings b
+  JOIN rbac.roles r ON r.id = b.role_id
+  JOIN private.users u ON u.id = b.subject_id
+  WHERE b.scope_kind = 'project' AND b.scope_id = p_project
+    AND b.subject_kind = 'User'
+    AND api.can_read_project(p_project)
+  ORDER BY r.name, u.email;
+$$;
+GRANT EXECUTE ON FUNCTION private.project_member_rows TO authenticator, authenticated;
+
+-- Project group role listing via rbac.bindings
+CREATE OR REPLACE FUNCTION private.project_group_role_rows(p_project uuid)
+RETURNS TABLE (
+  group_id uuid,
+  group_name text,
+  role text,
+  source text
+)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private, rbac
+SET row_security = off AS $$
+  SELECT g.id AS group_id, g.name AS group_name, r.name AS role,
+         COALESCE(b.source, 'manual') AS source
+  FROM rbac.bindings b
+  JOIN rbac.roles r ON r.id = b.role_id
+  JOIN api.groups g ON g.id = b.subject_id
+  WHERE b.scope_kind = 'project' AND b.scope_id = p_project
+    AND b.subject_kind = 'Group'
+    AND api.can_read_project(p_project)
+  ORDER BY g.name;
+$$;
+GRANT EXECUTE ON FUNCTION private.project_group_role_rows TO authenticator, authenticated;
+
 -- Who can manage RBAC at a scope?
 CREATE OR REPLACE FUNCTION api.can_manage_rbac(
   p_scope_kind text,
@@ -693,7 +767,7 @@ SET row_security = off AS $$
     OR api.can('*', '*', p_scope_kind, p_scope_id)
     OR (
       p_scope_kind = 'team'
-      AND api.team_role(p_scope_id) IN ('owner', 'admin')
+      AND api.team_role(p_scope_id) IN ('team-owner', 'team-admin')
     )
     OR (
       p_scope_kind = 'project'

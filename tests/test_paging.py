@@ -181,7 +181,7 @@ def test_load_team_secrets_page_applies_filters():
     assert pager["kind"] == "database"
     assert len(rows) == 1
     assert rows[0]["key"] == "DB_URL"
-    assert rows[0]["acl_restricted"] is False
+    assert rows[0]["access_restricted"] is False
     assert projects and projects[0]["name"] == "api"
     # count query includes kind + acl filters
     count_sql = cur.execute.call_args_list[0].args[0]

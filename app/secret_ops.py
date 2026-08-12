@@ -129,7 +129,7 @@ def _load_secrets_page(cur, project_id, page, q):
             r["approved_until"] = None
         mode = (r.get("access_mode") or "inherit").strip() or "inherit"
         r["access_mode"] = mode
-        r["acl_restricted"] = mode != "inherit"
+        r["access_restricted"] = mode != "inherit"
     return rows, pager
 
 
@@ -142,7 +142,7 @@ def _load_team_secrets_page(
     project=None,
     kind=None,
     due=None,
-    acl=None,
+    access_mode=None,
 ):
     """Count + page live secrets for a whole team with optional filters.
 
@@ -154,7 +154,7 @@ def _load_team_secrets_page(
         project: Optional project UUID filter.
         kind: Optional secret kind (plain, database, …).
         due: Optional expiry bucket: ``overdue``, ``soon``, or ``none``.
-        acl: Optional ACL filter: ``restricted`` (non-inherit) or ``inherit``.
+        access_mode: Optional access mode filter: ``restricted`` (non-inherit) or ``inherit``.
 
     Returns:
         ``(rows, pager, projects)`` — projects is ``[{id, name}, …]`` for filters.
@@ -167,9 +167,9 @@ def _load_team_secrets_page(
     if kind:
         where += " AND s.kind = %s"
         params.append(kind)
-    if acl == "restricted":
+    if access_mode == "restricted":
         where += " AND COALESCE(s.access_mode, 'inherit') <> 'inherit'"
-    elif acl == "inherit":
+    elif access_mode == "inherit":
         where += " AND COALESCE(s.access_mode, 'inherit') = 'inherit'"
     if due == "overdue":
         where += " AND s.expires_at IS NOT NULL AND s.expires_at < now()"
@@ -212,7 +212,7 @@ def _load_team_secrets_page(
         project=project or None,
         kind=kind or None,
         due=due or None,
-        acl=acl or None,
+        access_mode=access_mode or None,
     )
     cur.execute(
         f"""
@@ -231,7 +231,7 @@ def _load_team_secrets_page(
         r["due"] = secret_due_status(r)
         mode = (r.get("access_mode") or "inherit").strip() or "inherit"
         r["access_mode"] = mode
-        r["acl_restricted"] = mode != "inherit"
+        r["access_restricted"] = mode != "inherit"
     cur.execute(
         """
         SELECT id, name FROM api.projects
@@ -317,9 +317,6 @@ def _parse_access_mode(form_or_value) -> str:
     else:
         raw = form_or_value
     mode = (raw or "inherit").strip().lower()
-    if mode == "custom":
-        # Legacy value: custom meant "secret-scope bindings only" → restricted.
-        return "restricted"
     if mode not in config.ACCESS_MODES:
         return "inherit"
     return mode

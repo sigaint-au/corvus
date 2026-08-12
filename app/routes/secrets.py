@@ -189,7 +189,7 @@ def register(app):
         """List team secrets with pagination and filters.
 
         Query params: ``q``, ``page``, ``project`` (UUID), ``kind``, ``due``
-        (overdue|soon|none), ``acl`` (restricted|inherit).
+        (overdue|soon|none), ``access_mode`` (restricted|inherit).
 
         Example:
             GET /secrets?q=password&kind=database&page=2
@@ -204,9 +204,9 @@ def register(app):
         due = (request.args.get("due") or "").strip() or None
         if due not in ("overdue", "soon", "none", None):
             due = None
-        acl = (request.args.get("acl") or "").strip() or None
-        if acl not in ("restricted", "inherit", None):
-            acl = None
+        access_mode = (request.args.get("access_mode") or "").strip() or None
+        if access_mode not in ("restricted", "inherit", None):
+            access_mode = None
         team, secrets, team_projects = None, [], []
         secrets_pager = None
         if tid:
@@ -222,7 +222,7 @@ def register(app):
                         project=project,
                         kind=kind,
                         due=due,
-                        acl=acl,
+                        access_mode=access_mode,
                     )
         return render_template(
             "secrets.html",
@@ -234,7 +234,7 @@ def register(app):
             filter_project=project,
             filter_kind=kind,
             filter_due=due,
-            filter_acl=acl,
+            filter_access_mode=access_mode,
             secret_kinds=config.SECRET_KINDS,
         )
 
