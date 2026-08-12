@@ -796,3 +796,147 @@ CREATE TRIGGER bindings_guard_last_team_owner
 -- ── Drop legacy secret ACL (replaced by secret-scope rbac.bindings) ──
 DROP FUNCTION IF EXISTS private.secret_acl_rows(uuid);
 DROP TABLE IF EXISTS api.secret_acl CASCADE;
+
+
+-- ── Self-service: a user's own bindings across scopes (Profile → My access) ──
+CREATE OR REPLACE FUNCTION api.my_access_rows()
+RETURNS TABLE(
+  scope_kind text,
+  scope_label text,
+  role_name text,
+  role_description text,
+  grant_kind text,
+  grant_subject text,
+  created_at timestamptz
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = api, rbac, private, pg_catalog
+SET row_security = off AS $$
+DECLARE
+  uid uuid := api.current_user_id();
+BEGIN
+  IF uid IS NULL THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+  SELECT
+    b.scope_kind::text,
+    CASE b.scope_kind
+      WHEN 'cluster' THEN 'Global'::text
+      WHEN 'team' THEN t.name
+      WHEN 'project' THEN p.name
+      ELSE COALESCE(
+             CASE WHEN COALESCE(se.project_name, '') = '' THEN ''
+                  ELSE se.project_name || ' / ' END
+             || COALESCE(se.key, ''),
+             '')
+    END::text AS scope_label,
+    r.name::text AS role_name,
+    COALESCE(r.description, '')::text AS role_description,
+    CASE WHEN b.subject_kind = 'User' THEN 'Direct' ELSE 'Group' END::text AS grant_kind,
+    COALESCE(g.name, 'You')::text AS grant_subject,
+    b.created_at
+  FROM api.rbac_subjects(uid) sub
+  JOIN rbac.bindings b
+    ON b.subject_kind = sub.subject_kind
+   AND b.subject_id = sub.subject_id
+  JOIN rbac.roles r ON r.id = b.role_id
+  LEFT JOIN api.groups g ON b.subject_kind = 'Group' AND g.id = b.subject_id
+  LEFT JOIN api.teams t ON b.scope_kind = 'team' AND t.id = b.scope_id
+  LEFT JOIN api.projects p ON b.scope_kind = 'project' AND p.id = b.scope_id
+  LEFT JOIN LATERAL (
+    SELECT proj.name AS project_name, s.key
+    FROM api.secrets s
+    LEFT JOIN api.projects proj ON proj.id = s.project_id
+    WHERE s.id = b.scope_id
+  ) se ON b.scope_kind = 'secret'
+  ORDER BY b.scope_kind, 2, r.name;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION api.my_access_rows TO authenticator, authenticated, anon;
+
+-- ── Resource perspective: who can access a scope and why ────────────────
+-- Admin/manager-gated. Walks the scope inheritance chain (secret → project →
+-- team → cluster) and expands groups to members; appends global admins.
+CREATE OR REPLACE FUNCTION api.effective_access_rows(
+  p_scope_kind text,
+  p_scope_id uuid DEFAULT NULL
+)
+RETURNS TABLE(
+  subject_email text,
+  subject_name text,
+  subject_kind text,
+  scope_kind text,
+  scope_label text,
+  role_name text,
+  grant_kind text,
+  grant_subject text,
+  is_global_admin boolean
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path = api, rbac, private, pg_catalog
+SET row_security = off AS $$
+BEGIN
+  IF NOT (api.is_global_admin() OR api.can_manage_rbac(p_scope_kind, p_scope_id)) THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  WITH chain AS (
+    SELECT scope_kind::text, scope_id
+    FROM api.rbac_scope_chain(p_scope_kind, p_scope_id)
+  ),
+  labels AS (
+    SELECT 'cluster'::text AS scope_kind, NULL::uuid AS scope_id, 'Global'::text AS scope_label
+    UNION ALL
+    SELECT 'team', t.id, t.name FROM api.teams t
+    UNION ALL
+    SELECT 'project', p.id, p.name FROM api.projects p
+    UNION ALL
+    SELECT 'secret', s.id, COALESCE(p2.name, '') || ' / ' || s.key
+      FROM api.secrets s LEFT JOIN api.projects p2 ON p2.id = s.project_id
+  ),
+  grants AS (
+    SELECT b.subject_kind, b.subject_id, b.scope_kind, b.scope_id, r.name AS role_name
+    FROM rbac.bindings b
+    JOIN rbac.roles r ON r.id = b.role_id
+    JOIN chain sc ON sc.scope_kind = b.scope_kind
+      AND (
+        b.scope_kind = 'cluster'
+        OR sc.scope_id IS NOT DISTINCT FROM b.scope_id
+      )
+  ),
+  scoped AS (
+    SELECT g.*, COALESCE(l.scope_label, g.scope_kind) AS scope_label
+    FROM grants g
+    LEFT JOIN labels l
+      ON l.scope_kind = g.scope_kind
+     AND l.scope_id IS NOT DISTINCT FROM g.scope_id
+  )
+  SELECT u.email::text, u.name::text, 'User'::text, s.scope_kind, s.scope_label,
+         s.role_name, 'Direct'::text, u.email::text, u.is_global_admin
+    FROM scoped s
+    JOIN private.users u ON s.subject_kind = 'User' AND u.id = s.subject_id
+   WHERE u.disabled_at IS NULL
+  UNION ALL
+  SELECT u.email::text, u.name::text, 'User'::text, s.scope_kind, s.scope_label,
+         s.role_name, 'Group: ' || gr.name, gr.name, u.is_global_admin
+    FROM scoped s
+    JOIN api.groups gr ON s.subject_kind = 'Group' AND gr.id = s.subject_id
+    JOIN api.group_members gm ON gm.group_id = gr.id
+    JOIN private.users u ON u.id = gm.user_id
+   WHERE u.disabled_at IS NULL
+  UNION ALL
+  SELECT NULL::text, NULL::text, 'ServiceAccount'::text, s.scope_kind, s.scope_label,
+         s.role_name, 'Direct'::text, s.subject_id::text, false
+    FROM scoped s
+   WHERE s.subject_kind = 'ServiceAccount'
+  UNION ALL
+  SELECT u.email::text, u.name::text, 'User'::text, 'cluster',
+         'Global', 'global-admin', 'Global admin', u.email::text, true
+    FROM private.users u
+   WHERE u.disabled_at IS NULL AND u.is_global_admin
+  ORDER BY 1 NULLS LAST, scope_kind, role_name;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION api.effective_access_rows TO authenticator, authenticated;

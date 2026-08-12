@@ -260,6 +260,43 @@ class TestAuth:
         assert 'private.user_sessions' in init
         assert 'private.password_reset_tokens' in init
 
+    def test_profile_my_access(self):
+        uid = uuid4()
+        with self.client.session_transaction() as s:
+            s['user_id'] = str(uid)
+            s['email'] = 'a@b.c'
+            s['is_global_admin'] = False
+        admin_conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'Ada', 'is_global_admin': False, 'auth_source': 'local', 'created_at': '2026-01-01'})
+        last_sql = {'s': ''}
+
+        def execute(sql, params=None):
+            last_sql['s'] = ' '.join(str(sql).lower().split())
+
+        def fetchall():
+            s = last_sql['s']
+            if 'my_access_rows' in s:
+                return [
+                    {'scope_kind': 'team', 'scope_label': 'Platform', 'role_name': 'team-owner',
+                     'role_description': 'Owns the team', 'grant_kind': 'Direct',
+                     'grant_subject': 'You', 'created_at': '2026-01-02'},
+                    {'scope_kind': 'project', 'scope_label': 'API', 'role_name': 'project-write',
+                     'role_description': 'Write access', 'grant_kind': 'Group',
+                     'grant_subject': 'platform-ops', 'created_at': '2026-01-03'},
+                ]
+            return []
+        user_conn, cur = _conn(fetchone=None)
+        cur.execute.side_effect = execute
+        cur.fetchall.side_effect = fetchall
+        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn):
+            r = self.client.get('/profile?tab=myaccess')
+        assert r.status_code == 200
+        assert b'My access' in r.data
+        assert b'platform-ops' in r.data
+        assert b'team-owner' in r.data
+        assert b'Team access' in r.data
+        assert b'Project access' in r.data
+        assert b'?tab=myaccess' in r.data
+
     def test_profile_ok(self):
         uid = uuid4()
         tid = uuid4()
@@ -285,6 +322,15 @@ class TestAuth:
 
         def fetchall():
             s = last_sql['s']
+            if 'my_access_rows' in s:
+                return [
+                    {'scope_kind': 'team', 'scope_label': 'Platform', 'role_name': 'team-owner',
+                     'role_description': 'Owns the team', 'grant_kind': 'Direct',
+                     'grant_subject': 'You', 'created_at': '2026-01-02'},
+                    {'scope_kind': 'project', 'scope_label': 'API', 'role_name': 'project-write',
+                     'role_description': 'Write access', 'grant_kind': 'Group',
+                     'grant_subject': 'platform-ops', 'created_at': '2026-01-03'},
+                ]
             if 'from api.teams t' in s:
                 return [{'id': tid, 'name': 'Platform', 'role': 'owner', 'source': 'manual', 'created_at': '2026-01-02', 'project_count': 1}]
             if 'from api.projects p' in s:
@@ -305,6 +351,7 @@ class TestAuth:
         assert b'My profile' in r.data
         assert b'?tab=account' in r.data
         assert b'?tab=security' in r.data
+        assert b'?tab=myaccess' in r.data
         assert b'?tab=teams' in r.data
         assert b'?tab=projects' in r.data
         assert b'?tab=activity' in r.data

@@ -25,7 +25,7 @@ import user_sessions
 
 log = __import__("logging").getLogger(__name__)
 
-PROFILE_TABS = ("account", "security", "teams", "projects", "activity")
+PROFILE_TABS = ("account", "security", "myaccess", "teams", "projects", "activity")
 
 
 def _profile_url(tab: str = "account") -> str:
@@ -1049,6 +1049,7 @@ def register(app):
                 personal_tokens = []
         teams, projects, pending, pins_list, recent = [], [], [], [], []
         secret_count = pin_count = 0
+        my_access = []
         try:
             with db.as_user(uid) as conn, conn.cursor() as cur:
                 if tab in ("account", "teams"):
@@ -1120,6 +1121,13 @@ def register(app):
                 if tab == "activity":
                     pins_list = pins.list_pins(cur, uid)
                     recent = pins.list_recent(cur, uid)
+                if tab == "myaccess":
+                    try:
+                        cur.execute("SELECT * FROM api.my_access_rows()")
+                        my_access = list(cur.fetchall() or [])
+                    except Exception:
+                        log.exception("profile: my access rows failed")
+                        my_access = []
         except Exception:
             log.exception("profile: load memberships failed")
 
@@ -1127,6 +1135,23 @@ def register(app):
         session["email"] = user.get("email") or session.get("email")
         session["name"] = user.get("name") or session.get("name") or ""
         session["is_global_admin"] = bool(user.get("is_global_admin"))
+
+        # My access: bindings grouped by scope for the My access tab
+        _scope_labels = {
+            "cluster": "Global",
+            "team": "Team access",
+            "project": "Project access",
+            "secret": "Secret access",
+        }
+        _scope_order = ("cluster", "team", "project", "secret")
+        my_access_groups = []
+        by_scope: dict[str, list] = {}
+        for row in my_access:
+            by_scope.setdefault(row["scope_kind"], []).append(row)
+        for kind in _scope_order:
+            rows = by_scope.get(kind)
+            if rows:
+                my_access_groups.append((_scope_labels[kind], rows))
 
         return render_template(
             "profile.html",
@@ -1145,6 +1170,7 @@ def register(app):
             totp_enforced_for_user=totp_enforced,
             active_tab=tab,
             postgrest_url=config.POSTGREST_URL,
+            my_access_groups=my_access_groups,
             stats={
                 "teams": len(teams),
                 "projects": len(projects),

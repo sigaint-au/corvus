@@ -157,6 +157,19 @@ class TestOrgAccess:
         assert 'rbac_secret_binding_allows' in rbody
         assert 'api.secret_acl' not in rbody
 
+    def test_effective_access_functions_defined(self):
+        """Self-service (my access) and resource-level (effective access)
+        helpers exist in both rbac.sql sources with the grants they need."""
+        from pathlib import Path
+        for path in (REPO_ROOT / 'app' / 'rbac.sql', REPO_ROOT / 'db' / 'rbac.sql'):
+            sql = path.read_text()
+            assert 'FUNCTION api.my_access_rows()' in sql
+            assert 'FUNCTION api.effective_access_rows(' in sql
+            assert 'FROM api.rbac_subjects(' in sql
+            assert 'JOIN api.rbac_scope_chain(' in sql
+            assert "GRANT EXECUTE ON FUNCTION api.my_access_rows" in sql
+            assert "GRANT EXECUTE ON FUNCTION api.effective_access_rows" in sql
+
     def test_export_filters_reveal_permission(self):
         """Plain export SQL must filter by can_access_secret reveal + can_reveal."""
 

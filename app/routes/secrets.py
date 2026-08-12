@@ -762,6 +762,7 @@ def register(app):
         access_state=None,
         access_request=None,
         custom_meta=None,
+        effective_access=None,
     ):
         """Render the type-specific secret view/edit page template."""
         exp = row.get("expires_at")
@@ -823,6 +824,7 @@ def register(app):
                 last_accessed_at=row.get("last_accessed_at"),
                 last_accessed_by_email=row.get("last_accessed_by_email") or "",
                 custom_meta=custom_meta or [],
+                effective_access=effective_access or [],
             ),
             status,
         )
@@ -926,6 +928,7 @@ def register(app):
                 custom_meta = []
             secret_bindings = []
             team_groups = []
+            effective_access = []
             if can_admin:
                 try:
                     cur.execute(
@@ -988,6 +991,14 @@ def register(app):
                     team_groups = cur.fetchall() or []
                 except Exception:
                     team_groups = []
+                try:
+                    cur.execute(
+                        "SELECT * FROM api.effective_access_rows('secret', %s::uuid)",
+                        (str(secret_id),),
+                    )
+                    effective_access = list(cur.fetchall() or [])
+                except Exception:
+                    effective_access = []
 
             if request.method == "POST":
                 if is_version or not can_write:
@@ -1099,6 +1110,7 @@ def register(app):
                     secret_bindings=secret_bindings,
                     can_reveal=can_reveal,
                     team_groups=team_groups,
+                    effective_access=effective_access,
                     active_tab=active_tab,
                     access_blocked=can_reveal_acl and access_state != "allowed",
                     access_state=access_state,
@@ -1121,6 +1133,7 @@ def register(app):
                     secret_bindings=secret_bindings if can_admin else [],
                     can_reveal=False,
                     team_groups=team_groups if can_admin else [],
+                    effective_access=effective_access,
                     active_tab="meta" if active_tab == "meta" else "secret",
                     access_blocked=can_reveal_acl and access_state != "allowed",
                     access_state=access_state,
@@ -1146,6 +1159,7 @@ def register(app):
                     secret_bindings=secret_bindings if can_admin else [],
                     can_reveal=False,
                     team_groups=team_groups if can_admin else [],
+                    effective_access=effective_access,
                     active_tab="meta" if active_tab == "meta" else "secret",
                     access_blocked=True,
                     access_state="decrypt_error",
@@ -1184,6 +1198,7 @@ def register(app):
             secret_bindings=secret_bindings,
             can_reveal=can_reveal,
             team_groups=team_groups,
+            effective_access=effective_access,
             active_tab=active_tab,
             custom_meta=custom_meta,
         )

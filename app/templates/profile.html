@@ -11,6 +11,9 @@
   <a href="{{ url_for('profile', tab='security') }}"
      class="tab {% if active_tab == 'security' %}active{% endif %}"
 >Security</a>
+  <a href="{{ url_for('profile', tab='myaccess') }}"
+     class="tab {% if active_tab == 'myaccess' %}active{% endif %}"
+>My access</a>
   <a href="{{ url_for('profile', tab='teams') }}"
      class="tab {% if active_tab == 'teams' %}active{% endif %}"
 >Teams</a>
@@ -317,6 +320,58 @@
   {% else %}
   <p class="empty">No active sessions recorded for this account.</p>
   {% endif %}
+</section>
+
+{% elif active_tab == 'myaccess' %}
+<section>
+  <h2>My access</h2>
+  <p class="muted">The role bindings that grant you access across the system, and how each grant was received.</p>
+  {% if user.is_global_admin %}
+  <div role="alert" data-variant="warning">
+    You are a <strong>global admin</strong> and can access every team, project, and secret.
+  </div>
+  {% endif %}
+  {% for label, rows in my_access_groups %}
+  <h3>{{ label }}</h3>
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          {% if label == 'Team access' %}<th>Team</th>
+          {% elif label == 'Project access' %}<th>Project</th>
+          {% elif label == 'Secret access' %}<th>Secret</th>
+          {% else %}<th>Scope</th>{% endif %}
+          <th>Role</th>
+          <th>Granted to</th>
+          <th>Since</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>
+            {% if r.scope_kind == 'secret' and r.scope_label %}<code class="k">{{ r.scope_label }}</code>
+            {% else %}{{ r.scope_label or '—' }}{% endif %}
+          </td>
+          <td>
+            <span class="badge" data-variant="secondary" title="{{ r.role_description or r.role_name }}">{{ r.role_name }}</span>
+          </td>
+          <td>
+            <span class="badge">{{ r.grant_kind }}</span>
+            {{ r.grant_subject }}
+          </td>
+          <td class="muted">{{ r.created_at|time_ago if r.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    {% if user.is_global_admin %}No explicit bindings record your global-admin access.{% else %}
+    No role bindings reference you directly or through a group. Ask a team owner or admin to grant access.{% endif %}
+  </p>
+  {% endfor %}
 </section>
 
 {% elif active_tab == 'teams' %}

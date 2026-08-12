@@ -354,6 +354,7 @@ def register(app):
         access_pending_count = 0
         access_bindings = []
         access_groups = []
+        effective_access = []
         can_edit_access = False
         default_token_days = None
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -501,6 +502,14 @@ def register(app):
                 )
                 try:
                     cur.execute(
+                        "SELECT * FROM api.effective_access_rows('project', %s::uuid)",
+                        (str(project_id),),
+                    )
+                    effective_access = list(cur.fetchall() or [])
+                except Exception:
+                    effective_access = []
+                try:
+                    cur.execute(
                         """
                         SELECT id, name FROM api.groups
                         WHERE team_id = %s ORDER BY name
@@ -558,6 +567,7 @@ def register(app):
             access_pending_count=access_pending_count,
             access_bindings=access_bindings,
             access_groups=access_groups,
+            effective_access=effective_access,
             can_edit_access=can_edit_access,
             project_role_dropdown=config.RBAC_PROJECT_ROLE_DROPDOWN,
             subject_kinds=config.RBAC_SUBJECT_KINDS,
