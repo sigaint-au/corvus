@@ -421,7 +421,7 @@ def register(app):
 
     @app.post("/teams/<uuid:team_id>/members")
     @authz.login_required
-    def add_team_member(team_id):
+    def add_team_binding(team_id):
         """Add or update a team member by email and role.
 
         Args:
@@ -434,14 +434,15 @@ def register(app):
             POST /teams/<team_id>/members with email and role form fields
         """
         email = request.form["email"].strip().lower()
-        role = request.form.get("role", "member")
-        if role not in config.TEAM_ROLES:
-            role = "member"
+        role = request.form.get("role", "team-member")
+        role_names = [name for name, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        if role not in role_names:
+            role = "team-member"
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             # M1: only team owners may assign owner (admins cannot self-promote)
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             my_role = (cur.fetchone() or {}).get("r")
-            if role == "owner" and my_role != "owner":
+            if role == "team-owner" and my_role != "owner":
                 flash("Only a team owner can grant the owner role", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
@@ -451,7 +452,7 @@ def register(app):
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             try:
                 # Check for existing binding to determine add vs update
-                rname = rbac_sync.TEAM_ROLE_TO_RBAC.get(role, "team-member")
+                rname = role
                 cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (rname,))
                 role_row = cur.fetchone()
                 if not role_row:
@@ -492,7 +493,7 @@ def register(app):
 
     @app.post("/teams/<uuid:team_id>/members/<uuid:user_id>/remove")
     @authz.login_required
-    def remove_team_member(team_id, user_id):
+    def remove_team_binding(team_id, user_id):
         """Remove a member from a team.
 
         Args:

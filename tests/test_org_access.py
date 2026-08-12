@@ -60,7 +60,10 @@ class TestOrgAccess:
         assert 'private.audit_org' in sql
 
     def test_project_roles_config(self):
-        assert 'write' in config.PROJECT_ROLES
+        names = [n for n, _ in config.RBAC_PROJECT_ROLE_DROPDOWN]
+        assert 'project-read' in names
+        assert 'project-write' in names
+        assert 'project-admin' in names
         assert 'member' in config.INVITE_ROLES
         assert 'owner' not in config.INVITE_ROLES
 
@@ -115,20 +118,22 @@ class TestOrgAccess:
 
     def test_secret_acl_schema_and_config(self):
         from pathlib import Path
-        assert 'inherit' in config.SECRET_ACCESS_MODES
-        assert 'restricted' in config.SECRET_ACCESS_MODES
-        assert set(config.SECRET_ACCESS_MODE_LABELS) == {'inherit', 'restricted'}
-        assert 'reveal' in config.SECRET_ACCESS_PERMISSIONS
-        assert config.SECRET_ACCESS_PERM_TO_ROLE['reveal'] == 'secret-reveal'
+        assert 'inherit' in config.ACCESS_MODES
+        assert 'restricted' in config.ACCESS_MODES
+        assert set(config.ACCESS_MODE_LABELS) == {'inherit', 'restricted'}
+        assert 'secret-reveal' in dict(config.RBAC_SECRET_ROLE_DROPDOWN)
+        assert [n for n, _ in config.RBAC_SECRET_ROLE_DROPDOWN] == [
+            'secret-write', 'secret-reveal', 'secret-read',
+        ]
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        assert 'acl_mode' in init
+        assert 'access_mode' in init
         assert 'CREATE TABLE api.secret_acl' not in init
         assert 'api.can_access_secret' in init
         assert 'api.can_access_secret_row' in init
         # RLS policies pass deleted_at=NULL explicitly so the deleted_at guard
         # in can_access_secret_row does not reject soft-deletes/trash.
-        assert "can_access_secret_row(id, project_id, acl_mode, 'read', NULL)" in init
-        assert "deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL)" in init
+        assert "can_access_secret_row(id, project_id, access_mode, 'read', NULL)" in init
+        assert "deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)" in init
         rev = init[init.index('FUNCTION api.can_reveal_secret'):]
         rev = rev[:rev.index('$$;') + 3]
         assert "can_access_secret(sid, 'reveal')" in rev
@@ -187,7 +192,7 @@ class TestOrgAccess:
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         upd = init[init.index('CREATE POLICY secrets_update ON api.secrets'):]
         upd = upd[:upd.index(';')]
-        assert 'WITH CHECK (api.can_access_secret_row(id, project_id, acl_mode, \'write\', NULL))' in upd
+        assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in upd
         sel = init[init.index('CREATE POLICY secrets_select ON api.secrets'):]
         sel = sel[:sel.index(';')]
         assert 'deleted_at IS NOT NULL' in sel
@@ -195,7 +200,7 @@ class TestOrgAccess:
         delf = delf[:delf.index(';')]
         assert 'deleted_at IS NOT NULL' in delf
         src = Path(schema_mod.__file__).read_text()
-        assert 'WITH CHECK (api.can_access_secret_row(id, project_id, acl_mode, \'write\', NULL))' in src
+        assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in src
         from pathlib import Path
         src = (APP_ROOT / 'routes' / 'project_io.py').read_text()
         assert "can_access_secret(id, 'reveal')" in src
@@ -234,14 +239,16 @@ class TestOrgAccess:
         assert 'can_reveal_secret(id)' in body
         assert not re.search('SELECT key, value_enc FROM api\\.secrets\\s+WHERE project_id = %s AND deleted_at IS NULL\\s*\\"\\"\\"', body)
 
-    def test_group_team_role_cannot_be_owner(self):
-        """Groups must not grant team owner (admin max)."""
-        assert 'owner' not in config.GROUP_TEAM_ROLES
-        assert 'admin' in config.GROUP_TEAM_ROLES
+    def test_group_team_roles_config(self):
+        """Group team roles now flow through RBAC bindings — api.groups has no
+        team_role column."""
+        assert [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN][0] == 'team-owner'
+        assert not hasattr(config, 'GROUP_TEAM_ROLES')
         from pathlib import Path
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        assert "team_role IN ('admin', 'member', 'viewer')" in init
-        assert "team_role IN ('owner', 'admin', 'member', 'viewer')" not in init[init.index('CREATE TABLE api.groups'):init.index('CREATE TABLE api.group_members')]
+        gstart = init.index('CREATE TABLE api.groups')
+        gend = init.index('CREATE TABLE api.group_members')
+        assert 'team_role' not in init[gstart:gend]
 
     def test_can_access_secret_row_behavioral_matrix(self):
         """Expected outcomes for can_access_secret_row (mirrors SQL CASE).

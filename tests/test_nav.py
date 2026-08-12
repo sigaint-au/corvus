@@ -76,7 +76,7 @@ class TestNav:
             if state['n'] == 1:
                 return {'id': self.tid, 'name': 'Ops'}
             return {'n': 1}
-        conn, _ = _conn(fetchone=fetchone, fetchall=[{'id': sid, 'key': 'DB_URL', 'note': '', 'kind': 'plain', 'updated_at': 'now', 'expires_at': None, 'acl_mode': 'inherit', 'project_id': pid, 'project_name': 'api'}, {'id': pid, 'name': 'api'}])
+        conn, _ = _conn(fetchone=fetchone, fetchall=[{'id': sid, 'key': 'DB_URL', 'note': '', 'kind': 'plain', 'updated_at': 'now', 'expires_at': None, 'access_mode': 'inherit', 'project_id': pid, 'project_name': 'api'}, {'id': pid, 'name': 'api'}])
         with patch.object(db, 'as_user', return_value=conn), patch.object(nav, 'ensure_active_team', return_value=str(self.tid)):
             r = self.client.get('/secrets')
         assert r.status_code == 200

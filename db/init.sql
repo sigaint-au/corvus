@@ -170,8 +170,8 @@ CREATE TABLE api.projects (
   description text NOT NULL DEFAULT '',
   -- When true, secrets inherit require-approval for reveal (unless per-secret override)
   require_reveal_approval boolean NOT NULL DEFAULT false,
-  default_acl_mode text NOT NULL DEFAULT 'inherit'
-    CHECK (default_acl_mode IN ('inherit', 'restricted')),
+  default_access_mode text NOT NULL DEFAULT 'inherit'
+    CHECK (default_access_mode IN ('inherit', 'restricted')),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, name)
 );
@@ -192,11 +192,6 @@ CREATE TABLE api.groups (
     CHECK (source IN ('manual', 'ldap', 'oidc')),
   -- When source is ldap/oidc, directory group token (DN/CN/claim) for membership sync
   external_key text,
-  -- If set, group members receive this team role (max with direct team_members)
-  -- No 'owner': groups must not create team owners (break-glass stays direct members)
-  team_role text CHECK (
-    team_role IS NULL OR team_role IN ('admin', 'member', 'viewer')
-  ),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, name)
 );
@@ -250,8 +245,8 @@ CREATE TABLE api.secrets (
   -- NULL = inherit project.require_reveal_approval; true/false = override
   requires_approval boolean,
   -- Per-secret access tighter than project membership (see api.can_access_secret)
-  acl_mode text NOT NULL DEFAULT 'inherit'
-    CHECK (acl_mode IN ('inherit', 'restricted')),
+  access_mode text NOT NULL DEFAULT 'inherit'
+    CHECK (access_mode IN ('inherit', 'restricted')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
@@ -275,7 +270,7 @@ CREATE INDEX secret_meta_key_idx ON api.secret_meta (key);
 CREATE INDEX secret_meta_value_idx ON api.secret_meta (value);
 
 -- Legacy per-secret ACL table removed: use secret-scope rbac.bindings
--- (secrets.acl_mode inherit|custom remains; custom = exclusive secret bindings).
+-- (secrets.access_mode inherit|custom remains; custom = exclusive secret bindings).
 
 
 -- Per-user pins (favorites) and recently accessed secrets
@@ -605,7 +600,7 @@ SET row_security = off AS $$
   SELECT COALESCE(
     (
       SELECT api.can_access_secret_row(
-        s.id, s.project_id, s.acl_mode, need, s.deleted_at
+        s.id, s.project_id, s.access_mode, need, s.deleted_at
       )
       FROM api.secrets s
       WHERE s.id = sid
@@ -805,18 +800,18 @@ CREATE POLICY secret_recent_delete ON api.secret_recent FOR DELETE TO authentica
 
 CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
   USING (
-    (deleted_at IS NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'read', NULL))
-    OR (deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
+    (deleted_at IS NULL AND api.can_access_secret_row(id, project_id, access_mode, 'read', NULL))
+    OR (deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL))
   );
 CREATE POLICY secrets_insert ON api.secrets FOR INSERT TO authenticated
   WITH CHECK (api.can_write_project(project_id));
 CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
-  USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL))
-  WITH CHECK (api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL));
+  USING (api.can_access_secret_row(id, project_id, access_mode, 'write', NULL))
+  WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, 'write', NULL));
 CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
   USING (
     deleted_at IS NOT NULL
-    AND api.can_access_secret_row(id, project_id, acl_mode, 'write', NULL)
+    AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)
   );
 
 CREATE POLICY secret_meta_select ON api.secret_meta FOR SELECT TO authenticated
@@ -835,7 +830,7 @@ CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authen
       SELECT 1 FROM api.secrets s
       WHERE s.id = secret_id
         AND api.can_access_secret_row(
-          s.id, s.project_id, s.acl_mode, 'read', s.deleted_at
+          s.id, s.project_id, s.access_mode, 'read', s.deleted_at
         )
     )
   );

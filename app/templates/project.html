@@ -184,10 +184,10 @@
       <input type="date" name="expires_at" id="secret-expires">
     </label>
     <label>Access
-      <select name="acl_mode" title="Who may see this secret">
-        {% for m in acl_modes|default(['inherit']) %}
+      <select name="access_mode" title="Who may see this secret">
+        {% for m in access_modes|default(['inherit']) %}
         <option value="{{ m }}" {% if m == 'inherit' %}selected{% endif %}>
-          {{ acl_mode_labels.get(m, m) if acl_mode_labels is defined else m }}
+          {{ access_mode_labels.get(m, m) if access_mode_labels is defined else m }}
         </option>
         {% endfor %}
       </select>
@@ -788,11 +788,11 @@
           Require approval to reveal secrets
         </label>
         <label>Default access for new secrets
-          <select name="default_acl_mode">
-            <option value="inherit" {% if (project.default_acl_mode or 'inherit') == 'inherit' %}selected{% endif %}>
+          <select name="default_access_mode">
+            <option value="inherit" {% if (project.default_access_mode or 'inherit') == 'inherit' %}selected{% endif %}>
               Inherit team / project roles
             </option>
-            <option value="restricted" {% if project.default_acl_mode == 'restricted' %}selected{% endif %}>
+            <option value="restricted" {% if project.default_access_mode == 'restricted' %}selected{% endif %}>
               Restricted (role bindings only)
             </option>
           </select>

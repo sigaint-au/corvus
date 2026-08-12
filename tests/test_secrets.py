@@ -298,7 +298,7 @@ class TestSecrets:
         conn, cur = _conn()
         row = {
             'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'note': '', 'kind': 'plain',
-            'expires_at': None, 'requires_approval': None, 'acl_mode': 'inherit',
+            'expires_at': None, 'requires_approval': None, 'access_mode': 'inherit',
             'created_at': '2026-01-01', 'updated_at': '2026-01-01',
             'last_accessed_at': None, 'last_accessed_by': None,
             'project_name': 'prod', 'require_reveal_approval': False,
@@ -335,7 +335,7 @@ class TestSecrets:
         conn, cur = _conn()
         row = {
             'id': sid, 'key': 'DATABASE_URL', 'value_enc': enc, 'note': '', 'kind': 'plain',
-            'expires_at': None, 'requires_approval': None, 'acl_mode': 'inherit',
+            'expires_at': None, 'requires_approval': None, 'access_mode': 'inherit',
             'created_at': '2026-01-01', 'updated_at': '2026-01-01',
             'last_accessed_at': None, 'last_accessed_by': None,
             'project_name': 'prod', 'require_reveal_approval': False,
@@ -401,7 +401,7 @@ class TestSecrets:
         conn, cur = _conn()
         cur.fetchone.side_effect = [
             {'a': True},
-            {'id': sid, 'key': 'KEY', 'acl_mode': 'inherit', 'team_id': uuid4()},
+            {'id': sid, 'key': 'KEY', 'access_mode': 'inherit', 'team_id': uuid4()},
             {'id': role_id},
             {'id': sa_id},
         ]

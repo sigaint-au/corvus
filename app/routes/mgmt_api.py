@@ -215,9 +215,7 @@ def register(app):
                 {
                     "user_id": str(item["subject_id"]),
                     "email": item.get("subject_email") or "",
-                    "role": rbac_sync.RBAC_TO_TEAM_ROLE.get(
-                        item.get("role_name"), item.get("role_name")
-                    ),
+                    "role": item.get("role_name"),
                 }
                 for item in members
                 if item.get("subject_kind") == "User"
@@ -264,9 +262,7 @@ def register(app):
                 {
                     "user_id": str(item["subject_id"]),
                     "email": item.get("subject_email") or "",
-                    "role": rbac_sync.RBAC_TO_TEAM_ROLE.get(
-                        item.get("role_name"), item.get("role_name")
-                    ),
+                    "role": item.get("role_name"),
                     "source": item.get("source", "manual"),
                 }
                 for item in items
@@ -275,16 +271,17 @@ def register(app):
         return jsonify({"items": items})
 
     @app.post("/eso/v1/teams/<team_ref>/members")
-    def mgmt_add_team_member(team_ref):
-        """Add/update team member. Body: ``{"email":"…","role":"member"}``."""
+    def mgmt_add_team_binding(team_ref):
+        """Add/update team member. Body: ``{"email":"…","role":"team-member"}``."""
         uid, err = _require_pat()
         if err:
             return err
         body = request.get_json(silent=True) or {}
         email = (body.get("email") or "").strip().lower()
-        role = (body.get("role") or "member").strip()
-        if role not in config.TEAM_ROLES:
-            role = "member"
+        role = (body.get("role") or "team-member").strip()
+        role_names = [name for name, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        if role not in role_names:
+            role = "team-member"
         if not email:
             return jsonify({"error": "email required"}), 400
         with db.as_user(uid) as conn, conn.cursor() as cur:
@@ -325,7 +322,7 @@ def register(app):
         return jsonify({"ok": True, "email": email, "role": role})
 
     @app.delete("/eso/v1/teams/<team_ref>/members/<member_ref>")
-    def mgmt_remove_team_member(team_ref, member_ref):
+    def mgmt_remove_team_binding(team_ref, member_ref):
         """Remove team member by email or user id."""
         uid, err = _require_pat()
         if err:
@@ -469,9 +466,7 @@ def register(app):
                 {
                     "user_id": str(item["subject_id"]),
                     "email": item.get("subject_email") or "",
-                    "role": rbac_sync.RBAC_TO_PROJECT_ROLE.get(
-                        item.get("role_name"), item.get("role_name")
-                    ),
+                    "role": item.get("role_name"),
                 }
                 for item in members
                 if item.get("subject_kind") == "User"
@@ -532,16 +527,17 @@ def register(app):
         return jsonify({"items": items})
 
     @app.post("/eso/v1/projects/<project_ref>/members")
-    def mgmt_add_project_member(project_ref):
-        """Add project member. Body: ``{"email":"…","role":"read|write|admin"}``."""
+    def mgmt_add_project_binding(project_ref):
+        """Add project member. Body: ``{"email":"…","role":"project-read|project-write|project-admin"}``."""
         uid, err = _require_pat()
         if err:
             return err
         body = request.get_json(silent=True) or {}
         email = (body.get("email") or "").strip().lower()
-        role = (body.get("role") or "read").strip()
-        if role not in config.PROJECT_ROLES:
-            role = "read"
+        role = (body.get("role") or "project-read").strip()
+        role_names = [name for name, _ in config.RBAC_PROJECT_ROLE_DROPDOWN]
+        if role not in role_names:
+            role = "project-read"
         if not email:
             return jsonify({"error": "email required"}), 400
         with db.as_user(uid) as conn, conn.cursor() as cur:
@@ -570,7 +566,7 @@ def register(app):
         return jsonify({"ok": True, "email": email, "role": role})
 
     @app.delete("/eso/v1/projects/<project_ref>/members/<member_ref>")
-    def mgmt_remove_project_member(project_ref, member_ref):
+    def mgmt_remove_project_binding(project_ref, member_ref):
         """Remove project member by email or id."""
         uid, err = _require_pat()
         if err:

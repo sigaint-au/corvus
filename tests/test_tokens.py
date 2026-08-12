@@ -144,7 +144,7 @@ class TestTokens:
         assert "api.team_role" in body
         assert "IN ('owner', 'admin')" in body
 
-    def test_add_project_member_requires_admin(self):
+    def test_add_project_binding_requires_admin(self):
         """Non-admins cannot add project members (can_manage_rbac gate)."""
         conn, cur = _conn(fetchone={'ok': False, 'a': False})
         with patch.object(db, 'as_user', return_value=conn):
@@ -161,7 +161,7 @@ class TestTokens:
             flashes = s.get('_flashes') or []
         assert any(('permission' in msg.lower() for _c, msg in flashes))
 
-    def test_add_project_member_ok_for_admin(self):
+    def test_add_project_binding_ok_for_admin(self):
         uid = uuid4()
         tid = uuid4()
         rid = uuid4()
@@ -199,7 +199,7 @@ class TestTokens:
         assert 'insert into api.project_members' not in sql
         assert 'can_manage_rbac' in sql or 'can_admin_project' in sql
 
-    def test_remove_project_member_requires_admin(self):
+    def test_remove_project_binding_requires_admin(self):
         conn, cur = _conn(fetchone={'ok': False, 'a': False})
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(

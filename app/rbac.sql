@@ -1,6 +1,6 @@
 -- Kubernetes-style RBAC (Subjects + Roles + RoleBindings)
 -- Applied by ensure_schema() and on fresh volumes after init.sql.
--- Start-fresh: no migration from team_members / project_members / secret_acl.
+-- Start-fresh: access is designed around rbac.bindings; legacy tables are not used.
 
 CREATE SCHEMA IF NOT EXISTS rbac;
 GRANT USAGE ON SCHEMA rbac TO authenticator, authenticated, anon;
@@ -78,7 +78,7 @@ DECLARE
   rid uuid;
 BEGIN
   -- helper: upsert role + replace rules
-  -- Rename legacy cluster-admin → global-admin (start-fresh safe)
+  -- Rename the old cluster-admin role to global-admin (idempotent)
   UPDATE rbac.roles SET name = 'global-admin',
     description = 'Full access to all resources at every scope'
     WHERE name = 'cluster-admin';
@@ -390,7 +390,7 @@ GRANT EXECUTE ON FUNCTION api.rbac_rule_matches TO authenticator, authenticated,
 GRANT EXECUTE ON FUNCTION rbac.ensure_builtin_roles TO authenticator;
 
 -- ── Compatibility helpers rewritten over can() ───────────────────────
--- Start-fresh: legacy team_members / project_members / secret_acl are NOT consulted.
+-- Membership and access now resolve exclusively through rbac.bindings.
 
 CREATE OR REPLACE FUNCTION api.is_team_member(tid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
@@ -531,7 +531,7 @@ $$;
 GRANT EXECUTE ON FUNCTION api.rbac_secret_binding_allows TO authenticator, authenticated, anon;
 
 -- Secret access: RBAC on scope chain, or restricted = secret bindings only.
--- acl_mode 'restricted' is the exclusive / "deny broader grants" mode: team and project
+-- access_mode 'restricted' is the exclusive / "deny broader grants" mode: team and project
 -- bindings do NOT apply — only secret-scope bindings + project admins (admin floor).
 -- Legacy 'custom' value is treated as 'restricted' for backward compat.
 CREATE OR REPLACE FUNCTION api.can_access_secret_row(
@@ -550,7 +550,7 @@ SET row_security = off AS $$
     WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
     -- Project admins always full
     WHEN api.can_admin_project(pid) THEN true
-    -- Restricted (legacy 'custom'): secret-scope bindings only
+    -- Restricted: secret-scope bindings only
     WHEN COALESCE(mode, 'inherit') IN ('restricted', 'custom') THEN
       api.rbac_secret_binding_allows(sid, need)
     -- inherit / writers / admins / owners → project/team RBAC via scope chain
@@ -586,7 +586,7 @@ SET row_security = off AS $$
   SELECT COALESCE(
     (
       SELECT api.can_access_secret_row(
-        s.id, s.project_id, s.acl_mode, need, s.deleted_at
+        s.id, s.project_id, s.access_mode, need, s.deleted_at
       )
       FROM api.secrets s
       WHERE s.id = sid
@@ -629,7 +629,7 @@ DECLARE
   rid uuid;
 BEGIN
   INSERT INTO api.teams (name, created_by) VALUES (p_name, p_user) RETURNING id INTO tid;
-  -- RBAC only: create team-owner binding (no legacy team_members write)
+  -- RBAC only: create team-owner binding via rbac.bindings
   SELECT id INTO rid FROM rbac.roles WHERE name = 'team-owner' LIMIT 1;
   IF rid IS NOT NULL THEN
     INSERT INTO rbac.bindings (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)

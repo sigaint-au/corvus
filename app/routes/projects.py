@@ -586,7 +586,6 @@ def register(app):
             audit_pager=audit_pager,
 
             team_groups=team_groups,
-            project_roles=config.PROJECT_ROLES,
             default_token_days=default_token_days,
             can_write=can_write,
             can_admin=can_admin,
@@ -612,8 +611,8 @@ def register(app):
             )
             if project
             else False,
-            acl_modes=config.SECRET_ACCESS_MODES,
-            acl_mode_labels=config.SECRET_ACCESS_MODE_LABELS,
+            access_modes=config.ACCESS_MODES,
+            access_mode_labels=config.ACCESS_MODE_LABELS,
         )
 
 
@@ -662,15 +661,16 @@ def register(app):
 
     @app.post("/projects/<uuid:project_id>/members")
     @authz.login_required
-    def add_project_member(project_id):
+    def add_project_binding(project_id):
         """Add or update a project member via RBAC binding (User + project-* role).
 
         Body: email + role (admin|write|read). Writes ``rbac.bindings`` only.
         """
         email = (request.form.get("email") or "").strip().lower()
-        role = (request.form.get("role") or "read").strip()
-        if role not in config.PROJECT_ROLES:
-            role = "read"
+        role = (request.form.get("role") or "project-read").strip()
+        project_role_names = [name for name, _ in config.RBAC_PROJECT_ROLE_DROPDOWN]
+        if role not in project_role_names:
+            role = "project-read"
         dest = _project_access_url(project_id)
         if not email:
             flash("Email required", "error")
@@ -721,7 +721,7 @@ def register(app):
 
     @app.post("/projects/<uuid:project_id>/members/<uuid:user_id>/remove")
     @authz.login_required
-    def remove_project_member(project_id, user_id):
+    def remove_project_binding(project_id, user_id):
         """Remove a user project-scope RBAC binding."""
         dest = _project_access_url(project_id)
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -761,9 +761,10 @@ def register(app):
     def add_project_group_role(project_id):
         """Grant a team group a project role via RBAC binding only."""
         group_id = (request.form.get("group_id") or "").strip()
-        role = (request.form.get("role") or "read").strip()
-        if role not in config.PROJECT_ROLES:
-            role = "read"
+        role = (request.form.get("role") or "project-read").strip()
+        project_role_names = [name for name, _ in config.RBAC_PROJECT_ROLE_DROPDOWN]
+        if role not in project_role_names:
+            role = "project-read"
         dest = _project_access_url(project_id)
         if not group_id:
             flash("Group required", "error")
@@ -882,17 +883,12 @@ def register(app):
             try:
                 import rbac_sync
 
-                # Map built-in project-* role names or short admin/write/read
-                short = rbac_sync.RBAC_TO_PROJECT_ROLE.get(role_name)
-                if short:
-                    role_short = short
-                    rname = role_name
-                elif role_name in rbac_sync.PROJECT_ROLE_TO_RBAC:
-                    role_short = role_name
-                    rname = rbac_sync.PROJECT_ROLE_TO_RBAC[role_name]
-                else:
-                    rname = role_name
-                    role_short = None
+                # Role names are the built-in project-* rbac.roles names.
+                if role_name not in rbac_sync.PROJECT_ROLE_NAMES:
+                    flash("Unknown role", "error")
+                    return redirect(dest)
+                rname = role_name
+                role_short = None
 
                 cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (rname,))
                 role = cur.fetchone()
@@ -1072,7 +1068,7 @@ def register(app):
         require = (request.form.get("require_reveal_approval") or "").strip().lower()
         require_on = require in ("1", "true", "yes", "on")
         description = (request.form.get("description") or "").strip()[:500]
-        default_acl = (request.form.get("default_acl_mode") or "inherit").strip().lower()
+        default_acl = (request.form.get("default_access_mode") or "inherit").strip().lower()
         if default_acl not in ("inherit", "restricted"):
             default_acl = "inherit"
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -1085,7 +1081,7 @@ def register(app):
             cur.execute(
                 """
                 UPDATE api.projects
-                SET require_reveal_approval = %s, description = %s, default_acl_mode = %s
+                SET require_reveal_approval = %s, description = %s, default_access_mode = %s
                 WHERE id = %s
                 """,
                 (require_on, description, default_acl, str(project_id)),
@@ -1104,7 +1100,7 @@ def register(app):
                     team_id=proj["team_id"] if proj else None,
                     project_id=project_id,
                     action="project_settings",
-                    detail=f"require_reveal_approval={require_on}, default_acl_mode={default_acl}",
+                    detail=f"require_reveal_approval={require_on}, default_access_mode={default_acl}",
                 )
                 conn.commit()
                 flash("Project settings saved", "ok")

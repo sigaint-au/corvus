@@ -110,7 +110,7 @@
   <h2>Members</h2>
   <p class="muted">People with a team role binding. Manage groups and advanced bindings under <a href="{{ url_for('team_detail', team_id=team.id, tab='access') if is_admin else '#' }}">Access</a>.</p>
   {% if is_admin %}
-  <form method="post" action="{{ url_for('add_team_member', team_id=team.id) }}" class="row">
+  <form method="post" action="{{ url_for('add_team_binding', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>User email
       <input type="email" name="email" required class="user-suggest"
@@ -118,12 +118,11 @@
     </label>
     <label>Role
       <select name="role">
-        <option value="member">member</option>
-        <option value="viewer">viewer</option>
-        <option value="admin">admin</option>
-        {% if my_role == 'owner' %}
-        <option value="owner">owner</option>
+        {% for rname, label in team_role_dropdown|default([]) %}
+        {% if rname != 'team-owner' or my_role == 'owner' %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
         {% endif %}
+        {% endfor %}
       </select>
     </label>
     <button type="submit">Add</button>
@@ -147,7 +146,7 @@
           {% if is_admin %}
           <td class="acts">
             <form method="post"
-                  action="{{ url_for('remove_team_member', team_id=team.id, user_id=b.subject_id) }}"
+                  action="{{ url_for('remove_team_binding', team_id=team.id, user_id=b.subject_id) }}"
                   class="inline"
                   onsubmit="return confirm('Remove this member?')">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">

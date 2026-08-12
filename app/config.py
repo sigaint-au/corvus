@@ -126,13 +126,8 @@ DEFAULT_SETTINGS = {
     "oidc_require_email_verified": "true",
 }
 TEAM_ROLES = ("owner", "admin", "member", "viewer")
-# Groups may inherit a team role, but never owner (avoids accidental owner escalation)
-GROUP_TEAM_ROLES = ("admin", "member", "viewer")
-ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}
 # Invite / join-request roles (cannot self-invite as owner)
 INVITE_ROLES = ("admin", "member", "viewer")
-# Project-scoped membership (in addition to team roles)
-PROJECT_ROLES = ("admin", "write", "read")
 # Machine accounts / ESO tokens: read (metadata), reveal (metadata + plaintext), write (read + write)
 MACHINE_TOKEN_ROLES = ("read", "reveal", "write")
 
@@ -219,23 +214,10 @@ REVEAL_ACCESS_GRANT_CHOICES = (15, 60, 240, 1440)  # 15m, 1h, 4h, 1d
 SECRET_KINDS = ("plain", "database", "certificate", "ssh", "kv")
 # Per-secret access modes. Inherit uses project/team bindings; restricted uses
 # secret-scope role bindings only.
-SECRET_ACCESS_MODES = ("inherit", "restricted")
-SECRET_ACCESS_MODE_LABELS = {
+ACCESS_MODES = ("inherit", "restricted")
+ACCESS_MODE_LABELS = {
     "inherit": "Inherit project access",
     "restricted": "Restricted (role bindings only)",
-}
-# Grant dropdown on Permissions tab → built-in secret-* roles
-SECRET_ACCESS_PERMISSIONS = ("read", "reveal", "write")
-SECRET_ACCESS_PERM_TO_ROLE = {
-    "read": "secret-read",
-    "reveal": "secret-reveal",
-    "write": "secret-write",
-}
-SECRET_ACCESS_ROLE_TO_PERM = {v: k for k, v in SECRET_ACCESS_PERM_TO_ROLE.items()}
-SECRET_ACCESS_PERM_LABELS = {
-    "read": "Read (metadata)",
-    "reveal": "Reveal value",
-    "write": "Edit / delete",
 }
 # Upper bounds for optional expiry (secrets, machine tokens, team defaults)
 MAX_EXPIRY_DAYS = 3650  # ~10 years

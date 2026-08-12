@@ -2396,7 +2396,7 @@
       'secrets_list', 'machines_list', 'global_search'
     ) %}
     {% set account_eps = (
-      'teams', 'create_team', 'team_detail', 'add_team_member',
+      'teams', 'create_team', 'team_detail', 'add_team_binding',
       'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team',
       'delete_project_from_team', 'profile', 'trash'
     ) %}
@@ -2434,7 +2434,7 @@
       <details class="side-group" data-side-group="account"{% if account_open %} open{% endif %}>
         <summary>Organisation</summary>
         <div class="side-group-body">
-           <a class="side-nav-link {% if ep in ('teams', 'create_team', 'team_detail', 'add_team_member', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}"
+           <a class="side-nav-link {% if ep in ('teams', 'create_team', 'team_detail', 'add_team_binding', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}"
               href="{{ url_for('teams') }}">Teams</a>
            {% if not is_global_admin and session.get('team_id') %}
            <a class="side-nav-link {% if is_rbac_bindings and rbac_scoped %}active{% endif %}"

@@ -245,7 +245,7 @@ def access_review_rows(cur) -> list[dict]:
          SELECT u.id::text AS user_id, u.email, u.name, u.is_global_admin,
                 u.disabled_at IS NOT NULL AS disabled,
                 t.name AS team_name,
-                replace(r.name, 'team-', '') AS team_role
+                r.name AS team_role
          FROM rbac.bindings b
          JOIN rbac.roles r ON r.id = b.role_id
          JOIN private.users u ON u.id = b.subject_id
@@ -276,7 +276,7 @@ def access_review_rows(cur) -> list[dict]:
          SELECT u.id::text AS user_id, u.email, u.name, u.is_global_admin,
                 u.disabled_at IS NOT NULL AS disabled,
                 t.name AS team_name, p.name AS project_name,
-                replace(r.name, 'project-', '') AS project_role
+                r.name AS project_role
          FROM rbac.bindings b
          JOIN rbac.roles r ON r.id = b.role_id
          JOIN private.users u ON u.id = b.subject_id

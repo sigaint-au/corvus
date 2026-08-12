@@ -57,7 +57,7 @@ def _load_secrets_page(cur, project_id, page, q):
     cur.execute(
         f"""
         SELECT s.id, s.key, s.note, s.kind, s.created_at, s.updated_at, s.expires_at,
-               s.requires_approval, s.acl_mode,
+               s.requires_approval, s.access_mode,
                s.last_accessed_at,
                CASE
                  WHEN s.requires_approval IS TRUE THEN true
@@ -127,8 +127,8 @@ def _load_secrets_page(cur, project_id, page, q):
         else:
             r["reveal_access"] = "locked"
             r["approved_until"] = None
-        mode = (r.get("acl_mode") or "inherit").strip() or "inherit"
-        r["acl_mode"] = mode
+        mode = (r.get("access_mode") or "inherit").strip() or "inherit"
+        r["access_mode"] = mode
         r["acl_restricted"] = mode != "inherit"
     return rows, pager
 
@@ -168,9 +168,9 @@ def _load_team_secrets_page(
         where += " AND s.kind = %s"
         params.append(kind)
     if acl == "restricted":
-        where += " AND COALESCE(s.acl_mode, 'inherit') <> 'inherit'"
+        where += " AND COALESCE(s.access_mode, 'inherit') <> 'inherit'"
     elif acl == "inherit":
-        where += " AND COALESCE(s.acl_mode, 'inherit') = 'inherit'"
+        where += " AND COALESCE(s.access_mode, 'inherit') = 'inherit'"
     if due == "overdue":
         where += " AND s.expires_at IS NOT NULL AND s.expires_at < now()"
     elif due == "soon":
@@ -216,7 +216,7 @@ def _load_team_secrets_page(
     )
     cur.execute(
         f"""
-        SELECT s.id, s.key, s.note, s.kind, s.updated_at, s.expires_at, s.acl_mode,
+        SELECT s.id, s.key, s.note, s.kind, s.updated_at, s.expires_at, s.access_mode,
                p.id AS project_id, p.name AS project_name
         FROM api.secrets s
         JOIN api.projects p ON p.id = s.project_id
@@ -229,8 +229,8 @@ def _load_team_secrets_page(
     rows = cur.fetchall() or []
     for r in rows:
         r["due"] = secret_due_status(r)
-        mode = (r.get("acl_mode") or "inherit").strip() or "inherit"
-        r["acl_mode"] = mode
+        mode = (r.get("access_mode") or "inherit").strip() or "inherit"
+        r["access_mode"] = mode
         r["acl_restricted"] = mode != "inherit"
     cur.execute(
         """
@@ -313,11 +313,11 @@ def _parse_access_mode(form_or_value) -> str:
     if isinstance(form_or_value, dict) or (
         hasattr(form_or_value, "get") and not isinstance(form_or_value, (str, bytes))
     ):
-        raw = form_or_value.get("acl_mode")
+        raw = form_or_value.get("access_mode")
     else:
         raw = form_or_value
     mode = (raw or "inherit").strip().lower()
-    if mode not in config.SECRET_ACCESS_MODES:
+    if mode not in config.ACCESS_MODES:
         return "inherit"
     return mode
 
@@ -335,8 +335,8 @@ def _upsert_secret(
     touch_meta=True,
     requires_approval=None,
     set_requires_approval=False,
-    acl_mode="inherit",
-    set_acl_mode=False,
+    access_mode="inherit",
+    set_access_mode=False,
 ):
     """Insert/update one secret; returns (id, was_new).
 
@@ -354,8 +354,8 @@ def _upsert_secret(
             do not set expires_at.
         requires_approval: Per-secret override (None = inherit project default).
         set_requires_approval: When True, write requires_approval column.
-        acl_mode: Per-secret access mode (see config.SECRET_ACCESS_MODES).
-        set_acl_mode: When True, write acl_mode on insert/update.
+        access_mode: Per-secret access mode (see config.ACCESS_MODES).
+        set_access_mode: When True, write access_mode on insert/update.
 
     Returns:
         Tuple (secret_id, was_new) where was_new is True when no live row
@@ -368,7 +368,7 @@ def _upsert_secret(
     from secret_kinds import normalize_kind
 
     kind = normalize_kind(kind)
-    mode = _parse_access_mode(acl_mode)
+    mode = _parse_access_mode(access_mode)
     enc = value_or_enc if already_enc else crypto.encrypt(str(value_or_enc))
     cur.execute(
         """
@@ -391,10 +391,10 @@ def _upsert_secret(
             cols.append("requires_approval")
             vals.append(requires_approval)
             updates.append("requires_approval = EXCLUDED.requires_approval")
-        if set_acl_mode:
-            cols.append("acl_mode")
+        if set_access_mode:
+            cols.append("access_mode")
             vals.append(mode)
-            updates.append("acl_mode = EXCLUDED.acl_mode")
+            updates.append("access_mode = EXCLUDED.access_mode")
         placeholders = ", ".join(["%s"] * len(cols))
         col_sql = ", ".join(cols)
         upd_sql = ",\n                      ".join(updates)

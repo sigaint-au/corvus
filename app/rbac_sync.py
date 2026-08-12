@@ -1,30 +1,71 @@
 """RBAC binding helpers (k8s model).
 
 Membership UIs and directory synchronization write ``rbac.bindings`` directly.
+Roles are the built-in ``rbac.roles`` names (``team-member``, ``project-admin``,
+``secret-reveal``, ...); callers never translate a short role vocabulary.
 """
 
 from __future__ import annotations
 
 import logging
 
+from config import (
+    RBAC_CLUSTER_ROLE_DROPDOWN,
+    RBAC_PROJECT_ROLE_DROPDOWN,
+    RBAC_SECRET_ROLE_DROPDOWN,
+    RBAC_SERVICE_ROLE_DROPDOWN,
+    RBAC_TEAM_ROLE_DROPDOWN,
+)
+
 log = logging.getLogger(__name__)
 
-# Legacy role name → built-in rbac.roles name
-TEAM_ROLE_TO_RBAC = {
+TEAM_ROLE_NAMES = tuple(name for name, _ in RBAC_TEAM_ROLE_DROPDOWN)
+PROJECT_ROLE_NAMES = tuple(name for name, _ in RBAC_PROJECT_ROLE_DROPDOWN)
+
+# Legacy short role vocabulary still used by invites/join-requests/LDAP-OIDC maps.
+TEAM_SHORT_ROLES = {
     "owner": "team-owner",
     "admin": "team-admin",
     "member": "team-member",
     "viewer": "team-viewer",
 }
-PROJECT_ROLE_TO_RBAC = {
+PROJECT_SHORT_ROLES = {
     "admin": "project-admin",
     "write": "project-write",
     "read": "project-read",
 }
-RBAC_TO_PROJECT_ROLE = {v: k for k, v in PROJECT_ROLE_TO_RBAC.items()}
-RBAC_TO_TEAM_ROLE = {v: k for k, v in TEAM_ROLE_TO_RBAC.items()}
-PROJECT_ROLE_NAMES = tuple(PROJECT_ROLE_TO_RBAC.values())
-TEAM_ROLE_NAMES = tuple(TEAM_ROLE_TO_RBAC.values())
+
+
+def _team_role_name(role: str | None) -> str | None:
+    """Normalize a value to an rbac team role name (accepts full or short)."""
+    if not role:
+        return None
+    if role in TEAM_ROLE_NAMES:
+        return role
+    return TEAM_SHORT_ROLES.get(role)
+
+
+def _project_role_name(role: str | None) -> str | None:
+    """Normalize a value to an rbac project role name (accepts full or short)."""
+    if not role:
+        return None
+    if role in PROJECT_ROLE_NAMES:
+        return role
+    return PROJECT_SHORT_ROLES.get(role)
+
+# steep dropdowns → friendly label for list badges / tooltips
+ROLE_LABELS = dict(
+    RBAC_TEAM_ROLE_DROPDOWN
+    + RBAC_PROJECT_ROLE_DROPDOWN
+    + RBAC_SECRET_ROLE_DROPDOWN
+    + RBAC_CLUSTER_ROLE_DROPDOWN
+    + RBAC_SERVICE_ROLE_DROPDOWN
+)
+
+
+def rbac_role_label(role_name: str) -> str:
+    """Return the friendly label for an ``rbac.roles`` name (fallback: name)."""
+    return ROLE_LABELS.get(role_name, role_name or "")
 
 
 def _role_id(cur, name: str):
@@ -51,7 +92,11 @@ def count_team_owner_bindings(cur, team_id) -> int:
 def ensure_not_last_team_owner(
     cur, team_id, *, subject_kind: str, subject_id, new_role: str | None
 ) -> None:
-    """Raise if removing/demoting the last team-owner binding at this scope."""
+    """Raise if removing/demoting the last team-owner binding at this scope.
+
+    ``new_role`` is an ``rbac.roles`` name (e.g. ``"team-owner"``) or ``None``
+    / ``""`` to clear the binding.
+    """
     cur.execute(
         """
         SELECT r.name AS role_name
@@ -67,9 +112,7 @@ def ensure_not_last_team_owner(
     row = cur.fetchone()
     if not row or row.get("role_name") != "team-owner":
         return
-    # Demoting or clearing an owner
-    new_rname = TEAM_ROLE_TO_RBAC.get(new_role or "") if new_role else None
-    if new_rname == "team-owner":
+    if _team_role_name(new_role) == "team-owner":
         return
     if count_team_owner_bindings(cur, team_id) <= 1:
         raise ValueError(
@@ -78,7 +121,7 @@ def ensure_not_last_team_owner(
 
 
 def group_team_roles_map(cur, team_id) -> dict[str, str]:
-    """Map group_id → short team role (admin/member/viewer/owner) from bindings."""
+    """Map group_id → rbac team role name (e.g. ``team-admin``) from bindings."""
     cur.execute(
         """
         SELECT b.subject_id::text AS gid, r.name AS role_name
@@ -92,14 +135,12 @@ def group_team_roles_map(cur, team_id) -> dict[str, str]:
     )
     out: dict[str, str] = {}
     for row in cur.fetchall() or []:
-        out[str(row["gid"])] = RBAC_TO_TEAM_ROLE.get(
-            row["role_name"], row["role_name"]
-        )
+        out[str(row["gid"])] = row["role_name"]
     return out
 
 
 def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, created_by=None):
-    """Upsert or clear Group→team binding (RBAC only; no groups.team_role column)."""
+    """Upsert or clear Group→team binding. ``team_role`` is an rbac role name."""
     ensure_not_last_team_owner(
         cur,
         team_id,
@@ -119,14 +160,12 @@ def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, cr
         """,
         (str(group_id), str(team_id)),
     )
+    team_role = _team_role_name(team_role)
     if not team_role:
         return
-    rname = TEAM_ROLE_TO_RBAC.get(team_role)
-    if not rname:
-        return
-    rid = _role_id(cur, rname)
+    rid = _role_id(cur, team_role)
     if not rid:
-        log.warning("missing built-in role %s", rname)
+        log.warning("missing built-in role %s", team_role)
         return
     cur.execute(
         """
@@ -141,7 +180,7 @@ def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, cr
 def sync_group_project_binding(
     cur, *, group_id, project_id, role: str | None, created_by=None
 ):
-    """Upsert or clear a Group→project RBAC binding."""
+    """Upsert or clear a Group→project RBAC binding. ``role`` is an rbac name."""
     cur.execute(
         """
         DELETE FROM rbac.bindings
@@ -154,14 +193,12 @@ def sync_group_project_binding(
         """,
         (str(group_id), str(project_id)),
     )
+    role = _project_role_name(role)
     if not role:
         return
-    rname = PROJECT_ROLE_TO_RBAC.get(role)
-    if not rname:
-        return
-    rid = _role_id(cur, rname)
+    rid = _role_id(cur, role)
     if not rid:
-        log.warning("missing built-in role %s", rname)
+        log.warning("missing built-in role %s", role)
         return
     cur.execute(
         """
@@ -176,7 +213,7 @@ def sync_group_project_binding(
 def sync_user_team_binding(
     cur, *, user_id, team_id, role: str | None, created_by=None, source="manual"
 ):
-    """Upsert User→team binding (role: owner|admin|member|viewer or None to clear)."""
+    """Upsert User→team binding. ``role`` is an rbac role name or None to clear."""
     ensure_not_last_team_owner(
         cur,
         team_id,
@@ -197,12 +234,10 @@ def sync_user_team_binding(
         """,
         (str(user_id), str(team_id), source),
     )
+    role = _team_role_name(role)
     if not role:
         return
-    rname = TEAM_ROLE_TO_RBAC.get(role)
-    if not rname:
-        return
-    rid = _role_id(cur, rname)
+    rid = _role_id(cur, role)
     if not rid:
         return
     cur.execute(
@@ -218,7 +253,7 @@ def sync_user_team_binding(
 def sync_user_project_binding(
     cur, *, user_id, project_id, role: str | None, created_by=None
 ):
-    """Upsert User→project binding (role: admin|write|read or None to clear)."""
+    """Upsert User→project binding. ``role`` is an rbac role name or None."""
     cur.execute(
         """
         DELETE FROM rbac.bindings
@@ -231,14 +266,10 @@ def sync_user_project_binding(
         """,
         (str(user_id), str(project_id)),
     )
+    role = _project_role_name(role)
     if not role:
         return
-    rname = PROJECT_ROLE_TO_RBAC.get(role) or (
-        role if role in PROJECT_ROLE_NAMES else None
-    )
-    if not rname:
-        return
-    rid = _role_id(cur, rname)
+    rid = _role_id(cur, role)
     if not rid:
         return
     cur.execute(
@@ -272,7 +303,8 @@ def list_scope_bindings(cur, scope_kind: str, scope_id) -> list:
 
 
 def enrich_binding_emails(bindings: list) -> list:
-    """Attach subject_email for User subjects via admin DSN."""
+    """Attach subject_email for User subjects via admin DSN and the friendly
+    role label (title-bearing badge) for the role_name."""
     if not bindings:
         return bindings
     user_ids = [
@@ -302,7 +334,5 @@ def enrich_binding_emails(bindings: list) -> list:
             b["subject_email"] = email_map.get(str(b.get("subject_id")))
         else:
             b["subject_email"] = None
-        # Friendly short role for project-* / team-*
-        rn = b.get("role_name") or ""
-        b["role_short"] = RBAC_TO_PROJECT_ROLE.get(rn) or RBAC_TO_TEAM_ROLE.get(rn) or rn
+        b["role_short"] = rbac_role_label(b.get("role_name") or "")
     return bindings

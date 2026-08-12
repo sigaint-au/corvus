@@ -126,7 +126,7 @@ class TestTeams:
         tid = uuid4()
         conn, _ = _conn(fetchone={'id': None})
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/teams/{tid}/members', data={'email': 'nope@x.com', 'role': 'member'}, follow_redirects=False)
+            r = self.client.post(f'/teams/{tid}/members', data={'email': 'nope@x.com', 'role': 'team-member'}, follow_redirects=False)
         assert r.status_code == 302
 
     def test_add_member_uses_lookup_user(self):
@@ -134,7 +134,7 @@ class TestTeams:
         conn, cur = _conn(fetchone={'id': uid})
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/teams/{tid}/members', data={'email': 'u@ex.com', 'role': 'member'}, follow_redirects=False)
+            r = self.client.post(f'/teams/{tid}/members', data={'email': 'u@ex.com', 'role': 'team-member'}, follow_redirects=False)
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
         assert 'private.lookup_user' in sql
@@ -205,13 +205,14 @@ class TestTeams:
 
     def test_team_roles_include_viewer(self):
         assert 'viewer' in config.TEAM_ROLES
-        assert config.ROLE_RANK['viewer'] < config.ROLE_RANK['member']
+        assert 'team-viewer' in [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        assert not hasattr(config, 'ROLE_RANK')
 
     def test_add_member_viewer_role(self):
         tid, uid = (uuid4(), uuid4())
         conn, cur = _conn(fetchone={'id': uid})
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/teams/{tid}/members', data={'email': 'ro@ex.com', 'role': 'viewer'}, follow_redirects=False)
+            r = self.client.post(f'/teams/{tid}/members', data={'email': 'ro@ex.com', 'role': 'team-viewer'}, follow_redirects=False)
         assert r.status_code == 302
         sql = ' '.join((str(c) for c in cur.execute.call_args_list))
         assert 'viewer' in sql

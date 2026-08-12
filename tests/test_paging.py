@@ -165,7 +165,7 @@ def test_load_team_secrets_page_applies_filters():
                 "kind": "database",
                 "updated_at": None,
                 "expires_at": None,
-                "acl_mode": "inherit",
+                "access_mode": "inherit",
                 "project_id": uuid4(),
                 "project_name": "api",
             }
@@ -186,7 +186,7 @@ def test_load_team_secrets_page_applies_filters():
     # count query includes kind + acl filters
     count_sql = cur.execute.call_args_list[0].args[0]
     assert "s.kind = %s" in count_sql
-    assert "acl_mode" in count_sql
+    assert "access_mode" in count_sql
 
 
 def test_redirect_after_team_switch_from_other_project(app):

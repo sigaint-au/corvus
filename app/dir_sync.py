@@ -2,7 +2,20 @@
 
 from __future__ import annotations
 
-from config import ROLE_RANK
+# Directory team maps store short roles (owner/admin/member/viewer); translate
+# them to rbac.roles names and rank by RBAC role name.
+TEAM_MAP_ROLE_TO_RBAC = {
+    "owner": "team-owner",
+    "admin": "team-admin",
+    "member": "team-member",
+    "viewer": "team-viewer",
+}
+TEAM_RBAC_RANK = {
+    "team-owner": 4,
+    "team-admin": 3,
+    "team-member": 2,
+    "team-viewer": 1,
+}
 
 
 def apply_global_admin_maps(cur, uid, groups, role_maps, group_key: str) -> None:
@@ -52,7 +65,7 @@ def apply_team_membership_maps(
 ) -> None:
     """Sync directory-managed team bindings from LDAP/OIDC maps.
 
-    Builds desired team roles from matching maps (highest ``ROLE_RANK`` wins),
+    Builds desired team roles from matching maps (highest RBAC role rank wins),
     removes stale directory bindings, and never overwrites manual bindings.
 
     Args:
@@ -78,9 +91,14 @@ def apply_team_membership_maps(
         if not group_matches(m[group_key], groups):
             continue
         tid = str(m["team_id"])
-        role = m["role"]
-        if tid not in desired or ROLE_RANK.get(role, 0) > ROLE_RANK.get(desired[tid], 0):
-            desired[tid] = role
+        rname = TEAM_MAP_ROLE_TO_RBAC.get(m["role"])
+        if not rname:
+            continue
+        if (
+            tid not in desired
+            or TEAM_RBAC_RANK.get(rname, 0) > TEAM_RBAC_RANK.get(desired[tid], 0)
+        ):
+            desired[tid] = rname
 
     import rbac_sync
 

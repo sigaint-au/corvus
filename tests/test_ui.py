@@ -73,20 +73,23 @@ class TestUIShell:
                 create_url='/x', panel_title='Access', empty_message='',
                 full_bindings_url='', form_id_prefix='t')
         assert 'title="Full control of a team and its projects/secrets"' in panel
-        # Secret permission select explains read/reveal/write
+        # Secret Access tab reuses the panel: secret-* role options carry
+        # role-description tooltips
         sid = str(uuid4())
         with store.app.test_request_context(f'/projects/{tid}/secrets/{sid}'):
             sv = render_template(
                 'secret_view.html', project_id=tid, secret_id=sid, secret_key='K',
                 kind='plain', project_name='P', active_tab='access', can_admin=True,
                 can_write=False, can_reveal=True, access_blocked=False, is_version=False,
-                value='', acl_mode='inherit', acl_modes=['inherit', 'restricted'],
-                acl_mode_labels={}, acl_permissions=['reveal'],
-                acl_perm_labels={'reveal': 'Reveal value'}, team_groups=[],
+                value='', access_mode='inherit', access_modes=['inherit', 'restricted'],
+                access_mode_labels={}, team_groups=[],
+                role_dropdown=[('secret-reveal', 'Reveal')],
+                role_descriptions={'secret-reveal': 'Read metadata and reveal the secret value'},
                 secret_bindings=[], effective_access=[], custom_meta=[], note='',
                 expires_at='', created_at='', updated_at='', last_accessed_at=None,
                 last_accessed_by_email='', clipboard_clear_seconds=30)
-        assert 'title="See the secret value"' in sv
+        assert 'title="Read metadata and reveal the secret value"' in sv
+        assert 'name="role_name"' in sv
 
     def test_rbac_bindings_breadcrumb_shows_scope(self):
         # RBAC bindings accessed from the sidebar (no back_team_id / no active

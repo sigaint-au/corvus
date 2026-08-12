@@ -422,7 +422,7 @@ def register(app):
             flash("Use Advanced create for structured secret types", "error")
             return redirect(url_for("secret_new", project_id=project_id))
         req_appr = _parse_requires_approval(request.form)
-        acl_mode = _parse_access_mode(request.form)
+        access_mode = _parse_access_mode(request.form)
         if not key or value is None:
             flash("Key and value required", "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
@@ -443,8 +443,8 @@ def register(app):
                     kind=kind,
                     requires_approval=req_appr,
                     set_requires_approval=True,
-                    acl_mode=acl_mode,
-                    set_acl_mode=True,
+                    access_mode=access_mode,
+                    set_access_mode=True,
                 )
                 if not sid:
                     flash("You don't have permission to do that", "error")
@@ -775,7 +775,7 @@ def register(app):
         cert_pem, cert_key = ("", "")
         if kind == "certificate":
             cert_pem, cert_key = split_cert_and_key(plaintext)
-        acl_mode = (row.get("acl_mode") or "inherit").strip() or "inherit"
+        access_mode = (row.get("access_mode") or "inherit").strip() or "inherit"
         tab = (active_tab or "secret").strip().lower()
         if tab not in ("secret", "meta", "access"):
             tab = "secret"
@@ -805,12 +805,11 @@ def register(app):
                 can_write=can_write and not is_version,
                 can_admin=can_admin,
                 can_reveal=can_reveal,
-                acl_mode=acl_mode,
-                acl_modes=config.SECRET_ACCESS_MODES,
-                acl_mode_labels=config.SECRET_ACCESS_MODE_LABELS,
-                acl_permissions=config.SECRET_ACCESS_PERMISSIONS,
-                acl_perm_labels=config.SECRET_ACCESS_PERM_LABELS,
-                secret_perm_to_role=config.SECRET_ACCESS_PERM_TO_ROLE,
+                access_mode=access_mode,
+                access_modes=config.ACCESS_MODES,
+                access_mode_labels=config.ACCESS_MODE_LABELS,
+                can_edit_access=can_admin,
+                role_dropdown=config.RBAC_SECRET_ROLE_DROPDOWN,
                 subject_kinds=config.RBAC_SUBJECT_KINDS,
                 secret_bindings=secret_bindings or [],
                 team_groups=team_groups or [],
@@ -861,7 +860,7 @@ def register(app):
             cur.execute(
                 """
                 SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
-                       s.requires_approval, s.acl_mode, s.created_at, s.updated_at,
+                       s.requires_approval, s.access_mode, s.created_at, s.updated_at,
                        s.last_accessed_at, s.last_accessed_by,
                        p.name AS project_name, p.require_reveal_approval
                 FROM api.secrets s
@@ -950,35 +949,9 @@ def register(app):
                     secret_bindings = list(cur.fetchall() or [])
                 except Exception:
                     secret_bindings = []
-                # Enrich user emails (private.users not visible under JWT)
-                user_ids = [
-                    str(b["subject_id"])
-                    for b in secret_bindings
-                    if b.get("subject_kind") == "User"
-                ]
-                email_map = {}
-                if user_ids:
-                    try:
-                        with db.connect_admin() as aconn, aconn.cursor() as acur:
-                            acur.execute(
-                                """
-                                SELECT id, email, name FROM private.users
-                                WHERE id = ANY(%s::uuid[])
-                                """,
-                                (user_ids,),
-                            )
-                            for urow in acur.fetchall() or []:
-                                email_map[str(urow["id"])] = urow
-                    except Exception:
-                        email_map = {}
-                for b in secret_bindings:
-                    b["permission"] = config.SECRET_ACCESS_ROLE_TO_PERM.get(
-                        b.get("role_name") or "", b.get("role_name") or ""
-                    )
-                    if b.get("subject_kind") == "User":
-                        u = email_map.get(str(b.get("subject_id"))) or {}
-                        b["email"] = u.get("email")
-                        b["name"] = u.get("name")
+                import rbac_sync
+
+                rbac_sync.enrich_binding_emails(secret_bindings)
                 try:
                     cur.execute(
                         """
@@ -1022,13 +995,13 @@ def register(app):
                 note = (request.form.get("note") or "").strip()
                 # ACL + reveal approval live on the Access tab — preserve on value save
                 req_appr = row.get("requires_approval")
-                acl_mode = (row.get("acl_mode") or "inherit").strip() or "inherit"
+                access_mode = (row.get("access_mode") or "inherit").strip() or "inherit"
                 row_view = dict(row)
                 row_view["note"] = note
                 row_view["kind"] = kind
                 row_view["project_name"] = row.get("project_name") or ""
                 row_view["requires_approval"] = req_appr
-                row_view["acl_mode"] = acl_mode
+                row_view["access_mode"] = access_mode
                 if not value:
                     flash("Value is required", "error")
                     body, code = _render_secret_view(
@@ -1526,7 +1499,7 @@ def register(app):
             can_write=can_write,
             secrets_pager=secrets_pager,
             search_q=q,
-            acl_mode_labels=config.SECRET_ACCESS_MODE_LABELS,
+            access_mode_labels=config.ACCESS_MODE_LABELS,
         )
 
 
@@ -2280,9 +2253,9 @@ def register(app):
                 "expires_at": "",
                 "kv_pairs": [("", "")],
                 "secret_kinds": config.SECRET_KINDS,
-                "acl_mode": "inherit",
-                "acl_modes": config.SECRET_ACCESS_MODES,
-                "acl_mode_labels": config.SECRET_ACCESS_MODE_LABELS,
+                "access_mode": "inherit",
+                "access_modes": config.ACCESS_MODES,
+                "access_mode_labels": config.ACCESS_MODE_LABELS,
                 "require_reveal_approval": bool(
                     project.get("require_reveal_approval")
                 ),
@@ -2307,7 +2280,7 @@ def register(app):
                     note=note,
                     expires_at=request.form.get("expires_at") or "",
                     kv_pairs=kv_pairs or [("", "")],
-                    acl_mode=_parse_access_mode(request.form),
+                    access_mode=_parse_access_mode(request.form),
                 ),
             ), 400
         try:
@@ -2322,7 +2295,7 @@ def register(app):
                     note=note,
                     expires_at=request.form.get("expires_at") or "",
                     kv_pairs=kv_pairs or [("", "")],
-                    acl_mode=_parse_access_mode(request.form),
+                    access_mode=_parse_access_mode(request.form),
                 ),
             ), 400
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -2337,8 +2310,8 @@ def register(app):
                     kind=kind,
                     requires_approval=_parse_requires_approval(request.form),
                     set_requires_approval=True,
-                    acl_mode=_parse_access_mode(request.form),
-                    set_acl_mode=True,
+                    access_mode=_parse_access_mode(request.form),
+                    set_access_mode=True,
                 )
                 if not sid:
                     flash("You don't have permission to do that", "error")
@@ -2366,7 +2339,7 @@ def register(app):
                         note=note,
                         expires_at=request.form.get("expires_at") or "",
                         kv_pairs=kv_pairs or [("", "")],
-                        acl_mode=_parse_access_mode(request.form),
+                        access_mode=_parse_access_mode(request.form),
                     ),
                 ), 400
         return redirect(
@@ -2393,7 +2366,7 @@ def register(app):
             cur.execute(
                 """
                 UPDATE api.secrets
-                SET acl_mode = %s, requires_approval = %s
+                SET access_mode = %s, requires_approval = %s
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 RETURNING key
                 """,
@@ -2412,7 +2385,7 @@ def register(app):
                     action="updated",
                 )
                 conn.commit()
-                label = config.SECRET_ACCESS_MODE_LABELS.get(mode, mode)
+                label = config.ACCESS_MODE_LABELS.get(mode, mode)
                 flash(f"Access settings saved ({label})", "ok")
         return redirect(access_url)
 
@@ -2438,12 +2411,17 @@ def register(app):
             or ""
         ).strip()
         sa_id = (request.form.get("subject_sa") or "").strip()
+        secret_role_names = [name for name, _ in config.RBAC_SECRET_ROLE_DROPDOWN]
         role_name = (request.form.get("role_name") or "").strip()
-        if not role_name:
+        if role_name not in secret_role_names:
+            # Legacy permission (read/reveal/write) fallback
+            legacy = {
+                "read": "secret-read",
+                "reveal": "secret-reveal",
+                "write": "secret-write",
+            }
             perm = (request.form.get("permission") or "reveal").strip().lower()
-            if perm not in config.SECRET_ACCESS_PERMISSIONS:
-                perm = "reveal"
-            role_name = config.SECRET_ACCESS_PERM_TO_ROLE.get(perm, "secret-reveal")
+            role_name = legacy.get(perm, "secret-reveal")
         access_url = url_for(
             "secret_view",
             project_id=project_id,
@@ -2466,7 +2444,7 @@ def register(app):
                 return redirect(access_url)
             cur.execute(
                 """
-                SELECT s.id, s.key, s.acl_mode, p.team_id
+                SELECT s.id, s.key, s.access_mode, p.team_id
                 FROM api.secrets s
                 JOIN api.projects p ON p.id = s.project_id
                 WHERE s.id = %s AND s.project_id = %s AND s.deleted_at IS NULL
@@ -2549,10 +2527,10 @@ def register(app):
                     ),
                 )
                 # Restricted mode if not already — bindings only apply as exclusive when restricted
-                if (sec.get("acl_mode") or "inherit") != "restricted":
+                if (sec.get("access_mode") or "inherit") != "restricted":
                     cur.execute(
                         """
-                        UPDATE api.secrets SET acl_mode = 'restricted'
+                        UPDATE api.secrets SET access_mode = 'restricted'
                         WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                         """,
                         (str(secret_id), str(project_id)),
