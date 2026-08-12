@@ -130,6 +130,51 @@ class TestUIShell:
             ro = render_template('rbac_bindings.html', **base, bindings=[], can_edit=False)
         assert 'Add the first binding' not in ro
 
+    def test_single_role_bindings_nav_item(self):
+        # The team-scoped 'Role bindings' entry (Organisation group) is hidden
+        # for global admins, who get the Administration entry instead — exactly
+        # one visible item either way.
+        tid = str(uuid4())
+        team = {'id': tid, 'name': 'Acme', 'classification_enabled': None,
+                'classification_text': '', 'classification_color': '',
+                'classification_fg': ''}
+        conn, cur = _conn()
+        last_sql = {'s': ''}
+
+        def execute(sql, params=None):
+            last_sql['s'] = ' '.join(str(sql).lower().split())
+
+        def fetchone():
+            return {'n': 0}
+
+        def fetchall():
+            s = last_sql['s']
+            if 'from api.teams' in s and 'join' not in s:
+                return [team]
+            return []
+
+        cur.execute.side_effect = execute
+        cur.fetchone.side_effect = fetchone
+        cur.fetchall.side_effect = fetchall
+        # global admin with an active team → administration item only
+        c = store.app.test_client()
+        with c.session_transaction() as s:
+            s['user_id'] = str(uuid4()); s['email'] = 'admin@x.y'; s['team_id'] = tid
+            s['is_global_admin'] = True
+        with patch.object(db, 'as_user', return_value=conn), patch.object(authz, 'is_global_admin', return_value=True):
+            r = c.get('/teams')
+        assert r.status_code == 200
+        assert r.data.count(b'>Role bindings</a>') == 1
+        # regular member with an active team → organisation item only
+        c2 = store.app.test_client()
+        with c2.session_transaction() as s:
+            s['user_id'] = str(uuid4()); s['email'] = 'u@x.y'; s['team_id'] = tid
+            s['is_global_admin'] = False
+        with patch.object(db, 'as_user', return_value=conn), patch.object(authz, 'is_global_admin', return_value=False):
+            r2 = c2.get('/teams')
+        assert r2.status_code == 200
+        assert r2.data.count(b'>Role bindings</a>') == 1
+
     def test_app_has_skip_link_and_responsive_table_css(self):
         c = store.app.test_client()
         with c.session_transaction() as s:
