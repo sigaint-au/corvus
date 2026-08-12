@@ -203,9 +203,10 @@ class TestSecrets:
         assert b'/hide' in r.data
         assert b'<button type="button"' in r.data
         # OOB toggle must be an oat menu item (button, not anchor) that closes
-        # the kebab popover after clicking.
+        # the kebab popover after clicking, styled like the other menu items.
         assert b'role="menuitem"' in r.data
         assert b'popovertarget="secret-menu-' + str(sid).encode() + b'"' in r.data
+        assert b'class="reveal-toggle ghost"' in r.data
         assert b'name="expires_at"' not in r.data
 
     def test_reveal_secret_requires_access_request(self):
