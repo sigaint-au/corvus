@@ -325,7 +325,7 @@
 {% elif active_tab == 'myaccess' %}
 <section>
   <h2>My access</h2>
-  <p class="muted">The role bindings that grant you access across the system, and how each grant was received.</p>
+  <p class="muted">What grants you access, and how.</p>
   {% if user.is_global_admin %}
   <div role="alert" data-variant="warning">
     You are a <strong>global admin</strong> and can access every team, project, and secret.
@@ -369,7 +369,7 @@
   {% else %}
   <p class="empty">
     {% if user.is_global_admin %}No explicit bindings record your global-admin access.{% else %}
-    No role bindings reference you directly or through a group. Ask a team owner or admin to grant access.{% endif %}
+    No bindings reference you or your groups. Ask a team owner or admin to grant access.{% endif %}
   </p>
   {% endfor %}
 </section>
@@ -512,7 +512,7 @@
     </tbody>
   </table></div>
   {% else %}
-  <p class="empty">No pinned secrets. Pin keys from a project secrets list to keep them handy.</p>
+  <p class="empty">Pin a secret from a project's secrets list.</p>
   {% endif %}
 </section>
 

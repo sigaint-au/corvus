@@ -87,8 +87,7 @@
 <section>
   <h2>Two-factor authentication</h2>
   <p class="muted">
-    Any user can enable TOTP on their profile. When enforced below, global admins
-    must enroll at next sign-in and cannot disable 2FA.
+    Any user can enable TOTP. When enforced below, global admins must enroll and can't disable 2FA.
   </p>
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -470,8 +469,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 <section>
   <h2>LDAP group → roles</h2>
   <p class="muted">
-    Map directory groups to server roles. Matched on each LDAP login
-    (CN or full DN). When any maps exist, global admin is synced from them for LDAP users.
+    Map directory groups to roles. Matching groups sync global admin on login.
   </p>
   {% if ldap_role_maps %}
   <div class="table"><table>
@@ -594,9 +592,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 <section>
   <h2>OIDC group → roles</h2>
   <p class="muted">
-    Map IdP groups (or realm roles) to server roles. Matched on each SSO login
-    (exact name, case-insensitive token match like LDAP). When any maps exist,
-    global admin is synced from them for OIDC users.
+    Map IdP groups (or realm roles) to server roles. Matching groups sync global admin on login.
   </p>
   {% if oidc_role_maps %}
   <div class="table"><table>
@@ -718,8 +714,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       Send login alert emails on successful sign-in
     </label>
     <p class="muted field-spacer">
-      Password reset emails are sent whenever SMTP is enabled and a local user
-      requests a reset. Login alerts require the checkbox above.
+      Password-reset emails send when SMTP is enabled; login alerts need the checkbox above.
     </p>
     <p class="form-actions"><button type="submit">Save email settings</button></p>
   </form>

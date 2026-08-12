@@ -65,7 +65,7 @@
   {% if not scope_id and scope_kind != 'cluster' %}
   <p class="muted">Choose a team or project scope and run Review.</p>
   {% elif not results %}
-  <p class="muted">No users matched (start-fresh RBAC may have no bindings yet; global admins always match).</p>
+  <p class="muted">No users matched. Global admins always match.</p>
   {% else %}
   <div class="table">
     <table>

@@ -167,7 +167,7 @@
 {% if is_admin and active_tab == 'members' %}
 <section>
   <h2>Invites &amp; join requests</h2>
-  <p class="muted">Share an invite link. Recipients must be signed in; they request to join and wait for approval.</p>
+  <p class="muted">Share a link. Recipients sign in, request to join, and an owner approves.</p>
   <form method="post" action="{{ url_for('create_team_invite', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Role
@@ -456,8 +456,7 @@
 <section>
   <h2>LDAP group membership</h2>
   <p class="muted">
-    Automatically add users to this team when they sign in via LDAP and belong to the mapped group.
-    Highest matching role wins. Manual members are never removed by LDAP sync.
+    Automatically add matching LDAP users to this team on login.
     {% if not ldap_enabled %}<strong>LDAP is currently disabled</strong> in server settings.{% endif %}
   </p>
   {% if ldap_maps %}
@@ -504,8 +503,7 @@
 <section>
   <h2>OIDC group membership</h2>
   <p class="muted">
-    Automatically add users to this team when they sign in via OIDC/SSO and the token includes the mapped group.
-    Highest matching role wins. Manual members are never removed by OIDC sync.
+    Automatically add matching SSO users to this team on login.
     {% if not oidc_enabled %}<strong>OIDC is currently disabled</strong> in server settings.{% endif %}
   </p>
   {% if oidc_maps %}
@@ -552,7 +550,7 @@
 {% if my_role == 'team-owner' %}
 <section>
   <h2>Transfer ownership</h2>
-  <p class="muted">Promotes the user to owner and demotes you to admin. Prevents an ownerless team.</p>
+  <p class="muted">Promotes the user to owner and demotes you to admin.</p>
   <form method="post" action="{{ url_for('transfer_team_ownership', team_id=team.id) }}" class="row"
         onsubmit="return confirm('Transfer ownership to this user?')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">

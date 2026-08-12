@@ -244,7 +244,7 @@
   <h2>Import / Export</h2>
 
   <h3>Export</h3>
-  <p class="muted">Download all live secrets in this project. Prefer encrypted JSON for backups; plaintext formats need a confirm.</p>
+  <p class="muted">Prefer encrypted JSON for backups; plaintext formats need a confirm.</p>
   <form class="export-form row" id="export-form" action="#" method="get">
     <label class="export-format">Format
       <select id="export-format" name="format" aria-label="Export format">
@@ -311,7 +311,7 @@
   <div class="section-head">
     <h2>Effective access</h2>
   </div>
-  <p class="muted">Everyone who can access this project and why — including team roles that flow down and members of bound groups.</p>
+  <p class="muted">Who can access this project and why.</p>
   {% if effective_access %}
   <div class="table">
     <table>
@@ -433,9 +433,9 @@
   {% else %}
   <p class="empty">
     {% if can_admin %}
-    No access requests yet. Users with read access will appear here when they request to reveal a secret.
+    No access requests yet.
     {% else %}
-    You have no access requests. Click Reveal on a secret to request approval.
+    You have no access requests.
     {% endif %}
   </p>
   {% endif %}
@@ -505,7 +505,7 @@
     {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
     No audit events match these filters.
     {% else %}
-    No audit events yet. Activity appears here when secrets are saved, revealed, or deleted.
+    No audit events yet.
     {% endif %}
   </p>
   {% endif %}
@@ -518,8 +518,7 @@
     </div>
   </div>
   <p class="page-desc muted">
-    Project-scoped machine accounts for ESO and CI. Human access controls and reveal approval do not apply —
-    use a <strong>key allow-list</strong> when automation should only see some secrets.
+    Project-scoped tokens for ESO and CI. Use a <strong>key allow-list</strong> to limit which secrets automation can see.
   </p>
 
   {% if can_write %}

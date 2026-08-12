@@ -5,8 +5,8 @@
   <h1>Roles</h1>
 </div>
 <p class="page-desc muted">
-  Named sets of permissions (verbs on resources). Assign them to subjects under
-  <a href="{{ url_for('rbac_bindings') }}">Role bindings</a> at a scope.
+  Named sets of permissions (verbs × resources). Assign them under
+  <a href="{{ url_for('rbac_bindings') }}">Role bindings</a>.
 </p>
 
 <nav class="tabs" aria-label="Roles sections">
@@ -30,7 +30,7 @@
     <a class="button outline small" href="{{ url_for('rbac_roles', tab='create') }}">+ New role</a>
     {% endif %}
   </div>
-  <p class="muted mt-0">Shipped roles used by team, project, and secret Access dropdowns. Their rules cannot be edited.</p>
+  <p class="muted mt-0">Shipped roles used by the Access dropdowns. Rules can't be edited.</p>
   {% if builtin_roles %}
   <div class="table">
     <table>
@@ -144,7 +144,7 @@
 
       <div id="mode-form-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-form-btn">
         <p class="muted role-panel-hint">
-          Pick a resource and the verbs it allows for a single rule. Switch to YAML for multiple rules.
+          Pick a resource and its verbs for one rule. Use YAML for multiple rules.
         </p>
         <div class="role-create-cols">
           <fieldset class="field-group">
