@@ -1087,8 +1087,11 @@
       margin-bottom: -1px;
       color: var(--muted-foreground);
       text-decoration: none;
+      font: inherit;
       font-size: .925rem;
       font-weight: 500;
+      -webkit-appearance: none;
+      appearance: none;
       border: none;
       border-bottom: 2px solid transparent;
       border-radius: 0;
@@ -2259,37 +2262,7 @@
       white-space: pre-wrap;
     }
     .role-mode-tabs { margin: 0 0 .5rem; }
-    .role-mode-tabs [role="tablist"] {
-      display: flex;
-      flex-wrap: wrap;
-      gap: .15rem 1.1rem;
-      border-bottom: 1px solid var(--border);
-      padding: 0;
-      margin: 0;
-    }
-    .role-mode-tabs [role="tablist"] .tab {
-      cursor: pointer;
-      appearance: none;
-      -webkit-appearance: none;
-      color: var(--muted-foreground);
-      background: transparent;
-      border: none;
-      border-bottom: 2px solid transparent;
-      border-radius: 0;
-      padding: .55rem 0 .65rem;
-      margin: 0;
-      font: inherit;
-      font-size: .925rem;
-      font-weight: 500;
-    }
-    .role-mode-tabs [role="tablist"] .tab:hover {
-      color: var(--foreground);
-      background: transparent;
-    }
-    .role-mode-tabs [role="tablist"] .tab.active {
-      color: var(--foreground);
-      border-bottom-color: var(--foreground);
-    }
+    .role-mode-tabs .tab { cursor: pointer; }
     /* ── Machine account create + scope chips ── */
     .machine-accounts .token-create-card,
     .eso-token-create .token-create-card {
