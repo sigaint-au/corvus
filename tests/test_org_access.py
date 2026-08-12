@@ -322,7 +322,12 @@ class TestOrgAccess:
         assert 'apply_group_membership_maps' in Path(APP_ROOT / 'ldap_auth.py').read_text()
         seed = (REPO_ROOT / 'scripts' / 'seed_mock.py').read_text()
         assert 'GROUPS' in seed
-        assert 'PROJECT_GROUP_ROLES' in seed
+        assert 'PROJECT_GROUP_BINDINGS' in seed
+        assert 'CUSTOM_ROLES' in seed
+        assert 'MACHINE_TOKENS' in seed
+        assert 'SECRET_BINDINGS' in seed
+        assert 'access_mode' in seed
+        assert 'acl_mode' not in seed
 
     def test_dir_sync_group_membership_maps(self):
         """Directory sync upserts/removes group_members for external_key matches."""
