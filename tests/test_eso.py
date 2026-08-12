@@ -221,6 +221,24 @@ class TestESO:
         insert = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])][0]
         assert insert.args[1][5] is not None
 
+    def test_mgmt_add_team_binding_owner_guard(self):
+        """A non-owner must not grant team-owner via the management API."""
+        uid = str(uuid4())
+        tid, mid = uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': tid},     # _resolve_team by uuid
+            {'r': 'admin'},  # api.team_role -> requestor is only an admin
+            {'id': str(mid)},  # would-be user lookup (must not be reached)
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/eso/v1/teams/{tid}/members',
+                json={'email': 'u@x.com', 'role': 'team-owner'},
+                headers={'Authorization': 'Bearer pat_owner_guard'},
+            )
+        assert r.status_code == 403
+
     def test_pat_list_projects(self):
         uid = str(uuid4())
         conn, cur = _conn(fetchall=[{'id': self.pid, 'name': 'ios-app', 'team_id': uuid4(), 'team_name': 'Mobile'}])

@@ -291,7 +291,7 @@ def register(app):
             # M1: only team owners may assign owner
             cur.execute("SELECT api.team_role(%s::uuid) AS r", (tid,))
             my_role = (cur.fetchone() or {}).get("r")
-            if role == "owner" and my_role != "owner":
+            if role == "team-owner" and my_role != "owner":
                 return jsonify({"error": "only a team owner can grant owner"}), 403
             mid = _lookup_user_id(cur, email)
             if not mid:
