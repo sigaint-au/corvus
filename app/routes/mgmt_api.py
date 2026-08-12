@@ -288,6 +288,9 @@ def register(app):
             tid = _resolve_team(cur, team_ref)
             if not tid:
                 return jsonify({"error": "not found"}), 404
+            cur.execute("SELECT api.can_manage_rbac('team', %s::uuid) AS ok", (tid,))
+            if not (cur.fetchone() or {}).get("ok"):
+                return jsonify({"error": "forbidden"}), 403
             # M1: only team owners may assign owner
             cur.execute("SELECT api.team_role(%s::uuid) AS r", (tid,))
             my_role = (cur.fetchone() or {}).get("r")
@@ -331,6 +334,9 @@ def register(app):
             tid = _resolve_team(cur, team_ref)
             if not tid:
                 return jsonify({"error": "not found"}), 404
+            cur.execute("SELECT api.can_manage_rbac('team', %s::uuid) AS ok", (tid,))
+            if not (cur.fetchone() or {}).get("ok"):
+                return jsonify({"error": "forbidden"}), 403
             mid = _lookup_user_id(cur, member_ref)
             if not mid:
                 return jsonify({"error": "user not found"}), 404
@@ -345,7 +351,7 @@ def register(app):
                 (tid, mid),
             )
             if not cur.fetchone():
-                return jsonify({"error": "forbidden or not a member"}), 403
+                return jsonify({"error": "member not found"}), 404
             rbac_sync.sync_user_team_binding(
                 cur, user_id=mid, team_id=tid, role=None, created_by=uid
             )
@@ -372,12 +378,15 @@ def register(app):
             tid = _resolve_team(cur, team_ref)
             if not tid:
                 return jsonify({"error": "not found"}), 404
+            cur.execute("SELECT api.can_manage_rbac('team', %s::uuid) AS ok", (tid,))
+            if not (cur.fetchone() or {}).get("ok"):
+                return jsonify({"error": "forbidden"}), 403
             mid = _lookup_user_id(cur, email)
             if not mid:
                 return jsonify({"error": "user not found"}), 404
             # Promote the new owner first, then demote existing owners.
             rbac_sync.sync_user_team_binding(
-                cur, user_id=mid, team_id=tid, role="owner", created_by=uid
+                cur, user_id=mid, team_id=tid, role="team-owner", created_by=uid
             )
             cur.execute(
                 """
@@ -395,7 +404,7 @@ def register(app):
                     cur,
                     user_id=owner["subject_id"],
                     team_id=tid,
-                    role="admin",
+                    role="team-admin",
                     created_by=uid,
                 )
             audit.log_org(

@@ -38,7 +38,8 @@ def rbac_role_label(role_name: str) -> str:
     return ROLE_LABELS.get(role_name, role_name or "")
 
 
-def _role_id(cur, name: str):
+def role_id(cur, name: str):
+    """Return the UUID string for an ``rbac.roles`` name, or None."""
     cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (name,))
     row = cur.fetchone()
     return str(row["id"]) if row else None
@@ -132,7 +133,7 @@ def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, cr
     )
     if team_role not in TEAM_ROLE_NAMES:
         return
-    rid = _role_id(cur, team_role)
+    rid = role_id(cur, team_role)
     if not rid:
         log.warning("missing built-in role %s", team_role)
         return
@@ -164,7 +165,7 @@ def sync_group_project_binding(
     )
     if role not in PROJECT_ROLE_NAMES:
         return
-    rid = _role_id(cur, role)
+    rid = role_id(cur, role)
     if not rid:
         log.warning("missing built-in role %s", role)
         return
@@ -204,7 +205,7 @@ def sync_user_team_binding(
     )
     if role not in TEAM_ROLE_NAMES:
         return
-    rid = _role_id(cur, role)
+    rid = role_id(cur, role)
     if not rid:
         return
     cur.execute(
@@ -235,7 +236,7 @@ def sync_user_project_binding(
     )
     if role not in PROJECT_ROLE_NAMES:
         return
-    rid = _role_id(cur, role)
+    rid = role_id(cur, role)
     if not rid:
         return
     cur.execute(

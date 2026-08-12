@@ -883,16 +883,7 @@ def register(app):
             try:
                 import rbac_sync
 
-                # Role names are the built-in project-* rbac.roles names.
                 if role_name not in rbac_sync.PROJECT_ROLE_NAMES:
-                    flash("Unknown role", "error")
-                    return redirect(dest)
-                rname = role_name
-                role_short = None
-
-                cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (rname,))
-                role = cur.fetchone()
-                if not role:
                     flash("Unknown role", "error")
                     return redirect(dest)
 
@@ -908,34 +899,21 @@ def register(app):
                         return redirect(dest)
                     subject_id = str(u["id"])
                     detail_who = subject_email
-                    # Prefer family upsert for project-* roles
-                    if role_short:
-                        rbac_sync.sync_user_project_binding(
-                            cur,
-                            user_id=subject_id,
-                            project_id=project_id,
-                            role=role_short,
-                            created_by=session["user_id"],
-                        )
-                    else:
-                        cur.execute(
-                            """
-                            INSERT INTO rbac.bindings
-                              (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
-                            VALUES (%s::uuid, 'User', %s::uuid, 'project', %s::uuid, %s::uuid)
-                            """,
-                            (
-                                str(role["id"]),
-                                subject_id,
-                                str(project_id),
-                                session["user_id"],
-                            ),
-                        )
+                    rbac_sync.sync_user_project_binding(
+                        cur,
+                        user_id=subject_id,
+                        project_id=project_id,
+                        role=role_name,
+                        created_by=session["user_id"],
+                    )
                 elif subject_kind == "Group":
+                    if not subject_group:
+                        flash("Select a group", "error")
+                        return redirect(dest)
                     cur.execute(
                         """
                         SELECT id, name FROM api.groups
-                        WHERE id = %s::uuid AND team_id = %s::uuid
+                        WHERE id = %s AND team_id = %s
                         """,
                         (subject_group, str(proj["team_id"])),
                     )
@@ -945,42 +923,32 @@ def register(app):
                         return redirect(dest)
                     subject_id = str(g["id"])
                     detail_who = f"group {g['name']}"
-                    if role_short:
-                        rbac_sync.sync_group_project_binding(
-                            cur,
-                            group_id=subject_id,
-                            project_id=project_id,
-                            role=role_short,
-                            created_by=session["user_id"],
-                        )
-                    else:
-                        cur.execute(
-                            """
-                            INSERT INTO rbac.bindings
-                              (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
-                            VALUES (%s::uuid, 'Group', %s::uuid, 'project', %s::uuid, %s::uuid)
-                            """,
-                            (
-                                str(role["id"]),
-                                subject_id,
-                                str(project_id),
-                                session["user_id"],
-                            ),
-                        )
+                    rbac_sync.sync_group_project_binding(
+                        cur,
+                        group_id=subject_group,
+                        project_id=project_id,
+                        role=role_name,
+                        created_by=session["user_id"],
+                    )
                 elif subject_kind == "ServiceAccount":
                     subject_id = subject_sa
                     detail_who = f"sa {subject_sa}"
                     if not subject_id:
                         flash("Service account id required", "error")
                         return redirect(dest)
+                    rid = rbac_sync.role_id(cur, role_name)
+                    if not rid:
+                        flash("Unknown role", "error")
+                        return redirect(dest)
                     cur.execute(
                         """
                         INSERT INTO rbac.bindings
                           (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
                         VALUES (%s::uuid, 'ServiceAccount', %s::uuid, 'project', %s::uuid, %s::uuid)
+                        ON CONFLICT DO NOTHING
                         """,
                         (
-                            str(role["id"]),
+                            rid,
                             subject_id,
                             str(project_id),
                             session["user_id"],
@@ -995,7 +963,7 @@ def register(app):
                     team_id=proj["team_id"],
                     project_id=project_id,
                     action=audit.ORG_PROJECT_MEMBER_ADD,
-                    detail=f"{detail_who} → {rname}",
+                    detail=f"{detail_who} → {role_name}",
                 )
                 conn.commit()
                 flash("Binding created", "ok")

@@ -813,11 +813,21 @@ def register(app):
                 flash("Request not found", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             try:
+                # Role in request row can be 'team-member' or legacy 'member'
+                req_role = req["role"]
+                if req_role not in [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]:
+                    legacy_map = {
+                        "owner": "team-owner",
+                        "admin": "team-admin",
+                        "member": "team-member",
+                        "viewer": "team-viewer",
+                    }
+                    req_role = legacy_map.get(req_role, "team-member")
                 rbac_sync.sync_user_team_binding(
                     cur,
                     user_id=req["user_id"],
                     team_id=team_id,
-                    role=req["role"],
+                    role=req_role,
                     created_by=session["user_id"],
                 )
                 cur.execute(
