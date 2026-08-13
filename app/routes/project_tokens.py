@@ -94,7 +94,7 @@ def register(app):
                     cur.execute(
                         """
                         SELECT mt.id, mt.name, mt.token_prefix, mt.role,
-                               mt.created_at, mt.expires_at,
+                               mt.created_at, mt.expires_at, mt.last_used_at,
                                p.id AS project_id, p.name AS project_name
                         FROM api.machine_tokens mt
                         JOIN api.projects p ON p.id = mt.project_id
@@ -122,9 +122,9 @@ def register(app):
             POST /projects/<project_id>/tokens with name, role, expires_days form fields
         """
         name = request.form.get("name", "machine").strip() or "machine"
-        role = (request.form.get("role") or "read-only").strip()
+        role = (request.form.get("role") or "service-reveal").strip()
         if role not in config.MACHINE_TOKEN_ROLES:
-            role = "read-only"
+            role = "service-reveal"
         return_tab = (request.form.get("return_tab") or "tokens").strip().lower()
         if return_tab not in (
             "secrets",

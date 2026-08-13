@@ -21,6 +21,7 @@ import authz
 import config
 import db
 import pats
+import rbac_sync
 import settings_svc
 from crypto import sha256_hex
 from routes.eso import _iso, bearer_raw
@@ -157,31 +158,17 @@ def register(app):
         q = (request.args.get("q") or "").strip()
         like = f"%{q}%" if q else None
         with db.as_user(uid) as conn, conn.cursor() as cur:
-            if authz.is_global_admin(uid):
-                sql = """
-                    SELECT t.id, t.name, t.created_at,
-                      COALESCE(tm.role, 'owner') AS role,
-                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                    FROM api.teams t
-                    LEFT JOIN api.team_members tm
-                      ON tm.team_id = t.id AND tm.user_id = %s
-                """
-                params: list = [uid]
-                if like:
-                    sql += " WHERE t.name ILIKE %s"
-                    params.append(like)
-            else:
-                sql = """
-                    SELECT t.id, t.name, t.created_at, tm.role,
-                      (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
-                    FROM api.teams t
-                    JOIN api.team_members tm ON tm.team_id = t.id
-                    WHERE tm.user_id = %s
-                """
-                params = [uid]
-                if like:
-                    sql += " AND t.name ILIKE %s"
-                    params.append(like)
+            sql = """
+                SELECT t.id, t.name, t.created_at,
+                  COALESCE(api.team_role(t.id), 'team-owner') AS role,
+                  (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
+                FROM api.teams t
+                WHERE (%s OR api.is_team_member(t.id))
+            """
+            params: list = [authz.is_global_admin(uid)]
+            if like:
+                sql += " AND t.name ILIKE %s"
+                params.append(like)
             cur.execute(sql + " ORDER BY t.name", params)
             rows = [_row(r) for r in (cur.fetchall() or [])]
         return jsonify({"items": rows})
@@ -222,11 +209,17 @@ def register(app):
                 return jsonify({"error": "not found"}), 404
             cur.execute("SELECT * FROM api.teams WHERE id = %s::uuid", (tid,))
             team = _row(cur.fetchone())
-            cur.execute(
-                "SELECT * FROM private.team_member_rows(%s::uuid)",
-                (tid,),
-            )
-            members = [_row(r) for r in (cur.fetchall() or [])]
+            members = rbac_sync.list_scope_bindings(cur, "team", tid)
+            rbac_sync.enrich_binding_emails(members)
+            members = [
+                {
+                    "user_id": str(item["subject_id"]),
+                    "email": item.get("subject_email") or "",
+                    "role": item.get("role_name"),
+                }
+                for item in members
+                if item.get("subject_kind") == "User"
+            ]
             cur.execute(
                 """
                 SELECT id, name, created_at FROM api.projects
@@ -263,64 +256,76 @@ def register(app):
             tid = _resolve_team(cur, team_ref)
             if not tid:
                 return jsonify({"error": "not found"}), 404
-            cur.execute("SELECT * FROM private.team_member_rows(%s::uuid)", (tid,))
-            items = [_row(r) for r in (cur.fetchall() or [])]
+            items = rbac_sync.list_scope_bindings(cur, "team", tid)
+            rbac_sync.enrich_binding_emails(items)
+            items = [
+                {
+                    "user_id": str(item["subject_id"]),
+                    "email": item.get("subject_email") or "",
+                    "role": item.get("role_name"),
+                    "source": item.get("source", "manual"),
+                }
+                for item in items
+                if item.get("subject_kind") == "User"
+            ]
         return jsonify({"items": items})
 
     @app.post("/eso/v1/teams/<team_ref>/members")
-    def mgmt_add_team_member(team_ref):
-        """Add/update team member. Body: ``{"email":"…","role":"member"}``."""
+    def mgmt_add_team_binding(team_ref):
+        """Add/update team member. Body: ``{"email":"…","role":"team-member"}``."""
         uid, err = _require_pat()
         if err:
             return err
         body = request.get_json(silent=True) or {}
         email = (body.get("email") or "").strip().lower()
-        role = (body.get("role") or "member").strip()
-        if role not in config.TEAM_ROLES:
-            role = "member"
+        role = (body.get("role") or "team-member").strip()
+        role_names = [name for name, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        if role not in role_names:
+            role = "team-member"
         if not email:
             return jsonify({"error": "email required"}), 400
         with db.as_user(uid) as conn, conn.cursor() as cur:
             tid = _resolve_team(cur, team_ref)
             if not tid:
                 return jsonify({"error": "not found"}), 404
+            cur.execute("SELECT api.can_manage_rbac('team', %s::uuid) AS ok", (tid,))
+            if not (cur.fetchone() or {}).get("ok"):
+                return jsonify({"error": "forbidden"}), 403
             # M1: only team owners may assign owner
             cur.execute("SELECT api.team_role(%s::uuid) AS r", (tid,))
             my_role = (cur.fetchone() or {}).get("r")
-            if role == "owner" and my_role != "owner":
+            if role == "team-owner" and my_role != "team-owner":
                 return jsonify({"error": "only a team owner can grant owner"}), 403
             mid = _lookup_user_id(cur, email)
             if not mid:
                 return jsonify({"error": "user not found"}), 404
             cur.execute(
                 """
-                SELECT role FROM api.team_members
-                WHERE team_id = %s::uuid AND user_id = %s::uuid
+                SELECT r.name AS role_name
+                FROM rbac.bindings b
+                JOIN rbac.roles r ON r.id = b.role_id
+                WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                  AND b.subject_kind = 'User' AND b.subject_id = %s::uuid
+                  AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
                 """,
                 (tid, mid),
             )
             prev = cur.fetchone()
-            cur.execute(
-                """
-                INSERT INTO api.team_members (team_id, user_id, role, source)
-                VALUES (%s::uuid, %s::uuid, %s, 'manual')
-                ON CONFLICT (team_id, user_id) DO UPDATE
-                  SET role = EXCLUDED.role, source = 'manual'
-                """,
-                (tid, mid, role),
+            rbac_sync.sync_user_team_binding(
+                cur, user_id=mid, team_id=tid, role=role, created_by=uid
             )
-            if cur.rowcount == 0:
+            if not cur.rowcount:
                 return jsonify({"error": "forbidden"}), 403
             action = audit.ORG_MEMBER_ROLE if prev else audit.ORG_MEMBER_ADD
             detail = f"{email} → {role}"
             if prev:
-                detail = f"{email}: {prev['role']} → {role}"
+                detail = f"{email}: {prev['role_name']} → {role}"
             audit.log_org(cur, team_id=tid, action=action, detail=detail)
             conn.commit()
         return jsonify({"ok": True, "email": email, "role": role})
 
     @app.delete("/eso/v1/teams/<team_ref>/members/<member_ref>")
-    def mgmt_remove_team_member(team_ref, member_ref):
+    def mgmt_remove_team_binding(team_ref, member_ref):
         """Remove team member by email or user id."""
         uid, err = _require_pat()
         if err:
@@ -329,18 +334,27 @@ def register(app):
             tid = _resolve_team(cur, team_ref)
             if not tid:
                 return jsonify({"error": "not found"}), 404
+            cur.execute("SELECT api.can_manage_rbac('team', %s::uuid) AS ok", (tid,))
+            if not (cur.fetchone() or {}).get("ok"):
+                return jsonify({"error": "forbidden"}), 403
             mid = _lookup_user_id(cur, member_ref)
             if not mid:
                 return jsonify({"error": "user not found"}), 404
             cur.execute(
                 """
-                DELETE FROM api.team_members
-                WHERE team_id = %s::uuid AND user_id = %s::uuid
+                SELECT 1 FROM rbac.bindings b
+                JOIN rbac.roles r ON r.id = b.role_id
+                WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                  AND b.subject_kind = 'User' AND b.subject_id = %s::uuid
+                  AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
                 """,
                 (tid, mid),
             )
-            if cur.rowcount == 0:
-                return jsonify({"error": "forbidden or not a member"}), 403
+            if not cur.fetchone():
+                return jsonify({"error": "member not found"}), 404
+            rbac_sync.sync_user_team_binding(
+                cur, user_id=mid, team_id=tid, role=None, created_by=uid
+            )
             audit.log_org(
                 cur,
                 team_id=tid,
@@ -364,27 +378,35 @@ def register(app):
             tid = _resolve_team(cur, team_ref)
             if not tid:
                 return jsonify({"error": "not found"}), 404
+            cur.execute("SELECT api.can_manage_rbac('team', %s::uuid) AS ok", (tid,))
+            if not (cur.fetchone() or {}).get("ok"):
+                return jsonify({"error": "forbidden"}), 403
             mid = _lookup_user_id(cur, email)
             if not mid:
                 return jsonify({"error": "user not found"}), 404
-            # demote other owners, set new owner
-            cur.execute(
-                """
-                UPDATE api.team_members SET role = 'admin'
-                 WHERE team_id = %s::uuid AND role = 'owner'
-                """,
-                (tid,),
+            # Promote the new owner first, then demote existing owners.
+            rbac_sync.sync_user_team_binding(
+                cur, user_id=mid, team_id=tid, role="team-owner", created_by=uid
             )
             cur.execute(
                 """
-                INSERT INTO api.team_members (team_id, user_id, role, source)
-                VALUES (%s::uuid, %s::uuid, 'owner', 'manual')
-                ON CONFLICT (team_id, user_id) DO UPDATE SET role = 'owner'
+                SELECT b.subject_id
+                FROM rbac.bindings b
+                JOIN rbac.roles r ON r.id = b.role_id
+                WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                  AND b.subject_kind = 'User' AND r.name = 'team-owner'
+                  AND b.subject_id <> %s::uuid
                 """,
                 (tid, mid),
             )
-            if cur.rowcount == 0:
-                return jsonify({"error": "forbidden"}), 403
+            for owner in cur.fetchall() or []:
+                rbac_sync.sync_user_team_binding(
+                    cur,
+                    user_id=owner["subject_id"],
+                    team_id=tid,
+                    role="team-admin",
+                    created_by=uid,
+                )
             audit.log_org(
                 cur,
                 team_id=tid,
@@ -447,11 +469,20 @@ def register(app):
                 (pid,),
             )
             proj = _row(cur.fetchone())
-            cur.execute("SELECT * FROM private.project_member_rows(%s::uuid)", (pid,))
-            members = [_row(r) for r in (cur.fetchall() or [])]
+            members = rbac_sync.list_scope_bindings(cur, "project", pid)
+            rbac_sync.enrich_binding_emails(members)
+            members = [
+                {
+                    "user_id": str(item["subject_id"]),
+                    "email": item.get("subject_email") or "",
+                    "role": item.get("role_name"),
+                }
+                for item in members
+                if item.get("subject_kind") == "User"
+            ]
             cur.execute(
                 """
-                SELECT id, name, token_prefix, role, expires_at, created_at
+                SELECT id, name, token_prefix, role, expires_at, last_used_at, created_at
                   FROM api.machine_tokens
                  WHERE project_id = %s::uuid
                  ORDER BY created_at DESC
@@ -487,21 +518,35 @@ def register(app):
             pid = _resolve_project(cur, project_ref)
             if not pid:
                 return jsonify({"error": "not found"}), 404
-            cur.execute("SELECT * FROM private.project_member_rows(%s::uuid)", (pid,))
-            items = [_row(r) for r in (cur.fetchall() or [])]
+
+            bindings = rbac_sync.list_scope_bindings(cur, "project", pid)
+            rbac_sync.enrich_binding_emails(bindings)
+            items = []
+            for b in bindings:
+                if b.get("subject_kind") != "User":
+                    continue
+                items.append(
+                    {
+                        "user_id": str(b.get("subject_id")),
+                        "email": b.get("subject_email"),
+                        "role": b.get("role_short") or b.get("role_name"),
+                        "role_name": b.get("role_name"),
+                    }
+                )
         return jsonify({"items": items})
 
     @app.post("/eso/v1/projects/<project_ref>/members")
-    def mgmt_add_project_member(project_ref):
-        """Add project member. Body: ``{"email":"…","role":"read|write|admin"}``."""
+    def mgmt_add_project_binding(project_ref):
+        """Add project member. Body: ``{"email":"…","role":"project-read|project-write|project-admin"}``."""
         uid, err = _require_pat()
         if err:
             return err
         body = request.get_json(silent=True) or {}
         email = (body.get("email") or "").strip().lower()
-        role = (body.get("role") or "read").strip()
-        if role not in config.PROJECT_ROLES:
-            role = "read"
+        role = (body.get("role") or "project-read").strip()
+        role_names = [name for name, _ in config.RBAC_PROJECT_ROLE_DROPDOWN]
+        if role not in role_names:
+            role = "project-read"
         if not email:
             return jsonify({"error": "email required"}), 400
         with db.as_user(uid) as conn, conn.cursor() as cur:
@@ -512,26 +557,25 @@ def register(app):
             if not mid:
                 return jsonify({"error": "user not found"}), 404
             cur.execute(
-                """
-                INSERT INTO api.project_members (project_id, user_id, role)
-                VALUES (%s::uuid, %s::uuid, %s)
-                ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role
-                """,
-                (pid, mid, role),
+                "SELECT api.can_manage_rbac('project', %s::uuid) AS ok", (pid,)
             )
-            if cur.rowcount == 0:
+            if not (cur.fetchone() or {}).get("ok"):
                 return jsonify({"error": "forbidden"}), 403
+
+            rbac_sync.sync_user_project_binding(
+                cur, user_id=mid, project_id=pid, role=role, created_by=uid
+            )
             audit.log_org(
                 cur,
                 project_id=pid,
                 action=audit.ORG_PROJECT_MEMBER_ADD,
-                detail=f"{email} → {role}",
+                detail=f"{email} → {role} (rbac)",
             )
             conn.commit()
         return jsonify({"ok": True, "email": email, "role": role})
 
     @app.delete("/eso/v1/projects/<project_ref>/members/<member_ref>")
-    def mgmt_remove_project_member(project_ref, member_ref):
+    def mgmt_remove_project_binding(project_ref, member_ref):
         """Remove project member by email or id."""
         uid, err = _require_pat()
         if err:
@@ -544,14 +588,14 @@ def register(app):
             if not mid:
                 return jsonify({"error": "user not found"}), 404
             cur.execute(
-                """
-                DELETE FROM api.project_members
-                WHERE project_id = %s::uuid AND user_id = %s::uuid
-                """,
-                (pid, mid),
+                "SELECT api.can_manage_rbac('project', %s::uuid) AS ok", (pid,)
             )
-            if cur.rowcount == 0:
-                return jsonify({"error": "forbidden or not a member"}), 403
+            if not (cur.fetchone() or {}).get("ok"):
+                return jsonify({"error": "forbidden"}), 403
+
+            rbac_sync.sync_user_project_binding(
+                cur, user_id=mid, project_id=pid, role=None, created_by=uid
+            )
             audit.log_org(
                 cur,
                 project_id=pid,
@@ -668,7 +712,7 @@ def register(app):
                 return jsonify({"error": "not found"}), 404
             cur.execute(
                 """
-                SELECT id, name, token_prefix, role, expires_at, created_at
+                SELECT id, name, token_prefix, role, expires_at, last_used_at, created_at
                   FROM api.machine_tokens
                  WHERE project_id = %s::uuid
                  ORDER BY created_at DESC
@@ -707,9 +751,9 @@ def register(app):
             return err
         body = request.get_json(silent=True) or {}
         name = (body.get("name") or "machine").strip() or "machine"
-        role = (body.get("role") or "read-only").strip()
+        role = (body.get("role") or "service-reveal").strip()
         if role not in config.MACHINE_TOKEN_ROLES:
-            role = "read-only"
+            role = "service-reveal"
         expires_at = None
         days = body.get("expires_days")
         if days is not None:

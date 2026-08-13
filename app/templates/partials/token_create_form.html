@@ -1,49 +1,48 @@
-{# Machine token create form — modern card layout + chip allow-list.
+{# Machine token create form (matches the project settings / access-binding theme).
    Params: form_id, return_tab (optional), default_name, compact (bool for ESO) #}
 {% set form_id = form_id|default('token-form') %}
-{% set default_name = default_name|default('openshift') %}
+{% set default_name = default_name|default('machine') %}
 {% set return_tab = return_tab|default(none) %}
 {% set compact = compact|default(false) %}
-<article class="card token-create-card" id="{{ form_id }}-card">
+<section class="token-create-card" id="{{ form_id }}-card">
   {% if compact %}
-  <header>
-    <h3>Machine account for ESO</h3>
-    <p class="muted">Create a <strong>read-only</strong> token for the cluster to pull secrets.</p>
-  </header>
+  <div class="section-head"><h3>Machine account for ESO</h3></div>
+  <p class="muted">Create a <strong>reveal</strong> token for the cluster to pull secrets.</p>
   {% endif %}
   <form method="post"
         action="{{ url_for('create_token', project_id=project.id) }}"
-        class="token-create-form"
+        class="settings-form"
         id="{{ form_id }}"
         data-scope-form>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     {% if return_tab %}<input type="hidden" name="return_tab" value="{{ return_tab }}">{% endif %}
     <input type="hidden" name="scope_keys" value="" data-scope-hidden>
 
-    <div class="token-create-grid">
-      <label data-field>
-        Name
-        <input type="text" name="name" value="{{ default_name }}" placeholder="e.g. eso-prod" required autocomplete="off">
-      </label>
-      <label data-field>
-        Role
-        <select name="role" data-token-role aria-label="Token role">
-          <option value="read-only" selected>Read-only — fetch secrets</option>
-          <option value="write">Write — fetch and update</option>
-        </select>
-      </label>
-      <label data-field>
-        Expires (days)
-        <input type="number" name="expires_days" min="1" max="{{ max_expiry_days|default(3650) }}"
-               placeholder="{% if default_token_days %}{{ default_token_days }} (team default){% else %}Never{% endif %}">
-      </label>
-    </div>
+    <fieldset class="field-group">
+      <legend>Token</legend>
+      <div class="field-grid">
+        <label>Name
+          <input type="text" name="name" value="{{ default_name }}" placeholder="e.g. eso-prod" required autocomplete="off">
+        </label>
+        <label>Role
+          <select name="role" data-token-role aria-label="Token role">
+            <option value="service-read">Read — metadata only (no plaintext)</option>
+            <option value="service-reveal" selected>Reveal (fetch secrets for ESO)</option>
+            <option value="service-write">Write (fetch and update)</option>
+          </select>
+        </label>
+        <label>Expires (days)
+          <input type="number" name="expires_days" min="1" max="{{ max_expiry_days|default(3650) }}"
+                 placeholder="{% if default_token_days %}{{ default_token_days }} (team default){% else %}Never{% endif %}">
+        </label>
+      </div>
+    </fieldset>
 
     <div class="token-scope-panel" data-scope-panel>
       <div class="token-scope-head">
         <div>
           <strong>Key access</strong>
-          <p class="muted token-scope-hint">Limit which secret keys this token can use. Leave open for full project access.</p>
+          <p class="muted token-scope-hint">Limit which secret keys this token can use.</p>
         </div>
         <label class="token-scope-switch">
           <input type="checkbox" role="switch" data-scope-toggle aria-controls="{{ form_id }}-scope-body">
@@ -55,7 +54,7 @@
           <ot-taginput data-scope-tags>
             <input type="text"
                    list="{{ form_id }}-key-suggest"
-                   placeholder="Type a key or glob, then Enter — e.g. API_KEY or prod/*"
+                   placeholder="Type a key or glob, then Enter (e.g. API_KEY or prod/*)"
                    maxlength="256"
                    autocomplete="off"
                    aria-label="Add allowed secret key or pattern">
@@ -78,6 +77,7 @@
         <p class="muted token-scope-help">
           Chips are <strong>exact keys</strong> or <strong>globs</strong> (<code class="k">*</code> any run, <code class="k">?</code> one char).
           Restricted tokens cannot access keys outside this list.
+          A lone <code class="k">*</code> means <strong>all keys</strong> (equal to leaving keys unrestricted).
         </p>
       </div>
       <p class="token-scope-open muted" data-scope-open-msg>
@@ -86,11 +86,11 @@
     </div>
 
     <div role="alert" data-variant="warning" data-token-write-warn hidden>
-      Write tokens can create and update secrets via the machine API. Prefer read-only for ESO.
+      Write tokens create and update secrets via the machine API. Prefer reveal for ESO.
     </div>
 
-    <footer class="token-create-actions">
-      <button type="submit">{% if compact %}Create machine account{% else %}Create token{% endif %}</button>
-    </footer>
+    <p class="form-actions">
+      <button type="submit">Create machine account</button>
+    </p>
   </form>
-</article>
+</section>

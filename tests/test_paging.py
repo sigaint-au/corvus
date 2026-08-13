@@ -136,7 +136,7 @@ def test_create_token_persists_scopes(client):
             f"/projects/{pid}/tokens",
             data={
                 "name": "eso",
-                "role": "read-only",
+                "role": "reveal",
                 "expires_days": "30",
                 "scope_keys": "API_KEY\nprod/*\n",
             },
@@ -165,7 +165,7 @@ def test_load_team_secrets_page_applies_filters():
                 "kind": "database",
                 "updated_at": None,
                 "expires_at": None,
-                "acl_mode": "inherit",
+                "access_mode": "inherit",
                 "project_id": uuid4(),
                 "project_name": "api",
             }
@@ -174,19 +174,19 @@ def test_load_team_secrets_page_applies_filters():
     ]
     tid = str(uuid4())
     rows, pager, projects = _load_team_secrets_page(
-        cur, tid, page=1, q="db", kind="database", due=None, acl="inherit"
+        cur, tid, page=1, q="db", kind="database", due=None, access_mode="inherit"
     )
     assert pager["total"] == 2
     assert pager["endpoint"] == "secrets_list"
     assert pager["kind"] == "database"
     assert len(rows) == 1
     assert rows[0]["key"] == "DB_URL"
-    assert rows[0]["acl_restricted"] is False
+    assert rows[0]["access_restricted"] is False
     assert projects and projects[0]["name"] == "api"
     # count query includes kind + acl filters
     count_sql = cur.execute.call_args_list[0].args[0]
     assert "s.kind = %s" in count_sql
-    assert "acl_mode" in count_sql
+    assert "access_mode" in count_sql
 
 
 def test_redirect_after_team_switch_from_other_project(app):
@@ -238,6 +238,6 @@ def test_force_rls_on_core_tables():
         "api.secrets",
         "api.machine_tokens",
         "api.machine_token_scope",
-        "api.secret_acl",
     ):
         assert f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY" in init
+    assert "ALTER TABLE api.secret_acl FORCE ROW LEVEL SECURITY" not in init

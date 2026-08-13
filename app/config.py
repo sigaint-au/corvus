@@ -125,16 +125,75 @@ DEFAULT_SETTINGS = {
     # Require email_verified claim before linking/creating accounts (recommended)
     "oidc_require_email_verified": "true",
 }
-TEAM_ROLES = ("owner", "admin", "member", "viewer")
-# Groups may inherit a team role, but never owner (avoids accidental owner escalation)
-GROUP_TEAM_ROLES = ("admin", "member", "viewer")
-ROLE_RANK = {"owner": 4, "admin": 3, "member": 2, "viewer": 1}
-# Invite / join-request roles (cannot self-invite as owner)
-INVITE_ROLES = ("admin", "member", "viewer")
-# Project-scoped membership (in addition to team roles)
-PROJECT_ROLES = ("admin", "write", "read")
-# Machine accounts / ESO tokens: read-only (fetch) or write (fetch + upsert API)
-MACHINE_TOKEN_ROLES = ("read-only", "write")
+# Invite / join-request roles (cannot self-invite as owner) — rbac.roles names
+INVITE_ROLES = ("team-admin", "team-member", "team-viewer")
+# Machine accounts / ESO tokens: service-read (metadata), service-reveal (metadata + plaintext), service-write (read + write)
+MACHINE_TOKEN_ROLES = ("service-read", "service-reveal", "service-write")
+
+# ── Kubernetes-style RBAC (Subjects + Roles + Bindings) ───────────────
+# Familiar dropdown labels map to built-in rbac.roles names.
+RBAC_SCOPE_KINDS = ("cluster", "team", "project", "secret")
+RBAC_SUBJECT_KINDS = ("User", "Group", "ServiceAccount")
+RBAC_VERBS = ("get", "list", "create", "update", "delete", "reveal", "admin", "*")
+RBAC_RESOURCES = (
+    "teams",
+    "projects",
+    "secrets",
+    "bindings",
+    "roles",
+    "groups",
+    "machine_tokens",
+    "audit",
+    "users",
+    "*",
+)
+# Built-in role names (seeded in db/rbac.sql) — keep in sync with rbac.ensure_builtin_roles
+RBAC_BUILTIN_ROLES = (
+    "global-admin",
+    "audit-viewer",
+    "team-owner",
+    "team-admin",
+    "team-member",
+    "team-viewer",
+    "project-admin",
+    "project-write",
+    "project-reveal",
+    "project-read",
+    "secret-read",
+    "secret-reveal",
+    "secret-write",
+    "team-audit-viewer",
+    "service-read",
+    "service-reveal",
+    "service-write",
+)
+# Dropdown presets by scope (replaces old role vocabularies in Bindings UI)
+RBAC_TEAM_ROLE_DROPDOWN = (
+    ("team-owner", "Owner"),
+    ("team-admin", "Admin"),
+    ("team-member", "Member"),
+    ("team-viewer", "Viewer"),
+)
+RBAC_PROJECT_ROLE_DROPDOWN = (
+    ("project-admin", "Admin"),
+    ("project-write", "Write"),
+    ("project-reveal", "Reveal"),
+    ("project-read", "Read"),
+)
+RBAC_SECRET_ROLE_DROPDOWN = (
+    ("secret-write", "Write"),
+    ("secret-reveal", "Reveal"),
+    ("secret-read", "Read"),
+)
+RBAC_CLUSTER_ROLE_DROPDOWN = (
+    ("global-admin", "Global admin"),
+    ("audit-viewer", "Audit viewer"),
+)
+RBAC_SERVICE_ROLE_DROPDOWN = (
+    ("service-read", "Read (metadata)"),
+    ("service-reveal", "Reveal (plaintext)"),
+    ("service-write", "Write"),
+)
 # Clipboard auto-clear after copy (seconds); 0 disables
 CLIPBOARD_CLEAR_SECONDS = max(
     0, int(os.environ.get("CLIPBOARD_CLEAR_SECONDS", "30") or "30")
@@ -152,23 +211,12 @@ REVEAL_ACCESS_GRANT_MINUTES = max(
 REVEAL_ACCESS_GRANT_CHOICES = (15, 60, 240, 1440)  # 15m, 1h, 4h, 1d
 # Structured secret kinds for advanced create form
 SECRET_KINDS = ("plain", "database", "certificate", "ssh", "kv")
-# Per-secret ACL modes (tighter than project membership)
-# inherit = project RBAC; writers/admins/owners = min role; custom = user allow-list
-SECRET_ACL_MODES = ("inherit", "writers", "admins", "owners", "custom")
-SECRET_ACL_MODE_LABELS = {
-    "inherit": "Everyone with project access",
-    "writers": "Writers and above",
-    "admins": "Project admins and team owners/admins",
-    # Non-admins: team_role owner only; team owners/admins always bypass via can_admin_project
-    "owners": "Team owners and admins",
-    "custom": "Custom user or group list",
-}
-# Permissions grantable on custom secret ACLs (ordered weakest → strongest)
-SECRET_ACL_PERMISSIONS = ("read", "reveal", "write")
-SECRET_ACL_PERM_LABELS = {
-    "read": "List / metadata",
-    "reveal": "Reveal value",
-    "write": "Edit / delete",
+# Per-secret access modes. Inherit uses project/team bindings; restricted uses
+# secret-scope role bindings only.
+ACCESS_MODES = ("inherit", "restricted")
+ACCESS_MODE_LABELS = {
+    "inherit": "Inherit project access",
+    "restricted": "Restricted (role bindings only)",
 }
 # Upper bounds for optional expiry (secrets, machine tokens, team defaults)
 MAX_EXPIRY_DAYS = 3650  # ~10 years

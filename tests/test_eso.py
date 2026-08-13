@@ -104,14 +104,14 @@ class TestESO:
         with store.app.test_request_context('/', headers={}):
             assert eso_routes.bearer_hash() is None
 
-    def test_upsert_read_only_forbidden(self):
-        fo = [{'ok': True}, {'role': 'read-only'}]
+    def test_upsert_read_forbidden(self):
+        fo = [{'ok': True}, {'role': 'read'}]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
             r = self.client.post(f'/eso/v1/projects/{self.pid}/secrets', json={'key': 'K', 'value': 'v'}, headers={'Authorization': 'Bearer ss_ro'})
         assert r.status_code == 403
-        assert 'read-only' in r.get_json()['error']
+        assert 'write' in r.get_json().get('error', '')
         conn.commit.assert_not_called()
 
     def test_upsert_write_ok(self):
@@ -172,8 +172,8 @@ class TestESO:
         assert any(('deleted' in p for p in audit_params))
         conn.commit.assert_called()
 
-    def test_delete_read_only_forbidden(self):
-        fo = [{'ok': True}, {'role': 'read-only'}]
+    def test_delete_read_forbidden(self):
+        fo = [{'ok': True}, {'role': 'read'}]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
@@ -216,10 +216,28 @@ class TestESO:
         conn, cur = _conn(fetchone={'w': True})
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
-            r = c.post(f'/projects/{self.pid}/tokens', data={'name': 'eso', 'role': 'read-only', 'expires_days': '30'}, follow_redirects=False)
+            r = c.post(f'/projects/{self.pid}/tokens', data={'name': 'eso', 'role': 'reveal', 'expires_days': '30'}, follow_redirects=False)
         assert r.status_code == 302
         insert = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])][0]
         assert insert.args[1][5] is not None
+
+    def test_mgmt_add_team_binding_owner_guard(self):
+        """A non-owner must not grant team-owner via the management API."""
+        uid = str(uuid4())
+        tid, mid = uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': tid},     # _resolve_team by uuid
+            {'r': 'team-admin'},  # api.team_role -> requestor is only a team-admin
+            {'id': str(mid)},  # would-be user lookup (must not be reached)
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/eso/v1/teams/{tid}/members',
+                json={'email': 'u@x.com', 'role': 'team-owner'},
+                headers={'Authorization': 'Bearer pat_owner_guard'},
+            )
+        assert r.status_code == 403
 
     def test_pat_list_projects(self):
         uid = str(uuid4())
@@ -277,14 +295,15 @@ class TestESO:
             s['email'] = 'u@ex.com'
         conn, cur = _conn(fetchone={'w': True})
         with patch.object(db, 'as_user', return_value=conn):
-            r = c.post(f'/projects/{self.pid}/tokens', data={'name': 'eso', 'role': 'read-only', 'expires_days': str(config.MAX_EXPIRY_DAYS + 1)}, follow_redirects=False)
+            r = c.post(f'/projects/{self.pid}/tokens', data={'name': 'eso', 'role': 'reveal', 'expires_days': str(config.MAX_EXPIRY_DAYS + 1)}, follow_redirects=False)
         assert r.status_code == 302
         inserts = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
         assert inserts == []
 
     def test_machine_token_roles_config(self):
-        assert 'read-only' in config.MACHINE_TOKEN_ROLES
-        assert 'write' in config.MACHINE_TOKEN_ROLES
+        assert 'service-reveal' in config.MACHINE_TOKEN_ROLES
+        assert 'service-write' in config.MACHINE_TOKEN_ROLES
+        assert 'service-read' in config.MACHINE_TOKEN_ROLES
         assert config.MAX_EXPIRY_DAYS == 3650
         assert config.MAX_CONTENT_LENGTH >= 64 * 1024
         assert store.app.config.get('MAX_CONTENT_LENGTH') == config.MAX_CONTENT_LENGTH

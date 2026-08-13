@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Seed mock users, teams, projects, and secrets (dev only).
+"""Seed mock users, teams, projects, secrets, groups, custom RBAC roles,
+machine accounts, and scoped bindings (dev only).
 
 Password for every local account: password
 Run inside the app container (has MASTER_KEY + DB + crypto):
@@ -7,10 +8,16 @@ Run inside the app container (has MASTER_KEY + DB + crypto):
   podman exec secretserver_app_1 python /tmp/seed_mock.py
 
 Or from host after copying the file in.
+
+Covers: teams/projects/secrets, group + project + secret role bindings,
+custom roles with rules, restricted (access_mode) secrets, reveal approval,
+machine tokens with key allow-lists, and ServiceAccount subjects (visible in
+Access review, Effective access, and My access).
 """
 from __future__ import annotations
 
 import os
+import secrets
 import sys
 
 # App modules live on PYTHONPATH in the container (/app)
@@ -33,7 +40,7 @@ USERS = [
 ]
 
 TEAMS = [
-    # name, owner_email, members: (email, role)
+    # name, owner_email, members: (email, team role short)
     (
         "Platform",
         "admin@example.com",
@@ -63,7 +70,7 @@ TEAMS = [
 ]
 
 PROJECTS = [
-    # team_name, project_name, members: (email, role)  — team owners/admins get access via team
+    # team_name, project_name, members: (email, project role short)
     ("Platform", "demo-api", [("alice@example.com", "write"), ("bob@example.com", "read")]),
     ("Platform", "infra-core", [("bob@example.com", "write"), ("carol@example.com", "read")]),
     ("Payments", "billing-api", [("bob@example.com", "write"), ("dave@example.com", "read")]),
@@ -93,7 +100,14 @@ SECRETS = [
     ("Mobile", "android-app", "SENTRY_DSN", "https://mock@sentry.example/android", "Sentry", "plain"),
 ]
 
-# Team groups: (team_name, group_name, source, external_key, team_role, members emails)
+# Secrets that require admin approval before the value can be revealed.
+REQUIRES_APPROVAL = [
+    ("Payments", "billing-api", "PAYMENT_GATEWAY_SECRET"),
+    ("Platform", "infra-core", "SSH_DEPLOY_KEY"),
+]
+
+# Team groups: (team, name, source, external_key, team-binding-role, member emails)
+# The team-binding-role is applied as an rbac.bindings at team scope.
 GROUPS = [
     (
         "Platform",
@@ -121,17 +135,85 @@ GROUPS = [
     ),
 ]
 
-# Project group roles: (team, project, group_name, role)
-PROJECT_GROUP_ROLES = [
+# Project-scope group bindings: (team, project, group, project role short)
+PROJECT_GROUP_BINDINGS = [
     ("Platform", "demo-api", "platform-ops", "write"),
     ("Payments", "billing-api", "payments-readers", "read"),
 ]
 
-# Custom secret ACL: (team, project, secret_key, user_email|None, group_name|None, perm)
-SECRET_ACL_GRANTS = [
-    ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", "alice@example.com", None, "reveal"),
-    ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", None, "platform-ops", "read"),
+# Custom (non-built-in) roles to exercise the Roles page, custom-role bindings,
+# Access review, and Effective access. Each rule is (resources, verbs).
+CUSTOM_ROLES = [
+    (
+        "secrets-operator",
+        "Reveal and update secrets in assigned projects",
+        [
+            (["secrets"], ["get", "list", "reveal", "update"]),
+            (["machine_tokens"], ["get", "list"]),
+        ],
+    ),
+    (
+        "audit-reader",
+        "Read audit logs at team scope",
+        [(["audit"], ["get", "list"])],
+    ),
+    (
+        "infra-viewer",
+        "Read-only view of projects and secret metadata",
+        [(["projects", "secrets"], ["get", "list"])],
+    ),
+    (
+        "payments-reviewer",
+        "Reveal-only access to payments secrets",
+        [(["secrets"], ["get", "list", "reveal"])],
+    ),
 ]
+
+# Custom-role bindings: (scope_kind, scope key, subject_kind, subject ref, role)
+# scope key matches the team/project/secret tuples above ("team" → (team,) etc.).
+CUSTOM_BINDINGS = [
+    ("team", ("Platform",), "User", "carol@example.com", "audit-reader"),
+    ("team", ("Platform",), "User", "dave@example.com", "infra-viewer"),
+    ("project", ("Platform", "demo-api"), "Group", "platform-ops", "secrets-operator"),
+    ("project", ("Payments", "billing-api"), "Group", "payments-readers", "payments-reviewer"),
+    ("secret", ("Platform", "infra-core", "SSH_DEPLOY_KEY"), "User", "carol@example.com", "secrets-operator"),
+]
+
+# Machine accounts (ServiceAccount subjects): (team, project, name, role, scope keys|None)
+# role must match api.machine_tokens CHECK: service-read | service-reveal | service-write
+# None scope keys = full project access; otherwise a key allow-list.
+MACHINE_TOKENS = [
+    ("Platform", "demo-api", "ci-demo", "service-reveal", ["API_KEY", "DATABASE_URL"]),
+    ("Payments", "billing-api", "eso-billing", "service-reveal", None),
+]
+
+# Secret-scope bindings: (team, project, secret_key, user_email|None, group_name|None, role)
+# role is the full rbac.roles name (secret-* or a custom role). Sets access_mode=restricted.
+SECRET_BINDINGS = [
+    ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", "alice@example.com", None, "secret-reveal"),
+    ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", None, "platform-ops", "secret-read"),
+    ("Platform", "infra-core", "SSH_DEPLOY_KEY", "carol@example.com", None, "secrets-operator"),
+    ("Payments", "ledger", "DATABASE_URL", None, "payments-readers", "secret-reveal"),
+]
+
+TEAM_ROLE_MAP = {
+    "owner": "team-owner",
+    "admin": "team-admin",
+    "member": "team-member",
+    "viewer": "team-viewer",
+}
+PROJECT_ROLE_MAP = {
+    "admin": "project-admin",
+    "write": "project-write",
+    "reveal": "project-reveal",
+    "read": "project-read",
+}
+# Machine token / ServiceAccount role names (api.machine_tokens CHECK).
+SERVICE_ROLE_MAP = {
+    "service-read": "service-read",
+    "service-reveal": "service-reveal",
+    "service-write": "service-write",
+}
 
 
 def main() -> None:
@@ -169,7 +251,104 @@ def main() -> None:
             uids[email] = uid
             print(f"user  {email:24}  admin={is_admin}  {uid}")
 
-        # Teams + memberships
+        def role_id(name: str):
+            cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (name,))
+            r = cur.fetchone()
+            return str(r["id"]) if r else None
+
+        def bind_user(role_name: str, user_id: str, scope_kind: str, scope_id: str):
+            rid = role_id(role_name)
+            if not rid:
+                print(f"warn  missing role {role_name}")
+                return
+            cur.execute(
+                """
+                DELETE FROM rbac.bindings
+                WHERE subject_kind = 'User' AND subject_id = %s::uuid
+                  AND scope_kind = %s AND scope_id = %s::uuid
+                """,
+                (user_id, scope_kind, scope_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO rbac.bindings
+                  (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
+                VALUES (%s::uuid, 'User', %s::uuid, %s, %s::uuid, %s::uuid)
+                ON CONFLICT DO NOTHING
+                """,
+                (rid, user_id, scope_kind, scope_id, user_id),
+            )
+
+        def bind_group(role_name: str, group_id: str, scope_kind: str, scope_id: str, by: str):
+            rid = role_id(role_name)
+            if not rid:
+                print(f"warn  missing role {role_name}")
+                return
+            cur.execute(
+                """
+                DELETE FROM rbac.bindings
+                WHERE subject_kind = 'Group' AND subject_id = %s::uuid
+                  AND scope_kind = %s AND scope_id = %s::uuid
+                """,
+                (group_id, scope_kind, scope_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO rbac.bindings
+                  (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
+                VALUES (%s::uuid, 'Group', %s::uuid, %s, %s::uuid, %s::uuid)
+                ON CONFLICT DO NOTHING
+                """,
+                (rid, group_id, scope_kind, scope_id, by),
+            )
+
+        def bind_sa(role_name: str, token_id: str, scope_kind: str, scope_id: str, by: str):
+            rid = role_id(role_name)
+            if not rid:
+                print(f"warn  missing role {role_name}")
+                return
+            cur.execute(
+                """
+                DELETE FROM rbac.bindings
+                WHERE subject_kind = 'ServiceAccount' AND subject_id = %s::uuid
+                  AND scope_kind = %s AND scope_id = %s::uuid
+                """,
+                (token_id, scope_kind, scope_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO rbac.bindings
+                  (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
+                VALUES (%s::uuid, 'ServiceAccount', %s::uuid, %s, %s::uuid, %s::uuid)
+                ON CONFLICT DO NOTHING
+                """,
+                (rid, token_id, scope_kind, scope_id, by),
+            )
+
+        # Custom roles (idempotent by name)
+        for name, description, rules in CUSTOM_ROLES:
+            cur.execute(
+                """
+                INSERT INTO rbac.roles (name, description, built_in)
+                VALUES (%s, %s, false)
+                ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description
+                RETURNING id
+                """,
+                (name, description),
+            )
+            rid = str(cur.fetchone()["id"])
+            cur.execute("DELETE FROM rbac.role_rules WHERE role_id = %s::uuid", (rid,))
+            for resources, verbs in rules:
+                cur.execute(
+                    """
+                    INSERT INTO rbac.role_rules (role_id, resources, verbs)
+                    VALUES (%s::uuid, %s, %s)
+                    """,
+                    (rid, list(resources), list(verbs)),
+                )
+            print(f"role  {name:22}  rules={len(rules)}  {rid}")
+
+        # Teams + team RBAC bindings
         team_ids: dict[str, str] = {}
         for team_name, owner_email, members in TEAMS:
             cur.execute("SELECT id FROM api.teams WHERE name = %s", (team_name,))
@@ -187,28 +366,12 @@ def main() -> None:
                 )
                 tid = str(cur.fetchone()["id"])
             team_ids[team_name] = tid
-
-            # owner
-            cur.execute(
-                """
-                INSERT INTO api.team_members (team_id, user_id, role, source)
-                VALUES (%s::uuid, %s::uuid, 'owner', 'manual')
-                ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role
-                """,
-                (tid, uids[owner_email]),
-            )
+            bind_user("team-owner", uids[owner_email], "team", tid)
             for email, role in members:
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s::uuid, %s::uuid, %s, 'manual')
-                    ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role
-                    """,
-                    (tid, uids[email], role),
-                )
+                bind_user(TEAM_ROLE_MAP.get(role, "team-member"), uids[email], "team", tid)
             print(f"team  {team_name:24}  {tid}")
 
-        # Projects + project members
+        # Projects + project RBAC bindings
         project_ids: dict[tuple[str, str], str] = {}
         for team_name, proj_name, members in PROJECTS:
             tid = team_ids[team_name]
@@ -231,14 +394,7 @@ def main() -> None:
                 pid = str(cur.fetchone()["id"])
             project_ids[(team_name, proj_name)] = pid
             for email, role in members:
-                cur.execute(
-                    """
-                    INSERT INTO api.project_members (project_id, user_id, role)
-                    VALUES (%s::uuid, %s::uuid, %s)
-                    ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role
-                    """,
-                    (pid, uids[email], role),
-                )
+                bind_user(PROJECT_ROLE_MAP.get(role, "project-read"), uids[email], "project", pid)
             print(f"proj  {team_name}/{proj_name:16}  {pid}")
 
         # Secrets (encrypted with app MASTER_KEY)
@@ -264,7 +420,19 @@ def main() -> None:
             secret_ids[(team_name, proj_name, key)] = sid
             print(f"sec   {team_name}/{proj_name}/{key}  {sid}")
 
-        # Groups + members
+        # Reveal-approval secrets
+        for team_name, proj_name, key in REQUIRES_APPROVAL:
+            sid = secret_ids[(team_name, proj_name, key)]
+            cur.execute(
+                """
+                UPDATE api.secrets SET requires_approval = true
+                WHERE id = %s::uuid
+                """,
+                (sid,),
+            )
+            print(f"appr  {team_name}/{proj_name}/{key}  requires approval")
+
+        # Groups + members + team-scope group bindings
         group_ids: dict[tuple[str, str], str] = {}
         for team_name, gname, source, ext_key, team_role, members in GROUPS:
             tid = team_ids[team_name]
@@ -279,22 +447,17 @@ def main() -> None:
             if row:
                 gid = str(row["id"])
                 cur.execute(
-                    """
-                    UPDATE api.groups
-                       SET source = %s, external_key = %s, team_role = %s
-                     WHERE id = %s::uuid
-                    """,
-                    (source, ext_key, team_role, gid),
+                    "UPDATE api.groups SET source = %s, external_key = %s WHERE id = %s::uuid",
+                    (source, ext_key, gid),
                 )
             else:
                 cur.execute(
                     """
-                    INSERT INTO api.groups
-                      (team_id, name, source, external_key, team_role)
-                    VALUES (%s::uuid, %s, %s, %s, %s)
+                    INSERT INTO api.groups (team_id, name, source, external_key)
+                    VALUES (%s::uuid, %s, %s, %s)
                     RETURNING id
                     """,
-                    (tid, gname, source, ext_key, team_role),
+                    (tid, gname, source, ext_key),
                 )
                 gid = str(cur.fetchone()["id"])
             group_ids[(team_name, gname)] = gid
@@ -307,65 +470,141 @@ def main() -> None:
                     """,
                     (gid, uids[email]),
                 )
-            print(f"group {team_name}/{gname:24}  {gid}  role={team_role}")
+            if team_role:
+                bind_group(
+                    TEAM_ROLE_MAP.get(team_role, f"team-{team_role}"),
+                    gid, "team", tid,
+                    uids.get("admin@example.com") or next(iter(uids.values())),
+                )
+            print(f"group {team_name}/{gname:24}  {gid}  bind={team_role or 'none'}")
 
-        # Project group roles
-        for team_name, proj_name, gname, role in PROJECT_GROUP_ROLES:
+        # Project-scope group bindings
+        for team_name, proj_name, gname, role in PROJECT_GROUP_BINDINGS:
             pid = project_ids[(team_name, proj_name)]
             gid = group_ids[(team_name, gname)]
+            bind_group(
+                PROJECT_ROLE_MAP.get(role, "project-read"),
+                gid, "project", pid,
+                uids.get("admin@example.com") or next(iter(uids.values())),
+            )
+            print(f"gbind {team_name}/{proj_name}/{gname} -> {PROJECT_ROLE_MAP.get(role)}")
+
+        # Custom-role bindings
+        for scope_kind, scope_key, subject_kind, subject_ref, role_name in CUSTOM_BINDINGS:
+            if scope_kind == "team":
+                scope_id = team_ids[scope_key[0]]
+            elif scope_kind == "project":
+                scope_id = project_ids[(scope_key[0], scope_key[1])]
+            else:
+                scope_id = secret_ids[(scope_key[0], scope_key[1], scope_key[2])]
+            if subject_kind == "User":
+                bind_user(role_name, uids[subject_ref], scope_kind, scope_id)
+            elif subject_kind == "Group":
+                gid = group_ids[(scope_key[0], subject_ref)]
+                bind_group(role_name, gid, scope_kind, scope_id,
+                           uids.get("admin@example.com") or next(iter(uids.values())))
+            print(f"cbind {scope_kind} {scope_key} {subject_kind} {subject_ref} -> {role_name}")
+
+        # Machine accounts (ServiceAccount subjects) + allow-list scopes
+        token_ids: dict[tuple[str, str, str], str] = {}
+        for team_name, proj_name, name, role, scope_keys in MACHINE_TOKENS:
+            pid = project_ids[(team_name, proj_name)]
+            raw = "ss_" + secrets.token_urlsafe(32)
+            thash = crypto.sha256_hex(raw)
+            prefix = raw[:11]
             cur.execute(
                 """
-                INSERT INTO api.project_group_roles (project_id, group_id, role)
-                VALUES (%s::uuid, %s::uuid, %s)
-                ON CONFLICT (project_id, group_id) DO UPDATE SET role = EXCLUDED.role
+                INSERT INTO api.machine_tokens (project_id, name, token_hash, token_prefix, role)
+                VALUES (%s::uuid, %s, %s, %s, %s)
+                ON CONFLICT (token_prefix) DO UPDATE SET
+                  project_id = EXCLUDED.project_id,
+                  name = EXCLUDED.name,
+                  role = EXCLUDED.role,
+                  expires_at = NULL
+                RETURNING id
                 """,
-                (pid, gid, role),
+                (pid, name, thash, prefix, role),
             )
-            print(f"pgr   {team_name}/{proj_name}/{gname} → {role}")
+            token_id = str(cur.fetchone()["id"])
+            token_ids[(team_name, proj_name, name)] = token_id
+            if scope_keys:
+                cur.execute(
+                    "DELETE FROM api.machine_token_scope WHERE token_id = %s::uuid", (token_id,)
+                )
+                for k in scope_keys:
+                    cur.execute(
+                        """
+                        INSERT INTO api.machine_token_scope (token_id, secret_key)
+                        VALUES (%s::uuid, %s)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        (token_id, k),
+                    )
+            # ServiceAccount binding at project scope (service-* role)
+            bind_sa(
+                SERVICE_ROLE_MAP.get(role, "service-reveal"),
+                token_id, "project", pid,
+                uids.get("admin@example.com") or next(iter(uids.values())),
+            )
+            print(f"token {team_name}/{proj_name}/{name}  {raw}  (scope={'allow-list' if scope_keys else 'all keys'})")
 
-        # Custom secret ACL grants
-        for team_name, proj_name, key, user_email, gname, perm in SECRET_ACL_GRANTS:
+        # Secret-scope bindings (restricted access_mode)
+        for team_name, proj_name, key, user_email, gname, role_name in SECRET_BINDINGS:
             sid = secret_ids[(team_name, proj_name, key)]
             cur.execute(
-                """
-                UPDATE api.secrets SET acl_mode = 'custom'
-                WHERE id = %s::uuid
-                """,
+                "UPDATE api.secrets SET access_mode = 'restricted' WHERE id = %s::uuid",
                 (sid,),
             )
+            rid = role_id(role_name)
+            if not rid:
+                print(f"warn  missing role {role_name} - skip binding for {key}")
+                continue
             if user_email:
                 cur.execute(
-                    "DELETE FROM api.secret_acl WHERE secret_id = %s::uuid AND user_id = %s::uuid",
+                    """
+                    DELETE FROM rbac.bindings
+                    WHERE scope_kind = 'secret' AND scope_id = %s::uuid
+                      AND subject_kind = 'User' AND subject_id = %s::uuid
+                    """,
                     (sid, uids[user_email]),
                 )
                 cur.execute(
                     """
-                    INSERT INTO api.secret_acl (secret_id, user_id, permission)
-                    VALUES (%s::uuid, %s::uuid, %s)
+                    INSERT INTO rbac.bindings (role_id, subject_kind, subject_id, scope_kind, scope_id)
+                    VALUES (%s::uuid, 'User', %s::uuid, 'secret', %s::uuid)
                     """,
-                    (sid, uids[user_email], perm),
+                    (rid, uids[user_email], sid),
                 )
-                print(f"acl   {key} user={user_email} {perm}")
+                print(f"bind  {key} user={user_email} {role_name}")
             if gname:
                 gid = group_ids[(team_name, gname)]
                 cur.execute(
-                    "DELETE FROM api.secret_acl WHERE secret_id = %s::uuid AND group_id = %s::uuid",
+                    """
+                    DELETE FROM rbac.bindings
+                    WHERE scope_kind = 'secret' AND scope_id = %s::uuid
+                      AND subject_kind = 'Group' AND subject_id = %s::uuid
+                    """,
                     (sid, gid),
                 )
                 cur.execute(
                     """
-                    INSERT INTO api.secret_acl (secret_id, group_id, permission)
-                    VALUES (%s::uuid, %s::uuid, %s)
+                    INSERT INTO rbac.bindings (role_id, subject_kind, subject_id, scope_kind, scope_id)
+                    VALUES (%s::uuid, 'Group', %s::uuid, 'secret', %s::uuid)
                     """,
-                    (sid, gid, perm),
+                    (rid, gid, sid),
                 )
-                print(f"acl   {key} group={gname} {perm}")
+                print(f"bind  {key} group={gname} {role_name}")
 
     print()
     print("All accounts password:", PASSWORD)
     print("Log in at http://127.0.0.1:8080  e.g. admin@example.com / password")
-    print("CLI needs a project UUID (above) + machine token ss_… from UI Integrations.")
-    print("Groups: team Groups tab; project group roles on project Settings.")
+    print("Custom roles:", ", ".join(name for name, _, _ in CUSTOM_ROLES))
+    print("Machine tokens (raw, shown once):")
+    for team_name, proj_name, name, _role, _keys in MACHINE_TOKENS:
+        print(f"  {team_name}/{proj_name}/{name}")
+    print("CLI needs a project UUID (above) + a machine token ss_… from UI Integrations.")
+    print("Groups: team Groups tab; project Access and secret Access for scoped bindings.")
+    print("Access review: Administration > Access review (custom roles included).")
 
 
 if __name__ == "__main__":

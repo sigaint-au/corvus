@@ -31,9 +31,9 @@ PostgREST (:3000) ◄── JWT (via /api/token) ──► Postgres (RLS)
 ```
 app/
   app.py            # WSGI entry, security headers, schema bootstrap, CLI cmds
-  config.py         # env vars + constants
+  config.py         # env vars + RBAC constants
   db.py             # connections + JWT/RLS helpers (connect, as_user, make_jwt)
-  schema.py         # idempotent schema migrations (ensure_schema)
+  schema.py         # idempotent schema migrations (ensure_schema, _apply_rbac_sql)
   authz.py          # auth decorators, CSRF, safe redirect
   crypto.py         # Fernet encrypt/decrypt (MASTER_KEY)
   audit.py          # audit helpers + formatting
@@ -41,36 +41,58 @@ app/
   pins.py           # secret pins / recent
   paging.py         # pagination helpers
   secret_kinds.py   # structured secret parsing (db/cert/ssh/kv)
-  secret_ops.py     # shared secret DB helpers
+  secret_ops.py     # shared secret DB helpers (list, parse, upsert)
   settings_svc.py   # server settings
   totp_svc.py       # TOTP 2FA
   pats.py           # personal access tokens
   ldap_auth.py      # LDAP bind + group sync
   oidc_auth.py      # OIDC SSO
   dir_sync.py       # directory group sync
+  rbac_sync.py      # RBAC binding sync helpers (sync_user_team_binding, etc.)
   mailer.py         # SMTP
   lockout.py        # login lockout
   user_sessions.py  # server-side sessions
+  rbac.sql          # RBAC schema applied by _apply_rbac_sql()
   routes/
     auth.py         # login, register, 2FA, reset
     teams.py        # teams, members, groups, invites
     projects.py     # projects, members, group roles, settings
-    secrets.py      # secret CRUD, reveal, history, access requests, ACL
+    secrets.py      # secret CRUD, reveal, history, access requests, access mode
     project_io.py   # import/export
     project_tokens.py # machine token scopes
     admin.py        # server settings, users, audit
     api.py          # /api/token, /api/users/suggest, /health
     eso.py          # /eso/v1 machine + PAT secret API
-    mgmt_api.py     # management API
+    mgmt_api.py     # management API (teams, members via PAT)
 ```
+
+---
+
+## Database files
+
+```
+db/
+  init.sql          # Tables + ENABLE/FORCE RLS + non-RBAC functions (01-init.sql)
+  rbac.sql          # RBAC schema + auth functions + all RLS policies (02-rbac.sql)
+app/
+  rbac.sql          # Same as db/rbac.sql but without legacy data migration block
+  schema.py         # Migration stmts + _apply_rbac_sql() for existing databases
+```
+
+On fresh databases:
+1. `01-init.sql` creates tables + `ENABLE/FORCE RLS` (no policies yet).
+2. `02-rbac.sql` creates RBAC functions + all RLS policies.
+
+On existing databases:
+1. `schema.py` runs migration statements (filtered by `legacy_markers`).
+2. `_apply_rbac_sql()` applies `app/rbac.sql` (creates/replaces functions + policies).
 
 ---
 
 ## Database access model
 
 The app connects as the `authenticator` role, then switches to `authenticated`
-and sets `request.jwt.claims` with the verified session `user_id`
-([db.py](../app/db.py)):
+and sets `request.jwt.claims` with the verified session `user_id`:
 
 ```python
 conn = connect()                      # authenticator role
@@ -79,7 +101,7 @@ cur.execute("SELECT set_config('request.jwt.claims', %s, false)", (claims,))
 ```
 
 `api.current_user_id()` reads the `sub` claim. All RLS policies and helper
-functions key off that value. See [database.md](database.md).
+functions key off that value.
 
 ---
 
@@ -102,7 +124,7 @@ functions key off that value. See [database.md](database.md).
    - `ss_…` → machine token hash → SECURITY DEFINER helpers (bypass RLS).
    - `pat_…` → user id → `db.as_user()` → RLS.
 3. Machine helpers gate on `auth_machine(project, hash)` (validity + expiry)
-   and the token role (`read-only`/`write`).
+   and the token role (`service-read`/`service-reveal`/`service-write`).
 4. Secret values are decrypted with `MASTER_KEY` and returned as plaintext.
 5. Reveals are audited.
 
@@ -117,8 +139,8 @@ functions key off that value. See [database.md](database.md).
 - **Audit rows are append-only** via SECURITY DEFINER functions.
 - **Secret values** are Fernet-encrypted at rest; only the app and `/eso/v1`
   decrypt them. PostgREST only ever sees `value_enc`.
-
-See [database.md](database.md) for the full RLS reference.
+- **RBAC** is the only authorization model — `rbac.bindings` stores all
+  user/group/service-account access at cluster/team/project/secret scope.
 
 ---
 
@@ -128,3 +150,5 @@ See [database.md](database.md) for the full RLS reference.
 - [api.md](api.md) — API reference
 - [testing.md](testing.md) — tests
 - [contributing.md](contributing.md) — how to contribute
+- [../admin/rbac.md](../admin/rbac.md) — RBAC access model
+- [../admin/rbac-k8s.md](../admin/rbac-k8s.md) — K8s RBAC model

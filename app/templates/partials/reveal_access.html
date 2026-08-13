@@ -1,14 +1,19 @@
 {# Shown when reveal is blocked pending admin approval. #}
 <div class="reveal-access"
      data-secret-id="{{ secret_id }}">
-  {% if state == 'pending' %}
-  <p class="reveal-access-msg">
+   {% if state == 'denied' %}
+   <p class="reveal-access-msg">
+     <strong>Reveal permission required</strong> — ask a project admin to grant
+     <code class="k">secret-reveal</code> access.
+   </p>
+   {% elif state == 'pending' %}
+   <p class="reveal-access-msg">
     <strong>Access requested</strong> — waiting for a project admin or team owner to approve
     reveal of <code class="k">{{ secret_key }}</code>.
   </p>
   <p class="muted reveal-access-hint">
     Track status on the
-    <a href="{{ url_for('project_detail', project_id=project_id, tab='access') }}">Access requests</a>
+    <a href="{{ url_for('project_detail', project_id=project_id, tab='requests') }}">Requests</a>
     tab.
   </p>
   {% else %}

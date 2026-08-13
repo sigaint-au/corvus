@@ -1,0 +1,19 @@
+{# Oat.ink breadcrumb component (nav + ol.unstyled.hstack).
+   Expects `breadcrumbs` = list of (label, url_or_None) pairs. The last entry is
+   the current page and is marked with aria-current="page" (not a link).
+   Example:
+     {% set breadcrumbs = [('Teams', url_for('teams')), (team.name, url_for('team_detail', team_id=team.id)), (group.name, none)] %}
+     {% include "partials/breadcrumb.html" %}
+#}
+<nav aria-label="Breadcrumb">
+  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
+    {% for label, url in breadcrumbs %}
+    {% if not loop.last %}
+    <li><a href="{{ url }}" class="unstyled">{{ label }}</a></li>
+    <li aria-hidden="true">/</li>
+    {% else %}
+    <li aria-current="page"><strong>{{ label }}</strong></li>
+    {% endif %}
+    {% endfor %}
+  </ol>
+</nav>

@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Role bindings — {{ app_name }}{% endblock %}
+{% block body %}
+{# Scope-aware breadcrumb: show the team (and project/secret) you are binding
+   within whenever a scope is selected, even without an explicit back link. #}
+{% if scope_label or scope_kind == 'cluster' %}
+{% set crumbs = [('Teams', url_for('teams'))] %}
+{% if back_team_id and back_team_name %}
+{% set crumbs = crumbs + [(back_team_name, url_for('team_detail', team_id=back_team_id))] %}
+{% endif %}
+{% if scope_kind in ('project', 'secret') and scope_label %}
+{% set crumbs = crumbs + [(scope_label, none)] %}
+{% endif %}
+{% set breadcrumbs = crumbs + [('Role bindings', none)] %}
+{% include "partials/breadcrumb.html" %}
+{% endif %}
+
+<div class="page-head">
+  <h1>Role bindings</h1>
+</div>
+
+<form method="get" action="{{ url_for('rbac_bindings') }}" class="list-panel review-form">
+  <div class="review-form-row">
+    <label>Scope
+      <select name="scope" id="bind-scope" onchange="this.form.submit()">
+        {% for sk in scope_kinds %}
+        {% if sk != 'cluster' or session.get('is_global_admin') %}
+        <option value="{{ sk }}" {% if sk == scope_kind %}selected{% endif %}>{{ sk|capitalize }}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    {% if scope_kind == 'team' %}
+    <label>Team
+      <select name="scope_id" onchange="this.form.submit()">
+        <option value="">Choose a team…</option>
+        {% for t in teams %}
+        <option value="{{ t.id }}" {% if scope_id and scope_id|string == t.id|string %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% elif scope_kind == 'project' %}
+    <label>Project
+      <select name="scope_id" onchange="this.form.submit()">
+        <option value="">Choose a project…</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}" {% if scope_id and scope_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% elif scope_kind == 'secret' %}
+    <label>Secret
+      <select name="scope_id" onchange="this.form.submit()">
+        <option value="">Choose a secret…</option>
+        {% for s in secrets %}
+        <option value="{{ s.id }}" {% if scope_id and scope_id|string == s.id|string %}selected{% endif %}>
+          {% if s.project_name %}{{ s.project_name }} / {% endif %}{{ s.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+  </div>
+  <p class="muted review-form-hint">
+    Bind a user, group, or service account to a role at this scope.
+  </p>
+</form>
+
+{% if scope_label %}
+<p class="muted scope-note">Scope: <strong>{{ scope_kind }}</strong> · {{ scope_label }}</p>
+{% endif %}
+
+<section>
+  <div class="section-head">
+    <h2>Bindings{% if scope_label %} <span class="muted">· {{ scope_label }}{% if bindings %} ({{ bindings|length }}){% endif %}</span>{% endif %}</h2>
+    {% if can_edit and (scope_id or scope_kind == 'cluster') %}
+    <a class="button outline small" href="#add-binding">+ Add binding</a>
+    {% endif %}
+  </div>
+  {% if not scope_id and scope_kind != 'cluster' %}
+  <p class="empty">Select a scope above to view its role bindings.</p>
+  {% elif bindings %}
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>Role</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bindings %}
+        <tr>
+          <td>
+            <span class="badge">{{ b.subject_kind }}</span>
+            {% if b.subject_email %}{{ b.subject_email }}
+            {% elif b.group_name %}{{ b.group_name }}
+            {% else %}<code>{{ b.subject_id }}</code>{% endif %}
+          </td>
+          <td><span class="badge" data-variant="secondary">{{ b.role_name }}</span></td>
+          <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
+          <td class="acts">
+            {% if can_edit %}
+            <form method="post" action="{{ url_for('rbac_bindings_delete', binding_id=b.id) }}" class="inline"
+                  onsubmit="return confirm('Remove this binding?');">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <input type="hidden" name="scope" value="{{ scope_kind }}">
+              <input type="hidden" name="scope_id" value="{{ scope_id or '' }}">
+              <button type="submit" class="link danger">Remove</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    No {{ scope_kind }} bindings at this scope yet.
+    {% if can_edit and (scope_id or scope_kind == 'cluster') %}
+    <a href="#add-binding">Add the first binding</a>.
+    {% endif %}
+  </p>
+  {% endif %}
+  {% if not can_edit and (scope_id or scope_kind == 'cluster') %}
+  <p class="muted mt-1">View only. Team or project admins can add or remove bindings here.</p>
+  {% endif %}
+</section>
+
+{% if can_edit and (scope_id or scope_kind == 'cluster') %}
+<section id="add-binding">
+  <h2>Add binding</h2>
+  <form method="post" action="{{ url_for('rbac_bindings_create') }}" class="settings-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="scope_kind" value="{{ scope_kind }}">
+    <input type="hidden" name="scope_id" value="{{ scope_id or '' }}">
+
+    <fieldset class="field-group">
+      <legend>Who</legend>
+      <div class="field-grid">
+        <label class="span-2">Subject type
+          <select name="subject_kind" id="rbac-subject-kind">
+            {% for sk in subject_kinds %}
+            <option value="{{ sk }}">{{ sk }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label id="rbac-field-user" class="span-2">User email
+          <input type="email" name="subject_email" class="user-suggest"
+                 list="user-suggest-list" placeholder="user@example.com" autocomplete="off">
+        </label>
+        <label id="rbac-field-group" class="span-2" hidden>Group
+          <select name="subject_group">
+            <option value="">Choose a group…</option>
+            {% for g in groups %}
+            <option value="{{ g.id }}">{{ g.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label id="rbac-field-sa" class="span-2" hidden>Machine account ID
+          <input type="text" name="subject_sa" placeholder="Machine account UUID" autocomplete="off">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>Role</legend>
+      <div class="field-grid">
+        <label class="span-2">Grant
+          <select name="role_name" required>
+            {% if dropdown %}
+              {% set dropdown_names = dropdown|map(attribute=0)|list %}
+              {% for name, label in dropdown %}
+              <option value="{{ name }}"
+                      {% if role_descriptions is defined and role_descriptions.get(name) %} title="{{ role_descriptions.get(name) }}"{% endif %}>{{ label }} ({{ name }})</option>
+              {% endfor %}
+              <optgroup label="Other roles">
+                {% for r in all_roles if r.name not in dropdown_names %}
+                <option value="{{ r.name }}"
+                        {% if role_descriptions is defined and role_descriptions.get(r.name) %} title="{{ role_descriptions.get(r.name) }}"{% endif %}>{{ r.name }}</option>
+                {% endfor %}
+              </optgroup>
+            {% else %}
+              {% for r in all_roles %}
+              <option value="{{ r.name }}"
+                      {% if role_descriptions is defined and role_descriptions.get(r.name) %} title="{{ role_descriptions.get(r.name) }}"{% endif %}>{{ r.name }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <p class="form-actions">
+      <button type="submit" class="button">Create binding</button>
+    </p>
+  </form>
+</section>
+<script>
+(function () {
+  var sel = document.getElementById('rbac-subject-kind');
+  if (!sel) return;
+  function sync() {
+    var v = sel.value;
+    document.getElementById('rbac-field-user').hidden = v !== 'User';
+    document.getElementById('rbac-field-group').hidden = v !== 'Group';
+    document.getElementById('rbac-field-sa').hidden = v !== 'ServiceAccount';
+  }
+  sel.addEventListener('change', sync);
+  sync();
+})();
+</script>
+{% endif %}
+{% endblock %}

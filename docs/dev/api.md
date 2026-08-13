@@ -18,7 +18,7 @@ Sigaint Secret Server exposes three machine-facing surfaces:
 | Goal | Recommended API | Token |
 |------|-----------------|-------|
 | **CLI / CI: list, get, create, update, delete secrets (plaintext)** | `/eso/v1` secret API | `ss_…` (**write** to mutate) **or** `pat_…` (user write access) |
-| **OpenShift External Secrets Operator pull** | `GET /eso/v1/…/secrets/{key}` | Machine token `ss_…` (**read-only** is enough) |
+| **OpenShift External Secrets Operator pull** | `GET /eso/v1/…/secrets/{key}` | Machine account `ss_…` (`reveal` reads values) |
 | **Scripts: list teams/projects/metadata under user RLS** | PostgREST **or** `GET /eso/v1/projects` (PAT) | PAT → JWT via `/api/token`, or PAT on `/eso/v1` |
 | **Browser UI** | HTML session routes | Cookie session |
 
@@ -84,13 +84,14 @@ Also available in the UI: **My profile → Security → API access → Show JWT*
 Create on a project (**Integrations** / machine accounts). Format: `ss_…`
 (shown once). Scoped to **one project**.
 
-| Role | List / get | Create / update / delete |
-|------|------------|---------------------------|
-| `read-only` (default) | yes | **403** |
-| `write` | yes | yes |
+| Role | Metadata | Reveal values | Write |
+|------|----------|---------------|-------|
+| `service-read` | yes | no | no |
+| `service-reveal` | yes | yes | no |
+| `service-write` | yes | yes | yes |
 
-- Prefer **`read-only`** for ESO pull and read-only automation.
-- Use **`write`** for CLI/CI that creates, rotates, or deletes secrets.
+- Prefer **`service-reveal`** for ESO pull and automation that needs values.
+- Use **`service-write`** for CLI/CI that creates, rotates, or deletes secrets.
 
 ---
 
@@ -181,7 +182,7 @@ Also: **`GET /eso/v1/projects`** (PAT only) lists projects visible to the user
 **Machine token**
 
 ```text
-1. Project → Integrations / Tokens → create write (or read-only).
+1. Project → Integrations / Tokens → create write (or reveal).
 2. Copy ss_… and the project UUID.
 ```
 
@@ -224,7 +225,7 @@ keys (Flask `<path:key>`), e.g. `db/password`.
 | `note` | string | Non-sensitive label / description |
 | `kind` | string | `plain`, `database`, `certificate`, `ssh`, or `kv` |
 | `expires_at` | ISO-8601 or `null` | Optional hard expiry |
-| `acl_mode` | string | Per-secret ACL; default `inherit` |
+| `access_mode` | string | Per-secret access mode; default `inherit` |
 | `created_at` / `updated_at` | ISO-8601 or `null` | Timestamps |
 | `last_accessed_at` / `last_accessed_by` | ISO-8601 / string | Last successful reveal |
 | `metadata` | object | Custom key → value labels (`api.secret_meta`); searchable |
@@ -233,21 +234,18 @@ keys (Flask `<path:key>`), e.g. `db/password`.
 System fields are not set via API body. Custom `metadata` is managed in the UI
 **Metadata** tab (writers).
 
-### Per-secret ACLs
+### Per-secret access modes
 
-| `acl_mode` | Who can access (beyond project membership) |
-|------------|---------------------------------------------|
-| `inherit` (default) | Project RBAC as usual |
-| `writers` | Project writers and above |
-| `admins` | Project admins (+ team owners/admins always) |
-| `owners` | Team owners (+ team/project admins still full access) |
-| `custom` | Explicit user **or** group grants in `api.secret_acl` (+ admins always) |
+| `access_mode` | Who can access |
+|---------------|----------------|
+| `inherit` (default) | Project/team RBAC via scope chain; secret-scope bindings add grants |
+| `restricted` | Only secret-scope `rbac.bindings` (+ project admins) |
 
 **Always full access:** global admins and users with `can_admin_project`.
 
 **Machine tokens / ESO** use SECURITY DEFINER helpers and are **not** gated by
-per-secret human ACLs or reveal-approval. Prefer a **separate project** and/or
-**key allow-list** for sensitive values.
+per-secret human role bindings or reveal-approval. Prefer a **separate project**
+and/or **key allow-list** for sensitive values.
 
 **Key allow-list (optional):** each token may list exact keys and/or glob
 patterns (`prod/*`, `DB_*`, `?.api-key`). Empty allow-list = all keys. Create
@@ -257,7 +255,7 @@ via UI or PAT API body `scope: ["API_KEY", "prod/*"]`. Scoped tokens get
 **PAT bulk list with values** only includes secrets the caller may
 `can_access_secret(…, 'reveal')` and `can_reveal_secret` (approval).
 
-**Permissions on custom grants:** `read` (metadata) < `reveal` (value) <
+**Permissions on secret-scope bindings:** `read` (metadata) < `reveal` (value) <
 `write` (edit/delete). Higher permissions include lower ones.
 
 ---
@@ -351,10 +349,10 @@ A successful get (PAT) updates `last_accessed_at` / `last_accessed_by`.
 
 | `error` | Meaning |
 |---------|---------|
-| `forbidden` | Per-secret ACL denies reveal |
+| `forbidden` | Per-secret access mode denies reveal |
 | `approval_required` | Reveal needs admin approval (`pending` may be true) |
 
-Machine tokens (`ss_…`) skip human ACL and reveal-approval.
+Machine tokens (`ss_…`) skip human access mode and reveal-approval.
 
 **ESO:** keep using `jsonPath: $.value`. Extra fields are additive.
 
@@ -430,7 +428,7 @@ curl -s -X PATCH -H "$AUTH" -H "Content-Type: application/json" \
 
 **200** — updated secret object + `"ok": true`  
 **404** `{"error":"not found"}`  
-**403** read-only token  
+**403** read token cannot mutate
 **400** validation errors
 
 ---
@@ -478,7 +476,7 @@ secretserver delete secret API_KEY
 | **400** | `{"error":"kind must be one of: …"}` | Invalid `kind` |
 | **400** | `{"error":"expires_days must be …"}` / ISO parse errors | Bad expiry |
 | **401** | `{"error":"unauthorized"}` | Missing/invalid/wrong-project/expired token |
-| **403** | `{"error":"token is read-only"}` | Mutate with a read-only token |
+| **403** | `{"error":"token does not allow writes"}` | Mutate with a `read` token |
 | **403** | `{"error":"forbidden"}` | Write path denied by DB helper |
 | **403** | `{"error":"approval_required",…}` | PAT reveal blocked until approved |
 | **404** | `{"error":"not found"}` | Get/PATCH/DELETE on missing key |
@@ -585,7 +583,7 @@ Auth: `Authorization: Bearer pat_…`. Team/project refs: UUID or unique name.
 | `GET` | `/eso/v1/admin/users` | Global admin: user list (`?q=`) |
 | `GET` | `/eso/v1/admin/audit` | Global admin: org / secret / access audit |
 
-**Groups, secret ACLs, and custom metadata** are managed in the **browser UI**
+**Groups, secret role bindings, and custom metadata** are managed in the **browser UI**
 today (Team → Groups, Secret → Permissions / Metadata).
 
 ### Management CLI examples
@@ -594,10 +592,10 @@ today (Team → Groups, Secret → Permissions / Metadata).
 secretserver get teams
 secretserver create team Platform
 secretserver create project ios-app --team Platform
-secretserver create member bob@example.com --team Platform --role member
-secretserver create member dave@example.com --role write   # current project
+secretserver create member bob@example.com --team Platform --role team-member
+secretserver create member dave@example.com --role project-write   # current project
 secretserver get tokens
-secretserver create token ci --role write                  # prints ss_… once
+secretserver create token ci --role service-write             # prints ss_… once
 secretserver get trash
 secretserver restore trash <secret-uuid>
 secretserver get history API_KEY
@@ -634,18 +632,16 @@ Use the JWT from `/api/token`. Default compose port: **3000**.
 | Path | Typical use | Notes |
 |------|-------------|--------|
 | `/teams` | List/create teams | RLS: membership / global admin |
-| `/team_members` | Membership rows | `role`: owner/admin/member/viewer |
 | `/team_ldap_maps` / `/team_oidc_maps` | Directory group → team role | Team admin+ |
 | `/team_invites` | Invite metadata | Token hashes only |
 | `/team_join_requests` | Join request workflow | status: pending/approved/rejected |
 | `/projects` | Projects under teams | Optional `description` |
-| `/project_members` | Project-scoped user roles | `role`: admin/write/read |
-| `/groups` | Team-scoped groups | `source`: manual/ldap/oidc; optional `team_role` |
+| `/groups` | Team-scoped groups | `source`: manual/ldap/oidc |
 | `/group_members` | Group membership | |
-| `/project_group_roles` | Group → project role | |
-| `/secrets` | Row metadata + `value_enc` | Soft-delete via `deleted_at`; `acl_mode` |
+| RBAC bindings UI/API | Role bindings | Scoped cluster/team/project/secret; not exposed as a public PostgREST table |
+ |
+| `/secrets` | Row metadata + `value_enc` | Soft-delete via `deleted_at`; `access_mode` |
 | `/secret_meta` | Custom secret labels | Searchable in UI/API `q=` |
-| `/secret_acl` | Per-secret grants | `user_id` **or** `group_id` when `acl_mode=custom` |
 | `/secret_versions` | Prior ciphertexts | Filled on value change |
 | `/secret_audit` | Secret actions | Append-only |
 | `/secret_access_requests` | Reveal approval workflow | pending/approved/denied |
@@ -659,7 +655,7 @@ Use the JWT from `/api/token`. Default compose port: **3000**.
 ```bash
 # List live secret metadata for a project
 curl -s -H "Authorization: Bearer $JWT" \
-  "http://localhost:3000/secrets?project_id=eq.$SS_PROJECT&deleted_at=is.null&select=id,key,note,kind,expires_at,updated_at,last_accessed_at,acl_mode"
+  "http://localhost:3000/secrets?project_id=eq.$SS_PROJECT&deleted_at=is.null&select=id,key,note,kind,expires_at,updated_at,last_accessed_at,access_mode"
 
 # Custom metadata for a secret
 curl -s -H "Authorization: Bearer $JWT" \

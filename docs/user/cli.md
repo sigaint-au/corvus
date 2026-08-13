@@ -146,9 +146,9 @@ secretserver get teams
 secretserver get members --team Platform
 secretserver create team Platform
 secretserver create project demo --team Platform
-secretserver create member alice@example.com --team Platform --role member
+secretserver create member alice@example.com --team Platform --role team-member
 secretserver get tokens
-secretserver create token ci --role write
+secretserver create token ci --role service-write
 secretserver get trash
 secretserver restore trash <secret-id>
 secretserver get users              # global admin + PAT
@@ -196,3 +196,11 @@ DB_URL=$(secretserver get secret DATABASE_URL -o value)
 secretserver help
 secretserver <command> --help
 ```
+
+---
+
+## Related docs
+
+- [guide.md](guide.md) — web UI guide
+- [../admin/machine-tokens.md](../admin/machine-tokens.md) — machine accounts
+- [../admin/authentication.md](../admin/authentication.md) — auth flows

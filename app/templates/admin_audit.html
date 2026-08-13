@@ -4,19 +4,16 @@
 <div class="page-head"><h1>Auditing</h1></div>
 <p class="page-desc muted">Global admin only. Access reviews, role-change history, and audit export / retention.</p>
 
-<nav class="tabs" role="tablist" aria-label="Auditing sections">
+<nav class="tabs" aria-label="Auditing sections">
   <a href="{{ url_for('admin_audit', tab='access') }}"
      class="tab {% if active_tab == 'access' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}">Access review</a>
+>Access review</a>
   <a href="{{ url_for('admin_audit', tab='roles') }}"
      class="tab {% if active_tab == 'roles' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'roles' else 'false' }}">Role changes</a>
+>Role changes</a>
   <a href="{{ url_for('admin_audit', tab='export') }}"
      class="tab {% if active_tab == 'export' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'export' else 'false' }}">Export &amp; retention</a>
+>Export &amp; retention</a>
 </nav>
 
 {% if active_tab == 'access' %}
@@ -34,7 +31,7 @@
   </p>
   {% if access_rows %}
   <p class="muted">{{ access_rows|length }} grant row(s).</p>
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>User</th>
@@ -66,7 +63,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No membership grants found.</p>
   {% endif %}
@@ -97,7 +94,7 @@
       <input type="date" name="until" value="{{ audit_until or '' }}">
     </label>
     <div class="audit-filter-actions">
-      <button type="submit">Filter</button>
+      <button type="submit">Apply</button>
       {% if search_q or audit_actor or audit_since or audit_until %}
       <a class="button ghost small" href="{{ url_for('admin_audit', tab='roles') }}">Clear</a>
       {% endif %}
@@ -105,7 +102,7 @@
   </form>
   {% if role_rows %}
   <p class="muted">Showing {{ role_rows|length }} of {{ role_total }} event(s).</p>
-  <table class="audit-table">
+  <div class="table"><table class="audit-table">
     <thead>
       <tr>
         <th>When</th>
@@ -120,7 +117,7 @@
     {% for e in role_rows %}
       <tr>
         <td class="muted" title="{{ e.created_at }}">{{ e.when_display }}</td>
-        <td><span class="audit-action">{{ e.action }}</span></td>
+        <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
         <td>{{ e.detail or '—' }}</td>
         <td class="muted">{{ e.actor_email or '—' }}</td>
         <td>{{ e.team_name or '—' }}</td>
@@ -128,7 +125,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">
     {% if search_q or audit_actor or audit_since or audit_until %}

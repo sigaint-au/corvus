@@ -4,27 +4,25 @@
 <div class="page-head"><h1>My profile</h1></div>
 <p class="page-desc muted">Your account, security, memberships, and recent activity.</p>
 
-<nav class="tabs" role="tablist" aria-label="Profile sections">
+<nav class="tabs" aria-label="Profile sections">
   <a href="{{ url_for('profile', tab='account') }}"
      class="tab {% if active_tab == 'account' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'account' else 'false' }}">Account</a>
+>Account</a>
   <a href="{{ url_for('profile', tab='security') }}"
      class="tab {% if active_tab == 'security' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'security' else 'false' }}">Security</a>
+>Security</a>
+  <a href="{{ url_for('profile', tab='myaccess') }}"
+     class="tab {% if active_tab == 'myaccess' %}active{% endif %}"
+>My access</a>
   <a href="{{ url_for('profile', tab='teams') }}"
      class="tab {% if active_tab == 'teams' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'teams' else 'false' }}">Teams</a>
+>Teams</a>
   <a href="{{ url_for('profile', tab='projects') }}"
      class="tab {% if active_tab == 'projects' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'projects' else 'false' }}">Projects</a>
+>Projects</a>
   <a href="{{ url_for('profile', tab='activity') }}"
      class="tab {% if active_tab == 'activity' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'activity' else 'false' }}">Activity</a>
+>Activity</a>
 </nav>
 
 {% if active_tab == 'account' %}
@@ -164,7 +162,7 @@
     <button type="submit">Create token</button>
   </form>
   {% if personal_tokens %}
-  <table class="table-spaced">
+  <div class="table"><table class="table-spaced">
     <thead>
       <tr>
         <th>Name</th>
@@ -195,7 +193,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">None yet.</p>
   {% endif %}
@@ -282,7 +280,7 @@
   </div>
   <p class="muted">Signed-in devices.</p>
   {% if active_sessions %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Device / browser</th>
@@ -318,10 +316,62 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No active sessions recorded for this account.</p>
   {% endif %}
+</section>
+
+{% elif active_tab == 'myaccess' %}
+<section>
+  <h2>My access</h2>
+  <p class="muted">What grants you access, and how.</p>
+  {% if user.is_global_admin %}
+  <div role="alert" data-variant="warning">
+    You are a <strong>global admin</strong> and can access every team, project, and secret.
+  </div>
+  {% endif %}
+  {% for label, rows in my_access_groups %}
+  <h3>{{ label }}</h3>
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          {% if label == 'Team access' %}<th>Team</th>
+          {% elif label == 'Project access' %}<th>Project</th>
+          {% elif label == 'Secret access' %}<th>Secret</th>
+          {% else %}<th>Scope</th>{% endif %}
+          <th>Role</th>
+          <th>Granted to</th>
+          <th>Since</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>
+            {% if r.scope_kind == 'secret' and r.scope_label %}<code class="k">{{ r.scope_label }}</code>
+            {% else %}{{ r.scope_label or '—' }}{% endif %}
+          </td>
+          <td>
+            <span class="badge" data-variant="secondary" title="{{ r.role_description or r.role_name }}">{{ r.role_name }}</span>
+          </td>
+          <td>
+            <span class="badge">{{ r.grant_kind }}</span>
+            {{ r.grant_subject }}
+          </td>
+          <td class="muted">{{ r.created_at|time_ago if r.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    {% if user.is_global_admin %}No explicit bindings record your global-admin access.{% else %}
+    No bindings reference you or your groups. Ask a team owner or admin to grant access.{% endif %}
+  </p>
+  {% endfor %}
 </section>
 
 {% elif active_tab == 'teams' %}
@@ -331,7 +381,7 @@
     <a href="{{ url_for('teams') }}" class="muted">All teams →</a>
   </div>
   {% if teams %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Team</th>
@@ -344,13 +394,25 @@
     {% for t in teams %}
       <tr>
         <td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td>
-        <td><span class="badge" data-variant="secondary">{{ t.role }}</span></td>
-        <td class="muted">{{ t.source or 'manual' }}</td>
+        <td>
+        {% set role_help = {
+          'team-owner': 'Full control of the team',
+          'team-admin': 'Administer team projects and members',
+          'team-member': 'Create and update secrets in team projects',
+          'team-viewer': 'Read-only access',
+        } %}
+        {% if t.role %}
+        <span class="badge" data-variant="secondary" title="{{ role_help.get(t.role, '') }}">{{ t.role }}</span>
+        {% else %}
+        <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td class="muted">{{ t.source or 'manual' }}</td>
         <td>{{ t.project_count }}</td>
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">You are not a member of any teams yet.</p>
   {% endif %}
@@ -360,7 +422,7 @@
 <section>
   <h2>Pending join requests</h2>
   <p class="muted">Waiting for a team owner or admin to approve.</p>
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Team</th>
@@ -377,7 +439,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </section>
 {% endif %}
 
@@ -388,7 +450,7 @@
     <a href="{{ url_for('projects_list') }}" class="muted">All projects →</a>
   </div>
   {% if projects %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Project</th>
@@ -417,7 +479,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No projects available to you yet.</p>
   {% endif %}
@@ -427,7 +489,7 @@
 <section>
   <h2>Pinned secrets</h2>
   {% if pins %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Key</th>
@@ -448,16 +510,16 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
-  <p class="empty">No pinned secrets. Pin keys from a project secrets list to keep them handy.</p>
+  <p class="empty">Pin a secret from a project's secrets list.</p>
   {% endif %}
 </section>
 
 <section>
   <h2>Recently accessed</h2>
   {% if recent %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>Key</th>
@@ -480,7 +542,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No recent secret access yet.</p>
   {% endif %}

@@ -24,7 +24,7 @@ from secret_kinds import (
 from secret_ops import (
     _load_secrets_page,
     _load_team_secrets_page,
-    _parse_acl_mode,
+    _parse_access_mode,
     _parse_expires_at,
     _parse_requires_approval,
     _upsert_secret,
@@ -189,7 +189,7 @@ def register(app):
         """List team secrets with pagination and filters.
 
         Query params: ``q``, ``page``, ``project`` (UUID), ``kind``, ``due``
-        (overdue|soon|none), ``acl`` (restricted|inherit).
+        (overdue|soon|none), ``access_mode`` (restricted|inherit).
 
         Example:
             GET /secrets?q=password&kind=database&page=2
@@ -204,9 +204,9 @@ def register(app):
         due = (request.args.get("due") or "").strip() or None
         if due not in ("overdue", "soon", "none", None):
             due = None
-        acl = (request.args.get("acl") or "").strip() or None
-        if acl not in ("restricted", "inherit", None):
-            acl = None
+        access_mode = (request.args.get("access_mode") or "").strip() or None
+        if access_mode not in ("restricted", "inherit", None):
+            access_mode = None
         team, secrets, team_projects = None, [], []
         secrets_pager = None
         if tid:
@@ -222,7 +222,7 @@ def register(app):
                         project=project,
                         kind=kind,
                         due=due,
-                        acl=acl,
+                        access_mode=access_mode,
                     )
         return render_template(
             "secrets.html",
@@ -234,7 +234,7 @@ def register(app):
             filter_project=project,
             filter_kind=kind,
             filter_due=due,
-            filter_acl=acl,
+            filter_access_mode=access_mode,
             secret_kinds=config.SECRET_KINDS,
         )
 
@@ -418,8 +418,11 @@ def register(app):
         value = request.form["value"]
         note = request.form.get("note", "").strip()
         kind = normalize_kind(request.form.get("kind"))
+        if kind != "plain":
+            flash("Use Advanced create for structured secret types", "error")
+            return redirect(url_for("secret_new", project_id=project_id))
         req_appr = _parse_requires_approval(request.form)
-        acl_mode = _parse_acl_mode(request.form)
+        access_mode = _parse_access_mode(request.form)
         if not key or value is None:
             flash("Key and value required", "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
@@ -440,8 +443,8 @@ def register(app):
                     kind=kind,
                     requires_approval=req_appr,
                     set_requires_approval=True,
-                    acl_mode=acl_mode,
-                    set_acl_mode=True,
+                    access_mode=access_mode,
+                    set_access_mode=True,
                 )
                 if not sid:
                     flash("You don't have permission to do that", "error")
@@ -581,6 +584,12 @@ def register(app):
             >>> html = _reveal_toggle_html(project_id, secret_id, revealed=True)
         """
         cell_id, toggle_id = _reveal_cell_ids(secret_id, cell, version_id)
+        # The list-row toggle lives inside the secret kebab ot-dropdown; history
+        # toggles sit in the acts cell. Pass the popover id so the swapped-in
+        # Hide control renders as a proper menu item.
+        menu = None
+        if version_id is None and (cell or "").strip().lower() != "current":
+            menu = f"secret-menu-{secret_id}"
         if version_id is not None:
             reveal_url = url_for(
                 "reveal_secret_version",
@@ -608,6 +617,7 @@ def register(app):
             hide_url=hide_url,
             revealed=revealed,
             oob=True,
+            menu=menu,
         )
 
     @app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/reveal")
@@ -630,7 +640,6 @@ def register(app):
             GET /projects/<project_id>/secrets/<secret_id>/reveal?cell=current
         """
         cell = (request.args.get("cell") or "").strip() or None
-        force_inline = (request.args.get("inline") or "").strip() in ("1", "true", "yes")
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -647,7 +656,14 @@ def register(app):
                 (str(secret_id),),
             )
             if not (cur.fetchone() or {}).get("ok"):
-                return "Forbidden", 403
+                return render_template(
+                    "partials/reveal_access.html",
+                    project_id=project_id,
+                    secret_id=secret_id,
+                    secret_key=row["key"],
+                    state="denied",
+                    cell=cell,
+                ), 403
             access_state, access_row = _reveal_access_state(
                 cur, project_id, secret_id, session["user_id"]
             )
@@ -707,7 +723,6 @@ def register(app):
             "secret_view", project_id=project_id, secret_id=secret_id
         )
         # force_inline kept for callers; no longer gates redirect.
-        del force_inline
         body = render_template(
             "partials/reveal.html",
             value=plaintext,
@@ -739,7 +754,7 @@ def register(app):
         is_version: bool = False,
         status: int = 200,
         can_admin: bool = False,
-        acl_grants=None,
+        secret_bindings=None,
         can_reveal: bool = True,
         team_groups=None,
         active_tab: str = "secret",
@@ -747,6 +762,7 @@ def register(app):
         access_state=None,
         access_request=None,
         custom_meta=None,
+        effective_access=None,
     ):
         """Render the type-specific secret view/edit page template."""
         exp = row.get("expires_at")
@@ -759,7 +775,7 @@ def register(app):
         cert_pem, cert_key = ("", "")
         if kind == "certificate":
             cert_pem, cert_key = split_cert_and_key(plaintext)
-        acl_mode = (row.get("acl_mode") or "inherit").strip() or "inherit"
+        access_mode = (row.get("access_mode") or "inherit").strip() or "inherit"
         tab = (active_tab or "secret").strip().lower()
         if tab not in ("secret", "meta", "access"):
             tab = "secret"
@@ -789,12 +805,13 @@ def register(app):
                 can_write=can_write and not is_version,
                 can_admin=can_admin,
                 can_reveal=can_reveal,
-                acl_mode=acl_mode,
-                acl_modes=config.SECRET_ACL_MODES,
-                acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
-                acl_permissions=config.SECRET_ACL_PERMISSIONS,
-                acl_perm_labels=config.SECRET_ACL_PERM_LABELS,
-                acl_grants=acl_grants or [],
+                access_mode=access_mode,
+                access_modes=config.ACCESS_MODES,
+                access_mode_labels=config.ACCESS_MODE_LABELS,
+                can_edit_access=can_admin,
+                role_dropdown=config.RBAC_SECRET_ROLE_DROPDOWN,
+                subject_kinds=config.RBAC_SUBJECT_KINDS,
+                secret_bindings=secret_bindings or [],
                 team_groups=team_groups or [],
                 active_tab=tab,
                 access_blocked=access_blocked,
@@ -808,6 +825,7 @@ def register(app):
                 last_accessed_at=row.get("last_accessed_at"),
                 last_accessed_by_email=row.get("last_accessed_by_email") or "",
                 custom_meta=custom_meta or [],
+                effective_access=effective_access or [],
             ),
             status,
         )
@@ -842,7 +860,7 @@ def register(app):
             cur.execute(
                 """
                 SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
-                       s.requires_approval, s.acl_mode, s.created_at, s.updated_at,
+                       s.requires_approval, s.access_mode, s.created_at, s.updated_at,
                        s.last_accessed_at, s.last_accessed_by,
                        p.name AS project_name, p.require_reveal_approval
                 FROM api.secrets s
@@ -893,11 +911,11 @@ def register(app):
                 "SELECT api.can_access_secret(%s, 'reveal') AS r",
                 (str(secret_id),),
             )
-            can_reveal_acl = bool((cur.fetchone() or {}).get("r"))
+            can_reveal_perm = bool((cur.fetchone() or {}).get("r"))
             access_state, access_row = _reveal_access_state(
                 cur, project_id, secret_id, session["user_id"]
             )
-            can_reveal = can_reveal_acl and access_state == "allowed"
+            can_reveal = can_reveal_perm and access_state == "allowed"
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             can_admin = bool((cur.fetchone() or {}).get("a"))
             custom_meta = []
@@ -909,17 +927,31 @@ def register(app):
                 custom_meta = cur.fetchall() or []
             except Exception:
                 custom_meta = []
-            acl_grants = []
+            secret_bindings = []
             team_groups = []
+            effective_access = []
             if can_admin:
                 try:
                     cur.execute(
-                        "SELECT * FROM private.secret_acl_rows(%s::uuid)",
+                        """
+                        SELECT b.id, b.subject_kind, b.subject_id, b.created_at,
+                               r.name AS role_name,
+                               g.name AS group_name
+                        FROM rbac.bindings b
+                        JOIN rbac.roles r ON r.id = b.role_id
+                        LEFT JOIN api.groups g
+                          ON b.subject_kind = 'Group' AND g.id = b.subject_id
+                        WHERE b.scope_kind = 'secret' AND b.scope_id = %s::uuid
+                        ORDER BY b.created_at DESC
+                        """,
                         (str(secret_id),),
                     )
-                    acl_grants = cur.fetchall() or []
+                    secret_bindings = list(cur.fetchall() or [])
                 except Exception:
-                    acl_grants = []
+                    secret_bindings = []
+                import rbac_sync
+
+                rbac_sync.enrich_binding_emails(secret_bindings)
                 try:
                     cur.execute(
                         """
@@ -934,6 +966,15 @@ def register(app):
                     team_groups = cur.fetchall() or []
                 except Exception:
                     team_groups = []
+                try:
+                    cur.execute(
+                        "SELECT * FROM api.effective_access_rows('secret', %s::uuid)",
+                        (str(secret_id),),
+                    )
+                    effective_access = list(cur.fetchall() or [])
+                except Exception:
+                    conn.rollback()
+                    effective_access = []
 
             if request.method == "POST":
                 if is_version or not can_write:
@@ -954,13 +995,13 @@ def register(app):
                 note = (request.form.get("note") or "").strip()
                 # ACL + reveal approval live on the Access tab — preserve on value save
                 req_appr = row.get("requires_approval")
-                acl_mode = (row.get("acl_mode") or "inherit").strip() or "inherit"
+                access_mode = (row.get("access_mode") or "inherit").strip() or "inherit"
                 row_view = dict(row)
                 row_view["note"] = note
                 row_view["kind"] = kind
                 row_view["project_name"] = row.get("project_name") or ""
                 row_view["requires_approval"] = req_appr
-                row_view["acl_mode"] = acl_mode
+                row_view["access_mode"] = access_mode
                 if not value:
                     flash("Value is required", "error")
                     body, code = _render_secret_view(
@@ -1042,11 +1083,12 @@ def register(app):
                     can_write=can_write,
                     is_version=False,
                     can_admin=can_admin,
-                    acl_grants=acl_grants,
+                    secret_bindings=secret_bindings,
                     can_reveal=can_reveal,
                     team_groups=team_groups,
+                    effective_access=effective_access,
                     active_tab=active_tab,
-                    access_blocked=not can_reveal,
+                    access_blocked=can_reveal_perm and access_state != "allowed",
                     access_state=access_state,
                     access_request=access_row,
                     custom_meta=custom_meta,
@@ -1064,11 +1106,12 @@ def register(app):
                     can_write=False,
                     is_version=is_version,
                     can_admin=can_admin,
-                    acl_grants=acl_grants if can_admin else [],
+                    secret_bindings=secret_bindings if can_admin else [],
                     can_reveal=False,
                     team_groups=team_groups if can_admin else [],
+                    effective_access=effective_access,
                     active_tab="meta" if active_tab == "meta" else "secret",
-                    access_blocked=True,
+                    access_blocked=can_reveal_perm and access_state != "allowed",
                     access_state=access_state,
                     access_request=access_row,
                     custom_meta=custom_meta,
@@ -1076,10 +1119,33 @@ def register(app):
                 return body, code
 
             try:
+                plaintext = crypto.decrypt(value_enc)
+            except ValueError as e:
+                conn.rollback()
+                flash(str(e), "error")
+                body, code = _render_secret_view(
+                    project_id=project_id,
+                    secret_id=secret_id,
+                    row=row,
+                    plaintext="",
+                    kind=normalize_kind(row.get("kind")),
+                    can_write=False,
+                    is_version=is_version,
+                    can_admin=can_admin,
+                    secret_bindings=secret_bindings if can_admin else [],
+                    can_reveal=False,
+                    team_groups=team_groups if can_admin else [],
+                    effective_access=effective_access,
+                    active_tab="meta" if active_tab == "meta" else "secret",
+                    access_blocked=True,
+                    access_state="decrypt_error",
+                    custom_meta=custom_meta,
+                )
+                return body, code
+            try:
                 pins.touch_recent(cur, session["user_id"], secret_id)
             except Exception:
                 pass
-            # Same as inline /reveal: stamp last_accessed_* for Metadata tab
             try:
                 cur.execute(
                     "SELECT private.touch_secret_access(%s::uuid)",
@@ -1095,7 +1161,6 @@ def register(app):
                 action="revealed",
             )
             conn.commit()
-        plaintext = crypto.decrypt(value_enc)
         kind = normalize_kind(row.get("kind"))
         body, code = _render_secret_view(
             project_id=project_id,
@@ -1106,9 +1171,10 @@ def register(app):
             can_write=can_write,
             is_version=is_version,
             can_admin=can_admin,
-            acl_grants=acl_grants,
+            secret_bindings=secret_bindings,
             can_reveal=can_reveal,
             team_groups=team_groups,
+            effective_access=effective_access,
             active_tab=active_tab,
             custom_meta=custom_meta,
         )
@@ -1433,7 +1499,7 @@ def register(app):
             can_write=can_write,
             secrets_pager=secrets_pager,
             search_q=q,
-            acl_mode_labels=config.SECRET_ACL_MODE_LABELS,
+            access_mode_labels=config.ACCESS_MODE_LABELS,
         )
 
 
@@ -1516,7 +1582,6 @@ def register(app):
         Example:
             GET /projects/<project_id>/secrets/<secret_id>/versions/<version_id>/reveal
         """
-        force_inline = (request.args.get("inline") or "").strip() in ("1", "true", "yes")
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -1531,6 +1596,12 @@ def register(app):
             row = cur.fetchone()
             if not row:
                 return "Not found", 404
+            cur.execute(
+                "SELECT api.can_access_secret(%s, 'reveal') AS ok",
+                (str(secret_id),),
+            )
+            if not (cur.fetchone() or {}).get("ok"):
+                return ("Forbidden", 403)
             access_state, access_row = _reveal_access_state(
                 cur, project_id, secret_id, session["user_id"]
             )
@@ -1543,6 +1614,11 @@ def register(app):
                     request_row=access_row,
                     version_id=version_id,
                 )
+            try:
+                plaintext = crypto.decrypt(row["value_enc"])
+            except ValueError as e:
+                conn.rollback()
+                return str(e), 422
             audit.log_secret(
                 cur,
                 project_id=project_id,
@@ -1551,10 +1627,8 @@ def register(app):
                 action="revealed",
             )
             conn.commit()
-        plaintext = crypto.decrypt(row["value_enc"])
         kind = normalize_kind(row.get("kind"))
         structured = kind in STRUCTURED_VIEW_KINDS
-        del force_inline
         body = render_template(
             "partials/reveal.html",
             value=plaintext,
@@ -1676,7 +1750,7 @@ def register(app):
                     )
                 flash("You already have access to reveal this secret", "ok")
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             if access_state == "pending":
                 if wants_htmx:
@@ -1690,7 +1764,7 @@ def register(app):
                     )
                 flash("Access request already pending approval", "ok")
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             try:
                 cur.execute(
@@ -1731,7 +1805,7 @@ def register(app):
                         )
                     flash("Access request already pending approval", "ok")
                     return redirect(
-                        url_for("project_detail", project_id=project_id, tab="access")
+                        url_for("project_detail", project_id=project_id, tab="requests")
                     )
                 audit.log_secret(
                     cur,
@@ -1759,7 +1833,7 @@ def register(app):
                 conn.rollback()
                 log.exception("access request failed")
                 flash(str(e), "error")
-        return redirect(url_for("project_detail", project_id=project_id, tab="access"))
+        return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
 
     @app.post("/projects/<uuid:project_id>/access-requests/<uuid:req_id>/approve")
     @authz.login_required
@@ -1801,7 +1875,7 @@ def register(app):
                     "error",
                 )
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             cur.execute(
                 """
@@ -1816,7 +1890,7 @@ def register(app):
             if not req or req["status"] != "pending":
                 flash("Request not found or already resolved", "error")
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             try:
                 cur.execute(
@@ -1862,7 +1936,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(url_for("project_detail", project_id=project_id, tab="access"))
+        return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
 
     @app.post("/projects/<uuid:project_id>/access-requests/<uuid:req_id>/deny")
     @authz.login_required
@@ -1887,7 +1961,7 @@ def register(app):
                     "error",
                 )
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             cur.execute(
                 """
@@ -1902,7 +1976,7 @@ def register(app):
             if not req or req["status"] != "pending":
                 flash("Request not found or already resolved", "error")
                 return redirect(
-                    url_for("project_detail", project_id=project_id, tab="access")
+                    url_for("project_detail", project_id=project_id, tab="requests")
                 )
             try:
                 cur.execute(
@@ -1936,7 +2010,7 @@ def register(app):
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
-        return redirect(url_for("project_detail", project_id=project_id, tab="access"))
+        return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
 
     @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/rollback/<uuid:version_id>")
     @authz.login_required
@@ -2179,9 +2253,9 @@ def register(app):
                 "expires_at": "",
                 "kv_pairs": [("", "")],
                 "secret_kinds": config.SECRET_KINDS,
-                "acl_mode": "inherit",
-                "acl_modes": config.SECRET_ACL_MODES,
-                "acl_mode_labels": config.SECRET_ACL_MODE_LABELS,
+                "access_mode": "inherit",
+                "access_modes": config.ACCESS_MODES,
+                "access_mode_labels": config.ACCESS_MODE_LABELS,
                 "require_reveal_approval": bool(
                     project.get("require_reveal_approval")
                 ),
@@ -2206,7 +2280,7 @@ def register(app):
                     note=note,
                     expires_at=request.form.get("expires_at") or "",
                     kv_pairs=kv_pairs or [("", "")],
-                    acl_mode=_parse_acl_mode(request.form),
+                    access_mode=_parse_access_mode(request.form),
                 ),
             ), 400
         try:
@@ -2221,7 +2295,7 @@ def register(app):
                     note=note,
                     expires_at=request.form.get("expires_at") or "",
                     kv_pairs=kv_pairs or [("", "")],
-                    acl_mode=_parse_acl_mode(request.form),
+                    access_mode=_parse_access_mode(request.form),
                 ),
             ), 400
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -2236,8 +2310,8 @@ def register(app):
                     kind=kind,
                     requires_approval=_parse_requires_approval(request.form),
                     set_requires_approval=True,
-                    acl_mode=_parse_acl_mode(request.form),
-                    set_acl_mode=True,
+                    access_mode=_parse_access_mode(request.form),
+                    set_access_mode=True,
                 )
                 if not sid:
                     flash("You don't have permission to do that", "error")
@@ -2265,18 +2339,18 @@ def register(app):
                         note=note,
                         expires_at=request.form.get("expires_at") or "",
                         kv_pairs=kv_pairs or [("", "")],
-                        acl_mode=_parse_acl_mode(request.form),
+                        access_mode=_parse_access_mode(request.form),
                     ),
                 ), 400
         return redirect(
             url_for("project_detail", project_id=project_id, tab="secrets")
         )
 
-    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl")
+    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access")
     @authz.login_required
-    def update_secret_acl_mode(project_id, secret_id):
-        """Set per-secret ACL mode and reveal-approval override (project admin only)."""
-        mode = _parse_acl_mode(request.form)
+    def update_secret_access(project_id, secret_id):
+        """Set per-secret access mode and reveal-approval override (project admin only)."""
+        mode = _parse_access_mode(request.form)
         req_appr = _parse_requires_approval(request.form)
         access_url = url_for(
             "secret_view",
@@ -2292,7 +2366,7 @@ def register(app):
             cur.execute(
                 """
                 UPDATE api.secrets
-                SET acl_mode = %s, requires_approval = %s
+                SET access_mode = %s, requires_approval = %s
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 RETURNING key
                 """,
@@ -2311,36 +2385,51 @@ def register(app):
                     action="updated",
                 )
                 conn.commit()
-                label = config.SECRET_ACL_MODE_LABELS.get(mode, mode)
+                label = config.ACCESS_MODE_LABELS.get(mode, mode)
                 flash(f"Access settings saved ({label})", "ok")
         return redirect(access_url)
 
-    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl/grants")
+    @app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access/bindings")
     @authz.login_required
-    def add_secret_acl_grant(project_id, secret_id):
-        """Grant a user or group access to a custom-ACL secret (project admin only)."""
-        email = (request.form.get("email") or "").strip().lower()
-        group_id = (request.form.get("group_id") or "").strip()
-        perm = (request.form.get("permission") or "reveal").strip().lower()
-        if perm not in config.SECRET_ACL_PERMISSIONS:
-            perm = "reveal"
+    def add_secret_access_binding(project_id, secret_id):
+        """Bind a user, group, or service account to a secret role (project admin).
+
+        Uses the same subject/role vocabulary as every other binding form:
+        ``subject_kind`` + ``subject_email`` / ``subject_group`` / ``subject_sa``
+        and a ``role_name`` (``secret-*`` or a custom role).
+        """
+        subject_kind = (request.form.get("subject_kind") or "User").strip()
+        if subject_kind not in ("User", "Group", "ServiceAccount"):
+            subject_kind = "User"
+        email = (request.form.get("subject_email") or "").strip().lower()
+        group_id = (request.form.get("subject_group") or "").strip()
+        sa_id = (request.form.get("subject_sa") or "").strip()
+        role_name = (request.form.get("role_name") or "").strip()
+        if not role_name:
+            role_name = "secret-reveal"
         access_url = url_for(
             "secret_view",
             project_id=project_id,
             secret_id=secret_id,
             tab="access",
         )
-        if not email and not group_id:
-            flash("Email or group required", "error")
+        if subject_kind == "User" and not email:
+            flash("User email required", "error")
+            return redirect(access_url)
+        if subject_kind == "Group" and not group_id:
+            flash("Select a group", "error")
+            return redirect(access_url)
+        if subject_kind == "ServiceAccount" and not sa_id:
+            flash("Enter a machine account ID", "error")
             return redirect(access_url)
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             if not (cur.fetchone() or {}).get("a"):
-                flash("Only project admins can manage secret grants", "error")
+                flash("Only project admins can manage secret bindings", "error")
                 return redirect(access_url)
             cur.execute(
                 """
-                SELECT s.id, s.key, s.acl_mode, p.team_id
+                SELECT s.id, s.key, s.access_mode, p.team_id
                 FROM api.secrets s
                 JOIN api.projects p ON p.id = s.project_id
                 WHERE s.id = %s AND s.project_id = %s AND s.deleted_at IS NULL
@@ -2353,11 +2442,25 @@ def register(app):
                 return redirect(
                     url_for("project_detail", project_id=project_id, tab="secrets")
                 )
-            if (sec.get("acl_mode") or "inherit") != "custom":
-                flash("Switch access mode to Custom list first", "error")
+            cur.execute(
+                "SELECT id FROM rbac.roles WHERE name = %s", (role_name,)
+            )
+            role = cur.fetchone()
+            if not role:
+                flash(f"Built-in role {role_name} missing — run schema ensure", "error")
                 return redirect(access_url)
             try:
-                if group_id:
+                if subject_kind == "User":
+                    cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
+                    u = cur.fetchone()
+                    if not u or not u.get("id"):
+                        flash(
+                            "User not found — they must register or sign in first",
+                            "error",
+                        )
+                        return redirect(access_url)
+                    subject_id, who = str(u["id"]), email
+                elif subject_kind == "Group":
                     cur.execute(
                         """
                         SELECT id, name FROM api.groups
@@ -2369,48 +2472,54 @@ def register(app):
                     if not g:
                         flash("Group not found on this team", "error")
                         return redirect(access_url)
-                    # Upsert group grant (partial unique index)
-                    cur.execute(
-                        """
-                        DELETE FROM api.secret_acl
-                        WHERE secret_id = %s AND group_id = %s
-                        """,
-                        (str(secret_id), group_id),
-                    )
-                    cur.execute(
-                        """
-                        INSERT INTO api.secret_acl
-                          (secret_id, group_id, permission, created_by)
-                        VALUES (%s, %s, %s, %s)
-                        """,
-                        (str(secret_id), group_id, perm, session["user_id"]),
-                    )
-                    who = f"group {g['name']}"
+                    subject_id, who = str(g["id"]), f"group {g['name']}"
                 else:
-                    cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
-                    u = cur.fetchone()
-                    if not u or not u.get("id"):
-                        flash(
-                            "User not found — they must register or sign in first",
-                            "error",
-                        )
+                    cur.execute(
+                        """
+                        SELECT mt.id
+                        FROM api.machine_tokens mt
+                        WHERE mt.id = %s::uuid
+                          AND mt.project_id = %s
+                        """,
+                        (sa_id, str(project_id)),
+                    )
+                    sa = cur.fetchone()
+                    if not sa:
+                        flash("Machine account not found in this project", "error")
                         return redirect(access_url)
+                    subject_id, who = str(sa["id"]), f"machine account {sa_id[:8]}"
+                # Replace any existing secret-scope binding for this subject
+                cur.execute(
+                    """
+                    DELETE FROM rbac.bindings
+                    WHERE scope_kind = 'secret' AND scope_id = %s::uuid
+                      AND subject_kind = %s AND subject_id = %s::uuid
+                    """,
+                    (str(secret_id), subject_kind, subject_id),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO rbac.bindings
+                      (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
+                    VALUES (%s::uuid, %s, %s::uuid, 'secret', %s::uuid, %s::uuid)
+                    """,
+                    (
+                        str(role["id"]),
+                        subject_kind,
+                        subject_id,
+                        str(secret_id),
+                        session["user_id"],
+                    ),
+                )
+                # Restricted mode if not already — bindings only apply as exclusive when restricted
+                if (sec.get("access_mode") or "inherit") != "restricted":
                     cur.execute(
                         """
-                        DELETE FROM api.secret_acl
-                        WHERE secret_id = %s AND user_id = %s
+                        UPDATE api.secrets SET access_mode = 'restricted'
+                        WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                         """,
-                        (str(secret_id), str(u["id"])),
+                        (str(secret_id), str(project_id)),
                     )
-                    cur.execute(
-                        """
-                        INSERT INTO api.secret_acl
-                          (secret_id, user_id, permission, created_by)
-                        VALUES (%s, %s, %s, %s)
-                        """,
-                        (str(secret_id), str(u["id"]), perm, session["user_id"]),
-                    )
-                    who = email
                 audit.log_secret(
                     cur,
                     project_id=project_id,
@@ -2419,18 +2528,18 @@ def register(app):
                     action="updated",
                 )
                 conn.commit()
-                flash(f"Granted {perm} to {who}", "ok")
+                flash(f"Bound {who} as {role_name}", "ok")
             except Exception as e:
                 conn.rollback()
                 flash(str(e), "error")
         return redirect(access_url)
 
     @app.post(
-        "/projects/<uuid:project_id>/secrets/<uuid:secret_id>/acl/grants/<uuid:grant_id>/delete"
+        "/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access/bindings/<uuid:grant_id>/delete"
     )
     @authz.login_required
-    def delete_secret_acl_grant(project_id, secret_id, grant_id):
-        """Remove a custom ACL grant (project admin only)."""
+    def delete_secret_access_binding(project_id, secret_id, grant_id):
+        """Remove a secret-scope role binding (project admin only)."""
         access_url = url_for(
             "secret_view",
             project_id=project_id,
@@ -2440,21 +2549,23 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
             if not (cur.fetchone() or {}).get("a"):
-                flash("Only project admins can manage secret grants", "error")
+                flash("Only project admins can manage secret bindings", "error")
                 return redirect(access_url)
             cur.execute(
                 """
-                DELETE FROM api.secret_acl a
+                DELETE FROM rbac.bindings b
                 USING api.secrets s
-                WHERE a.id = %s AND a.secret_id = s.id
-                  AND s.id = %s AND s.project_id = %s
+                WHERE b.id = %s::uuid
+                  AND b.scope_kind = 'secret'
+                  AND b.scope_id = s.id
+                  AND s.id = %s::uuid AND s.project_id = %s::uuid
                 RETURNING s.key
                 """,
                 (str(grant_id), str(secret_id), str(project_id)),
             )
             row = cur.fetchone()
             if not row:
-                flash("Grant not found", "error")
+                flash("Binding not found", "error")
                 conn.rollback()
             else:
                 audit.log_secret(
@@ -2465,5 +2576,5 @@ def register(app):
                     action="updated",
                 )
                 conn.commit()
-                flash("Grant removed", "ok")
+                flash("Binding removed", "ok")
         return redirect(access_url)

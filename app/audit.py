@@ -52,6 +52,14 @@ _ACTION_VERB = {
     "access_denied": "denied access to",
 }
 
+# Special per-action sentence shapes for describe_event.
+_EVENT_FORMATS = {
+    "exported": lambda who, verb, key: f"{who} {verb}" + (f" ({key})" if key else ""),
+    "machine_upsert": lambda who, verb, key: (
+        f"{who} {verb} “{key}”" if key else f"{who} {verb} a secret"
+    ),
+}
+
 
 def log_secret(
     cur,
@@ -242,13 +250,17 @@ def access_review_rows(cur) -> list[dict]:
         )
     cur.execute(
         """
-        SELECT u.id::text AS user_id, u.email, u.name, u.is_global_admin,
-               u.disabled_at IS NOT NULL AS disabled,
-               t.name AS team_name, tm.role AS team_role
-        FROM api.team_members tm
-        JOIN private.users u ON u.id = tm.user_id
-        JOIN api.teams t ON t.id = tm.team_id
-        ORDER BY u.email, t.name
+         SELECT u.id::text AS user_id, u.email, u.name, u.is_global_admin,
+                u.disabled_at IS NOT NULL AS disabled,
+                t.name AS team_name,
+                r.name AS team_role
+         FROM rbac.bindings b
+         JOIN rbac.roles r ON r.id = b.role_id
+         JOIN private.users u ON u.id = b.subject_id
+         JOIN api.teams t ON t.id = b.scope_id
+         WHERE b.subject_kind = 'User' AND b.scope_kind = 'team'
+           AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+         ORDER BY u.email, t.name
         """
     )
     for r in cur.fetchall() or []:
@@ -269,14 +281,18 @@ def access_review_rows(cur) -> list[dict]:
         )
     cur.execute(
         """
-        SELECT u.id::text AS user_id, u.email, u.name, u.is_global_admin,
-               u.disabled_at IS NOT NULL AS disabled,
-               t.name AS team_name, p.name AS project_name, pm.role AS project_role
-        FROM api.project_members pm
-        JOIN private.users u ON u.id = pm.user_id
-        JOIN api.projects p ON p.id = pm.project_id
-        JOIN api.teams t ON t.id = p.team_id
-        ORDER BY u.email, t.name, p.name
+         SELECT u.id::text AS user_id, u.email, u.name, u.is_global_admin,
+                u.disabled_at IS NOT NULL AS disabled,
+                t.name AS team_name, p.name AS project_name,
+                r.name AS project_role
+         FROM rbac.bindings b
+         JOIN rbac.roles r ON r.id = b.role_id
+         JOIN private.users u ON u.id = b.subject_id
+         JOIN api.projects p ON p.id = b.scope_id
+         JOIN api.teams t ON t.id = p.team_id
+         WHERE b.subject_kind = 'User' AND b.scope_kind = 'project'
+           AND r.name IN ('project-admin', 'project-write', 'project-reveal', 'project-read')
+         ORDER BY u.email, t.name, p.name
         """
     )
     for r in cur.fetchall() or []:
@@ -770,15 +786,10 @@ def describe_event(row) -> str:
     action = row.get("action") or ""
     key = (row.get("secret_key") or "").strip()
     verb = _ACTION_VERB.get(action, action or "acted on")
-    if action == "exported":
-        detail = f" ({key})" if key else ""
-        return f"{who} {verb}{detail}"
-    if action == "machine_upsert":
-        target = f" “{key}”" if key else " a secret"
-        return f"{who} {verb}{target}"
-    if key:
-        return f"{who} {verb} “{key}”"
-    return f"{who} {verb} a secret"
+    formatter = _EVENT_FORMATS.get(action)
+    if formatter:
+        return formatter(who, verb, key)
+    return f"{who} {verb} " + (f"“{key}”" if key else "a secret")
 
 
 def _as_utc_dt(dt):

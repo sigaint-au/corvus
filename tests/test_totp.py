@@ -21,10 +21,16 @@ store.app.config["TESTING"] = True
 class TestTotp:
 
     def test_verify_code_window(self):
+        import base64
+        import hashlib
+        import hmac
+        import struct
+        import time
+
         import totp_svc
-        import pyotp
-        secret = pyotp.random_base32()
-        code = pyotp.TOTP(secret).now()
+
+        secret = (base64.b32encode(b"0" * 20)).decode().rstrip("=")
+        code = totp_svc._totp_code(secret, int(time.time()) // 30)
         assert totp_svc.verify_code(secret, code)
         assert not totp_svc.verify_code(secret, '000000')
         assert not totp_svc.verify_code(secret, 'abcdef')

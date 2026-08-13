@@ -79,11 +79,19 @@ def decrypt(val: str) -> str:
         Original plaintext UTF-8 string.
 
     Raises:
-        cryptography.fernet.InvalidToken: If the token is corrupt or was
-            encrypted with a different master key.
+        ValueError: If the token is corrupt or was encrypted with a different
+            master key (wraps cryptography InvalidToken for safer call sites).
 
     Example:
         >>> decrypt(encrypt("hello"))
         'hello'
     """
-    return _fernet().decrypt(val.encode()).decode()
+    from cryptography.fernet import InvalidToken
+
+    try:
+        return _fernet().decrypt(val.encode()).decode()
+    except InvalidToken as e:
+        raise ValueError(
+            "Cannot decrypt secret value — MASTER_KEY does not match the key "
+            "used when this secret was stored (or the ciphertext is corrupt)."
+        ) from e

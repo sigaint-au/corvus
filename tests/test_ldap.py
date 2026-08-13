@@ -145,12 +145,12 @@ class TestLDAPMaps:
     def test_add_team_ldap_map(self):
         conn, _ = _conn()
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/teams/{self.tid}/ldap-maps', data={'ldap_group': 'eng-secrets', 'role': 'member'}, follow_redirects=False)
+            r = self.client.post(f'/teams/{self.tid}/ldap-maps', data={'ldap_group': 'eng-secrets', 'role': 'team-member'}, follow_redirects=False)
         assert r.status_code == 302
         assert str(self.tid) in r.location
 
     def test_add_team_ldap_map_empty_group(self):
-        r = self.client.post(f'/teams/{self.tid}/ldap-maps', data={'ldap_group': '  ', 'role': 'member'}, follow_redirects=False)
+        r = self.client.post(f'/teams/{self.tid}/ldap-maps', data={'ldap_group': '  ', 'role': 'team-member'}, follow_redirects=False)
         assert r.status_code == 302
 
     def test_delete_team_ldap_map(self):
@@ -181,7 +181,7 @@ class TestLDAPMaps:
                     'id': uuid4(),
                     'team_id': tid,
                     'ldap_group': 'admins',
-                    'role': 'admin',
+                    'role': 'team-admin',
                 }
             ],
             [],  # api.groups with external_key
@@ -195,7 +195,13 @@ class TestLDAPMaps:
                 yield fo[-1]
 
         cur.fetchone.side_effect = _fo()
-        cur.fetchall.side_effect = fa
+        def _fa():
+            for rows in fa:
+                yield rows
+            while True:
+                yield []
+
+        cur.fetchall.side_effect = _fa()
         with patch.object(db, 'connect_admin', return_value=conn):
             user = ldap_auth.sync_ldap_user(
                 'u@ex.com', 'U', ['CN=admins,OU=g,DC=x']
@@ -203,6 +209,6 @@ class TestLDAPMaps:
         assert str(user['id']) == str(uid)
         assert user['is_global_admin']
         executed = ' '.join((str(c) for c in cur.execute.call_args_list)).lower()
-        assert 'team_members' in executed
+        assert 'rbac.bindings' in executed
         assert 'upsert_ldap_user' in executed
 

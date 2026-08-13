@@ -27,8 +27,10 @@ class TestOrgAccess:
         assert 'CREATE TABLE api.team_invites' in init
         assert 'CREATE TABLE api.team_join_requests' in init
         assert 'CREATE TABLE api.org_audit' in init
-        assert 'guard_last_team_owner' in init
-        assert 'NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id)' in init
+        # guard_last_team_owner moved to rbac.sql as guard_last_team_owner_binding
+        rbac_sql = (root / 'db' / 'rbac.sql').read_text()
+        assert 'guard_last_team_owner' in rbac_sql
+        assert 'guard_last_team_owner' not in init
         assert 'NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id)' in Path(schema_mod.__file__).read_text()
         assert 'private.project_member_rows' in init
         assert 'private.audit_org' in init
@@ -60,9 +62,13 @@ class TestOrgAccess:
         assert 'private.audit_org' in sql
 
     def test_project_roles_config(self):
-        assert 'write' in config.PROJECT_ROLES
-        assert 'member' in config.INVITE_ROLES
-        assert 'owner' not in config.INVITE_ROLES
+        names = [n for n, _ in config.RBAC_PROJECT_ROLE_DROPDOWN]
+        assert 'project-read' in names
+        assert 'project-write' in names
+        assert 'project-admin' in names
+        assert 'team-member' in config.INVITE_ROLES
+        assert 'team-owner' not in config.INVITE_ROLES
+        assert not hasattr(config, 'TEAM_ROLES')
 
     def test_secret_meta_schema(self):
         from pathlib import Path
@@ -99,54 +105,108 @@ class TestOrgAccess:
         from pathlib import Path
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         src = Path(schema_mod.__file__).read_text()
-        assert 'USING (api.can_admin_project(id))' in init
+        # RLS policies moved from init.sql to rbac.sql
+        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'USING (api.can_admin_project(id))' in rbac_sql
         assert 'USING (api.can_admin_project(id))' in src
-        assert "role IS DISTINCT FROM 'owner'" in init
-        assert "role IS DISTINCT FROM 'owner'" in src
+        # Legacy tm_insert policy removed from init.sql; RBAC bindings write policy in rbac.sql
+        assert 'rbac_bindings_write' in rbac_sql
+        assert 'can_manage_rbac' in rbac_sql
         assert 'CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT' not in init
         assert 'REVOKE INSERT, UPDATE, DELETE ON api.secret_versions FROM authenticated' in init
         assert 'SECURITY DEFINER' in init.split('archive_secret_version')[1][:400]
         assert 'REVOKE INSERT, UPDATE, DELETE ON api.secret_versions' in src
-        assert 'g.team_id = p.team_id' in init
-        assert 'g.team_id = p.team_id' in src
+        # L2 was secret_acl group-team check; table dropped — ensure drop remains
+        assert 'DROP TABLE IF EXISTS api.secret_acl' in src
+        assert 'CREATE TABLE api.secret_acl' not in init
         assert 'FORCE ROW LEVEL SECURITY' in init
         assert 'FORCE ROW LEVEL SECURITY' in src
 
     def test_secret_acl_schema_and_config(self):
         from pathlib import Path
-        assert 'owners' in config.SECRET_ACL_MODES
-        assert 'reveal' in config.SECRET_ACL_PERMISSIONS
+        assert 'inherit' in config.ACCESS_MODES
+        assert 'restricted' in config.ACCESS_MODES
+        assert set(config.ACCESS_MODE_LABELS) == {'inherit', 'restricted'}
+        assert 'secret-reveal' in dict(config.RBAC_SECRET_ROLE_DROPDOWN)
+        assert [n for n, _ in config.RBAC_SECRET_ROLE_DROPDOWN] == [
+            'secret-write', 'secret-reveal', 'secret-read',
+        ]
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        assert 'acl_mode' in init
-        assert 'CREATE TABLE api.secret_acl' in init
-        assert 'api.can_access_secret' in init
-        assert 'api.can_access_secret_row' in init
-        assert 'api._perm_rank' in init
-        assert "can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at)" in init
-        rev = init[init.index('FUNCTION api.can_reveal_secret'):]
+        assert 'access_mode' in init
+        assert 'CREATE TABLE api.secret_acl' not in init
+        assert 'api.can_access_secret' in init  # referenced in private functions (comment + calls)
+        # can_access_secret_row and can_reveal_secret defined in rbac.sql (moved from init.sql)
+        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'api.can_access_secret_row' in rbac
+        # RLS policies pass deleted_at=NULL explicitly so the deleted_at guard
+        # in can_access_secret_row does not reject soft-deletes/trash.
+        assert "can_access_secret_row(id, project_id, access_mode, 'read', NULL)" in rbac
+        assert "deleted_at IS NOT NULL AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)" in rbac
+        rev = rbac[rbac.index('FUNCTION api.can_reveal_secret'):]
         rev = rev[:rev.index('$$;') + 3]
         assert "can_access_secret(sid, 'reveal')" in rev
         src = Path(schema_mod.__file__).read_text()
         assert 'can_access_secret' in src
         assert 'can_access_secret_row' in src
-        assert 'secret_acl' in src
+        assert 'DROP TABLE IF EXISTS api.secret_acl' in src
         assert "NOT api.can_access_secret(sid, 'reveal')" in src
+        assert 'DROP TABLE IF EXISTS api.secret_acl' in rbac
+        assert 'rbac_secret_binding_allows' in rbac
 
     def test_can_access_secret_row_modes_in_sql(self):
-        """ACL mode branches exist for inherit/writers/admins/owners/custom."""
+        """rbac.sql defines can_access_secret_row with mode branches and k8s bindings."""
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        start = init.index('FUNCTION api.can_access_secret_row')
-        body = init[start:start + 2500]
-        for mode in ('inherit', 'writers', 'admins', 'owners', 'custom'):
+        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        start = rbac.index('FUNCTION api.can_access_secret_row')
+        body = rbac[start:start + 2500]
+        for mode in ('inherit', 'restricted'):
             assert mode in body, f'mode {mode} missing from can_access_secret_row'
         for need in ("'read'", "'reveal'", "'write'"):
             assert need in body
-        assert 'group_members' in body
-        assert '_perm_rank' in body
+        rstart = rbac.index('FUNCTION api.can_access_secret_row')
+        rbody = rbac[rstart:rstart + 2500]
+        assert 'rbac_secret_binding_allows' in rbody
+        assert 'api.secret_acl' not in rbody
+
+    def test_effective_access_functions_defined(self):
+        """Self-service (my access) and resource-level (effective access)
+        helpers exist in both rbac.sql sources with the grants they need."""
+        from pathlib import Path
+        for path in (REPO_ROOT / 'app' / 'rbac.sql', REPO_ROOT / 'db' / 'rbac.sql'):
+            sql = path.read_text()
+            assert 'FUNCTION api.my_access_rows()' in sql
+            assert 'FUNCTION api.effective_access_rows(' in sql
+            assert 'FROM api.rbac_subjects(' in sql
+            assert 'JOIN api.rbac_scope_chain(' in sql
+            # chain CTE columns are the same names as the function's OUT params;
+            # they must be qualified or PL/pgSQL raises an ambiguity error.
+            assert 'FROM api.rbac_scope_chain(p_scope_kind, p_scope_id) AS c' in sql
+            assert 'SELECT c.scope_kind::text, c.scope_id' in sql
+            assert "ORDER BY 1 NULLS LAST, 4, 6;" in sql
+            assert "GRANT EXECUTE ON FUNCTION api.my_access_rows" in sql
+            assert "GRANT EXECUTE ON FUNCTION api.effective_access_rows" in sql
 
     def test_export_filters_reveal_permission(self):
         """Plain export SQL must filter by can_access_secret reveal + can_reveal."""
+
+    def test_secrets_policies_allow_soft_delete(self):
+        """Soft-delete must not trip RLS: the UPDATE policy needs an explicit
+        WITH CHECK (not the implicit USING default) gated on write access, and
+        SELECT must expose trash rows to writers. Regression for
+        'new row violates row-level security policy for table secrets'."""
+        from pathlib import Path
+        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        upd = rbac[rbac.index('CREATE POLICY secrets_update ON api.secrets'):]
+        upd = upd[:upd.index(';')]
+        assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in upd
+        sel = rbac[rbac.index('CREATE POLICY secrets_select ON api.secrets'):]
+        sel = sel[:sel.index(';')]
+        assert 'deleted_at IS NOT NULL' in sel
+        delf = rbac[rbac.index('CREATE POLICY secrets_delete ON api.secrets'):]
+        delf = delf[:delf.index(';')]
+        assert 'deleted_at IS NOT NULL' in delf
+        src = Path(schema_mod.__file__).read_text()
+        assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in src
         from pathlib import Path
         src = (APP_ROOT / 'routes' / 'project_io.py').read_text()
         assert "can_access_secret(id, 'reveal')" in src
@@ -158,9 +218,9 @@ class TestOrgAccess:
         """Secret ACL mode/grant routes registered and gated to admins."""
         from pathlib import Path
         src = (APP_ROOT / 'routes' / 'secrets.py').read_text()
-        assert 'def update_secret_acl_mode' in src
-        assert 'def add_secret_acl_grant' in src
-        assert 'def delete_secret_acl_grant' in src
+        assert 'def update_secret_access' in src
+        assert 'def add_secret_access_binding' in src
+        assert 'def delete_secret_access_binding' in src
         assert 'can_admin_project' in src
         assert 'tab="access"' in src
 
@@ -185,24 +245,26 @@ class TestOrgAccess:
         assert 'can_reveal_secret(id)' in body
         assert not re.search('SELECT key, value_enc FROM api\\.secrets\\s+WHERE project_id = %s AND deleted_at IS NULL\\s*\\"\\"\\"', body)
 
-    def test_group_team_role_cannot_be_owner(self):
-        """Groups must not grant team owner (admin max)."""
-        assert 'owner' not in config.GROUP_TEAM_ROLES
-        assert 'admin' in config.GROUP_TEAM_ROLES
+    def test_group_team_roles_config(self):
+        """Group team roles now flow through RBAC bindings — api.groups has no
+        team_role column."""
+        assert [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN][0] == 'team-owner'
+        assert not hasattr(config, 'GROUP_TEAM_ROLES')
         from pathlib import Path
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        assert "team_role IN ('admin', 'member', 'viewer')" in init
-        assert "team_role IN ('owner', 'admin', 'member', 'viewer')" not in init[init.index('CREATE TABLE api.groups'):init.index('CREATE TABLE api.group_members')]
+        gstart = init.index('CREATE TABLE api.groups')
+        gend = init.index('CREATE TABLE api.group_members')
+        assert 'team_role' not in init[gstart:gend]
 
     def test_can_access_secret_row_behavioral_matrix(self):
-        """Expected outcomes for can_access_secret_row (mirrors SQL CASE).
+        """Expected outcomes for can_access_secret_row (mirrors rbac.sql CASE).
 
         Pure-Python stand-in of the SECURITY DEFINER helper so we can assert
-        mode × need without a live Postgres. Keep in sync with init.sql.
+        mode × need without a live Postgres. Keep in sync with rbac.sql.
         """
         perm_rank = {'read': 1, 'reveal': 2, 'write': 3}
 
-        def row_access(*, mode, need, deleted=False, can_read=True, can_write=False, can_admin=False, is_global=False, team_role=None, grants=None):
+        def row_access(*, mode, need, deleted=False, can_read=True, can_write=False, can_admin=False, is_global=False, grants=None):
             if deleted or not need or need not in perm_rank:
                 return False
             if not can_read and (not is_global):
@@ -212,13 +274,7 @@ class TestOrgAccess:
             mode = mode or 'inherit'
             if mode == 'inherit':
                 return can_write if need == 'write' else True
-            if mode == 'writers':
-                return can_write
-            if mode == 'admins':
-                return False
-            if mode == 'owners':
-                return team_role == 'owner'
-            if mode == 'custom':
+            if mode == 'restricted':
                 grants = grants or []
                 need_r = perm_rank[need]
                 return any((perm_rank.get(g, 0) >= need_r for g in grants))
@@ -227,43 +283,41 @@ class TestOrgAccess:
         assert row_access(mode='inherit', need='reveal', can_read=True)
         assert not row_access(mode='inherit', need='write', can_read=True, can_write=False)
         assert row_access(mode='inherit', need='write', can_read=True, can_write=True)
-        assert not row_access(mode='writers', need='read', can_read=True, can_write=False)
-        assert row_access(mode='writers', need='read', can_read=True, can_write=True)
-        assert not row_access(mode='admins', need='reveal', can_read=True, can_write=True)
-        assert row_access(mode='admins', need='reveal', can_admin=True)
-        assert not row_access(mode='owners', need='read', can_read=True, team_role='admin')
-        assert row_access(mode='owners', need='read', can_read=True, team_role='owner')
-        assert not row_access(mode='custom', need='reveal', can_read=True, grants=['read'])
-        assert row_access(mode='custom', need='reveal', can_read=True, grants=['reveal'])
-        assert row_access(mode='custom', need='read', can_read=True, grants=['write'])
-        assert not row_access(mode='custom', need='write', can_read=True, grants=['reveal'])
+        assert not row_access(mode='restricted', need='reveal', can_read=True, grants=['read'])
+        assert row_access(mode='restricted', need='reveal', can_read=True, grants=['reveal'])
+        assert row_access(mode='restricted', need='read', can_read=True, grants=['write'])
+        assert not row_access(mode='restricted', need='write', can_read=True, grants=['reveal'])
         assert not row_access(mode='inherit', need='read', deleted=True)
         assert not row_access(mode='inherit', need='read', can_read=False)
 
     def test_org_groups_rbac_schema(self):
-        """Groups tables, group-aware RBAC helpers, secret ACL group grants."""
+        """Groups tables and group-aware RBAC helpers."""
         from pathlib import Path
         init = (REPO_ROOT / 'db' / 'init.sql').read_text()
         assert 'CREATE TABLE api.groups' in init
         assert 'CREATE TABLE api.group_members' in init
-        assert 'CREATE TABLE api.project_group_roles' in init
         assert 'external_key' in init
-        assert 'api.project_role' in init
-        assert 'api._role_rank' in init
-        assert 'group_id' in init
         assert 'group_members gm' in init
-        assert 'g.team_role IS NOT NULL' in init
+        # Legacy tables removed from init.sql
+        assert 'CREATE TABLE api.project_group_roles' not in init
+        assert 'api._role_rank' not in init
+        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'api.project_role' in rbac_sql
         src = Path(schema_mod.__file__).read_text()
         assert 'CREATE TABLE IF NOT EXISTS api.groups' in src
-        assert 'project_group_roles' in src
         assert 'team_group_rows' in src
-        assert 'secret_acl_principal_check' in src
+        assert 'DROP TABLE IF EXISTS api.secret_acl' in src
         teams_src = (APP_ROOT / 'routes' / 'teams.py').read_text()
         assert 'create_team_group' in teams_src
         assert 'apply_group_membership_maps' in Path(APP_ROOT / 'ldap_auth.py').read_text()
         seed = (REPO_ROOT / 'scripts' / 'seed_mock.py').read_text()
         assert 'GROUPS' in seed
-        assert 'PROJECT_GROUP_ROLES' in seed
+        assert 'PROJECT_GROUP_BINDINGS' in seed
+        assert 'CUSTOM_ROLES' in seed
+        assert 'MACHINE_TOKENS' in seed
+        assert 'SECRET_BINDINGS' in seed
+        assert 'access_mode' in seed
+        assert 'acl_mode' not in seed
 
     def test_dir_sync_group_membership_maps(self):
         """Directory sync upserts/removes group_members for external_key matches."""

@@ -1,45 +1,39 @@
 {% extends "base.html" %}
 {% block title %}{{ team.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<nav aria-label="Breadcrumb">
-  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
-    <li><a href="{{ url_for('teams') }}" class="unstyled">Teams</a></li>
-    <li aria-hidden="true">/</li>
-    <li aria-current="page"><strong>{{ team.name }}</strong></li>
-  </ol>
-</nav>
-<h1>{{ team.name }}</h1>
+<div class="page-head"><h1>{{ team.name }}</h1></div>
 <p class="page-desc muted">Your role: <span class="badge" data-variant="secondary">{{ my_role }}</span></p>
 
 {% if new_invite_url %}
 <div class="token-once">
-  <strong>Invite link (copy now — shown once)</strong>
-  <pre>{{ new_invite_url }}</pre>
+  <div class="section-head tight">
+    <strong>Invite link (copy now — shown once)</strong>
+    <button type="button" class="link copy-btn" data-copy-target="new-invite-pre" data-clear-seconds="60">Copy link</button>
+  </div>
+  <pre id="new-invite-pre">{{ new_invite_url }}</pre>
 </div>
 {% endif %}
 
-<nav class="tabs" role="tablist" aria-label="Team sections">
+<nav class="tabs" aria-label="Team sections">
   <a href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}"
      class="tab {% if active_tab == 'projects' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'projects' else 'false' }}">Projects</a>
+>Projects</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='members') }}"
      class="tab {% if active_tab == 'members' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'members' else 'false' }}">Members</a>
+>Members</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}"
      class="tab {% if active_tab == 'groups' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'groups' else 'false' }}">Groups</a>
+>Groups</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='activity') }}"
      class="tab {% if active_tab == 'activity' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'activity' else 'false' }}">Activity</a>
+>Activity</a>
   {% if is_admin %}
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}"
+     class="tab {% if active_tab == 'access' %}active{% endif %}"
+     title="Role bindings for this team">Access</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'settings' else 'false' }}">Settings</a>
+>Settings</a>
   {% endif %}
 </nav>
 
@@ -60,7 +54,7 @@
       {% endif %}
     </form>
   </div>
-  {% if my_role in ('owner', 'admin', 'member') %}
+  {% if my_role in ('team-owner', 'team-admin', 'team-member') %}
   <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
@@ -71,15 +65,15 @@
   </form>
   {% endif %}
   {% if projects %}
-  <table>
-    <thead><tr><th>Name</th><th>Description</th><th>ID</th>{% if my_role in ('owner', 'admin') %}<th></th>{% endif %}</tr></thead>
+  <div class="table"><table>
+    <thead><tr><th>Name</th><th>Description</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for p in projects %}
       <tr>
         <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
         <td class="muted col-note">{{ p.description or '—' }}</td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
-        {% if my_role in ('owner', 'admin') %}
+        {% if my_role in ('team-owner', 'team-admin') %}
         <td class="acts">
           <form method="post"
                 action="{{ url_for('delete_project_from_team', team_id=team.id, project_id=p.id) }}"
@@ -93,17 +87,30 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">{% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}</p>
   {% endif %}
 </section>
 
+{% elif active_tab == 'access' and is_admin %}
+{% set panel_title = 'Access' %}
+{% set create_url = url_for('team_access_binding_create', team_id=team.id) %}
+{% set delete_endpoint = 'team_access_binding_delete' %}
+{% set delete_team_id = team.id %}
+{% set form_id_prefix = 'team-access-rbac' %}
+{% set role_dropdown = team_role_dropdown %}
+{% set full_bindings_url = url_for('rbac_bindings', scope='team', scope_id=team.id) %}
+{% set empty_message = 'No team bindings yet. Add a user, group, or service account below.' %}
+{% set help_html = 'Role bindings for this team (users, groups, service accounts). Groups are created under the Groups tab, then bound here as subject kind <strong>Group</strong>.' %}
+{% include "partials/access_bindings_panel.html" %}
+
 {% elif active_tab == 'members' %}
 <section>
   <h2>Members</h2>
+  <p class="muted">People with a team role binding. Manage groups and advanced bindings under <a href="{{ url_for('team_detail', team_id=team.id, tab='access') if is_admin else '#' }}">Access</a>.</p>
   {% if is_admin %}
-  <form method="post" action="{{ url_for('add_team_member', team_id=team.id) }}" class="row">
+  <form method="post" action="{{ url_for('add_team_binding', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>User email
       <input type="email" name="email" required class="user-suggest"
@@ -111,56 +118,64 @@
     </label>
     <label>Role
       <select name="role">
-        <option value="member">member</option>
-        <option value="viewer">viewer</option>
-        <option value="admin">admin</option>
-        {% if my_role == 'owner' %}
-        <option value="owner">owner</option>
+        {% for rname, label in team_role_dropdown|default([]) %}
+        {% if rname != 'team-owner' or my_role == 'team-owner' %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
         {% endif %}
+        {% endfor %}
       </select>
     </label>
     <button type="submit">Add</button>
   </form>
   {% endif %}
   {% if members %}
-  <table>
-    <thead><tr><th>User</th><th>Role</th><th>Source</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
-    <tbody>
-    {% for m in members %}
-      <tr>
-        <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
-        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
-        <td class="muted">{{ m.source or 'manual' }}</td>
-        {% if is_admin %}
-        <td class="acts">
-          <form method="post"
-                action="{{ url_for('remove_team_member', team_id=team.id, user_id=m.user_id) }}"
-                class="inline"
-                onsubmit="return confirm('Remove {{ m.email }} from this team?')">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="link danger">Remove</button>
-          </form>
-        </td>
-        {% endif %}
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="table">
+    <table>
+      <thead><tr><th>Member</th><th>Role</th><th>Created</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+      {% for b in members %}
+        <tr>
+          <td>
+            {{ b.subject_email or b.subject_id }}
+          </td>
+          <td>
+            <span class="badge" data-variant="secondary"
+                  title="{{ b.role_name }}">{{ b.role_short if b.role_short and b.role_short != b.role_name else b.role_name }}</span>
+          </td>
+          <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
+          {% if is_admin %}
+          <td class="acts">
+            <form method="post"
+                  action="{{ url_for('remove_team_binding', team_id=team.id, user_id=b.subject_id) }}"
+                  class="inline"
+                  onsubmit="return confirm('Remove this member?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Remove</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
-  <p class="empty">No members listed.</p>
+  <p class="empty">No members yet.</p>
   {% endif %}
 </section>
 
-{% if is_admin %}
+{% if is_admin and active_tab == 'members' %}
 <section>
   <h2>Invites &amp; join requests</h2>
-  <p class="muted">Share an invite link. Recipients must be signed in; they request to join and wait for approval.</p>
+  <p class="muted">Share a link. Recipients sign in, request to join, and an owner approves.</p>
   <form method="post" action="{{ url_for('create_team_invite', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Role
       <select name="role">
-        {% for r in invite_roles %}
-        <option value="{{ r }}" {% if r == 'member' %}selected{% endif %}>{{ r }}</option>
+        {% for rname, label in team_role_dropdown|default([]) %}
+        {% if rname != 'team-owner' %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endif %}
         {% endfor %}
       </select>
     </label>
@@ -168,7 +183,7 @@
     <button type="submit">Create invite link</button>
   </form>
   {% if invites %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>Role</th><th>Expires</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for i in invites %}
@@ -188,12 +203,12 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% endif %}
 
   <h3>Pending requests</h3>
   {% if join_requests %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>User</th><th>Role</th><th>Requested</th><th></th></tr></thead>
     <tbody>
     {% for r in join_requests %}
@@ -214,7 +229,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No pending join requests.</p>
   {% endif %}
@@ -239,9 +254,11 @@
     </form>
   </div>
   <p class="muted">
-    Groups are RBAC principals for this team. Open a group to manage membership.
-    Optional <strong>team role</strong> grants team access; bind groups on project settings
-    or secret Permissions. Map LDAP/OIDC via an external key (sync on login).
+    Groups are named collections of users (RBAC <strong>Group</strong> subjects).
+    Manage who is in the group here; grant team access on
+    <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}">Access</a>
+    (add binding → subject kind Group), or project Access / secret Permissions.
+    Map LDAP/OIDC via an external key (sync on login).
   </p>
   {% if is_admin %}
   <form method="post" action="{{ url_for('create_team_group', team_id=team.id) }}" class="row">
@@ -258,27 +275,18 @@
       <input type="text" name="external_key"
              placeholder="e.g. cn=ops,ou=groups,dc=example,dc=com  or  platform-ops">
     </label>
-    <label>Team role
-      <select name="team_role">
-        <option value="">— none —</option>
-        {% for r in team_roles|default(['admin','member','viewer']) %}
-        <option value="{{ r }}" {% if r == 'member' %}selected{% endif %}>{{ r }}</option>
-        {% endfor %}
-      </select>
-    </label>
     <button type="submit">Create group</button>
   </form>
   {% endif %}
   {% if groups %}
-  <table>
-    <thead><tr><th>Name</th><th>Source</th><th>External</th><th>Team role</th><th>Members</th><th></th></tr></thead>
+  <div class="table"><table>
+    <thead><tr><th>Name</th><th>Source</th><th>External</th><th>Members</th><th></th></tr></thead>
     <tbody>
     {% for g in groups %}
       <tr>
         <td><a href="{{ url_for('team_group_detail', team_id=team.id, group_id=g.id) }}">{{ g.name }}</a></td>
         <td><span class="badge" data-variant="secondary">{{ g.source }}</span></td>
         <td class="muted"><code class="k">{{ g.external_key or '—' }}</code></td>
-        <td>{% if g.team_role %}<span class="badge" data-variant="secondary">{{ g.team_role }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td>{{ g.member_count }}</td>
         <td class="acts">
           {% if is_admin %}
@@ -292,7 +300,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">{% if search_q %}No groups match “{{ search_q }}”.{% else %}No groups yet.{% endif %}</p>
   {% endif %}
@@ -303,19 +311,19 @@
   <h2>Access activity</h2>
   <p class="muted">Membership, invites, LDAP maps, and team settings changes.</p>
   {% if org_events %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
     <tbody>
     {% for e in org_events %}
       <tr>
         <td class="muted">{{ e.created_at }}</td>
         <td>{{ e.actor_email or 'unknown' }}</td>
-        <td><span class="audit-action">{{ e.action }}</span></td>
+        <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
         <td class="muted">{{ e.detail }}</td>
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No activity yet.</p>
   {% endif %}
@@ -448,12 +456,11 @@
 <section>
   <h2>LDAP group membership</h2>
   <p class="muted">
-    Automatically add users to this team when they sign in via LDAP and belong to the mapped group.
-    Highest matching role wins. Manual members are never removed by LDAP sync.
+    Automatically add matching LDAP users to this team on login.
     {% if not ldap_enabled %}<strong>LDAP is currently disabled</strong> in server settings.{% endif %}
   </p>
   {% if ldap_maps %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>LDAP group</th><th>Team role</th><th></th></tr></thead>
     <tbody>
     {% for m in ldap_maps %}
@@ -472,7 +479,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No LDAP group maps for this team.</p>
   {% endif %}
@@ -484,10 +491,9 @@
     </label>
     <label>Team role
       <select name="role">
-        <option value="member">member</option>
-        <option value="viewer">viewer</option>
-        <option value="admin">admin</option>
-        <option value="owner">owner</option>
+        {% for rname, label in team_role_dropdown|default([]) %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
       </select>
     </label>
     <button type="submit">Add map</button>
@@ -497,12 +503,11 @@
 <section>
   <h2>OIDC group membership</h2>
   <p class="muted">
-    Automatically add users to this team when they sign in via OIDC/SSO and the token includes the mapped group.
-    Highest matching role wins. Manual members are never removed by OIDC sync.
+    Automatically add matching SSO users to this team on login.
     {% if not oidc_enabled %}<strong>OIDC is currently disabled</strong> in server settings.{% endif %}
   </p>
   {% if oidc_maps %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>OIDC group</th><th>Team role</th><th></th></tr></thead>
     <tbody>
     {% for m in oidc_maps %}
@@ -521,7 +526,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No OIDC group maps for this team.</p>
   {% endif %}
@@ -533,20 +538,19 @@
     </label>
     <label>Team role
       <select name="role">
-        <option value="member">member</option>
-        <option value="viewer">viewer</option>
-        <option value="admin">admin</option>
-        <option value="owner">owner</option>
+        {% for rname, label in team_role_dropdown|default([]) %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
       </select>
     </label>
     <button type="submit">Add map</button>
   </form>
 </section>
 
-{% if my_role == 'owner' %}
+{% if my_role == 'team-owner' %}
 <section>
   <h2>Transfer ownership</h2>
-  <p class="muted">Promotes the user to owner and demotes you to admin. Prevents an ownerless team.</p>
+  <p class="muted">Promotes the user to owner and demotes you to admin.</p>
   <form method="post" action="{{ url_for('transfer_team_ownership', team_id=team.id) }}" class="row"
         onsubmit="return confirm('Transfer ownership to this user?')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">

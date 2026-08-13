@@ -8,15 +8,39 @@ tagged releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Kubernetes-style RBAC** (branch `feature/k8s-rbac`): `rbac.roles` /
+  `role_rules` / `bindings`, `api.can(verb, resource, scope…)`, scope chain
+  cluster→team→project→secret, built-in roles, admin UI (Roles, Bindings,
+  Access review). Start-fresh: no data migration from legacy membership tables.
+- Pytest suite under `tests/` (domain modules) run via `tox -e py`
+
+### Removed
+
+- Legacy `api.secret_acl` table and `private.secret_acl_rows` (per-secret grants
+  are secret-scope `rbac.bindings` only; dropped on schema ensure)
+- Legacy secret access-mode values and aliases (`custom`, `writers`, `admins`,
+  `owners`): only `inherit` / `restricted` remain; `ensure_schema` scrubs old
+  rows and drops leftover `acl_mode` columns
+
 ### Changed
 
+- Project **Members** / **Group roles** write **RBAC bindings only** (no dual-write
+  to `project_members` / `project_group_roles`); managed on **Project → Access**
+- Project reveal-approval tab renamed **Requests**; new **Access** tab for
+  project-scope role bindings (shared panel with improved Team Access form)
+- Access nav: separate **Role bindings** and **Roles** items again (same page,
+  different panels); removed quick-paths blurb
+- Team admin RBAC UX: Access nav (Role bindings / Roles / Review) open to all
+  signed-in users; **Team → Access** tab; bindings page breadcrumb + scope-aware
+  project/group pickers; `can_manage_rbac` allows project admins on secret scope
 - Regenerated `docs/postgrest-openapi.json` from live PostgREST (authenticated
   role): groups, secret ACL/meta/access requests, machine token scope,
   project description / ACL / last_accessed columns, new `api.can_*` RPCs
+- `can_*` / `team_role` / `project_role` helpers evaluate RBAC bindings (legacy
+  tables retained but not used for authorization on this branch)
 
-### Added
-
-- Pytest suite under `tests/` (domain modules) run via `tox -e py`
 - CI workflows (Forgejo/GitHub Actions): unit tests + pylint
 - `SECURITY.md`, `CONTRIBUTING.md`, and this changelog
 - Machine token key allow-list (exact keys + `*` / `?` globs)

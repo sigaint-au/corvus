@@ -36,8 +36,6 @@ def client_meta() -> tuple[str, str]:
     return ua, ip[:100]
 
 
-# Back-compat alias
-_client_meta = client_meta
 
 
 def create_session(user_id) -> str | None:
@@ -57,7 +55,7 @@ def create_session(user_id) -> str | None:
 
     if has_app_context() and current_app.config.get("TESTING"):
         return None
-    ua, ip = _client_meta()
+    ua, ip = client_meta()
     expires = datetime.now(timezone.utc) + timedelta(days=SESSION_IDLE_DAYS)
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:

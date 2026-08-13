@@ -27,7 +27,9 @@ tox -e lint
 
 ```
 app/            # Flask app (flat modules + routes/)
-db/init.sql     # Schema + RLS (first DB init only)
+db/init.sql     # Tables + ENABLE/FORCE RLS (first DB init, applied as 01-init.sql)
+db/rbac.sql     # RBAC schema + auth functions + RLS policies (applied as 02-rbac.sql)
+app/rbac.sql    # Same as db/rbac.sql (without legacy migration) — applied by schema.py
 docs/           # Documentation (user/, admin/, dev/)
 tests/          # pytest suite
 scripts/        # dev seed (seed_mock.py)
@@ -41,9 +43,12 @@ Dockerfile      # App image
 
 1. **Write a failing test first** where possible. Tests live in `tests/` and
    mock the DB — no live Postgres needed.
-2. **Keep `db/init.sql` and `app/schema.py` in sync.** `init.sql` is for fresh
-   installs; `schema.py` (`ensure_schema()`) upgrades existing databases. Any
-   schema/RLS change must be applied in both, idempotently.
+2. **Keep `db/init.sql`, `db/rbac.sql`, `app/rbac.sql`, and `app/schema.py` in
+   sync.** `init.sql` creates tables; `rbac.sql` creates RBAC functions + RLS
+   policies; `schema.py` (`ensure_schema()`) upgrades existing databases. Any
+   schema/RLS change must be applied in all relevant files, idempotently.
+   `db/rbac.sql` and `app/rbac.sql` should be identical except for the legacy
+   data migration block (only in `db/rbac.sql`).
 3. **Run the full suite and lint** before submitting:
    ```bash
    pytest

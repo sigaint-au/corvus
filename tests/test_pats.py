@@ -23,7 +23,7 @@ class TestPatsUnit:
         assert raw.startswith('pat_')
         assert len(thash) == 64
         assert prefix == raw[:12]
-        assert pats._hash(raw) == thash
+        assert pats.sha256_hex(raw) == thash
 
     def test_create_requires_name(self):
         with pytest.raises(ValueError):

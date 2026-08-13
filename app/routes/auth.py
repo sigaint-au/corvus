@@ -25,27 +25,7 @@ import user_sessions
 
 log = __import__("logging").getLogger(__name__)
 
-PROFILE_TABS = ("account", "security", "teams", "projects", "activity")
-
-
-def _profile_url(tab: str = "account") -> str:
-    """Build the profile URL for a validated tab name.
-
-    Args:
-        tab: Profile tab slug (account, security, teams, projects, activity).
-            Invalid values fall back to ``account``.
-
-    Returns:
-        Absolute path string for the profile route with the chosen tab.
-
-    Example:
-        >>> _profile_url("security")
-        '/profile?tab=security'
-    """
-    tab = (tab or "account").strip().lower()
-    if tab not in PROFILE_TABS:
-        tab = "account"
-    return url_for("profile", tab=tab)
+PROFILE_TABS = ("account", "security", "myaccess", "teams", "projects", "activity")
 
 
 def _maybe_promote_bootstrap_admin(email: str, user_id) -> bool:
@@ -709,7 +689,7 @@ def register(app):
                 expires_days = int(days_raw)
             except ValueError:
                 flash("Expires days must be a positive integer", "error")
-                return redirect(_profile_url("security"))
+                return redirect(url_for("profile", tab="security"))
         try:
             raw = pats.create(session["user_id"], name, expires_days=expires_days)
             session["new_pat"] = raw
@@ -719,7 +699,7 @@ def register(app):
         except Exception as e:
             log.exception("create PAT failed")
             flash(str(e), "error")
-        return redirect(_profile_url("security"))
+        return redirect(url_for("profile", tab="security"))
 
     @app.post("/profile/tokens/<uuid:token_id>/delete")
     @authz.login_required
@@ -739,7 +719,7 @@ def register(app):
             flash("Token revoked", "ok")
         else:
             flash("Token not found", "error")
-        return redirect(_profile_url("security"))
+        return redirect(url_for("profile", tab="security"))
 
     @app.post("/profile/password")
     @authz.login_required
@@ -762,11 +742,11 @@ def register(app):
         conf = request.form.get("new_password_confirm") or ""
         if new != conf:
             flash("New passwords do not match", "error")
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         ok, err = passwords.change_password(uid, old, new)
         if not ok:
             flash(err or "Could not change password", "error")
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         # Keep current session; sign out other devices after password change
         sid = session.get("sid")
         if sid:
@@ -777,7 +757,7 @@ def register(app):
                 flash("Password updated.", "ok")
         else:
             flash("Password updated.", "ok")
-        return redirect(_profile_url("security"))
+        return redirect(url_for("profile", tab="security"))
 
 
     @app.post("/profile/sessions/revoke-others")
@@ -798,10 +778,10 @@ def register(app):
         sid = session.get("sid")
         if not sid:
             flash("No active session registry entry for this browser", "error")
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         n = user_sessions.revoke_other_sessions(uid, sid)
         flash(f"Signed out {n} other session(s).", "ok")
-        return redirect(_profile_url("security"))
+        return redirect(url_for("profile", tab="security"))
 
 
     @app.post("/profile/sessions/<uuid:session_id>/revoke")
@@ -829,7 +809,7 @@ def register(app):
             flash("Session signed out.", "ok")
         else:
             flash("Session not found or already signed out.", "error")
-        return redirect(_profile_url("security"))
+        return redirect(url_for("profile", tab="security"))
 
 
     @app.get("/profile/2fa")
@@ -849,7 +829,7 @@ def register(app):
         uid = session["user_id"]
         if totp_svc.is_enabled(uid) and not session.get("totp_setup_required"):
             flash("Two-factor authentication is already enabled", "ok")
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         secret = session.get("pending_totp_secret")
         if not secret:
             secret = totp_svc.new_secret()
@@ -922,7 +902,7 @@ def register(app):
         """
         codes = session.pop("new_recovery_codes", None)
         if not codes:
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         return render_template("totp_recovery.html", codes=codes)
 
 
@@ -946,23 +926,23 @@ def register(app):
             return redirect(url_for("totp_setup"))
         if not totp_svc.is_enabled(uid):
             flash("Two-factor authentication is not enabled", "error")
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         # When enforce is on, global admins cannot disable
         if session.get("is_global_admin") and totp_svc.enforce_global_admins():
             flash(
                 "Global admins cannot disable two-factor authentication while it is enforced",
                 "error",
             )
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         code = request.form.get("code") or ""
         ok, _method = totp_svc.verify_user_code(uid, code)
         if not ok:
             flash("Invalid authentication or recovery code", "error")
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         totp_svc.disable(uid)
         session.pop("pending_totp_secret", None)
         flash("Two-factor authentication disabled", "ok")
-        return redirect(_profile_url("security"))
+        return redirect(url_for("profile", tab="security"))
 
 
     @app.post("/profile/2fa/recovery-codes/regenerate")
@@ -982,12 +962,12 @@ def register(app):
         uid = session["user_id"]
         if not totp_svc.is_enabled(uid):
             flash("Enable two-factor authentication first", "error")
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         code = request.form.get("code") or ""
         ok, _method = totp_svc.verify_user_code(uid, code)
         if not ok:
             flash("Invalid authentication or recovery code", "error")
-            return redirect(_profile_url("security"))
+            return redirect(url_for("profile", tab="security"))
         codes = totp_svc.regenerate_recovery_codes(uid)
         session["new_recovery_codes"] = codes
         flash("New recovery codes generated — save them now", "ok")
@@ -1049,20 +1029,23 @@ def register(app):
                 personal_tokens = []
         teams, projects, pending, pins_list, recent = [], [], [], [], []
         secret_count = pin_count = 0
+        my_access = []
         try:
             with db.as_user(uid) as conn, conn.cursor() as cur:
                 if tab in ("account", "teams"):
                     cur.execute(
                         """
-                        SELECT t.id, t.name, tm.role, tm.source, t.created_at,
+                        SELECT t.id, t.name,
+                               api.team_role(t.id) AS role,
+                               'rbac' AS source,
+                               t.created_at,
                           (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id)
                             AS project_count
                         FROM api.teams t
-                        JOIN api.team_members tm ON tm.team_id = t.id
-                        WHERE tm.user_id = %s
+                        WHERE api.is_team_member(t.id)
                         ORDER BY t.name
                         """,
-                        (uid,),
+                        (),
                     )
                     teams = cur.fetchall() or []
 
@@ -1071,20 +1054,17 @@ def register(app):
                         """
                         SELECT p.id, p.name, p.created_at,
                                t.id AS team_id, t.name AS team_name,
-                               tm.role AS team_role,
-                               pm.role AS project_role,
+                               api.team_role(t.id) AS team_role,
+                               api.project_role(p.id) AS project_role,
                           (SELECT count(*) FROM api.secrets s
                            WHERE s.project_id = p.id AND s.deleted_at IS NULL)
                             AS secret_count
                         FROM api.projects p
                         JOIN api.teams t ON t.id = p.team_id
-                        LEFT JOIN api.team_members tm
-                          ON tm.team_id = t.id AND tm.user_id = %s
-                        LEFT JOIN api.project_members pm
-                          ON pm.project_id = p.id AND pm.user_id = %s
+                        WHERE api.can_read_project(p.id)
                         ORDER BY t.name, p.name
                         """,
-                        (uid, uid),
+
                     )
                     projects = cur.fetchall() or []
 
@@ -1121,6 +1101,14 @@ def register(app):
                 if tab == "activity":
                     pins_list = pins.list_pins(cur, uid)
                     recent = pins.list_recent(cur, uid)
+                if tab == "myaccess":
+                    try:
+                        cur.execute("SELECT * FROM api.my_access_rows()")
+                        my_access = list(cur.fetchall() or [])
+                    except Exception:
+                        conn.rollback()
+                        log.exception("profile: my access rows failed")
+                        my_access = []
         except Exception:
             log.exception("profile: load memberships failed")
 
@@ -1128,6 +1116,23 @@ def register(app):
         session["email"] = user.get("email") or session.get("email")
         session["name"] = user.get("name") or session.get("name") or ""
         session["is_global_admin"] = bool(user.get("is_global_admin"))
+
+        # My access: bindings grouped by scope for the My access tab
+        _scope_labels = {
+            "cluster": "Global",
+            "team": "Team access",
+            "project": "Project access",
+            "secret": "Secret access",
+        }
+        _scope_order = ("cluster", "team", "project", "secret")
+        my_access_groups = []
+        by_scope: dict[str, list] = {}
+        for row in my_access:
+            by_scope.setdefault(row["scope_kind"], []).append(row)
+        for kind in _scope_order:
+            rows = by_scope.get(kind)
+            if rows:
+                my_access_groups.append((_scope_labels[kind], rows))
 
         return render_template(
             "profile.html",
@@ -1146,6 +1151,7 @@ def register(app):
             totp_enforced_for_user=totp_enforced,
             active_tab=tab,
             postgrest_url=config.POSTGREST_URL,
+            my_access_groups=my_access_groups,
             stats={
                 "teams": len(teams),
                 "projects": len(projects),

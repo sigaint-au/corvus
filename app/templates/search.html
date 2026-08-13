@@ -50,14 +50,14 @@
   <section>
     <h2>Teams <span class="muted">({{ teams_total }})</span></h2>
     {% if teams %}
-    <table>
+    <div class="table"><table>
       <thead><tr><th>Name</th></tr></thead>
       <tbody>
       {% for t in teams %}
         <tr><td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td></tr>
       {% endfor %}
       </tbody>
-    </table>
+    </table></div>
     {% with pager=search_pager %}{% include "partials/pager.html" %}{% endwith %}
     {% else %}
     <p class="empty">No teams match.</p>
@@ -67,7 +67,7 @@
   <section>
     <h2>Projects <span class="muted">({{ projects_total }})</span></h2>
     {% if projects %}
-    <table>
+    <div class="table"><table>
       <thead><tr><th>Project</th><th>Team</th><th>Description</th></tr></thead>
       <tbody>
       {% for p in projects %}
@@ -78,7 +78,7 @@
         </tr>
       {% endfor %}
       </tbody>
-    </table>
+    </table></div>
     {% with pager=search_pager %}{% include "partials/pager.html" %}{% endwith %}
     {% else %}
     <p class="empty">No projects match.</p>
@@ -88,7 +88,7 @@
   <section>
     <h2>Secrets <span class="muted">({{ secrets_total }})</span></h2>
     {% if secrets %}
-    <table>
+    <div class="table"><table>
       <thead><tr><th>Key</th><th>Kind</th><th>Project</th><th>Team</th><th>Note</th></tr></thead>
       <tbody>
       {% for s in secrets %}
@@ -100,14 +100,14 @@
             {% if s.due == 'overdue' %}<span class="badge" data-variant="danger">overdue</span>
             {% elif s.due == 'soon' %}<span class="badge" data-variant="warning">soon</span>{% endif %}
           </td>
-          <td><span class="badge" data-variant="secondary">{{ s.kind or 'plain' }}</span></td>
+          <td><span class="badge" data-variant="{% if s.kind == 'kv' %}success{% elif s.kind in ('certificate', 'ssh') %}warning{% else %}secondary{% endif %}">{{ s.kind or 'plain' }}</span></td>
           <td><a href="{{ url_for('project_detail', project_id=s.project_id) }}">{{ s.project_name }}</a></td>
           <td class="muted">{{ s.team_name }}</td>
           <td class="col-note muted">{{ s.note }}</td>
         </tr>
       {% endfor %}
       </tbody>
-    </table>
+    </table></div>
     {% with pager=search_pager %}{% include "partials/pager.html" %}{% endwith %}
     {% else %}
     <p class="empty">No secrets match.</p>
@@ -126,14 +126,14 @@
     </span>
   </h2>
   {% if teams %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>Name</th></tr></thead>
     <tbody>
     {% for t in teams %}
       <tr><td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td></tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% if teams_total > teams|length %}
   <p class="muted">
     <a href="{{ url_for('global_search', q=search_q, scope='teams') }}">View all {{ teams_total }} matching teams →</a>
@@ -152,7 +152,7 @@
     </span>
   </h2>
   {% if projects %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>Project</th><th>Team</th></tr></thead>
     <tbody>
     {% for p in projects %}
@@ -162,7 +162,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% if projects_total > projects|length %}
   <p class="muted">
     <a href="{{ url_for('global_search', q=search_q, scope='projects') }}">View all {{ projects_total }} matching projects →</a>
@@ -181,7 +181,7 @@
     </span>
   </h2>
   {% if secrets %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>Key</th><th>Kind</th><th>Project</th><th>Team</th><th>Note</th></tr></thead>
     <tbody>
     {% for s in secrets %}
@@ -193,14 +193,14 @@
           {% if s.due == 'overdue' %}<span class="badge" data-variant="danger">overdue</span>
           {% elif s.due == 'soon' %}<span class="badge" data-variant="warning">soon</span>{% endif %}
         </td>
-        <td><span class="badge" data-variant="secondary">{{ s.kind or 'plain' }}</span></td>
+        <td><span class="badge" data-variant="{% if s.kind == 'kv' %}success{% elif s.kind in ('certificate', 'ssh') %}warning{% else %}secondary{% endif %}">{{ s.kind or 'plain' }}</span></td>
         <td><a href="{{ url_for('project_detail', project_id=s.project_id) }}">{{ s.project_name }}</a></td>
         <td class="muted">{{ s.team_name }}</td>
         <td class="col-note muted">{{ s.note }}</td>
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% if secrets_total > secrets|length %}
   <p class="muted">
     <a href="{{ url_for('global_search', q=search_q, scope='secrets') }}">View all {{ secrets_total }} matching secrets →</a>

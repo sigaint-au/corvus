@@ -29,6 +29,9 @@ _KIND_OPTIONS = (
 def _items_from_import_form():
     """Read import rows from commit form (values live in POST body, not session).
 
+    Form fields are parallel lists indexed by key; read each directly so rows
+    are never silently dropped by zip.
+
     Returns:
         list[dict]: Import item dicts with key, enc/value or value_enc, note, and kind.
             Empty list if no keys were posted.
@@ -37,57 +40,34 @@ def _items_from_import_form():
         items = _items_from_import_form()
     """
     keys = request.form.getlist("key")
+    if not keys:
+        return []
     values = request.form.getlist("value")
     value_encs = request.form.getlist("value_enc")
     notes = request.form.getlist("note")
     kinds = request.form.getlist("kind")
     encs = request.form.getlist("enc")
-    n = len(keys)
-    if not n:
-        return []
-    # Pad shorter lists so zip doesn't silently drop rows
-    def pad(lst):
-        """Pad a form list with empty strings to length n.
 
-        Args:
-            lst: Sequence of form values (may be shorter than n).
-
-        Returns:
-            list: Copy of lst extended with "" so len(result) == n.
-
-        Example:
-            pad(["a"])  # when n == 3 -> ["a", "", ""]
-        """
-        return list(lst) + [""] * (n - len(lst))
+    def at(lst, i):
+        return lst[i] if i < len(lst) else ""
 
     items = []
-    for key, val, venc, note, kind, enc in zip(
-        keys, pad(values), pad(value_encs), pad(notes), pad(kinds), pad(encs)
-    ):
-        key = (key or "").strip()
+    for i, key_raw in enumerate(keys):
+        key = (key_raw or "").strip()
         if not key:
             continue
-        is_enc = (enc or "").strip() in ("1", "true", "yes")
+        is_enc = (at(encs, i) or "").strip() in ("1", "true", "yes")
+        body = {
+            "key": key,
+            "enc": is_enc,
+            "note": at(notes, i) or "",
+            "kind": normalize_kind(at(kinds, i)),
+        }
         if is_enc:
-            items.append(
-                {
-                    "key": key,
-                    "enc": True,
-                    "value_enc": venc or "",
-                    "note": note or "",
-                    "kind": normalize_kind(kind),
-                }
-            )
+            body["value_enc"] = at(value_encs, i) or ""
         else:
-            items.append(
-                {
-                    "key": key,
-                    "enc": False,
-                    "value": val if val is not None else "",
-                    "note": note or "",
-                    "kind": normalize_kind(kind),
-                }
-            )
+            body["value"] = at(values, i) or ""
+        items.append(body)
     return items
 
 
@@ -168,7 +148,8 @@ def register(app):
                 body,
                 mimetype="application/json",
                 headers={
-                    "Content-Disposition": f'attachment; filename="secrets-{project_id}-enc.json"'
+                    "Content-Disposition": f'attachment; filename="secrets-{project_id}-enc.json"',
+                    "Cache-Control": "no-store",
                 },
             )
         pairs = [(r["key"], crypto.decrypt(r["value_enc"])) for r in rows]

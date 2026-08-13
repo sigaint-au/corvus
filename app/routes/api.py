@@ -116,12 +116,28 @@ def register(app):
                         """
                         SELECT DISTINCT u.email, u.name
                         FROM private.users u
-                        JOIN api.team_members tm ON tm.user_id = u.id
                         WHERE u.disabled_at IS NULL
                           AND (u.email ILIKE %s OR u.name ILIKE %s)
-                          AND tm.team_id IN (
-                            SELECT team_id FROM api.team_members
-                            WHERE user_id = %s::uuid
+                          AND EXISTS (
+                            SELECT 1
+                            FROM rbac.bindings candidate
+                            JOIN rbac.roles candidate_role
+                              ON candidate_role.id = candidate.role_id
+                            WHERE candidate.subject_kind = 'User'
+                              AND candidate.subject_id = u.id
+                              AND candidate.scope_kind = 'team'
+                              AND candidate_role.name IN (
+                                'team-owner', 'team-admin', 'team-member', 'team-viewer'
+                              )
+                              AND EXISTS (
+                                SELECT 1
+                                FROM rbac.bindings caller
+                                JOIN api.rbac_subjects(%s::uuid) caller_subject
+                                  ON caller_subject.subject_kind = caller.subject_kind
+                                 AND caller_subject.subject_id = caller.subject_id
+                                WHERE caller.scope_kind = 'team'
+                                  AND caller.scope_id = candidate.scope_id
+                              )
                           )
                         ORDER BY u.email
                         LIMIT 15

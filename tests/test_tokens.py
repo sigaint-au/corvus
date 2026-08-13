@@ -35,28 +35,28 @@ class TestTokens:
         with self.client.session_transaction() as s:
             assert s.get('new_token', '').startswith('ss_')
         sql = ' '.join((str(c) for c in cur.execute.call_args_list))
-        assert 'read-only' in sql
+        assert 'reveal' in sql
 
     def test_create_token_write_role(self):
         conn, cur = _conn(fetchone={'w': True})
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'ci-writer', 'role': 'write'}, follow_redirects=False)
+            r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'ci-writer', 'role': 'service-write'}, follow_redirects=False)
         assert r.status_code == 302
         insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
         assert insert_calls
-        assert insert_calls[0].args[1][4] == 'write'
+        assert insert_calls[0].args[1][4] == 'service-write'
 
-    def test_create_token_invalid_role_defaults_read_only(self):
+    def test_create_token_invalid_role_defaults_reveal(self):
         conn, cur = _conn(fetchone={'w': True})
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'x', 'role': 'owner'}, follow_redirects=False)
         assert r.status_code == 302
         insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
-        assert insert_calls[0].args[1][4] == 'read-only'
+        assert insert_calls[0].args[1][4] == 'service-reveal'
 
-    def test_create_token_read_only_denied(self):
+    def test_create_token_reveal_denied(self):
         conn, _ = _conn(fetchone={'w': False})
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'openshift'}, follow_redirects=False)
@@ -74,7 +74,7 @@ class TestTokens:
             r = self.client.post(f'/projects/{self.pid}/tokens/{uuid4()}/delete', follow_redirects=False)
         assert r.status_code == 302
 
-    def test_delete_token_read_only_denied(self):
+    def test_delete_token_reveal_denied(self):
         conn, _ = _conn(fetchone={'w': False})
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/tokens/{uuid4()}/delete', follow_redirects=False)
@@ -84,7 +84,7 @@ class TestTokens:
         assert any(('permission' in msg.lower() for _cat, msg in flashes))
 
     def test_mt_select_policy_allows_readers(self):
-        """Read-only may list tokens; only writers insert/delete."""
+        """Reveal-role may list tokens; only writers insert/delete."""
         from pathlib import Path
         init_sql = (REPO_ROOT / 'db' / 'init.sql').read_text()
         sel_start = init_sql.index('CREATE POLICY mt_select ON api.machine_tokens')
@@ -95,71 +95,68 @@ class TestTokens:
         assert 'can_write_project' in init_sql[ins_start:ins_end]
 
     def test_pm_policies_use_can_admin_project(self):
-        """Member management requires project admin, not mere write."""
+        """RBAC bindings write policy requires can_manage_rbac, not mere write."""
         from pathlib import Path
         root = REPO_ROOT
+        rbac_sql = (root / 'db' / 'rbac.sql').read_text()
+        assert 'rbac_bindings_write' in rbac_sql
+        assert 'can_manage_rbac' in rbac_sql
+        # Legacy project_members policies removed from init.sql
         init_sql = (root / 'db' / 'init.sql').read_text()
-        schema_src = (root / 'app' / 'schema.py').read_text()
-        for name in ('pm_insert', 'pm_update', 'pm_delete'):
-            start = init_sql.index(f'CREATE POLICY {name} ON api.project_members')
-            end = init_sql.index(';', start)
-            chunk = init_sql[start:end]
-            assert 'can_admin_project' in chunk, name
-            assert 'can_write_project' not in chunk, name
-        assert 'can_admin_project' in schema_src
-        assert 'pm_insert ON api.project_members' in schema_src
-        assert 'pm_delete ON api.project_members' in schema_src
+        assert 'CREATE POLICY pm_insert ON api.project_members' not in init_sql
 
     def test_can_write_project_team_admin_floor(self):
-        """Team owner/admin keep write; project role elevates; team members inherit write."""
+        """can_write_project uses RBAC can() — defined in rbac.sql."""
         from pathlib import Path
-        init_sql = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        start = init_sql.index('CREATE OR REPLACE FUNCTION api.can_write_project')
-        end = init_sql.index('$$;', start) + 3
-        body = init_sql[start:end]
-        assert "api.team_role" in body
-        assert "IN ('owner', 'admin')" in body
-        assert "api.project_role(pid) IN ('admin', 'write')" in body
-        assert "api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'member'" in body
+        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'CREATE OR REPLACE FUNCTION api.can_write_project' in rbac_sql
+        start = rbac_sql.index('CREATE OR REPLACE FUNCTION api.can_write_project')
+        end = rbac_sql.index('$$;', start) + 3
+        body = rbac_sql[start:end]
+        assert "api.can('create', 'secrets', 'project', pid)" in body
+        assert "api.can('update', 'secrets', 'project', pid)" in body
 
     def test_can_read_project_most_specific_wins(self):
-        """Any project role or team membership grants read (helpers, not inline NOT EXISTS)."""
+        """can_read_project uses RBAC can() — defined in rbac.sql."""
         from pathlib import Path
-        init_sql = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        start = init_sql.index('CREATE OR REPLACE FUNCTION api.can_read_project')
-        end = init_sql.index('$$;', start) + 3
-        body = init_sql[start:end]
-        assert 'api.project_role(pid) IS NOT NULL' in body
-        assert 'api.is_team_member' in body
-        assert 'FROM api.projects p' in body
+        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'CREATE OR REPLACE FUNCTION api.can_read_project' in rbac_sql
+        start = rbac_sql.index('CREATE OR REPLACE FUNCTION api.can_read_project')
+        end = rbac_sql.index('$$;', start) + 3
+        body = rbac_sql[start:end]
+        assert "api.can('get', 'projects', 'project', pid)" in body
+        assert "api.can('list', 'secrets', 'project', pid)" in body
 
     def test_can_admin_project_defined(self):
         from pathlib import Path
-        init_sql = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        assert 'CREATE OR REPLACE FUNCTION api.can_admin_project' in init_sql
-        start = init_sql.index('CREATE OR REPLACE FUNCTION api.can_admin_project')
-        end = init_sql.index('$$;', start) + 3
-        body = init_sql[start:end]
-        assert "api.project_role(pid) = 'admin'" in body
-        assert "api.team_role" in body
-        assert "IN ('owner', 'admin')" in body
+        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        assert 'CREATE OR REPLACE FUNCTION api.can_admin_project' in rbac_sql
+        start = rbac_sql.index('CREATE OR REPLACE FUNCTION api.can_admin_project')
+        end = rbac_sql.index('$$;', start) + 3
+        body = rbac_sql[start:end]
+        assert "api.can('admin', 'projects', 'project', pid)" in body
 
-    def test_add_project_member_requires_admin(self):
-        """Project write members cannot add project members."""
-        conn, cur = _conn(fetchone={'a': False})
+    def test_add_project_binding_requires_admin(self):
+        """Non-admins cannot add project members (can_manage_rbac gate)."""
+        conn, cur = _conn(fetchone={'ok': False, 'a': False})
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/projects/{self.pid}/members', data={'email': 'x@ex.com', 'role': 'read'}, follow_redirects=False)
+            r = self.client.post(
+                f'/projects/{self.pid}/members',
+                data={'email': 'x@ex.com', 'role': 'project-read'},
+                follow_redirects=False,
+            )
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
-        assert 'can_admin_project' in sql
+        assert 'can_manage_rbac' in sql or 'can_admin_project' in sql
         assert 'insert into api.project_members' not in sql
         with self.client.session_transaction() as s:
             flashes = s.get('_flashes') or []
         assert any(('permission' in msg.lower() for _c, msg in flashes))
 
-    def test_add_project_member_ok_for_admin(self):
+    def test_add_project_binding_ok_for_admin(self):
         uid = uuid4()
         tid = uuid4()
+        rid = uuid4()
         last = {'s': ''}
 
         def execute(sql, params=None):
@@ -167,32 +164,43 @@ class TestTokens:
 
         def fetchone():
             s = last['s']
-            if 'can_admin_project' in s:
-                return {'a': True}
+            if 'can_manage_rbac' in s or 'can_admin_project' in s:
+                return {'ok': True, 'a': True}
             if 'lookup_user' in s:
                 return {'id': uid}
             if 'from api.projects' in s and 'team_id' in s:
                 return {'team_id': tid}
-            if 'from api.project_members' in s and 'select role' in s:
+            if 'from rbac.roles' in s:
+                return {'id': rid}
+            if 'from rbac.bindings' in s:
                 return None
             return None
+
         conn, cur = _conn(fetchone=fetchone)
         cur.execute.side_effect = execute
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/projects/{self.pid}/members', data={'email': 'x@ex.com', 'role': 'write'}, follow_redirects=False)
+            r = self.client.post(
+                f'/projects/{self.pid}/members',
+                data={'email': 'x@ex.com', 'role': 'project-write'},
+                follow_redirects=False,
+            )
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
-        assert 'insert into api.project_members' in sql
-        assert 'can_admin_project' in sql
+        assert 'rbac.bindings' in sql
+        assert 'insert into api.project_members' not in sql
+        assert 'can_manage_rbac' in sql or 'can_admin_project' in sql
 
-    def test_remove_project_member_requires_admin(self):
-        conn, cur = _conn(fetchone={'a': False})
+    def test_remove_project_binding_requires_admin(self):
+        conn, cur = _conn(fetchone={'ok': False, 'a': False})
         with patch.object(db, 'as_user', return_value=conn):
-            r = self.client.post(f'/projects/{self.pid}/members/{uuid4()}/remove', follow_redirects=False)
+            r = self.client.post(
+                f'/projects/{self.pid}/members/{uuid4()}/remove',
+                follow_redirects=False,
+            )
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
-        assert 'can_admin_project' in sql
+        assert 'can_manage_rbac' in sql or 'can_admin_project' in sql
         assert 'delete from api.project_members' not in sql
 
     def test_secrets_updated_at_trigger_defined(self):

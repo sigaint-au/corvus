@@ -106,14 +106,29 @@ Configured under **Administration → Server settings**. Stored in
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `TEAM_ROLES` | `owner, admin, member, viewer` | Team roles |
-| `GROUP_TEAM_ROLES` | `admin, member, viewer` | Group-inherited team roles (never owner) |
-| `PROJECT_ROLES` | `admin, write, read` | Project roles |
-| `MACHINE_TOKEN_ROLES` | `read-only, write` | Machine token roles |
-| `SECRET_ACL_MODES` | `inherit, writers, admins, owners, custom` | Per-secret ACL modes |
-| `SECRET_ACL_PERMISSIONS` | `read, reveal, write` | Custom grant permissions |
+| `RBAC_TEAM_ROLE_DROPDOWN` | `team-owner, team-admin, team-member, team-viewer` | Team role dropdown |
+| `RBAC_PROJECT_ROLE_DROPDOWN` | `project-admin, project-write, project-reveal, project-read` | Project role dropdown |
+| `RBAC_SECRET_ROLE_DROPDOWN` | `secret-write, secret-reveal, secret-read` | Secret role dropdown |
+| `RBAC_SERVICE_ROLE_DROPDOWN` | `service-write, service-reveal, service-read` | Machine token role dropdown |
+| `MACHINE_TOKEN_ROLES` | `service-read, service-reveal, service-write` | Machine account roles |
+| `INVITE_ROLES` | `team-admin, team-member, team-viewer` | Roles allowed for invites (not `team-owner`) |
+| `ACCESS_MODES` | `inherit, restricted` | Secret access modes |
+| `ACCESS_MODE_LABELS` | `inherit → "Inherit project access"`, `restricted → "Restricted (role bindings only)"` | Access mode labels |
+| `RBAC_VERBS` | `get, list, create, update, delete, reveal, admin, *` | RBAC verbs |
+| `RBAC_RESOURCES` | `teams, projects, secrets, bindings, roles, audit` | RBAC resources |
+| `RBAC_SCOPE_KINDS` | `cluster, team, project, secret` | RBAC scope kinds |
+| `RBAC_SUBJECT_KINDS` | `User, Group, ServiceAccount` | RBAC subject kinds |
+| `RBAC_BUILTIN_ROLES` | (see `config.py`) | All built-in role names |
 | `REVEAL_ACCESS_GRANT_CHOICES` | `15, 60, 240, 1440` | Allowed grant durations (minutes) |
 | `SECRET_KINDS` | `plain, database, certificate, ssh, kv` | Structured secret kinds |
 | `MAX_EXPIRY_DAYS` | `3650` | Max optional expiry |
 | `SIDEBAR_PINS_LIMIT` | `8` | Sidebar pinned secrets |
 | `SIDEBAR_RECENT_LIMIT` | `8` | Sidebar recent secrets |
+
+---
+
+## Related docs
+
+- [deploy.md](deploy.md) — deployment guide
+- [rbac.md](rbac.md) — RBAC access model
+- [authentication.md](authentication.md) — auth flows

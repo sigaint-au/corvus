@@ -35,7 +35,7 @@ In scope:
 - Authorization and Postgres RLS / `api.can_*` helpers
 - Secret encryption at rest (`MASTER_KEY`), export paths, machine tokens, PATs
 - CSRF, open redirects, injection in the Flask UI and APIs
-- Multi-tenant isolation (teams, projects, secret ACL)
+- Multi-tenant isolation (teams, projects, per-secret access mode)
 
 Out of scope (unless they enable a product vulnerability):
 

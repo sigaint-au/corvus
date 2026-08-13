@@ -135,10 +135,11 @@ unique name).
 
 Create a token on a project under **Integrations** (or **Tokens**). Roles:
 
-| Role | `GET` / list | Create / update / delete |
-|------|--------------|---------------------------|
-| `read-only` (default) | yes | **403** |
-| `write` | yes | yes |
+| Role | Metadata | Reveal values | Write |
+|------|----------|---------------|-------|
+| `service-read` | yes | no | no |
+| `service-reveal` | yes | yes | no |
+| `service-write` | yes | yes | yes |
 
 Raw `ss_…` tokens are stored only as SHA-256 hashes; the raw value is shown
 once at creation.
@@ -165,7 +166,7 @@ curl -s "${AUTH[@]}" \
   "note": "",
   "kind": "plain",
   "expires_at": null,
-  "acl_mode": "inherit",
+  "access_mode": "inherit",
   "created_at": "…",
   "updated_at": "…",
   "last_accessed_at": "…",
@@ -178,8 +179,8 @@ ESO continues to use `jsonPath: $.value` (extra fields are additive). A
 successful **PAT** get updates `last_accessed_*`.
 
 **403 on get (PAT):** `{"error":"approval_required",…}` if reveal approval is
-required; `{"error":"forbidden"}` if per-secret ACL denies reveal. Machine
-tokens (`ss_…`) skip human ACL and approval.
+required; `{"error":"forbidden"}` if per-secret access mode denies reveal. Machine
+tokens (`ss_…`) skip human access mode and approval.
 
 ### Fetch all secrets (bulk value map)
 
@@ -192,8 +193,8 @@ curl -s "${AUTH[@]}" \
 {"secrets": {"DATABASE_URL": "...", "API_KEY": "..."}}
 ```
 
-PAT bulk list with values only includes secrets the caller may reveal (ACL +
-approval). Machine tokens return all live keys in the project.
+PAT bulk list with values only includes secrets the caller may reveal (access
+mode + approval). Machine tokens return all live keys in the project.
 
 ### List metadata only (CLI — no plaintext)
 
@@ -311,7 +312,7 @@ Key security properties:
 - **Server settings → OIDC / SSO → OIDC group → roles** maps a group to
   `global_admin`.
 - **Team → Settings → OIDC group membership** maps a directory group to a
-  direct `team_members` row. Manual memberships are never overwritten.
+  directory-managed `rbac.bindings` row. Manual memberships are never overwritten.
 - **Team → Groups** can create a first-class group with `source=oidc` and an
   `external_key` matching the claim value; on login, matching users are synced
   into `group_members`. That group can hold a **team role**, a **project role**,
@@ -339,7 +340,7 @@ POST /login  (email, password)
 
 - LDAP over cleartext is rejected unless StartTLS is enabled.
 - **Team → Settings → LDAP group membership** maps a group to a direct
-  `team_members` role.
+  team-scope RBAC role binding.
 - **Team → Groups** with `source=ldap` + `external_key` syncs membership into
   `group_members`.
 - **Server settings → LDAP → LDAP group → roles** maps a group to

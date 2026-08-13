@@ -4,39 +4,31 @@
 <div class="page-head"><h1>Server settings</h1></div>
 <p class="page-desc muted">Global admin only. Changes apply immediately for all users.</p>
 
-<nav class="tabs" role="tablist" aria-label="Server settings sections">
+<nav class="tabs" aria-label="Server settings sections">
   <a href="{{ url_for('server_settings', tab='general') }}"
      class="tab {% if active_tab == 'general' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'general' else 'false' }}">General</a>
+>General</a>
   <a href="{{ url_for('server_settings', tab='branding') }}"
      class="tab {% if active_tab == 'branding' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'branding' else 'false' }}">Branding</a>
+>Branding</a>
   <a href="{{ url_for('server_settings', tab='banner') }}"
      class="tab {% if active_tab == 'banner' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'banner' else 'false' }}">Classification</a>
+>Classification</a>
   <a href="{{ url_for('server_settings', tab='admins') }}"
      class="tab {% if active_tab == 'admins' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'admins' else 'false' }}">Admins</a>
+>Admins</a>
   <a href="{{ url_for('server_settings', tab='users') }}"
      class="tab {% if active_tab == 'users' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'users' else 'false' }}">Users</a>
+>Users</a>
   <a href="{{ url_for('server_settings', tab='ldap') }}"
      class="tab {% if active_tab == 'ldap' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'ldap' else 'false' }}">LDAP</a>
+>LDAP</a>
   <a href="{{ url_for('server_settings', tab='oidc') }}"
      class="tab {% if active_tab == 'oidc' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'oidc' else 'false' }}">OIDC / SSO</a>
+>OIDC / SSO</a>
   <a href="{{ url_for('server_settings', tab='email') }}"
      class="tab {% if active_tab == 'email' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'email' else 'false' }}">Email</a>
+>Email</a>
 </nav>
 
 {% if active_tab == 'general' %}
@@ -95,8 +87,7 @@
 <section>
   <h2>Two-factor authentication</h2>
   <p class="muted">
-    Any user can enable TOTP on their profile. When enforced below, global admins
-    must enroll at next sign-in and cannot disable 2FA.
+    Any user can enable TOTP. When enforced below, global admins must enroll and can't disable 2FA.
   </p>
   <form method="post">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -243,7 +234,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     Reset 2FA clears TOTP and recovery codes.
   </p>
   {% if all_users %}
-  <table>
+  <div class="table"><table>
     <thead>
       <tr>
         <th>User</th>
@@ -330,7 +321,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No users found.</p>
   {% endif %}
@@ -340,12 +331,14 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 <section>
   <h2>Global admins</h2>
   <p class="muted">Global admins can access every team, project, and server settings.</p>
-  <table>
+  {% set admin_users = users|selectattr('is_global_admin')|list %}
+  {% if admin_users %}
+  <div class="table"><table>
     <thead>
       <tr><th>User</th><th>Role</th><th></th></tr>
     </thead>
     <tbody>
-      {% for u in users if u.is_global_admin %}
+      {% for u in admin_users %}
       <tr>
         <td>{{ u.name or u.email }} <span class="muted">{{ u.email }}</span>
           {% if u.auth_source %}<span class="muted">({{ u.auth_source }})</span>{% endif %}
@@ -364,11 +357,12 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
           {% endif %}
         </td>
       </tr>
-      {% else %}
-      <tr><td colspan="3" class="empty">No global admins found.</td></tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
+  {% else %}
+  <p class="empty">No global admins found.</p>
+  {% endif %}
   <form method="post" class="row mt-1">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="promote">
@@ -475,11 +469,10 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 <section>
   <h2>LDAP group → roles</h2>
   <p class="muted">
-    Map directory groups to server roles. Matched on each LDAP login
-    (CN or full DN). When any maps exist, global admin is synced from them for LDAP users.
+    Map directory groups to roles. Matching groups sync global admin on login.
   </p>
   {% if ldap_role_maps %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>LDAP group</th><th>Role</th><th></th></tr></thead>
     <tbody>
     {% for m in ldap_role_maps %}
@@ -498,7 +491,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No role maps yet.</p>
   {% endif %}
@@ -599,12 +592,10 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 <section>
   <h2>OIDC group → roles</h2>
   <p class="muted">
-    Map IdP groups (or realm roles) to server roles. Matched on each SSO login
-    (exact name, case-insensitive token match like LDAP). When any maps exist,
-    global admin is synced from them for OIDC users.
+    Map IdP groups (or realm roles) to server roles. Matching groups sync global admin on login.
   </p>
   {% if oidc_role_maps %}
-  <table>
+  <div class="table"><table>
     <thead><tr><th>OIDC group</th><th>Role</th><th></th></tr></thead>
     <tbody>
     {% for m in oidc_role_maps %}
@@ -623,7 +614,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% else %}
   <p class="empty">No role maps yet.</p>
   {% endif %}
@@ -723,8 +714,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       Send login alert emails on successful sign-in
     </label>
     <p class="muted field-spacer">
-      Password reset emails are sent whenever SMTP is enabled and a local user
-      requests a reset. Login alerts require the checkbox above.
+      Password-reset emails send when SMTP is enabled; login alerts need the checkbox above.
     </p>
     <p class="form-actions"><button type="submit">Save email settings</button></p>
   </form>

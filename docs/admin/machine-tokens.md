@@ -7,13 +7,14 @@ Operator) read and write secrets without a browser session.
 
 ## Roles
 
-| Role | List / get | Create / update / delete |
-|------|------------|---------------------------|
-| `read-only` (default) | yes | **403** |
-| `write` | yes | yes |
+| Role | Metadata | Reveal values | Write |
+|------|----------|---------------|-------|
+| `service-read` | yes | no | no |
+| `service-reveal` | yes | yes | no |
+| `service-write` | yes | yes | yes |
 
-- Prefer **`read-only`** for ESO pull and read-only automation.
-- Use **`write`** only if automation must create, rotate, or delete secrets.
+- Prefer **`service-reveal`** for ESO pull and automation that needs values.
+- Use **`service-write`** only if automation must create, rotate, or delete.
 
 Tokens are **project-scoped** (a token only ever sees one project). The raw
 `ss_…` value is shown once at creation; only a SHA-256 hash is stored.
@@ -26,8 +27,8 @@ Project → **Integrations** (or **Machine accounts**):
 
 ```text
 Name: openshift-prod
-Role: read-only        (or write)
-Expires (days): 90     (optional)
+Role: service-reveal    (or service-write)
+Expires (days): 90      (optional)
 [Create machine account]
 ```
 
@@ -53,7 +54,7 @@ Empty allow-list = **all** keys in the project. A scoped token gets
 Create via the UI (**Key allow-list** on Machine accounts) or via the PAT API
 body `scope: ["API_KEY", "prod/*"]`.
 
-> **Security note:** machine tokens bypass per-secret human ACL modes and
+> **Security note:** machine tokens bypass per-secret human role bindings and
 > reveal-approval (they use SECURITY DEFINER helpers). Use a **key allow-list**
 > or a **separate project** when automation must not see every secret in a
 > shared project.
@@ -64,9 +65,9 @@ body `scope: ["API_KEY", "prod/*"]`.
 
 The machine API powers the External Secrets Operator webhook provider.
 
-### 1. Create a read-only machine token
+### 1. Create a service-reveal machine token
 
-Project → **Integrations** → create a **read-only** token for the cluster.
+Project → **Integrations** → create a **service-reveal** token for the cluster.
 
 ### 2. Generate the manifests
 

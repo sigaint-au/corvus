@@ -65,7 +65,7 @@ Documentation is organised by audience.
 |---------|-------------|
 | Team / project / secret store | `team → project → key/value`; optional project description |
 | Org groups RBAC | Team-scoped groups (manual or LDAP/OIDC-mapped) at team, project, and secret level |
-| Per-secret ACLs | Modes: `inherit` / `writers` / `admins` / `owners` / `custom` (user or group grants) |
+| Per-secret access | Modes: `inherit` (project/team RBAC) / `restricted` (secret-scope bindings only) |
 | Secret metadata | System (created, updated, last accessed) + custom searchable key/values |
 | Structured kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
 | Browser UI | Bulk actions, trash, version history, search (incl. metadata), pins, mobile nav |

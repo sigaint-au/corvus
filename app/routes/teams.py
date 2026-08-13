@@ -11,6 +11,7 @@ import authz
 import config
 import db
 import ldap_auth
+import rbac_sync
 import settings_svc
 from crypto import sha256_hex
 
@@ -111,12 +112,16 @@ def register(app):
         """
         session["team_id"] = str(team_id)
         tab = (request.args.get("tab") or "projects").strip().lower()
-        if tab not in ("projects", "members", "groups", "activity", "settings"):
+        if tab not in ("projects", "members", "groups", "activity", "access", "settings"):
             tab = "projects"
         q = (request.args.get("q") or "").strip()
         members, projects, ldap_maps, oidc_maps = [], [], [], []
         groups = []
         invites, join_requests, org_events = [], [], []
+        access_bindings = []
+        access_groups = []
+        role_descriptions = {}
+        can_edit_access = False
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
             team = cur.fetchone()
@@ -124,8 +129,18 @@ def register(app):
                 return "Not found", 404
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             my_role = (cur.fetchone() or {}).get("r")
-            is_admin = my_role in ("owner", "admin")
-            if tab == "settings" and not is_admin:
+            cur.execute(
+                "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
+                (str(team_id),),
+            )
+            can_edit_access = bool((cur.fetchone() or {}).get("ok"))
+            # Team owner/admin, global admin, or anyone who can manage bindings
+            is_admin = (
+                my_role in ("team-owner", "team-admin")
+                or bool(session.get("is_global_admin"))
+                or can_edit_access
+            )
+            if tab in ("settings", "access") and not is_admin:
                 tab = "projects"
 
             if tab == "projects":
@@ -145,11 +160,16 @@ def register(app):
                     )
                 projects = cur.fetchall()
             elif tab == "members":
-                cur.execute(
-                    "SELECT * FROM private.team_member_rows(%s::uuid)",
-                    (str(team_id),),
-                )
-                members = cur.fetchall()
+                # User subjects only (people + invites)
+
+                all_b = rbac_sync.list_scope_bindings(cur, "team", team_id)
+                rbac_sync.enrich_binding_emails(all_b)
+                members = [
+                    b
+                    for b in all_b
+                    if b.get("subject_kind") == "User"
+                    and str(b.get("role_name") or "").startswith("team-")
+                ]
                 if is_admin:
                     cur.execute(
                         """
@@ -172,13 +192,32 @@ def register(app):
                         (str(team_id),),
                     )
                     join_requests = cur.fetchall() or []
+            elif tab == "access" and is_admin:
+
+                # All team-scope bindings (users, groups, service accounts)
+                access_bindings = rbac_sync.list_scope_bindings(cur, "team", team_id)
+                rbac_sync.enrich_binding_emails(access_bindings)
+                cur.execute(
+                    "SELECT id, name FROM api.groups WHERE team_id = %s ORDER BY name",
+                    (str(team_id),),
+                )
+                access_groups = list(cur.fetchall() or [])
+                can_edit_access = True
+                try:
+                    cur.execute("SELECT name, description FROM rbac.roles")
+                    role_descriptions = {
+                        r["name"]: (r.get("description") or "")
+                        for r in (cur.fetchall() or [])
+                    }
+                except Exception:
+                    role_descriptions = {}
             elif tab == "groups":
                 try:
                     cur.execute(
                         "SELECT * FROM private.team_group_rows(%s::uuid)",
                         (str(team_id),),
                     )
-                    groups = cur.fetchall() or []
+                    groups = list(cur.fetchall() or [])
                 except Exception:
                     groups = []
                 if q:
@@ -189,7 +228,6 @@ def register(app):
                         if ql in (g.get("name") or "").lower()
                         or ql in (g.get("external_key") or "").lower()
                         or ql in (g.get("source") or "").lower()
-                        or ql in (g.get("team_role") or "").lower()
                     ]
                 # Legacy ?group_id= → dedicated group page
                 gid = (request.args.get("group_id") or "").strip()
@@ -238,6 +276,9 @@ def register(app):
                 for jr in join_requests:
                     jr.setdefault("email", str(jr.get("user_id")))
                     jr.setdefault("name", "")
+        if access_bindings:
+
+            rbac_sync.enrich_binding_emails(access_bindings)
         return render_template(
             "team.html",
             team=team,
@@ -251,8 +292,12 @@ def register(app):
             invites=invites,
             join_requests=join_requests,
             org_events=org_events,
-            invite_roles=config.INVITE_ROLES,
-            team_roles=config.GROUP_TEAM_ROLES,
+            access_bindings=access_bindings,
+            access_groups=access_groups,
+            can_edit_access=can_edit_access or is_admin,
+            team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
+            role_descriptions=role_descriptions,
+            subject_kinds=config.RBAC_SUBJECT_KINDS,
             new_invite_url=session.pop("new_invite_url", None),
             ldap_enabled=settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled")),
             oidc_enabled=settings_svc.truthy(
@@ -262,10 +307,120 @@ def register(app):
             is_admin=is_admin,
         )
 
+    @app.post("/teams/<uuid:team_id>/access/bindings")
+    @authz.login_required
+    def team_access_binding_create(team_id):
+        """Create a team-scope role binding (team admin)."""
+        access_url = url_for("team_detail", team_id=team_id, tab="access")
+        role_name = (request.form.get("role_name") or "").strip()
+        subject_kind = (request.form.get("subject_kind") or "User").strip()
+        subject_email = (request.form.get("subject_email") or "").strip().lower()
+        subject_group = (request.form.get("subject_group") or "").strip()
+        subject_sa = (request.form.get("subject_sa") or "").strip()
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
+                (str(team_id),),
+            )
+            if not (cur.fetchone() or {}).get("ok"):
+                flash("Only team admins can manage role bindings", "error")
+                return redirect(access_url)
+            try:
+                cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (role_name,))
+                role = cur.fetchone()
+                if not role:
+                    flash("Unknown role", "error")
+                    return redirect(access_url)
+                subject_id = None
+                if subject_kind == "User":
+                    cur.execute(
+                        "SELECT private.lookup_user(%s) AS id", (subject_email,)
+                    )
+                    u = cur.fetchone()
+                    if not u or not u.get("id"):
+                        flash("User not found — they must register first", "error")
+                        return redirect(access_url)
+                    subject_id = str(u["id"])
+                elif subject_kind == "Group":
+                    cur.execute(
+                        """
+                        SELECT id FROM api.groups
+                        WHERE id = %s::uuid AND team_id = %s::uuid
+                        """,
+                        (subject_group, str(team_id)),
+                    )
+                    g = cur.fetchone()
+                    if not g:
+                        flash("Group not found on this team", "error")
+                        return redirect(access_url)
+                    subject_id = str(g["id"])
+                elif subject_kind == "ServiceAccount":
+                    subject_id = subject_sa
+                else:
+                    flash("Invalid subject kind", "error")
+                    return redirect(access_url)
+                if not subject_id:
+                    flash("Subject required", "error")
+                    return redirect(access_url)
+                cur.execute(
+                    """
+                    INSERT INTO rbac.bindings
+                      (role_id, subject_kind, subject_id, scope_kind, scope_id, created_by)
+                    VALUES (%s::uuid, %s, %s::uuid, 'team', %s::uuid, %s::uuid)
+                    """,
+                    (
+                        str(role["id"]),
+                        subject_kind,
+                        subject_id,
+                        str(team_id),
+                        session["user_id"],
+                    ),
+                )
+                conn.commit()
+                flash("Binding created", "ok")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(access_url)
+
+    @app.post("/teams/<uuid:team_id>/access/bindings/<uuid:binding_id>/delete")
+    @authz.login_required
+    def team_access_binding_delete(team_id, binding_id):
+        """Remove a team-scope role binding (team admin)."""
+        access_url = url_for("team_detail", team_id=team_id, tab="access")
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
+                (str(team_id),),
+            )
+            if not (cur.fetchone() or {}).get("ok"):
+                flash("Only team admins can manage role bindings", "error")
+                return redirect(access_url)
+            try:
+                cur.execute(
+                    """
+                    DELETE FROM rbac.bindings
+                    WHERE id = %s::uuid
+                      AND scope_kind = 'team'
+                      AND scope_id = %s::uuid
+                    """,
+                    (str(binding_id), str(team_id)),
+                )
+                if cur.rowcount:
+                    conn.commit()
+                    flash("Binding removed", "ok")
+                else:
+                    conn.rollback()
+                    flash("Binding not found or not permitted", "error")
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+        return redirect(access_url)
+
 
     @app.post("/teams/<uuid:team_id>/members")
     @authz.login_required
-    def add_team_member(team_id):
+    def add_team_binding(team_id):
         """Add or update a team member by email and role.
 
         Args:
@@ -278,14 +433,15 @@ def register(app):
             POST /teams/<team_id>/members with email and role form fields
         """
         email = request.form["email"].strip().lower()
-        role = request.form.get("role", "member")
-        if role not in config.TEAM_ROLES:
-            role = "member"
+        role = request.form.get("role", "team-member")
+        role_names = [name for name, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        if role not in role_names:
+            role = "team-member"
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             # M1: only team owners may assign owner (admins cannot self-promote)
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             my_role = (cur.fetchone() or {}).get("r")
-            if role == "owner" and my_role != "owner":
+            if role == "team-owner" and my_role != "team-owner":
                 flash("Only a team owner can grant the owner role", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
@@ -294,41 +450,49 @@ def register(app):
                 flash("User not found — they must register or sign in via LDAP first", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             try:
+                # Check for existing binding to determine add vs update
+                rname = role
+                cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (rname,))
+                role_row = cur.fetchone()
+                if not role_row:
+                    flash(f"Built-in role {rname} missing — run schema ensure", "error")
+                    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+                # Check existing team binding for this user
                 cur.execute(
                     """
-                    SELECT role FROM api.team_members
-                    WHERE team_id = %s AND user_id = %s
+                    SELECT b.id, r.name AS role_name
+                    FROM rbac.bindings b
+                    JOIN rbac.roles r ON r.id = b.role_id
+                    WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
+                      AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                      AND r.name IN ('team-owner','team-admin','team-member','team-viewer')
                     """,
-                    (str(team_id), str(u["id"])),
+                    (str(u["id"]), str(team_id)),
                 )
                 prev = cur.fetchone()
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s, %s, %s, 'manual')
-                    ON CONFLICT (team_id, user_id) DO UPDATE
-                      SET role = EXCLUDED.role, source = 'manual'
-                    """,
-                    (str(team_id), str(u["id"]), role),
+                rbac_sync.sync_user_team_binding(
+                    cur,
+                    user_id=u["id"],
+                    team_id=team_id,
+                    role=role,
+                    created_by=session["user_id"],
                 )
-                if cur.rowcount == 0:
-                    flash("You don't have permission to do that", "error")
-                    conn.rollback()
-                else:
-                    action = audit.ORG_MEMBER_ROLE if prev else audit.ORG_MEMBER_ADD
-                    detail = f"{email} → {role}"
-                    if prev:
-                        detail = f"{email}: {prev['role']} → {role}"
-                    audit.log_org(cur, team_id=team_id, action=action, detail=detail)
-                    conn.commit()
+                action = audit.ORG_MEMBER_ROLE if prev else audit.ORG_MEMBER_ADD
+                detail = f"{email} → {role}"
+                if prev:
+                    detail = f"{email}: {prev['role_name']} → {role}"
+                audit.log_org(cur, team_id=team_id, action=action, detail=detail)
+                conn.commit()
+                flash(f"Bound {email} as {role}", "ok")
             except Exception as e:
+                conn.rollback()
                 flash(str(e), "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
     @app.post("/teams/<uuid:team_id>/members/<uuid:user_id>/remove")
     @authz.login_required
-    def remove_team_member(team_id, user_id):
+    def remove_team_binding(team_id, user_id):
         """Remove a member from a team.
 
         Args:
@@ -343,34 +507,35 @@ def register(app):
         """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             try:
+                # Find existing team binding for this user
                 cur.execute(
                     """
-                    SELECT role FROM api.team_members
-                    WHERE team_id = %s AND user_id = %s
+                    SELECT b.id, r.name AS role_name
+                    FROM rbac.bindings b
+                    JOIN rbac.roles r ON r.id = b.role_id
+                    WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
+                      AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                      AND r.name IN ('team-owner','team-admin','team-member','team-viewer')
                     """,
-                    (str(team_id), str(user_id)),
+                    (str(user_id), str(team_id)),
                 )
                 row = cur.fetchone()
                 if not row:
                     flash("Member not found", "error")
                     return redirect(url_for("team_detail", team_id=team_id, tab="members"))
-                cur.execute(
-                    "DELETE FROM api.team_members WHERE team_id = %s AND user_id = %s",
-                    (str(team_id), str(user_id)),
+                rbac_sync.sync_user_team_binding(
+                    cur, user_id=user_id, team_id=team_id, role=None
                 )
-                if cur.rowcount == 0:
-                    flash("You don't have permission to do that", "error")
-                    conn.rollback()
-                else:
-                    audit.log_org(
-                        cur,
-                        team_id=team_id,
-                        action=audit.ORG_MEMBER_REMOVE,
-                        detail=f"user {user_id} ({row['role']})",
-                    )
-                    conn.commit()
-                    flash("Member removed", "ok")
+                audit.log_org(
+                    cur,
+                    team_id=team_id,
+                    action=audit.ORG_MEMBER_REMOVE,
+                    detail=f"user {user_id} ({row['role_name']})",
+                )
+                conn.commit()
+                flash("Member removed", "ok")
             except Exception as e:
+                conn.rollback()
                 flash(str(e), "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
@@ -395,7 +560,7 @@ def register(app):
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-            if (cur.fetchone() or {}).get("r") != "owner":
+            if (cur.fetchone() or {}).get("r") != "team-owner":
                 flash("Only owners can transfer ownership", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
@@ -409,21 +574,19 @@ def register(app):
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             try:
                 # Promote new owner first (avoids last-owner guard)
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s, %s, 'owner', 'manual')
-                    ON CONFLICT (team_id, user_id) DO UPDATE
-                      SET role = 'owner', source = 'manual'
-                    """,
-                    (str(team_id), new_uid),
+                rbac_sync.sync_user_team_binding(
+                    cur,
+                    user_id=new_uid,
+                    team_id=team_id,
+                    role="team-owner",
+                    created_by=session["user_id"],
                 )
-                cur.execute(
-                    """
-                    UPDATE api.team_members SET role = 'admin'
-                    WHERE team_id = %s AND user_id = %s AND role = 'owner'
-                    """,
-                    (str(team_id), session["user_id"]),
+                rbac_sync.sync_user_team_binding(
+                    cur,
+                    user_id=session["user_id"],
+                    team_id=team_id,
+                    role="team-admin",
+                    created_by=session["user_id"],
                 )
                 audit.log_org(
                     cur,
@@ -453,9 +616,9 @@ def register(app):
         Example:
             POST /teams/<team_id>/invites with role and expires_days form fields
         """
-        role = request.form.get("role", "member")
+        role = request.form.get("role", "team-member")
         if role not in config.INVITE_ROLES:
-            role = "member"
+            role = "team-member"
         days = 7
         raw_days = (request.form.get("expires_days") or "7").strip()
         try:
@@ -568,8 +731,12 @@ def register(app):
             # Already a member?
             cur.execute(
                 """
-                SELECT role FROM api.team_members
-                WHERE team_id = %s AND user_id = %s
+                SELECT 1
+                FROM rbac.bindings b
+                JOIN rbac.roles r ON r.id = b.role_id
+                WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
+                  AND b.subject_kind = 'User' AND b.subject_id = %s::uuid
+                  AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
                 """,
                 (str(inv["team_id"]), session["user_id"]),
             )
@@ -631,7 +798,7 @@ def register(app):
         """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-            if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
+            if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
                 flash("Only owners or admins can approve join requests", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute(
@@ -646,14 +813,22 @@ def register(app):
                 flash("Request not found", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             try:
-                cur.execute(
-                    """
-                    INSERT INTO api.team_members (team_id, user_id, role, source)
-                    VALUES (%s, %s, %s, 'manual')
-                    ON CONFLICT (team_id, user_id) DO UPDATE
-                      SET role = EXCLUDED.role, source = 'manual'
-                    """,
-                    (str(team_id), str(req["user_id"]), req["role"]),
+                # Role in request row can be 'team-member' or legacy 'member'
+                req_role = req["role"]
+                if req_role not in [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]:
+                    legacy_map = {
+                        "owner": "team-owner",
+                        "admin": "team-admin",
+                        "member": "team-member",
+                        "viewer": "team-viewer",
+                    }
+                    req_role = legacy_map.get(req_role, "team-member")
+                rbac_sync.sync_user_team_binding(
+                    cur,
+                    user_id=req["user_id"],
+                    team_id=team_id,
+                    role=req_role,
+                    created_by=session["user_id"],
                 )
                 cur.execute(
                     """
@@ -694,7 +869,7 @@ def register(app):
         """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-            if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
+            if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
                 flash("Only owners or admins can reject join requests", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             cur.execute(
@@ -735,7 +910,7 @@ def register(app):
         """
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-            if (cur.fetchone() or {}).get("r") not in ("owner", "admin"):
+            if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
                 flash("Only owners or admins can change team settings", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             default_token_days = None
@@ -834,9 +1009,10 @@ def register(app):
             POST /teams/<team_id>/ldap-maps with ldap_group and role form fields
         """
         ldap_group = (request.form.get("ldap_group") or "").strip()
-        role = request.form.get("role", "member")
-        if role not in config.TEAM_ROLES:
-            role = "member"
+        role = request.form.get("role", "team-member")
+        team_role_names = [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        if role not in team_role_names:
+            role = "team-member"
         if not ldap_group:
             flash("LDAP group required", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
@@ -908,9 +1084,10 @@ def register(app):
             POST /teams/<team_id>/oidc-maps with oidc_group and role form fields
         """
         oidc_group = (request.form.get("oidc_group") or "").strip()
-        role = request.form.get("role", "member")
-        if role not in config.TEAM_ROLES:
-            role = "member"
+        role = request.form.get("role", "team-member")
+        team_role_names = [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        if role not in team_role_names:
+            role = "team-member"
         if not oidc_group:
             flash("OIDC group required", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
@@ -1022,7 +1199,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             row = cur.fetchone()
-            if not row or row["r"] != "owner":
+            if not row or row["r"] != "team-owner":
                 flash("Only team owners can delete a team", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             try:
@@ -1061,7 +1238,7 @@ def register(app):
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             row = cur.fetchone()
-            if not row or row["r"] not in ("owner", "admin"):
+            if not row or row["r"] not in ("team-owner", "team-admin"):
                 flash("Only team owners or admins can delete projects", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
             cur.execute(
@@ -1094,16 +1271,22 @@ def register(app):
                 return "Not found", 404
             cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
             my_role = (cur.fetchone() or {}).get("r")
-            is_admin = my_role in ("owner", "admin")
+            is_admin = my_role in ("team-owner", "team-admin") or bool(
+                session.get("is_global_admin")
+            )
             cur.execute(
                 """
-                SELECT id, name, source, external_key, team_role, created_at
+                SELECT id, name, source, external_key, created_at
                 FROM api.groups
                 WHERE id = %s AND team_id = %s
                 """,
                 (str(group_id), str(team_id)),
             )
             group = cur.fetchone()
+            if group:
+                group["team_role"] = rbac_sync.group_team_roles_map(cur, team_id).get(
+                    str(group_id)
+                )
             if not group:
                 flash("Group not found", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
@@ -1112,7 +1295,7 @@ def register(app):
                     "SELECT * FROM private.group_member_rows(%s::uuid)",
                     (str(group_id),),
                 )
-                members = cur.fetchall() or []
+                members = list(cur.fetchall() or [])
             except Exception:
                 members = []
             if q:
@@ -1132,21 +1315,20 @@ def register(app):
             search_q=q,
             my_role=my_role,
             is_admin=is_admin,
-            team_roles=config.GROUP_TEAM_ROLES,
         )
 
     @app.post("/teams/<uuid:team_id>/groups")
     @authz.login_required
     def create_team_group(team_id):
-        """Create a team-scoped group (manual or LDAP/OIDC-mapped)."""
+        """Create a team-scoped group (manual or LDAP/OIDC-mapped).
+
+        Group membership only; grant team access via Members (Group subject binding).
+        """
         name = (request.form.get("name") or "").strip()
         source = (request.form.get("source") or "manual").strip().lower()
         if source not in ("manual", "ldap", "oidc"):
             source = "manual"
         external_key = (request.form.get("external_key") or "").strip() or None
-        team_role = (request.form.get("team_role") or "").strip() or None
-        if team_role and team_role not in config.GROUP_TEAM_ROLES:
-            team_role = None
         if source == "manual":
             external_key = None
         elif not external_key:
@@ -1159,11 +1341,11 @@ def register(app):
             try:
                 cur.execute(
                     """
-                    INSERT INTO api.groups (team_id, name, source, external_key, team_role)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO api.groups (team_id, name, source, external_key)
+                    VALUES (%s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (str(team_id), name, source, external_key, team_role),
+                    (str(team_id), name, source, external_key),
                 )
                 gid = cur.fetchone()["id"]
                 audit.log_org(
@@ -1173,7 +1355,10 @@ def register(app):
                     detail=f"{name} ({source})",
                 )
                 conn.commit()
-                flash(f"Group “{name}” created", "ok")
+                flash(
+                    f"Group “{name}” created — bind it under Members as subject Group",
+                    "ok",
+                )
                 return redirect(_group_detail_url(team_id, gid))
             except Exception as e:
                 conn.rollback()
@@ -1183,11 +1368,8 @@ def register(app):
     @app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>")
     @authz.login_required
     def update_team_group(team_id, group_id):
-        """Update group name, team role, or external mapping."""
+        """Update group name or external mapping (not team role — use RBAC binding)."""
         name = (request.form.get("name") or "").strip()
-        team_role = (request.form.get("team_role") or "").strip() or None
-        if team_role and team_role not in config.GROUP_TEAM_ROLES:
-            team_role = None
         external_key = (request.form.get("external_key") or "").strip() or None
         if not name:
             flash("Group name required", "error")
@@ -1197,7 +1379,7 @@ def register(app):
                 cur.execute(
                     """
                     UPDATE api.groups
-                    SET name = %s, team_role = %s,
+                    SET name = %s,
                         external_key = CASE
                           WHEN source = 'manual' THEN NULL
                           ELSE COALESCE(%s, external_key)
@@ -1205,7 +1387,7 @@ def register(app):
                     WHERE id = %s AND team_id = %s
                     RETURNING name
                     """,
-                    (name, team_role, external_key, str(group_id), str(team_id)),
+                    (name, external_key, str(group_id), str(team_id)),
                 )
                 row = cur.fetchone()
                 if not row:

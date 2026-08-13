@@ -27,11 +27,11 @@ class TestSecrets:
             s['user_id'] = self.uid
             s['email'] = 'u@ex.com'
 
-    def _project_conn(self, tab='secrets', can_write=True, can_admin=None, team_role='owner', secrets=None, tokens=None, audit_log=None, access_requests=None, total=None, pending_count=0):
+    def _project_conn(self, tab='secrets', can_write=True, can_admin=None, team_role='team-owner', secrets=None, tokens=None, audit_log=None, access_requests=None, total=None, pending_count=0):
         """as_user used by project_detail (tab-scoped queries)."""
         project = {'id': self.pid, 'name': 'prod', 'team_name': 'Ops', 'team_id': uuid4()}
         if can_admin is None:
-            can_admin = team_role in ('owner', 'admin')
+            can_admin = team_role in ('team-owner', 'team-admin')
         rows = secrets or [] if tab == 'secrets' else audit_log or [] if tab == 'audit' else tokens or []
         if total is None:
             total = len(rows)
@@ -45,7 +45,7 @@ class TestSecrets:
             fa = [[]]
         elif tab == 'secrets':
             fa = [rows, [], [], []]
-        elif tab == 'access':
+        elif tab in ('access', 'requests'):
             fa = [access_requests or []]
         else:
             fa = [rows] if tab in ('audit', 'tokens') else []
@@ -65,8 +65,8 @@ class TestSecrets:
 
     def test_project_access_tab(self):
         reqs = [{'id': uuid4(), 'secret_id': uuid4(), 'secret_key': 'API_KEY', 'user_id': self.uid, 'email': 'u@ex.com', 'name': 'User', 'status': 'pending', 'reason': 'debug prod', 'created_at': '2026-01-01', 'resolved_at': None, 'approved_until': None, 'resolver_email': ''}]
-        with patch.object(db, 'as_user', return_value=self._project_conn(tab='access', access_requests=reqs, pending_count=1)):
-            r = self.client.get(f'/projects/{self.pid}?tab=access')
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='requests', access_requests=reqs, pending_count=1)):
+            r = self.client.get(f'/projects/{self.pid}?tab=requests')
         assert r.status_code == 200
         assert b'API_KEY' in r.data
         assert b'pending' in r.data
@@ -92,7 +92,7 @@ class TestSecrets:
 
     def test_delete_project_route_owner_ok(self):
         tid = uuid4()
-        conn, cur = _conn(fetchone={'team_id': tid, 'r': 'owner'})
+        conn, cur = _conn(fetchone={'team_id': tid, 'r': 'team-owner'})
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/delete', follow_redirects=False)
@@ -102,7 +102,7 @@ class TestSecrets:
 
     def test_delete_project_route_viewer_denied(self):
         tid = uuid4()
-        conn, _ = _conn(fetchone={'team_id': tid, 'r': 'viewer'})
+        conn, _ = _conn(fetchone={'team_id': tid, 'r': 'team-viewer'})
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/delete', follow_redirects=False)
         assert r.status_code == 302
@@ -110,10 +110,10 @@ class TestSecrets:
         conn.commit.assert_not_called()
 
     def test_project_settings_tab_shows_members_and_delete_for_owner(self):
-        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='owner')):
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='team-owner')):
             r = self.client.get(f'/projects/{self.pid}?tab=settings')
         assert r.status_code == 200
-        assert b'Members' in r.data
+        assert b'Settings' in r.data
         assert b'Danger zone' in r.data
         assert b'Delete project' in r.data
         assert b'Settings' in r.data
@@ -121,14 +121,14 @@ class TestSecrets:
 
     def test_project_settings_hidden_for_writer_without_admin(self):
         """Project write without admin cannot manage members; Settings tab hidden."""
-        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='member', can_write=True, can_admin=False)):
+        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='team-member', can_write=True, can_admin=False)):
             r = self.client.get(f'/projects/{self.pid}')
         assert r.status_code == 200
         assert b'?tab=settings' not in r.data
         assert b'Delete project' not in r.data
 
     def test_project_settings_tab_hidden_for_viewer(self):
-        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='viewer', can_write=False, can_admin=False)):
+        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='team-viewer', can_write=False, can_admin=False)):
             r = self.client.get(f'/projects/{self.pid}')
         assert r.status_code == 200
         assert b'?tab=settings' not in r.data
@@ -136,14 +136,14 @@ class TestSecrets:
 
     def test_project_admin_settings_members_without_delete(self):
         """Project admin can manage members; team member cannot delete project."""
-        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='member', can_write=True, can_admin=True)):
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='settings', team_role='team-member', can_write=True, can_admin=True)):
             r = self.client.get(f'/projects/{self.pid}?tab=settings')
         assert r.status_code == 200
-        assert b'Members' in r.data
+        assert b'Settings' in r.data
         assert b'Delete project' not in r.data
 
     def test_project_secrets_tab_no_danger_zone(self):
-        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='owner')):
+        with patch.object(db, 'as_user', return_value=self._project_conn(team_role='team-owner')):
             r = self.client.get(f'/projects/{self.pid}?tab=secrets')
         assert r.status_code == 200
         assert b'Settings' in r.data
@@ -199,8 +199,14 @@ class TestSecrets:
         assert b'/value' in r.data
         assert b'Copy' in r.data
         assert b'Open full view' in r.data
-        assert b'>Hide</a>' in r.data
+        assert b'>Hide</button>' in r.data
         assert b'/hide' in r.data
+        assert b'<button type="button"' in r.data
+        # OOB toggle must be an oat menu item (button, not anchor) that closes
+        # the kebab popover after clicking, styled like the other menu items.
+        assert b'role="menuitem"' in r.data
+        assert b'popovertarget="secret-menu-' + str(sid).encode() + b'"' in r.data
+        assert b'class="reveal-toggle ghost"' in r.data
         assert b'name="expires_at"' not in r.data
 
     def test_reveal_secret_requires_access_request(self):
@@ -261,7 +267,7 @@ class TestSecrets:
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/access-requests/{rid}/approve', data={'minutes': '15'}, follow_redirects=False)
         assert r.status_code == 302
-        assert 'tab=access' in r.location
+        assert 'tab=requests' in r.location
         conn.commit.assert_called()
         all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
         assert 'approved' in all_args
@@ -275,11 +281,72 @@ class TestSecrets:
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/access-requests/{rid}/deny', follow_redirects=False)
         assert r.status_code == 302
-        assert 'tab=access' in r.location
+        assert 'tab=requests' in r.location
         conn.commit.assert_called()
         all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
         assert 'denied' in all_args
         assert 'access_denied' in all_args
+
+    def test_secret_view_keeps_secret_row_after_binding_enrichment(self):
+        """Regression: the admin binding email-enrichment loop previously shadowed
+        the `row` variable, clobbering the secret row and raising KeyError: 'key'
+        later when rendering/auditing the reveal. (secret_view reveal path)."""
+        from contextlib import contextmanager
+        sid = uuid4()
+        binder_uid = str(uuid4())
+        enc = crypto.encrypt('super-secret')
+        conn, cur = _conn()
+        row = {
+            'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'note': '', 'kind': 'plain',
+            'expires_at': None, 'requires_approval': None, 'access_mode': 'inherit',
+            'created_at': '2026-01-01', 'updated_at': '2026-01-01',
+            'last_accessed_at': None, 'last_accessed_by': None,
+            'project_name': 'prod', 'require_reveal_approval': False,
+        }
+        # as_user cursor fetchone order:
+        #   [secret row, can_write, can_reveal_acl, helper can_admin_project, can_admin]
+        cur.fetchone.side_effect = [row, {'w': True}, {'r': True}, {'a': True}, {'a': True}]
+        bindings = [{'id': sid, 'subject_kind': 'User', 'subject_id': binder_uid,
+                     'created_at': '2026-01-01', 'role_name': 'secret-reveal', 'group_name': None}]
+        # fetchall order: custom_meta, secret_bindings, team_groups
+        cur.fetchall.side_effect = [[], bindings, []]
+        # admin connection (enrichment) — returns the binder user row
+        acur = MagicMock()
+        acur.fetchall.return_value = [{'id': binder_uid, 'email': 'b@x.com', 'name': 'Bob'}]
+
+        @contextmanager
+        def _acur_cm(*_a, **_k):
+            yield acur
+
+        aconn = MagicMock()
+        aconn.__enter__ = MagicMock(return_value=aconn)
+        aconn.__exit__ = MagicMock(return_value=False)
+        aconn.cursor.side_effect = _acur_cm
+        with patch.object(db, 'as_user', return_value=conn), \
+             patch.object(db, 'connect_admin', return_value=aconn):
+            r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/view')
+        assert r.status_code == 200
+        assert b'API_KEY' in r.data
+        assert b'super-secret' in r.data
+
+    def test_secret_view_plain_get(self):
+        sid = uuid4()
+        enc = crypto.encrypt('plain-value')
+        conn, cur = _conn()
+        row = {
+            'id': sid, 'key': 'DATABASE_URL', 'value_enc': enc, 'note': '', 'kind': 'plain',
+            'expires_at': None, 'requires_approval': None, 'access_mode': 'inherit',
+            'created_at': '2026-01-01', 'updated_at': '2026-01-01',
+            'last_accessed_at': None, 'last_accessed_by': None,
+            'project_name': 'prod', 'require_reveal_approval': False,
+        }
+        cur.fetchone.side_effect = [row, {'w': True}, {'r': True}, {'a': True}, {'a': False}]
+        cur.fetchall.side_effect = [[], [], []]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/view')
+        assert r.status_code == 200
+        assert b'DATABASE_URL' in r.data
+        assert b'plain-value' in r.data
 
     def test_hide_secret(self):
         sid = uuid4()
@@ -288,7 +355,7 @@ class TestSecrets:
         r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/hide', headers={'HX-Request': 'true'})
         assert r.status_code == 200
         assert b'*******' in r.data
-        assert b'>Reveal</a>' in r.data
+        assert b'>Reveal</button>' in r.data
         assert b'/reveal' in r.data
 
     def test_update_secret_value(self):
@@ -302,7 +369,7 @@ class TestSecrets:
         assert b'new-secret' not in r.data
         assert b'*******' in r.data
         assert b'Updated' in r.data
-        assert b'>Reveal</a>' in r.data
+        assert b'>Reveal</button>' in r.data
         conn.commit.assert_called()
         sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
         assert 'expires_at' in sql
@@ -328,4 +395,30 @@ class TestSecrets:
         assert r.status_code == 200
         data = r.get_json()
         assert data[0]['email'] == 'alice@ex.com'
+
+    def test_add_secret_access_binding_service_account(self):
+        sid, sa_id, role_id, pid = uuid4(), uuid4(), uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'a': True},
+            {'id': sid, 'key': 'KEY', 'access_mode': 'inherit', 'team_id': uuid4()},
+            {'id': role_id},
+            {'id': sa_id},
+        ]
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/projects/{pid}/secrets/{sid}/access/bindings',
+                data={'subject_kind': 'ServiceAccount', 'subject_sa': str(sa_id),
+                      'role_name': 'secret-reveal'},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        assert f'/projects/{pid}/secrets/{sid}/view?tab=access' in r.location
+        conn.commit.assert_called()
+        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        assert 'INSERT INTO rbac.bindings' in all_args
+        assert 'ServiceAccount' in all_args
+        assert str(sa_id) in all_args
+        assert 'secret-reveal' in all_args
 

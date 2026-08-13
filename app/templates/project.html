@@ -1,58 +1,55 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} — {{ app_name }}{% endblock %}
 {% block body %}
-<nav aria-label="Breadcrumb">
-  <ol class="unstyled hstack" style="font-size: var(--text-7); gap: .35rem; flex-wrap: wrap;">
-    <li><a href="{{ url_for('teams') }}" class="unstyled">Teams</a></li>
-    <li aria-hidden="true">/</li>
-    <li><a href="{{ url_for('team_detail', team_id=project.team_id) }}" class="unstyled">{{ project.team_name }}</a></li>
-    <li aria-hidden="true">/</li>
-    <li aria-current="page"><strong>{{ project.name }}</strong></li>
-  </ol>
-</nav>
-<h1>{{ project.name }}</h1>
+<div class="page-head"><h1>{{ project.name }}</h1></div>
 {% if project.description %}
 <p class="page-desc">{{ project.description }}</p>
+{% elif can_admin or can_settings %}
+<p class="page-desc muted">
+  No description yet —
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}">add a purpose in Settings</a>.
+</p>
 {% endif %}
 <p class="page-desc muted">Project ID: <code class="k">{{ project.id }}</code></p>
 
 {% if new_token %}
 <div class="token-once">
-  <strong>Machine token (copy now — shown once)</strong>
-  <pre>{{ new_token }}</pre>
+  <div class="section-head tight">
+    <strong>Machine token (copy now — shown once)</strong>
+    <button type="button" class="link copy-btn" data-copy-target="new-token-pre" data-clear-seconds="60">Copy token</button>
+  </div>
+  <pre id="new-token-pre">{{ new_token }}</pre>
 </div>
 {% endif %}
 
-<nav class="tabs" role="tablist" aria-label="Project sections">
+<nav class="tabs" aria-label="Project sections">
   <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}"
      class="tab {% if active_tab == 'secrets' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'secrets' else 'false' }}">Secrets</a>
+>Secrets</a>
+  {% if can_admin %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}"
      class="tab {% if active_tab == 'access' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'access' else 'false' }}">Access{% if access_pending_count %}<span class="tab-badge" title="{{ access_pending_count }} pending">{{ access_pending_count }}</span>{% endif %}</a>
+     title="Role bindings for this project">Access</a>
+  {% endif %}
+  <a href="{{ url_for('project_detail', project_id=project.id, tab='requests') }}"
+     class="tab {% if active_tab == 'requests' %}active{% endif %}"
+>Requests{% if access_pending_count %}<span class="tab-badge" title="{{ access_pending_count }} pending">{{ access_pending_count }}</span>{% endif %}</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
      class="tab {% if active_tab == 'audit' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'audit' else 'false' }}">Audit log</a>
+>Audit log</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}"
      class="tab {% if active_tab == 'tokens' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'tokens' else 'false' }}">Machine accounts</a>
+>Machine accounts</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
      class="tab {% if active_tab == 'import' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'import' else 'false' }}">Import / Export</a>
+>Import / Export</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='integrations') }}"
      class="tab {% if active_tab == 'integrations' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'integrations' else 'false' }}">Integrations</a>
+>Integrations</a>
   {% if can_settings %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
      class="tab {% if active_tab == 'settings' %}active{% endif %}"
-     role="tab"
-     aria-selected="{{ 'true' if active_tab == 'settings' else 'false' }}">Settings</a>
+>Settings</a>
   {% endif %}
 </nav>
 
@@ -74,7 +71,7 @@
     </div>
     {% endif %}
   </div>
-  <table>
+  <div class="table"><table>
     <thead><tr><th>Key</th><th>Status</th><th>Expires</th><th></th></tr></thead>
     <tbody>
     {% for s in due_overdue %}
@@ -102,181 +99,55 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </section>
 {% endif %}
 <section>
   <div class="section-head">
-    <div class="section-head-main">
-      <h2>Secrets</h2>
-      {% if can_write %}
-      <a class="button outline small" href="{{ url_for('secret_new', project_id=project.id) }}">Create secret</a>
-      {% endif %}
-    </div>
-    <div class="section-tools">
-      <div class="bulk-toolbar" id="bulk-toolbar" hidden>
-        <label class="bulk-select" title="Select all on this page">
-          <input type="checkbox" id="bulk-select-all" aria-label="Select all secrets">
-          <span id="bulk-count" class="bulk-count">0</span>
-        </label>
-        <label class="visually-hidden" for="bulk-action">Bulk action</label>
-        <select id="bulk-action" class="bulk-action" aria-label="Bulk action">
-          <option value="">Action…</option>
-          <option value="export_env"
-                  data-url="{{ url_for('bulk_export', project_id=project.id, format='env') }}">Export .env</option>
-          <option value="export_json"
-                  data-url="{{ url_for('bulk_export', project_id=project.id, format='json') }}">Export JSON</option>
-          {% if can_write %}
-          <option value="delete"
-                  data-url="{{ url_for('bulk_secrets', project_id=project.id) }}"
-                  data-confirm="Move selected secrets to trash?">Delete</option>
-          {% endif %}
-        </select>
-        <button type="button" id="bulk-apply" class="bulk-apply" disabled>Apply</button>
-      </div>
-      <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
-        <input type="hidden" name="tab" value="secrets">
-        <label class="search-field">
-          <span class="visually-hidden">Search secrets</span>
-          <input type="search" name="q" value="{{ search_q or '' }}"
-                 placeholder="Search…" autocomplete="off" aria-label="Search secrets">
-        </label>
-        <button type="submit">Search</button>
-        {% if search_q %}
-        <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
-        {% endif %}
-      </form>
-    </div>
+    <h2>Secrets</h2>
+    {% if can_write %}
+    <a class="button outline small" href="{{ url_for('secret_new', project_id=project.id) }}">Create secret</a>
+    {% endif %}
   </div>
-  {% if can_write %}
-  <form method="post"
-        action="{{ url_for('create_secret', project_id=project.id, page=secrets_pager.page if secrets_pager else 1, q=search_q or none) }}"
-        hx-post="{{ url_for('create_secret', project_id=project.id) }}"
-        hx-target="#secrets-list"
-        hx-swap="innerHTML"
-        hx-indicator="#secrets-list"
-        hx-disabled-elt="find button[type=submit]"
-        class="row secret-create" id="secret-form">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    {# Preserve list filters across HTMX create round-trips #}
-    <input type="hidden" name="page" value="{{ secrets_pager.page if secrets_pager else 1 }}">
-    <input type="hidden" name="q" value="{{ search_q or '' }}">
-    <label>Key <input type="text" name="key" required placeholder="DATABASE_URL" pattern="[A-Za-z0-9._/-]+"></label>
-    <label>Type
-      <select name="kind" id="secret-kind" aria-label="Secret type">
-        <option value="plain" selected>Plain</option>
-        <option value="database">Database</option>
-        <option value="certificate">Certificate</option>
-        <option value="ssh">SSH</option>
-        <option value="kv">Key / value</option>
+  {% if secrets or search_q %}
+  <div class="secrets-toolbar">
+    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="secrets">
+      <label class="search-field">
+        <span class="visually-hidden">Search secrets</span>
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search…" autocomplete="off" aria-label="Search secrets">
+      </label>
+      <button type="submit">Search</button>
+      {% if search_q %}
+      <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+      {% endif %}
+    </form>
+    {% if secrets %}
+    <div class="bulk-toolbar" id="bulk-toolbar" hidden>
+      <label class="bulk-select" title="Select all on this page">
+        <input type="checkbox" id="bulk-select-all" aria-label="Select all secrets">
+        <span id="bulk-count" class="bulk-count">0</span>
+      </label>
+      <label class="visually-hidden" for="bulk-action">Bulk action</label>
+      <select id="bulk-action" class="bulk-action" aria-label="Bulk action">
+        <option value="">Action…</option>
+         <option value="export_env"
+                 data-url="{{ url_for('bulk_export', project_id=project.id, format='env') }}"
+                 data-confirm="Download {n} plaintext secret(s) for this project?">Export .env</option>
+         <option value="export_json"
+                 data-url="{{ url_for('bulk_export', project_id=project.id, format='json') }}"
+                 data-confirm="Download {n} plaintext secret(s) for this project?">Export JSON</option>
+        {% if can_write %}
+        <option value="delete"
+                data-url="{{ url_for('bulk_secrets', project_id=project.id) }}"
+                data-confirm="Move {n} selected secret(s) to trash?">Delete</option>
+        {% endif %}
       </select>
-    </label>
-    <label class="value-label">Value
-      <span class="input-with-btn">
-        <input type="password" name="value" id="secret-value" required placeholder="••••••••" autocomplete="off">
-        <button type="button" class="icon-btn" id="gen-btn"
-                title="Generate random value" aria-label="Generate random value">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
-            <path d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-        </button>
-      </span>
-    </label>
-    <label>Note
-      <input type="text" name="note" placeholder="optional label">
-    </label>
-    <label>Expires
-      <input type="date" name="expires_at" id="secret-expires">
-    </label>
-    <label>Access
-      <select name="acl_mode" title="Who may see this secret">
-        {% for m in acl_modes|default(['inherit']) %}
-        <option value="{{ m }}" {% if m == 'inherit' %}selected{% endif %}>
-          {{ acl_mode_labels.get(m, m) if acl_mode_labels is defined else m }}
-        </option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Approval
-      <select name="requires_approval" title="Override project default for reveal approval">
-        <option value="inherit" selected>
-          Project default{% if require_reveal_approval %} (require){% else %} (open){% endif %}
-        </option>
-        <option value="require">Require approval</option>
-        <option value="exempt">No approval</option>
-      </select>
-    </label>
-    <button type="submit">Create</button>
-  </form>
-  <script>
-  (function () {
-    var form = document.getElementById('secret-form');
-    var btn = document.getElementById('gen-btn');
-    var inp = document.getElementById('secret-value');
-    var kindSel = document.getElementById('secret-kind');
-    var kindTouched = false;
-    if (kindSel) {
-      kindSel.addEventListener('change', function () { kindTouched = true; });
-    }
-    function suggestKind(value) {
-      var v = value || '';
-      if (/BEGIN CERTIFICATE/.test(v)) return 'certificate';
-      if (/BEGIN (?:OPENSSH |RSA |EC |DSA |ED25519 )?PRIVATE KEY/.test(v)) return 'ssh';
-      if (/^(postgresql|postgres|mysql|mongodb|redis|amqp|https?):\/\//i.test(v.trim()) && v.indexOf('\n') < 0) {
-        return 'database';
-      }
-      var lines = v.split(/\n/).map(function (l) { return l.trim(); }).filter(function (l) {
-        return l && l.charAt(0) !== '#';
-      });
-      var kv = 0;
-      for (var i = 0; i < lines.length; i++) {
-        if (/^[A-Za-z_][A-Za-z0-9_.-]*=/.test(lines[i])) kv++;
-      }
-      if (lines.length >= 2 && kv >= 2) return 'kv';
-      return 'plain';
-    }
-    function maybeSuggest() {
-      if (!kindSel || kindTouched || !inp) return;
-      var s = suggestKind(inp.value);
-      if (s) kindSel.value = s;
-    }
-    if (!btn || !inp) return;
-    function maskValue() {
-      inp.type = 'password';
-    }
-    btn.addEventListener('click', function () {
-      var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*_-+=';
-      var len = 32;
-      var buf = new Uint8Array(len);
-      crypto.getRandomValues(buf);
-      var out = '';
-      for (var i = 0; i < len; i++) out += chars[buf[i] % chars.length];
-      inp.type = 'text';
-      inp.value = out;
-      inp.focus();
-      inp.select();
-    });
-    inp.addEventListener('input', function () {
-      maybeSuggest();
-    });
-    inp.addEventListener('paste', function () {
-      setTimeout(maybeSuggest, 0);
-    });
-    if (form) {
-      form.addEventListener('htmx:afterRequest', function (e) {
-        if (e.detail && e.detail.successful) {
-          form.reset();
-          maskValue();
-          kindTouched = false;
-          if (kindSel) kindSel.value = 'plain';
-        }
-      });
-    }
-  })();
-  </script>
+      <button type="button" id="bulk-apply" class="bulk-apply" disabled>Apply</button>
+    </div>
+    {% endif %}
+  </div>
   {% endif %}
   <div id="secrets-list" class="secrets-list">
     {% include "partials/secrets.html" %}
@@ -287,7 +158,7 @@
   <h2>Import / Export</h2>
 
   <h3>Export</h3>
-  <p class="muted">Download all live secrets in this project. Prefer encrypted JSON for backups; plaintext formats need a confirm.</p>
+  <p class="muted">Prefer encrypted JSON for backups; plaintext formats need a confirm.</p>
   <form class="export-form row" id="export-form" action="#" method="get">
     <label class="export-format">Format
       <select id="export-format" name="format" aria-label="Export format">
@@ -339,14 +210,66 @@
   <p class="muted">You need write access to import secrets.</p>
   {% endif %}
 </section>
-{% elif active_tab == 'access' %}
+{% elif active_tab == 'access' and can_admin %}
+{% set panel_title = 'Project access' %}
+{% set create_url = url_for('project_access_binding_create', project_id=project.id) %}
+{% set delete_endpoint = 'project_access_binding_delete' %}
+{% set delete_project_id = project.id %}
+{% set form_id_prefix = 'proj-access' %}
+{% set role_dropdown = project_role_dropdown %}
+{% set full_bindings_url = url_for('rbac_bindings', scope='project', scope_id=project.id) %}
+{% set empty_message = 'No project-scope bindings yet. Team members still have access via their team role.' %}
+{% set help_html = 'Bind users, groups, or service accounts to a <strong>project</strong> role (<code>project-admin</code> / <code>project-write</code> / <code>project-reveal</code> / <code>project-read</code>). Prefer team membership for broad access. Secret-level grants: secret Access tab. Reveal approval requests live under <a href="' ~ url_for('project_detail', project_id=project.id, tab='requests') ~ '">Requests</a>.' %}
+{% include "partials/access_bindings_panel.html" %}
 <section>
   <div class="section-head">
-    <h2>Access</h2>
+    <h2>Effective access</h2>
+  </div>
+  <p class="muted">Who can access this project and why.</p>
+  {% if effective_access %}
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>Kind</th>
+          <th>Role</th>
+          <th>Granted at</th>
+          <th>How</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in effective_access %}
+        <tr>
+          <td>
+            {{ a.subject_email or a.subject_name or '—' }}
+            {% if a.subject_name and a.subject_email %}
+            <span class="muted">{{ a.subject_email }}</span>
+            {% endif %}
+            {% if a.is_global_admin %}<span class="badge" data-variant="warning">global admin</span>{% endif %}
+          </td>
+          <td><span class="badge" data-variant="secondary">{{ a.subject_kind }}</span></td>
+          <td><span class="badge" data-variant="secondary">{{ a.role_name }}</span></td>
+          <td class="muted">{{ a.scope_label or a.scope_kind }}</td>
+          <td class="muted">{{ a.grant_kind }}{% if a.grant_subject and a.grant_subject != a.subject_email %} · {{ a.grant_subject }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No access grants found for this project.</p>
+  {% endif %}
+</section>
+
+{% elif active_tab == 'requests' %}
+<section>
+  <div class="section-head">
+    <h2>Reveal requests</h2>
   </div>
   <p class="muted">Pending and recent reveal-approval requests for this project.</p>
   {% if access_requests %}
-  <div class="access-requests-wrap">
+  <div class="table">
   <table class="access-requests-table">
     <thead>
       <tr>
@@ -391,7 +314,8 @@
             <form method="post"
                   id="approve-{{ r.id }}"
                   action="{{ url_for('approve_secret_access', project_id=project.id, req_id=r.id) }}"
-                  class="access-approve-form">
+                  class="access-approve-form"
+                  onsubmit="var s=this.querySelector('#grant-minutes-{{ r.id }}');var m=parseInt(s?s.value:'0',10);var lab=m<60?m+' minutes':(m===60?'1 hour':(m===1440?'1 day':(m/60)+' hours'));return confirm('Approve reveal for '+lab+'?');">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">
               <label class="visually-hidden" for="grant-minutes-{{ r.id }}">Grant duration</label>
               <select name="minutes" id="grant-minutes-{{ r.id }}" class="bulk-action" aria-label="Grant duration">
@@ -423,9 +347,9 @@
   {% else %}
   <p class="empty">
     {% if can_admin %}
-    No access requests yet. Users with read access will appear here when they request to reveal a secret.
+    No access requests yet.
     {% else %}
-    You have no access requests. Click Reveal on a secret to request approval.
+    You have no access requests.
     {% endif %}
   </p>
   {% endif %}
@@ -468,7 +392,7 @@
     </div>
   </form>
   {% if audit_log %}
-  <table class="audit-table">
+  <div class="table"><table class="audit-table">
     <thead>
       <tr>
         <th>What happened</th>
@@ -486,7 +410,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% with pager=audit_pager %}
     {% include "partials/pager.html" %}
   {% endwith %}
@@ -495,7 +419,7 @@
     {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
     No audit events match these filters.
     {% else %}
-    No audit events yet. Activity appears here when secrets are saved, revealed, or deleted.
+    No audit events yet.
     {% endif %}
   </p>
   {% endif %}
@@ -508,12 +432,11 @@
     </div>
   </div>
   <p class="page-desc muted">
-    Project-scoped tokens for ESO and CI. Human ACLs and reveal-approval do not apply —
-    use a <strong>key allow-list</strong> when automation should only see some secrets.
+    Project-scoped tokens for ESO and CI. Use a <strong>key allow-list</strong> to limit which secrets automation can see.
   </p>
 
   {% if can_write %}
-  {% with form_id='token-form', default_name='openshift', compact=false %}
+  {% with form_id='token-form', default_name='machine', compact=false %}
     {% include "partials/token_create_form.html" %}
   {% endwith %}
   {% endif %}
@@ -521,13 +444,16 @@
   <section class="token-list-section list-panel">
     <h3 class="token-list-title">Active tokens</h3>
     {% if tokens %}
+    <div class="table">
     <table>
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Prefix</th>
+           <th>Name</th>
+           <th>Machine account ID</th>
+           <th>Prefix</th>
           <th>Role</th>
           <th>Key scope</th>
+          <th>Last used</th>
           <th>Created</th>
           <th>Expires</th>
           <th></th>
@@ -536,12 +462,14 @@
       <tbody>
       {% for t in tokens %}
         <tr>
-          <td>{{ t.name }}</td>
-          <td><code class="k">{{ t.token_prefix }}…</code></td>
-          <td><span class="badge" data-variant="secondary">{{ t.role or 'read-only' }}</span></td>
+           <td>{{ t.name }}</td>
+           <td><code class="k">{{ t.id }}</code></td>
+           <td><code class="k">{{ t.token_prefix }}…</code></td>
+          <td><span class="badge" data-variant="secondary">{{ t.role or 'service-reveal' }}</span></td>
           <td class="col-note">
             {% if t.scopes %}
-            <div class="token-scope-badges">
+            <div class="token-scope-badges"
+                 title="{% for sc in t.scopes %}{{ sc.secret_key or sc.key_pattern }}{% if not loop.last %}, {% endif %}{% endfor %}">
               {% for sc in t.scopes[:8] %}
               <span class="badge outline{% if sc.key_pattern %} token-scope-glob{% endif %}"
                     title="{% if sc.key_pattern %}Glob pattern{% else %}Exact key{% endif %}">
@@ -549,13 +477,17 @@
               </span>
               {% endfor %}
               {% if t.scopes|length > 8 %}
-              <span class="muted">+{{ t.scopes|length - 8 }}</span>
+              <span class="muted">+{{ t.scopes|length - 8 }} more</span>
+              {% endif %}
+              {% if t.scopes|length == 1 and (t.scopes[0].key_pattern|default('')) == '*' %}
+              <span class="muted">all keys</span>
               {% endif %}
             </div>
             {% else %}
             <span class="badge" data-variant="secondary">all keys</span>
             {% endif %}
           </td>
+          <td class="muted" title="{% if t.last_used_at %}{{ t.last_used_at|time_when }}{% endif %}">{% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}never{% endif %}</td>
           <td class="muted">{{ t.created_at }}</td>
           <td class="muted">
             {{ t.expires_at or 'never' }}
@@ -575,6 +507,7 @@
       {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}
     <p class="empty">No machine accounts yet.</p>
     {% endif %}
@@ -742,131 +675,55 @@
 {% elif active_tab == 'settings' and can_settings %}
 {% if can_admin %}
 <section>
-  <h2>General</h2>
-  <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="row">
+  <div class="section-head">
+    <h2>General</h2>
+    <p class="muted" style="margin:0">Settings applied when new secrets are created in this project.</p>
+  </div>
+  <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label class="full-width">Description
-      <input type="text" name="description" maxlength="500"
-             value="{{ project.description or '' }}"
-             placeholder="Short purpose for this project">
-    </label>
-    <label class="checkbox-label">
-      <input type="checkbox" name="require_reveal_approval" value="1"
-             {% if require_reveal_approval %}checked{% endif %}>
-      Require approval to reveal secrets (default for this project)
-    </label>
-    <button type="submit">Save</button>
+    <fieldset class="field-group">
+      <legend>Project</legend>
+      <div class="field-grid">
+        <label class="span-2">Description
+          <input type="text" name="description" maxlength="500"
+                 value="{{ project.description or '' }}"
+                 placeholder="Short purpose for this project">
+          <span class="field-hint">Shown at the top of this project alongside its name.</span>
+        </label>
+      </div>
+    </fieldset>
+    <fieldset class="field-group">
+      <legend>Reveal access</legend>
+      <div class="field-grid">
+        <label class="check-row span-2">
+          <input type="checkbox" name="require_reveal_approval" value="1"
+                 {% if require_reveal_approval %}checked{% endif %}>
+          Require approval to reveal secrets
+        </label>
+        <label>Default access for new secrets
+          <select name="default_access_mode">
+            <option value="inherit" {% if (project.default_access_mode or 'inherit') == 'inherit' %}selected{% endif %}>
+              Inherit team / project roles
+            </option>
+            <option value="restricted" {% if project.default_access_mode == 'restricted' %}selected{% endif %}>
+              Restricted (role bindings only)
+            </option>
+          </select>
+        </label>
+        <span class="field-hint span-2">
+          The project default is a baseline: individual secrets can override it (require or exempt)
+          on their Access tab, and existing secrets keep their current mode.
+        </span>
+        <span class="field-hint span-2">
+          <strong>Inherit</strong> means new secrets follow team/project roles;
+          <strong>Restricted</strong> starts them locked to role bindings only.
+        </span>
+      </div>
+    </fieldset>
+    <p class="form-actions">
+      <button type="submit" class="button">Save changes</button>
+    </p>
   </form>
-  <p class="muted">
-    Reveal approval is the project default; individual secrets can override it
-    (require or exempt) on their Permissions tab.
-  </p>
-</section>
-<section>
-  <h2>Members</h2>
-  <p class="muted">
-    Optional project-level roles for this project only.
-    Roles: <strong>read</strong> (view), <strong>write</strong> (edit secrets),
-    <strong>admin</strong> (write + manage members).
-    Project roles can <strong>elevate</strong> team members/viewers; they
-    <strong>cannot demote</strong> team owners or team admins.
-  </p>
-  <form method="post" action="{{ url_for('add_project_member', project_id=project.id) }}" class="row">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>User email
-      <input type="email" name="email" required class="user-suggest"
-             list="user-suggest-list" placeholder="e.g. alice@example.com" autocomplete="off">
-    </label>
-    <label>Role
-      <select name="role">
-        {% for r in project_roles %}
-        <option value="{{ r }}" {% if r == 'read' %}selected{% endif %}>{{ r }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">Add</button>
-  </form>
-  {% if project_members %}
-  <table>
-    <thead><tr><th>User</th><th>Role</th><th></th></tr></thead>
-    <tbody>
-    {% for m in project_members %}
-      <tr>
-        <td>{{ m.name or m.email }} <span class="muted">{{ m.email }}</span></td>
-        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
-        <td class="acts">
-          <form method="post"
-                action="{{ url_for('remove_project_member', project_id=project.id, user_id=m.user_id) }}"
-                class="inline"
-                onsubmit="return confirm('Remove {{ m.email }} from this project?')">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="link danger">Remove</button>
-          </form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="empty">No project-level members. Team members still have access via their team role.</p>
-  {% endif %}
-</section>
-<section>
-  <h2>Group roles</h2>
-  <p class="muted">
-    Grant a <strong>team group</strong> a project role. Group members get that access
-    (highest of user and group grants wins).
-    Create or edit groups under the team:
-    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='groups') }}">{{ project.team_name }} → Groups</a>.
-  </p>
-  {% if team_groups %}
-  <form method="post" action="{{ url_for('add_project_group_role', project_id=project.id) }}" class="row">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Team group
-      <select name="group_id" required>
-        {% for g in team_groups %}
-        <option value="{{ g.id }}">{{ g.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Role
-      <select name="role">
-        {% for r in project_roles %}
-        <option value="{{ r }}" {% if r == 'read' %}selected{% endif %}>{{ r }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">Add</button>
-  </form>
-  {% else %}
-  <p class="empty">
-    No team groups yet —
-    <a href="{{ url_for('team_detail', team_id=project.team_id, tab='groups') }}">create one on {{ project.team_name }} → Groups</a>.
-  </p>
-  {% endif %}
-  {% if project_group_roles %}
-  <table>
-    <thead><tr><th>Group</th><th>Role</th><th>Source</th><th></th></tr></thead>
-    <tbody>
-    {% for g in project_group_roles %}
-      <tr>
-        <td>{{ g.group_name }}</td>
-        <td><span class="badge" data-variant="secondary">{{ g.role }}</span></td>
-        <td class="muted">{{ g.source }}</td>
-        <td class="acts">
-          <form method="post"
-                action="{{ url_for('remove_project_group_role', project_id=project.id, group_id=g.group_id) }}"
-                class="inline"
-                onsubmit="return confirm('Remove group role for {{ g.group_name }}?')">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="link danger">Remove</button>
-          </form>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
 </section>
 {% endif %}
 {% if can_delete %}

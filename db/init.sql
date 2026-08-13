@@ -112,21 +112,12 @@ CREATE TABLE api.teams (
   classification_fg text NOT NULL DEFAULT ''
 );
 
-CREATE TABLE api.team_members (
-  team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
-  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
-  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
-  source text NOT NULL DEFAULT 'manual'
-    CHECK (source IN ('manual', 'ldap', 'oidc')),
-  PRIMARY KEY (team_id, user_id)
-);
-
 -- Team owner rules: LDAP group → automatic team membership/role
 CREATE TABLE api.team_ldap_maps (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   ldap_group text NOT NULL,
-  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+  role text NOT NULL CHECK (role IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, ldap_group)
 );
@@ -136,8 +127,8 @@ CREATE TABLE api.team_invites (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   token_hash text NOT NULL UNIQUE,
-  role text NOT NULL DEFAULT 'member'
-    CHECK (role IN ('admin', 'member', 'viewer')),
+  role text NOT NULL DEFAULT 'team-member'
+    CHECK (role IN ('team-admin', 'team-member', 'team-viewer')),
   expires_at timestamptz NOT NULL,
   created_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -151,8 +142,8 @@ CREATE TABLE api.team_join_requests (
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   invite_id uuid REFERENCES api.team_invites(id) ON DELETE SET NULL,
   user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
-  role text NOT NULL DEFAULT 'member'
-    CHECK (role IN ('admin', 'member', 'viewer')),
+  role text NOT NULL DEFAULT 'team-member'
+    CHECK (role IN ('team-admin', 'team-member', 'team-viewer')),
   status text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -170,15 +161,10 @@ CREATE TABLE api.projects (
   description text NOT NULL DEFAULT '',
   -- When true, secrets inherit require-approval for reveal (unless per-secret override)
   require_reveal_approval boolean NOT NULL DEFAULT false,
+  default_access_mode text NOT NULL DEFAULT 'inherit'
+    CHECK (default_access_mode IN ('inherit', 'restricted')),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, name)
-);
-
-CREATE TABLE api.project_members (
-  project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
-  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
-  role text NOT NULL CHECK (role IN ('admin', 'write', 'read')),
-  PRIMARY KEY (project_id, user_id)
 );
 
 -- Team-scoped groups (manual members and/or LDAP/OIDC external_key mapping)
@@ -190,11 +176,6 @@ CREATE TABLE api.groups (
     CHECK (source IN ('manual', 'ldap', 'oidc')),
   -- When source is ldap/oidc, directory group token (DN/CN/claim) for membership sync
   external_key text,
-  -- If set, group members receive this team role (max with direct team_members)
-  -- No 'owner': groups must not create team owners (break-glass stays direct members)
-  team_role text CHECK (
-    team_role IS NULL OR team_role IN ('admin', 'member', 'viewer')
-  ),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, name)
 );
@@ -210,14 +191,6 @@ CREATE TABLE api.group_members (
   PRIMARY KEY (group_id, user_id)
 );
 CREATE INDEX group_members_user_idx ON api.group_members (user_id);
-
--- Group → project role (group must belong to the project's team; enforced in app)
-CREATE TABLE api.project_group_roles (
-  project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
-  group_id uuid NOT NULL REFERENCES api.groups(id) ON DELETE CASCADE,
-  role text NOT NULL CHECK (role IN ('admin', 'write', 'read')),
-  PRIMARY KEY (project_id, group_id)
-);
 
 -- Membership / settings / access-control audit (not secret values)
 CREATE TABLE api.org_audit (
@@ -248,8 +221,8 @@ CREATE TABLE api.secrets (
   -- NULL = inherit project.require_reveal_approval; true/false = override
   requires_approval boolean,
   -- Per-secret access tighter than project membership (see api.can_access_secret)
-  acl_mode text NOT NULL DEFAULT 'inherit'
-    CHECK (acl_mode IN ('inherit', 'writers', 'admins', 'owners', 'custom')),
+  access_mode text NOT NULL DEFAULT 'inherit'
+    CHECK (access_mode IN ('inherit', 'restricted')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
@@ -272,28 +245,7 @@ CREATE TABLE api.secret_meta (
 CREATE INDEX secret_meta_key_idx ON api.secret_meta (key);
 CREATE INDEX secret_meta_value_idx ON api.secret_meta (value);
 
--- Explicit per-user or per-group grants when secrets.acl_mode = 'custom'
-CREATE TABLE api.secret_acl (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  secret_id uuid NOT NULL REFERENCES api.secrets(id) ON DELETE CASCADE,
-  user_id uuid REFERENCES private.users(id) ON DELETE CASCADE,
-  group_id uuid REFERENCES api.groups(id) ON DELETE CASCADE,
-  -- read < reveal < write (write implies reveal + read)
-  permission text NOT NULL DEFAULT 'reveal'
-    CHECK (permission IN ('read', 'reveal', 'write')),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES private.users(id) ON DELETE SET NULL,
-  CHECK (
-    (user_id IS NOT NULL AND group_id IS NULL)
-    OR (user_id IS NULL AND group_id IS NOT NULL)
-  )
-);
-CREATE UNIQUE INDEX secret_acl_user_uidx
-  ON api.secret_acl (secret_id, user_id) WHERE user_id IS NOT NULL;
-CREATE UNIQUE INDEX secret_acl_group_uidx
-  ON api.secret_acl (secret_id, group_id) WHERE group_id IS NOT NULL;
-CREATE INDEX secret_acl_user_idx ON api.secret_acl (user_id) WHERE user_id IS NOT NULL;
-CREATE INDEX secret_acl_group_idx ON api.secret_acl (group_id) WHERE group_id IS NOT NULL;
+-- Per-secret access: use secret-scope rbac.bindings for restricted mode
 
 
 -- Per-user pins (favorites) and recently accessed secrets
@@ -336,7 +288,13 @@ CREATE TRIGGER secrets_touch_updated_at
   BEFORE UPDATE ON api.secrets
   FOR EACH ROW EXECUTE FUNCTION api.touch_updated_at();
 
--- Archive previous ciphertext when value changes (DEFINER: writers cannot forge history)
+-- Archive previous ciphertext when value changes (DEFINER: writers cannot forge history).
+-- Trigger fires BEFORE UPDATE on api.secrets. If value_enc changed, inserts
+-- the old row into secret_versions.
+--
+-- Input:  Trigger (OLD/NEW row from api.secrets)
+-- Output: trigger — NEW row
+-- Example: (trigger — not called directly)
 CREATE OR REPLACE FUNCTION api.archive_secret_version()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog, api, private
@@ -401,8 +359,8 @@ CREATE TABLE api.machine_tokens (
   name text NOT NULL,
   token_hash text NOT NULL,
   token_prefix text NOT NULL UNIQUE,
-  role text NOT NULL DEFAULT 'read-only'
-    CHECK (role IN ('read-only', 'write')),
+  role text NOT NULL DEFAULT 'service-reveal'
+    CHECK (role IN ('service-read', 'service-reveal', 'service-write')),
   expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -438,13 +396,23 @@ CREATE TABLE private.login_failures (
 CREATE INDEX login_failures_email_created_idx
   ON private.login_failures (email, created_at);
 
--- Helpers: current user from JWT claim
+-- ── Helpers: current user from JWT claim ──
+-- Extracts the user id (sub claim) from the PostgREST JWT.
+--
+-- Input:  none (reads request.jwt.claims setting)
+-- Output: uuid — user id or NULL
+-- Example: SELECT api.current_user_id();
 CREATE OR REPLACE FUNCTION api.current_user_id() RETURNS uuid
 LANGUAGE sql STABLE AS $$
   SELECT NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
 $$;
 
--- Global admin: full access across teams/projects
+-- Global admin: full access across teams/projects.
+-- Checks the is_global_admin flag on the user row.
+--
+-- Input:  none (uses current user from JWT)
+-- Output: boolean
+-- Example: SELECT api.is_global_admin();
 CREATE OR REPLACE FUNCTION api.is_global_admin() RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -455,572 +423,26 @@ SET row_security = off AS $$
   );
 $$;
 
--- row_security=off: avoid RLS recursion inside policy helper functions
-CREATE OR REPLACE FUNCTION api._role_rank(r text) RETURNS int
-LANGUAGE sql IMMUTABLE AS $$
-  SELECT CASE r
-    WHEN 'owner' THEN 4
-    WHEN 'admin' THEN 3
-    WHEN 'member' THEN 2
-    WHEN 'write' THEN 2
-    WHEN 'viewer' THEN 1
-    WHEN 'read' THEN 1
-    ELSE 0
-  END;
-$$;
-
-CREATE OR REPLACE FUNCTION api._perm_rank(p text) RETURNS int
-LANGUAGE sql IMMUTABLE AS $$
-  SELECT CASE p
-    WHEN 'read' THEN 1
-    WHEN 'reveal' THEN 2
-    WHEN 'write' THEN 3
-    ELSE 0
-  END;
-$$;
-
-CREATE OR REPLACE FUNCTION api.is_team_member(tid uuid) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT api.is_global_admin()
-    OR EXISTS (
-      SELECT 1 FROM api.team_members
-      WHERE team_id = tid AND user_id = api.current_user_id()
-    )
-    OR EXISTS (
-      SELECT 1 FROM api.group_members gm
-      JOIN api.groups g ON g.id = gm.group_id
-      WHERE g.team_id = tid
-        AND gm.user_id = api.current_user_id()
-        AND g.team_role IS NOT NULL
-    );
-$$;
-
-CREATE OR REPLACE FUNCTION api.team_role(tid uuid) RETURNS text
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT CASE
-    WHEN api.is_global_admin() THEN 'owner'
-    ELSE (
-      SELECT r FROM (
-        SELECT tm.role AS r, api._role_rank(tm.role) AS rank
-        FROM api.team_members tm
-        WHERE tm.team_id = tid AND tm.user_id = api.current_user_id()
-        UNION ALL
-        SELECT g.team_role, api._role_rank(g.team_role)
-        FROM api.group_members gm
-        JOIN api.groups g ON g.id = gm.group_id
-        WHERE g.team_id = tid
-          AND gm.user_id = api.current_user_id()
-          AND g.team_role IS NOT NULL
-      ) x
-      ORDER BY rank DESC
-      LIMIT 1
-    )
-  END;
-$$;
-
--- Highest project-level role from direct membership or group grants (null if none)
-CREATE OR REPLACE FUNCTION api.project_role(pid uuid) RETURNS text
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT r FROM (
-    SELECT pm.role AS r, api._role_rank(pm.role) AS rank
-    FROM api.project_members pm
-    WHERE pm.project_id = pid AND pm.user_id = api.current_user_id()
-    UNION ALL
-    SELECT pgr.role, api._role_rank(pgr.role)
-    FROM api.project_group_roles pgr
-    JOIN api.group_members gm ON gm.group_id = pgr.group_id
-    WHERE pgr.project_id = pid AND gm.user_id = api.current_user_id()
-  ) x
-  ORDER BY rank DESC
-  LIMIT 1;
-$$;
-
--- Project access: project-level role (user or group) when present; else team role.
--- Team owner/admin always keep admin/write (cannot demote via project grants).
-CREATE OR REPLACE FUNCTION api.can_read_project(pid uuid) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT api.is_global_admin()
-    OR api.project_role(pid) IS NOT NULL
-    OR EXISTS (
-      SELECT 1 FROM api.projects p
-      WHERE p.id = pid AND api.is_team_member(p.team_id)
-    );
-$$;
-
-CREATE OR REPLACE FUNCTION api.can_write_project(pid uuid) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT api.is_global_admin()
-    OR api.team_role((SELECT team_id FROM api.projects WHERE id = pid))
-         IN ('owner', 'admin')
-    OR api.project_role(pid) IN ('admin', 'write')
-    OR (
-      api.project_role(pid) IS NULL
-      AND api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'member'
-    );
-$$;
-
-CREATE OR REPLACE FUNCTION api.can_admin_project(pid uuid) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT api.is_global_admin()
-    OR api.team_role((SELECT team_id FROM api.projects WHERE id = pid))
-         IN ('owner', 'admin')
-    OR api.project_role(pid) = 'admin';
-$$;
-
--- Per-secret access using row fields (safe for INSERT … RETURNING RLS).
--- Do not re-query api.secrets here — the new row is not visible mid-insert.
-CREATE OR REPLACE FUNCTION api.can_access_secret_row(
-  sid uuid,
-  pid uuid,
-  mode text,
-  need text DEFAULT 'read',
-  deleted_at timestamptz DEFAULT NULL
-) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT CASE
-    WHEN sid IS NULL OR pid IS NULL THEN false
-    WHEN deleted_at IS NOT NULL THEN false
-    WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
-    WHEN NOT api.can_read_project(pid) THEN false
-    WHEN api.can_admin_project(pid) THEN true
-    WHEN COALESCE(mode, 'inherit') = 'inherit' THEN (
-      CASE need
-        WHEN 'write' THEN api.can_write_project(pid)
-        ELSE true
-      END
-    )
-    WHEN mode = 'writers' THEN api.can_write_project(pid)
-    WHEN mode = 'admins' THEN false
-    WHEN mode = 'owners' THEN (
-      api.team_role((SELECT team_id FROM api.projects WHERE id = pid)) = 'owner'
-    )
-    WHEN mode = 'custom' THEN EXISTS (
-      SELECT 1 FROM api.secret_acl a
-      WHERE a.secret_id = sid
-        AND api._perm_rank(a.permission) >= api._perm_rank(need)
-        AND (
-          a.user_id = api.current_user_id()
-          OR EXISTS (
-            SELECT 1 FROM api.group_members gm
-            WHERE gm.group_id = a.group_id
-              AND gm.user_id = api.current_user_id()
-          )
-        )
-    )
-    ELSE false
-  END;
-$$;
-
--- App-facing helper: load the secret row then apply can_access_secret_row
-CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
-RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT COALESCE(
-    (
-      SELECT api.can_access_secret_row(
-        s.id, s.project_id, s.acl_mode, need, s.deleted_at
-      )
-      FROM api.secrets s
-      WHERE s.id = sid
-    ),
-    false
-  );
-$$;
-
--- Prevent removing the last team owner (except when the team itself is deleted)
-CREATE OR REPLACE FUNCTION api.guard_last_team_owner()
-RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE remaining int;
-BEGIN
-  IF TG_OP = 'DELETE' THEN
-    IF OLD.role = 'owner' THEN
-      -- ON DELETE CASCADE from api.teams runs after the team row is gone; allow that.
-      IF NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id) THEN
-        RETURN OLD;
-      END IF;
-      SELECT count(*) INTO remaining FROM api.team_members
-      WHERE team_id = OLD.team_id AND role = 'owner' AND user_id <> OLD.user_id;
-      IF remaining = 0 THEN
-        RAISE EXCEPTION 'cannot remove the last team owner; transfer ownership first';
-      END IF;
-    END IF;
-    RETURN OLD;
-  ELSIF TG_OP = 'UPDATE' THEN
-    IF OLD.role = 'owner' AND NEW.role IS DISTINCT FROM 'owner' THEN
-      SELECT count(*) INTO remaining FROM api.team_members
-      WHERE team_id = OLD.team_id AND role = 'owner' AND user_id <> OLD.user_id;
-      IF remaining = 0 THEN
-        RAISE EXCEPTION 'cannot demote the last team owner; transfer ownership first';
-      END IF;
-    END IF;
-    RETURN NEW;
-  END IF;
-  RETURN NEW;
-END;
-$$;
-CREATE TRIGGER team_members_guard_last_owner
-  BEFORE UPDATE OR DELETE ON api.team_members
-  FOR EACH ROW EXECUTE FUNCTION api.guard_last_team_owner();
-
--- RLS
+-- RLS: tables enabled here; policies defined in 02-rbac.sql (after auth functions exist)
 ALTER TABLE api.teams ENABLE ROW LEVEL SECURITY;
-ALTER TABLE api.team_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.team_ldap_maps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.team_invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.team_join_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.projects ENABLE ROW LEVEL SECURITY;
-ALTER TABLE api.project_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.group_members ENABLE ROW LEVEL SECURITY;
-ALTER TABLE api.project_group_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_pins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_recent ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.org_audit ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_audit ENABLE ROW LEVEL SECURITY;
-ALTER TABLE api.secret_acl ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_meta ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_access_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_token_scope ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY teams_select ON api.teams FOR SELECT TO authenticated
-  USING (api.is_global_admin() OR api.is_team_member(id));
-CREATE POLICY teams_insert ON api.teams FOR INSERT TO authenticated
-  WITH CHECK (created_by = api.current_user_id() OR api.is_global_admin());
-CREATE POLICY teams_update ON api.teams FOR UPDATE TO authenticated
-  USING (api.team_role(id) IN ('owner', 'admin'));
-CREATE POLICY teams_delete ON api.teams FOR DELETE TO authenticated
-  USING (api.team_role(id) = 'owner');
-
-CREATE POLICY tm_select ON api.team_members FOR SELECT TO authenticated
-  USING (api.is_team_member(team_id));
--- Only owners may assign role=owner (admins cannot self-promote via PostgREST)
-CREATE POLICY tm_insert ON api.team_members FOR INSERT TO authenticated
-  WITH CHECK (
-    api.team_role(team_id) IN ('owner', 'admin')
-    AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
-  );
-CREATE POLICY tm_update ON api.team_members FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'))
-  WITH CHECK (
-    api.team_role(team_id) IN ('owner', 'admin')
-    AND (role IS DISTINCT FROM 'owner' OR api.team_role(team_id) = 'owner')
-  );
-CREATE POLICY tm_delete ON api.team_members FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin') OR user_id = api.current_user_id());
-
-CREATE POLICY tlm_select ON api.team_ldap_maps FOR SELECT TO authenticated
-  USING (api.is_team_member(team_id));
-CREATE POLICY tlm_insert ON api.team_ldap_maps FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
-CREATE POLICY tlm_update ON api.team_ldap_maps FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-CREATE POLICY tlm_delete ON api.team_ldap_maps FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-
-CREATE POLICY team_invites_select ON api.team_invites FOR SELECT TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-CREATE POLICY team_invites_insert ON api.team_invites FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
-CREATE POLICY team_invites_update ON api.team_invites FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-CREATE POLICY team_invites_delete ON api.team_invites FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-
-CREATE POLICY team_join_requests_select ON api.team_join_requests FOR SELECT TO authenticated
-  USING (
-    api.team_role(team_id) IN ('owner', 'admin')
-    OR user_id = api.current_user_id()
-  );
-CREATE POLICY team_join_requests_insert ON api.team_join_requests FOR INSERT TO authenticated
-  WITH CHECK (user_id = api.current_user_id());
-CREATE POLICY team_join_requests_update ON api.team_join_requests FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-
-CREATE POLICY org_audit_select ON api.org_audit FOR SELECT TO authenticated
-  USING (
-    (team_id IS NOT NULL AND api.is_team_member(team_id))
-    OR (project_id IS NOT NULL AND api.can_read_project(project_id))
-  );
--- INSERT only via private.audit_org
-
--- Use team_id on the row (not can_read_project(id)) so INSERT … RETURNING works
-CREATE POLICY projects_select ON api.projects FOR SELECT TO authenticated
-  USING (
-    api.is_team_member(team_id)
-    OR EXISTS (
-      SELECT 1 FROM api.project_members pm
-      WHERE pm.project_id = id AND pm.user_id = api.current_user_id()
-    )
-  );
-CREATE POLICY projects_insert ON api.projects FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin', 'member'));
--- H1: members must not change require_reveal_approval (or other settings) via PostgREST
-CREATE POLICY projects_update ON api.projects FOR UPDATE TO authenticated
-  USING (api.can_admin_project(id));
-CREATE POLICY projects_delete ON api.projects FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-
-CREATE POLICY pm_select ON api.project_members FOR SELECT TO authenticated
-  USING (api.can_read_project(project_id));
-CREATE POLICY pm_insert ON api.project_members FOR INSERT TO authenticated
-  WITH CHECK (api.can_admin_project(project_id));
-CREATE POLICY pm_update ON api.project_members FOR UPDATE TO authenticated
-  USING (api.can_admin_project(project_id));
-CREATE POLICY pm_delete ON api.project_members FOR DELETE TO authenticated
-  USING (api.can_admin_project(project_id));
-
--- Pins / recent: own rows only, and only if secret is still readable
-CREATE POLICY secret_pins_select ON api.secret_pins FOR SELECT TO authenticated
-  USING (
-    user_id = api.current_user_id()
-    AND EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND s.deleted_at IS NULL
-        AND api.can_read_project(s.project_id)
-    )
-  );
-CREATE POLICY secret_pins_insert ON api.secret_pins FOR INSERT TO authenticated
-  WITH CHECK (
-    user_id = api.current_user_id()
-    AND EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND s.deleted_at IS NULL
-        AND api.can_read_project(s.project_id)
-    )
-  );
-CREATE POLICY secret_pins_delete ON api.secret_pins FOR DELETE TO authenticated
-  USING (user_id = api.current_user_id());
-
-CREATE POLICY secret_recent_select ON api.secret_recent FOR SELECT TO authenticated
-  USING (
-    user_id = api.current_user_id()
-    AND EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND s.deleted_at IS NULL
-        AND api.can_read_project(s.project_id)
-    )
-  );
-CREATE POLICY secret_recent_insert ON api.secret_recent FOR INSERT TO authenticated
-  WITH CHECK (
-    user_id = api.current_user_id()
-    AND EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND s.deleted_at IS NULL
-        AND api.can_read_project(s.project_id)
-    )
-  );
-CREATE POLICY secret_recent_update ON api.secret_recent FOR UPDATE TO authenticated
-  USING (user_id = api.current_user_id());
-CREATE POLICY secret_recent_delete ON api.secret_recent FOR DELETE TO authenticated
-  USING (user_id = api.current_user_id());
-
-CREATE POLICY secrets_select ON api.secrets FOR SELECT TO authenticated
-  USING (api.can_access_secret_row(id, project_id, acl_mode, 'read', deleted_at));
-CREATE POLICY secrets_insert ON api.secrets FOR INSERT TO authenticated
-  WITH CHECK (api.can_write_project(project_id));
-CREATE POLICY secrets_update ON api.secrets FOR UPDATE TO authenticated
-  USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at));
-CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
-  USING (api.can_access_secret_row(id, project_id, acl_mode, 'write', deleted_at));
-
-CREATE POLICY secret_meta_select ON api.secret_meta FOR SELECT TO authenticated
-  USING (api.can_access_secret(secret_id, 'read'));
-CREATE POLICY secret_meta_insert ON api.secret_meta FOR INSERT TO authenticated
-  WITH CHECK (api.can_access_secret(secret_id, 'write'));
-CREATE POLICY secret_meta_update ON api.secret_meta FOR UPDATE TO authenticated
-  USING (api.can_access_secret(secret_id, 'write'));
-CREATE POLICY secret_meta_delete ON api.secret_meta FOR DELETE TO authenticated
-  USING (api.can_access_secret(secret_id, 'write'));
-
--- Versions inherit access from parent secret's project
-CREATE POLICY secret_versions_select ON api.secret_versions FOR SELECT TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id
-        AND api.can_access_secret_row(
-          s.id, s.project_id, s.acl_mode, 'read', s.deleted_at
-        )
-    )
-  );
--- L1: no client INSERT — versions only via archive_secret_version() trigger
--- No direct UPDATE/DELETE for authenticated (purge via secret CASCADE)
-
-CREATE POLICY secret_audit_select ON api.secret_audit FOR SELECT TO authenticated
-  USING (api.can_read_project(project_id));
--- INSERT only via private.audit_secret (SECURITY DEFINER); no direct client insert
-
-CREATE POLICY groups_select ON api.groups FOR SELECT TO authenticated
-  USING (api.is_team_member(team_id));
-CREATE POLICY groups_insert ON api.groups FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
-CREATE POLICY groups_update ON api.groups FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-CREATE POLICY groups_delete ON api.groups FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-
-CREATE POLICY gm_select ON api.group_members FOR SELECT TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.groups g
-      WHERE g.id = group_id AND api.is_team_member(g.team_id)
-    )
-  );
-CREATE POLICY gm_insert ON api.group_members FOR INSERT TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.groups g
-      WHERE g.id = group_id AND api.team_role(g.team_id) IN ('owner', 'admin')
-    )
-  );
-CREATE POLICY gm_update ON api.group_members FOR UPDATE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.groups g
-      WHERE g.id = group_id AND api.team_role(g.team_id) IN ('owner', 'admin')
-    )
-  );
-CREATE POLICY gm_delete ON api.group_members FOR DELETE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.groups g
-      WHERE g.id = group_id AND api.team_role(g.team_id) IN ('owner', 'admin')
-    )
-    OR user_id = api.current_user_id()
-  );
-
-CREATE POLICY pgr_select ON api.project_group_roles FOR SELECT TO authenticated
-  USING (api.can_read_project(project_id));
-CREATE POLICY pgr_insert ON api.project_group_roles FOR INSERT TO authenticated
-  WITH CHECK (api.can_admin_project(project_id));
-CREATE POLICY pgr_update ON api.project_group_roles FOR UPDATE TO authenticated
-  USING (api.can_admin_project(project_id));
-CREATE POLICY pgr_delete ON api.project_group_roles FOR DELETE TO authenticated
-  USING (api.can_admin_project(project_id));
-
-CREATE POLICY secret_acl_select ON api.secret_acl FOR SELECT TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id
-        AND api.can_access_secret_row(
-          s.id, s.project_id, s.acl_mode, 'read', s.deleted_at
-        )
-    )
-  );
--- L2: group grants must be groups on the same team as the secret's project
-CREATE POLICY secret_acl_insert ON api.secret_acl FOR INSERT TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      JOIN api.projects p ON p.id = s.project_id
-      WHERE s.id = secret_id
-        AND api.can_admin_project(s.project_id)
-        AND (
-          group_id IS NULL
-          OR EXISTS (
-            SELECT 1 FROM api.groups g
-            WHERE g.id = group_id AND g.team_id = p.team_id
-          )
-        )
-    )
-  );
-CREATE POLICY secret_acl_update ON api.secret_acl FOR UPDATE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      JOIN api.projects p ON p.id = s.project_id
-      WHERE s.id = secret_id
-        AND api.can_admin_project(s.project_id)
-        AND (
-          group_id IS NULL
-          OR EXISTS (
-            SELECT 1 FROM api.groups g
-            WHERE g.id = group_id AND g.team_id = p.team_id
-          )
-        )
-    )
-  );
-CREATE POLICY secret_acl_delete ON api.secret_acl FOR DELETE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = secret_id AND api.can_admin_project(s.project_id)
-    )
-  );
-
-CREATE POLICY secret_access_requests_select ON api.secret_access_requests
-  FOR SELECT TO authenticated
-  USING (
-    api.can_admin_project(project_id)
-    OR user_id = api.current_user_id()
-  );
-CREATE POLICY secret_access_requests_insert ON api.secret_access_requests
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    user_id = api.current_user_id()
-    AND api.can_read_project(project_id)
-  );
-CREATE POLICY secret_access_requests_update ON api.secret_access_requests
-  FOR UPDATE TO authenticated
-  USING (api.can_admin_project(project_id));
-
--- read-only may list tokens (name/prefix/expiry); only writers create/revoke
-CREATE POLICY mt_select ON api.machine_tokens FOR SELECT TO authenticated
-  USING (api.can_read_project(project_id));
-CREATE POLICY mt_insert ON api.machine_tokens FOR INSERT TO authenticated
-  WITH CHECK (api.can_write_project(project_id));
-CREATE POLICY mt_delete ON api.machine_tokens FOR DELETE TO authenticated
-  USING (api.can_write_project(project_id));
-
-CREATE POLICY mts_select ON api.machine_token_scope FOR SELECT TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.machine_tokens t
-      WHERE t.id = token_id AND api.can_read_project(t.project_id)
-    )
-  );
-CREATE POLICY mts_insert ON api.machine_token_scope FOR INSERT TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM api.machine_tokens t
-      WHERE t.id = token_id AND api.can_write_project(t.project_id)
-    )
-  );
-CREATE POLICY mts_delete ON api.machine_token_scope FOR DELETE TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM api.machine_tokens t
-      WHERE t.id = token_id AND api.can_write_project(t.project_id)
-    )
-  );
-
--- Grants
+-- Grants (table-level; function grants in 02-rbac.sql)
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA api TO authenticated;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO authenticated;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA api TO authenticated, anon;
@@ -1034,12 +456,9 @@ REVOKE DELETE ON api.secret_access_requests FROM authenticated;
 
 -- L5: table owners still subject to RLS (PostgREST uses SET ROLE authenticated)
 ALTER TABLE api.teams FORCE ROW LEVEL SECURITY;
-ALTER TABLE api.team_members FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.projects FORCE ROW LEVEL SECURITY;
-ALTER TABLE api.project_members FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.secrets FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_versions FORCE ROW LEVEL SECURITY;
-ALTER TABLE api.secret_acl FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_meta FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_access_requests FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens FORCE ROW LEVEL SECURITY;
@@ -1049,6 +468,12 @@ ALTER TABLE api.group_members FORCE ROW LEVEL SECURITY;
 
 -- Auth helpers (SECURITY DEFINER; Flask/anon only)
 -- Never auto-promote first registrant; GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL does that in app.
+--
+-- Input:  p_email    (text: email address, case-insensitive),
+--         p_password (text: plaintext password, hashed with bcrypt),
+--         p_name     (text: display name; defaults to '' if NULL)
+-- Output: uuid — new user id
+-- Example: SELECT private.register_user('alice@example.com', 's3cret', 'Alice');
 CREATE OR REPLACE FUNCTION private.register_user(p_email text, p_password text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 DECLARE uid uuid;
@@ -1060,6 +485,13 @@ BEGIN
 END;
 $$;
 
+-- Verify a local-account password and return the user row on success.
+-- Only matches users with a non-null password_hash and disabled_at IS NULL.
+--
+-- Input:  p_email    (text: email address, case-insensitive),
+--         p_password (text: plaintext password to check)
+-- Output: TABLE(id uuid, email text, name text, is_global_admin boolean) — empty if invalid
+-- Example: SELECT * FROM private.verify_user('alice@example.com', 's3cret');
 CREATE OR REPLACE FUNCTION private.verify_user(p_email text, p_password text)
 RETURNS TABLE (id uuid, email text, name text, is_global_admin boolean)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
@@ -1073,7 +505,14 @@ BEGIN
 END;
 $$;
 
--- Change password (local accounts only; requires current password)
+-- Change password (local accounts only; requires current password).
+-- Password must be at least 8 characters. Returns false if old password is wrong.
+--
+-- Input:  p_user (uuid: user id),
+--         p_old  (text: current plaintext password),
+--         p_new  (text: new plaintext password, min 8 chars)
+-- Output: boolean — true if password was changed, false if old password didn't match
+-- Example: SELECT private.change_password('<user-uuid>', 'oldpass', 'newpass123');
 CREATE OR REPLACE FUNCTION private.change_password(
   p_user uuid, p_old text, p_new text
 ) RETURNS boolean
@@ -1092,7 +531,14 @@ BEGIN
 END;
 $$;
 
--- Set password after verified reset (local accounts only)
+-- Set password after verified reset (local accounts only).
+-- Does not require the old password; caller must have verified the reset token.
+-- Password must be at least 8 characters.
+--
+-- Input:  p_user (uuid: user id),
+--         p_new  (text: new plaintext password, min 8 chars)
+-- Output: boolean — true if password was set, false if user not found / not local
+-- Example: SELECT private.set_local_password('<user-uuid>', 'newpass123');
 CREATE OR REPLACE FUNCTION private.set_local_password(p_user uuid, p_new text)
 RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
@@ -1137,7 +583,13 @@ CREATE INDEX password_reset_tokens_user_idx
   ON private.password_reset_tokens (user_id)
   WHERE used_at IS NULL;
 
--- Provision / refresh LDAP user (no password stored; never auto-promote admin)
+-- Provision / refresh LDAP user (no password stored; never auto-promote admin).
+-- Creates the user if not found, otherwise updates name and sets auth_source to 'ldap'.
+--
+-- Input:  p_email (text: email address, case-insensitive),
+--         p_name  (text: display name from LDAP; empty string preserves existing)
+-- Output: uuid — user id (existing or newly created)
+-- Example: SELECT private.upsert_ldap_user('bob@example.com', 'Bob Smith');
 CREATE OR REPLACE FUNCTION private.upsert_ldap_user(p_email text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 DECLARE uid uuid;
@@ -1157,7 +609,14 @@ BEGIN
 END;
 $$;
 
--- Provision / refresh OIDC SSO user (no password stored)
+-- Provision / refresh OIDC SSO user (no password stored).
+-- Creates the user if not found. If user exists with a local password, keeps
+-- auth_source 'local' so they can still use password login; otherwise sets 'oidc'.
+--
+-- Input:  p_email (text: email address, case-insensitive),
+--         p_name  (text: display name from OIDC; empty string preserves existing)
+-- Output: uuid — user id (existing or newly created)
+-- Example: SELECT private.upsert_oidc_user('carol@example.com', 'Carol Jones');
 CREATE OR REPLACE FUNCTION private.upsert_oidc_user(p_email text, p_name text)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 DECLARE uid uuid;
@@ -1194,19 +653,12 @@ CREATE TABLE api.team_oidc_maps (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   oidc_group text NOT NULL,
-  role text NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+  role text NOT NULL CHECK (role IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, oidc_group)
 );
 ALTER TABLE api.team_oidc_maps ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tom_select ON api.team_oidc_maps FOR SELECT TO authenticated
-  USING (api.is_team_member(team_id));
-CREATE POLICY tom_insert ON api.team_oidc_maps FOR INSERT TO authenticated
-  WITH CHECK (api.team_role(team_id) IN ('owner', 'admin'));
-CREATE POLICY tom_update ON api.team_oidc_maps FOR UPDATE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
-CREATE POLICY tom_delete ON api.team_oidc_maps FOR DELETE TO authenticated
-  USING (api.team_role(team_id) IN ('owner', 'admin'));
+-- Policies for team_oidc_maps defined in 02-rbac.sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_oidc_maps TO authenticated;
 GRANT ALL ON api.team_oidc_maps TO authenticator;
 
@@ -1224,15 +676,7 @@ CREATE TABLE private.personal_access_tokens (
 CREATE INDEX personal_access_tokens_user_idx
   ON private.personal_access_tokens (user_id, created_at DESC);
 
-CREATE OR REPLACE FUNCTION private.create_team(p_user uuid, p_name text)
-RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private AS $$
-DECLARE tid uuid;
-BEGIN
-  INSERT INTO api.teams (name, created_by) VALUES (p_name, p_user) RETURNING id INTO tid;
-  INSERT INTO api.team_members (team_id, user_id, role) VALUES (tid, p_user, 'owner');
-  RETURN tid;
-END;
-$$;
+-- private.create_team defined in 02-rbac.sql (inserts into rbac.bindings)
 
 -- User directory: not granted to authenticated (prevents full-user enumeration via PostgREST)
 CREATE OR REPLACE VIEW api.user_directory AS
@@ -1240,7 +684,11 @@ CREATE OR REPLACE VIEW api.user_directory AS
 -- Global admin / app admin path only
 GRANT SELECT ON api.user_directory TO authenticator;
 
--- Lookup by email for add-member (does not list all users)
+-- Lookup user by email for add-member (does not list all users).
+--
+-- Input:  p_email (text: email address, case-insensitive)
+-- Output: uuid — user id or NULL
+-- Example: SELECT private.lookup_user('alice@example.com');
 CREATE OR REPLACE FUNCTION private.lookup_user(p_email text)
 RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = private
@@ -1248,62 +696,59 @@ SET row_security = off AS $$
   SELECT id FROM private.users WHERE email = lower(p_email) LIMIT 1;
 $$;
 
--- Team member listing with emails (caller must be a team member / global admin)
-CREATE OR REPLACE FUNCTION private.team_member_rows(p_team uuid)
-RETURNS TABLE (role text, source text, user_id uuid, email text, name text)
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT tm.role, tm.source, u.id, u.email, u.name
-  FROM api.team_members tm
-  JOIN private.users u ON u.id = tm.user_id
-  WHERE tm.team_id = p_team
-    AND api.is_team_member(p_team)
-  ORDER BY tm.role, u.email;
-$$;
+-- private.team_member_rows and private.project_member_rows defined in 02-rbac.sql
+-- (query rbac.bindings instead of legacy team_members/project_members)
 
--- Project-level members with emails
-CREATE OR REPLACE FUNCTION private.project_member_rows(p_project uuid)
-RETURNS TABLE (role text, user_id uuid, email text, name text)
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT pm.role, u.id, u.email, u.name
-  FROM api.project_members pm
-  JOIN private.users u ON u.id = pm.user_id
-  WHERE pm.project_id = p_project
-    AND api.can_read_project(p_project)
-  ORDER BY pm.role, u.email;
-$$;
+-- ── Functions that call RBAC auth helpers (defined in 02-rbac.sql) ──
+-- These functions are LANGUAGE plpgsql (not LANGUAGE sql) because PostgreSQL
+-- validates LANGUAGE sql bodies at creation time. Since the RBAC auth
+-- functions (is_team_member, can_access_secret, can_admin_project) are defined
+-- in 02-rbac.sql (applied after this file), LANGUAGE sql would fail.
+-- LANGUAGE plpgsql defers body validation to execution time.
 
--- Team groups listing
+-- Team groups listing (group team roles live in rbac.bindings, not api.groups)
+-- Calls api.is_team_member() — defined in 02-rbac.sql.
+--
+-- Input:  p_team (uuid: team id)
+-- Output: TABLE(id, name, source, external_key, member_count, created_at)
+-- Example: SELECT * FROM private.team_group_rows('<team-uuid>');
 CREATE OR REPLACE FUNCTION private.team_group_rows(p_team uuid)
 RETURNS TABLE (
   id uuid,
   name text,
   source text,
   external_key text,
-  team_role text,
   member_count bigint,
   created_at timestamptz
 )
-LANGUAGE sql STABLE SECURITY DEFINER
+LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
-  SELECT g.id, g.name, g.source, g.external_key, g.team_role,
+BEGIN
+  RETURN QUERY
+  SELECT g.id, g.name, g.source, g.external_key,
          (SELECT count(*) FROM api.group_members gm WHERE gm.group_id = g.id),
          g.created_at
   FROM api.groups g
   WHERE g.team_id = p_team
     AND api.is_team_member(p_team)
   ORDER BY g.name;
+END;
 $$;
 
+-- List group members for a team group. Calls api.is_team_member() — defined
+-- in 02-rbac.sql.
+--
+-- Input:  p_group (uuid: group id)
+-- Output: TABLE(user_id, email, name, source)
+-- Example: SELECT * FROM private.group_member_rows('<group-uuid>');
 CREATE OR REPLACE FUNCTION private.group_member_rows(p_group uuid)
 RETURNS TABLE (user_id uuid, email text, name text, source text)
-LANGUAGE sql STABLE SECURITY DEFINER
+LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
+BEGIN
+  RETURN QUERY
   SELECT u.id, u.email, u.name, gm.source
   FROM api.group_members gm
   JOIN private.users u ON u.id = gm.user_id
@@ -1311,78 +756,39 @@ SET row_security = off AS $$
   WHERE gm.group_id = p_group
     AND api.is_team_member(g.team_id)
   ORDER BY u.email;
+END;
 $$;
 
-CREATE OR REPLACE FUNCTION private.project_group_role_rows(p_project uuid)
-RETURNS TABLE (
-  group_id uuid,
-  group_name text,
-  role text,
-  source text
-)
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT g.id, g.name, pgr.role, g.source
-  FROM api.project_group_roles pgr
-  JOIN api.groups g ON g.id = pgr.group_id
-  WHERE pgr.project_id = p_project
-    AND api.can_read_project(p_project)
-  ORDER BY g.name;
-$$;
+-- private.project_group_role_rows defined in 02-rbac.sql (queries rbac.bindings)
 
--- Per-secret ACL rows (user and/or group grants)
-CREATE OR REPLACE FUNCTION private.secret_acl_rows(p_secret uuid)
-RETURNS TABLE (
-  id uuid,
-  user_id uuid,
-  group_id uuid,
-  email text,
-  name text,
-  group_name text,
-  permission text,
-  created_at timestamptz
-)
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT a.id, a.user_id, a.group_id,
-         COALESCE(u.email, ''),
-         COALESCE(u.name, ''),
-         COALESCE(g.name, ''),
-         a.permission, a.created_at
-  FROM api.secret_acl a
-  JOIN api.secrets s ON s.id = a.secret_id
-  LEFT JOIN private.users u ON u.id = a.user_id
-  LEFT JOIN api.groups g ON g.id = a.group_id
-  WHERE a.secret_id = p_secret
-    AND (
-      api.can_admin_project(s.project_id)
-      OR a.user_id = api.current_user_id()
-      OR EXISTS (
-        SELECT 1 FROM api.group_members gm
-        WHERE gm.group_id = a.group_id
-          AND gm.user_id = api.current_user_id()
-      )
-    )
-  ORDER BY COALESCE(u.email, g.name);
-$$;
-
--- Custom metadata rows for a secret
+-- Custom metadata rows for a secret. Calls api.can_access_secret() —
+-- defined in 02-rbac.sql.
+--
+-- Input:  p_secret (uuid: secret id)
+-- Output: TABLE(key, value, updated_at)
+-- Example: SELECT * FROM private.secret_meta_rows('<secret-uuid>');
 CREATE OR REPLACE FUNCTION private.secret_meta_rows(p_secret uuid)
 RETURNS TABLE (key text, value text, updated_at timestamptz)
-LANGUAGE sql STABLE SECURITY DEFINER
+LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
+BEGIN
+  RETURN QUERY
   SELECT m.key, m.value, m.updated_at
   FROM api.secret_meta m
   JOIN api.secrets s ON s.id = m.secret_id
   WHERE m.secret_id = p_secret
     AND api.can_access_secret(p_secret, 'read')
   ORDER BY m.key;
+END;
 $$;
 
--- Record last reveal access (does not change updated_at of secret value)
+-- Record last reveal access (does not change updated_at of secret value).
+-- Calls api.can_access_secret() — defined in 02-rbac.sql.
+--
+-- Input:  p_secret (uuid: secret id)
+-- Output: void
+-- Example: SELECT private.touch_secret_access('<secret-uuid>');
 CREATE OR REPLACE FUNCTION private.touch_secret_access(p_secret uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = api, private
@@ -1401,7 +807,13 @@ BEGIN
 END;
 $$;
 
--- Org / membership audit insert (JWT actor only)
+-- Org / membership audit insert (JWT actor only).
+-- Actor is always derived from JWT claims; p_user_id is ignored.
+--
+-- Input:  p_team (uuid, nullable), p_project (uuid, nullable),
+--         p_action (text), p_detail (text, default ''), p_actor_email (text, nullable)
+-- Output: void
+-- Example: SELECT private.audit_org('<team-uuid>', NULL, 'member_added', 'alice@example.com');
 CREATE OR REPLACE FUNCTION private.audit_org(
   p_team uuid,
   p_project uuid,
@@ -1431,7 +843,11 @@ BEGIN
 END;
 $$;
 
--- Resolve invite token → team (SECURITY DEFINER; hash is the gate)
+-- Resolve invite token → team (SECURITY DEFINER; hash is the gate).
+--
+-- Input:  p_hash (text: SHA-256 hash of the invite token)
+-- Output: TABLE(invite_id, team_id, team_name, role, expires_at) or empty
+-- Example: SELECT * FROM private.lookup_invite('<sha256-hash>');
 CREATE OR REPLACE FUNCTION private.lookup_invite(p_hash text)
 RETURNS TABLE (
   invite_id uuid, team_id uuid, team_name text, role text, expires_at timestamptz
@@ -1448,10 +864,14 @@ SET row_security = off AS $$
   LIMIT 1;
 $$;
 
--- Audit insert only via this function (not direct table INSERT for authenticated).
--- p_user_id is ignored: actor is always taken from JWT claims (defense-in-depth
--- against forged attribution if this function is ever exposed). Machine/system
--- callers with no JWT leave user_id NULL and may set p_actor_email (e.g. 'machine').
+-- Audit insert for secret actions (JWT actor only).
+-- p_user_id is ignored: actor is always taken from JWT claims (defense-in-depth).
+-- Machine/system callers with no JWT leave user_id NULL and set p_actor_email.
+--
+-- Input:  p_project (uuid), p_secret_id (uuid, nullable), p_secret_key (text),
+--         p_action (text), p_user_id (uuid, ignored), p_actor_email (text, nullable)
+-- Output: void
+-- Example: SELECT private.audit_secret('<project-uuid>', '<secret-uuid>', 'API_KEY', 'revealed');
 CREATE OR REPLACE FUNCTION private.audit_secret(
   p_project uuid,
   p_secret_id uuid,
@@ -1487,7 +907,18 @@ BEGIN
 END;
 $$;
 
--- Machine/ESO helpers (bypass RLS; token hash is the gate)
+-- ── Machine/ESO helpers (bypass RLS; token hash is the gate) ──
+-- These SECURITY DEFINER functions validate machine tokens and read/write
+-- secrets on behalf of automation. Gated on token hash + expiry, not RLS.
+-- Granted to authenticator only (not authenticated) so users cannot call
+-- them directly via PostgREST.
+
+-- Validate a machine token (hash + expiry) for a project.
+--
+-- Input:  p_project (uuid: project id),
+--         p_hash    (text: SHA-256 hash of the token)
+-- Output: boolean — true if token is valid and not expired
+-- Example: SELECT private.auth_machine('<project-uuid>', '<sha256-hash>');
 CREATE OR REPLACE FUNCTION private.auth_machine(p_project uuid, p_hash text)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
@@ -1499,6 +930,12 @@ SET row_security = off AS $$
   );
 $$;
 
+-- Return the machine token role: 'service-read', 'service-reveal', or 'service-write'.
+--
+-- Input:  p_project (uuid: project id),
+--         p_hash    (text: SHA-256 hash of the token)
+-- Output: text — role name or NULL if token not found
+-- Example: SELECT private.machine_role('<project-uuid>', '<sha256-hash>');
 CREATE OR REPLACE FUNCTION private.machine_role(p_project uuid, p_hash text)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
@@ -1509,7 +946,12 @@ SET row_security = off AS $$
   LIMIT 1;
 $$;
 
--- Label for audit actor_email (e.g. "eso-pull:ss_abc12xyz")
+-- Label for audit actor_email (e.g. "eso-pull:ss_abc12xyz").
+--
+-- Input:  p_project (uuid: project id),
+--         p_hash    (text: SHA-256 hash of the token)
+-- Output: text — "<token-name>:<token-prefix>" or "token:<prefix>"
+-- Example: SELECT private.machine_token_label('<project-uuid>', '<sha256-hash>');
 CREATE OR REPLACE FUNCTION private.machine_token_label(p_project uuid, p_hash text)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
@@ -1521,7 +963,12 @@ SET row_security = off AS $$
   LIMIT 1;
 $$;
 
--- Shell-style gl-- Shell-style glob (* ?) → SQL LIKE pattern (escape % and _)
+-- Shell-style glob (* ?) → SQL LIKE pattern (escape % and _).
+-- Backslash, % and _ are escaped; * becomes % and ? becomes _.
+--
+-- Input:  p_glob (text: shell-style glob pattern, e.g. 'API_*')
+-- Output: text — SQL LIKE pattern, e.g. 'API\_%'
+-- Example: SELECT private.glob_to_like('API_*');  → 'API\_%'
 CREATE OR REPLACE FUNCTION private.glob_to_like(p_glob text)
 RETURNS text LANGUAGE plpgsql IMMUTABLE STRICT
 SET search_path = pg_catalog AS $$
@@ -1536,6 +983,15 @@ BEGIN
 END;
 $$;
 
+-- Check if a machine token is allowed to access a specific secret key.
+-- If no scope rows exist for the token, all keys are allowed.
+-- If scope rows exist, the key must match an exact secret_key or a key_pattern.
+--
+-- Input:  p_project (uuid: project id),
+--         p_hash    (text: SHA-256 hash of the token),
+--         p_key     (text: secret key to check)
+-- Output: boolean — true if the key is allowed
+-- Example: SELECT private.machine_key_allowed('<project-uuid>', '<hash>', 'API_KEY');
 CREATE OR REPLACE FUNCTION private.machine_key_allowed(
   p_project uuid, p_hash text, p_key text
 ) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
@@ -1573,6 +1029,12 @@ $$;
 
 GRANT EXECUTE ON FUNCTION private.glob_to_like TO authenticator;
 
+-- Get a single secret's encrypted value (ciphertext) for a machine token.
+-- Respects key allow-list. Does not decrypt.
+--
+-- Input:  p_project (uuid), p_hash (text), p_key (text: secret key)
+-- Output: text — value_enc (Fernet ciphertext) or NULL if not allowed/found
+-- Example: SELECT private.machine_get_enc('<project-uuid>', '<hash>', 'API_KEY');
 CREATE OR REPLACE FUNCTION private.machine_get_enc(p_project uuid, p_hash text, p_key text)
 RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
@@ -1588,6 +1050,12 @@ BEGIN
 END;
 $$;
 
+-- Get a single secret row (metadata + ciphertext) for a machine token.
+-- Respects key allow-list.
+--
+-- Input:  p_project (uuid), p_hash (text), p_key (text: secret key)
+-- Output: TABLE(id, key, value_enc, note, kind, expires_at, created_at, updated_at)
+-- Example: SELECT * FROM private.machine_get_row('<project-uuid>', '<hash>', 'API_KEY');
 CREATE OR REPLACE FUNCTION private.machine_get_row(p_project uuid, p_hash text, p_key text)
 RETURNS TABLE (
   id uuid,
@@ -1613,6 +1081,12 @@ BEGIN
 END;
 $$;
 
+-- List all secret key+ciphertext pairs for a machine token.
+-- Respects key allow-list.
+--
+-- Input:  p_project (uuid), p_hash (text)
+-- Output: TABLE(key, value_enc)
+-- Example: SELECT * FROM private.machine_list_enc('<project-uuid>', '<hash>');
 CREATE OR REPLACE FUNCTION private.machine_list_enc(p_project uuid, p_hash text)
 RETURNS TABLE (key text, value_enc text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -1629,6 +1103,12 @@ BEGIN
 END;
 $$;
 
+-- List secret metadata (no ciphertext) for a machine token.
+-- Optional q filter matches key, note, or custom metadata.
+--
+-- Input:  p_project (uuid), p_hash (text), p_q (text: optional search; default NULL)
+-- Output: TABLE(id, key, note, kind, expires_at, created_at, updated_at)
+-- Example: SELECT * FROM private.machine_list_meta('<project-uuid>', '<hash>', 'api');
 CREATE OR REPLACE FUNCTION private.machine_list_meta(p_project uuid, p_hash text, p_q text DEFAULT NULL)
 RETURNS TABLE (
   id uuid,
@@ -1667,6 +1147,12 @@ BEGIN
 END;
 $$;
 
+-- Soft-delete a secret via machine token (service-write role only).
+-- Respects key allow-list.
+--
+-- Input:  p_project (uuid), p_hash (text), p_key (text: secret key)
+-- Output: uuid — deleted secret id, or NULL if not allowed/not found
+-- Example: SELECT private.machine_delete('<project-uuid>', '<hash>', 'API_KEY');
 CREATE OR REPLACE FUNCTION private.machine_delete(
   p_project uuid, p_hash text, p_key text
 )
@@ -1675,7 +1161,7 @@ SET search_path = pg_catalog, api
 SET row_security = off AS $$
 DECLARE sid uuid;
 BEGIN
-  IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+  IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
     RETURN NULL;
   END IF;
   IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
@@ -1694,6 +1180,13 @@ BEGIN
 END;
 $$;
 
+-- Create or update a secret via machine token (service-write role only).
+-- Respects key allow-list. Archives previous ciphertext on value change.
+--
+-- Input:  p_project (uuid), p_hash (text), p_key (text),
+--         p_value_enc (text: Fernet-encrypted value), p_note (text: optional)
+-- Output: uuid — secret id
+-- Example: SELECT private.machine_upsert_enc('<project-uuid>', '<hash>', 'API_KEY', '<enc>', 'rotated');
 DROP FUNCTION IF EXISTS private.machine_upsert_enc(uuid, text, text, text, text);
 CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
   p_project uuid,
@@ -1712,7 +1205,7 @@ DECLARE
   sid uuid;
   k text := COALESCE(NULLIF(btrim(p_kind), ''), 'plain');
 BEGIN
-  IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'write' THEN
+  IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
     RETURN NULL;
   END IF;
   IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
@@ -1753,17 +1246,15 @@ GRANT EXECUTE ON FUNCTION private.change_password TO authenticator;
 GRANT EXECUTE ON FUNCTION private.set_local_password TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_ldap_user TO authenticator;
 GRANT EXECUTE ON FUNCTION private.upsert_oidc_user TO authenticator;
-GRANT EXECUTE ON FUNCTION private.create_team TO authenticator;
+-- private.create_team granted in 02-rbac.sql
 -- private.lookup_user: Flask (as_user → authenticated) + authenticator; not in
 -- PostgREST db-schemas (api only) so not callable as RPC over PostgREST.
 GRANT EXECUTE ON FUNCTION private.lookup_user TO authenticator, authenticated;
 REVOKE EXECUTE ON FUNCTION private.lookup_user FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION private.team_member_rows TO authenticator, authenticated;
-GRANT EXECUTE ON FUNCTION private.project_member_rows TO authenticator, authenticated;
+-- private.team_member_rows and private.project_member_rows granted in 02-rbac.sql
 GRANT EXECUTE ON FUNCTION private.team_group_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.group_member_rows TO authenticator, authenticated;
-GRANT EXECUTE ON FUNCTION private.project_group_role_rows TO authenticator, authenticated;
-GRANT EXECUTE ON FUNCTION private.secret_acl_rows TO authenticator, authenticated;
+-- private.project_group_role_rows granted in 02-rbac.sql
 GRANT EXECUTE ON FUNCTION private.secret_meta_rows TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.touch_secret_access TO authenticator, authenticated;
 GRANT EXECUTE ON FUNCTION private.audit_org TO authenticator, authenticated;
@@ -1781,18 +1272,15 @@ GRANT EXECUTE ON FUNCTION private.machine_list_meta TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_delete TO authenticator;
 GRANT EXECUTE ON FUNCTION private.machine_upsert_enc TO authenticator;
 GRANT EXECUTE ON FUNCTION api.is_global_admin TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api._role_rank TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api._perm_rank TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api.is_team_member TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api.team_role TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api.project_role TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api.can_read_project TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api.can_write_project TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api.can_admin_project TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api.can_access_secret_row TO authenticated, anon;
-GRANT EXECUTE ON FUNCTION api.can_access_secret TO authenticated, anon;
+-- Authorization function grants in 02-rbac.sql
 
--- Effective policy: secret.requires_approval overrides project default
+-- Effective policy: secret.requires_approval overrides project default.
+-- NULL on secret → inherit project.require_reveal_approval.
+-- true/false on secret → override.
+--
+-- Input:  sid (uuid: secret id)
+-- Output: boolean — true if reveal requires admin approval
+-- Example: SELECT api.secret_requires_approval('<secret-uuid>');
 CREATE OR REPLACE FUNCTION api.secret_requires_approval(sid uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, private
@@ -1808,34 +1296,15 @@ SET row_security = off AS $$
 $$;
 GRANT EXECUTE ON FUNCTION api.secret_requires_approval TO authenticated, anon;
 
--- Non-admins need ACL reveal + optional approved grant when approval is required
-CREATE OR REPLACE FUNCTION api.can_reveal_secret(sid uuid) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT CASE
-    WHEN sid IS NULL THEN false
-    -- Per-secret ACL (and project read) first
-    WHEN NOT api.can_access_secret(sid, 'reveal') THEN false
-    WHEN api.is_global_admin() THEN true
-    WHEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND api.can_admin_project(s.project_id)
-    ) THEN true
-    WHEN NOT COALESCE(api.secret_requires_approval(sid), false) THEN true
-    WHEN EXISTS (
-      SELECT 1 FROM api.secret_access_requests r
-      WHERE r.secret_id = sid
-        AND r.user_id = api.current_user_id()
-        AND r.status = 'approved'
-        AND r.approved_until IS NOT NULL
-        AND r.approved_until > now()
-    ) THEN true
-    ELSE false
-  END;
-$$;
-GRANT EXECUTE ON FUNCTION api.can_reveal_secret TO authenticated, anon;
+-- api.can_reveal_secret defined in 02-rbac.sql (RBAC reveal + approval layer)
 
+-- List reveal access requests for a project. Calls api.can_admin_project()
+-- and api.current_user_id() — can_admin_project is defined in 02-rbac.sql.
+--
+-- Input:  p_project (uuid: project id)
+-- Output: TABLE(id, secret_id, secret_key, user_id, email, name, status,
+--               reason, created_at, resolved_at, approved_until, resolver_email)
+-- Example: SELECT * FROM private.secret_access_request_rows('<project-uuid>');
 CREATE OR REPLACE FUNCTION private.secret_access_request_rows(p_project uuid)
 RETURNS TABLE (
   id uuid,
@@ -1851,9 +1320,11 @@ RETURNS TABLE (
   approved_until timestamptz,
   resolver_email text
 )
-LANGUAGE sql STABLE SECURITY DEFINER
+LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
+BEGIN
+  RETURN QUERY
   SELECT r.id, r.secret_id, COALESCE(s.key, ''), r.user_id,
          u.email, u.name, r.status, r.reason, r.created_at,
          r.resolved_at, r.approved_until,
@@ -1871,9 +1342,17 @@ SET row_security = off AS $$
     CASE r.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
     r.created_at DESC
   LIMIT 200;
+END;
 $$;
 GRANT EXECUTE ON FUNCTION private.secret_access_request_rows TO authenticator, authenticated;
 
+-- List pending access requests for all projects the current user can admin.
+-- Calls api.can_admin_project() — defined in 02-rbac.sql.
+--
+-- Input:  none (uses current user from JWT)
+-- Output: TABLE(id, project_id, project_name, secret_id, secret_key,
+--               user_id, email, name, reason, created_at)
+-- Example: SELECT * FROM private.pending_access_requests_for_admin();
 CREATE OR REPLACE FUNCTION private.pending_access_requests_for_admin()
 RETURNS TABLE (
   id uuid,
@@ -1887,9 +1366,11 @@ RETURNS TABLE (
   reason text,
   created_at timestamptz
 )
-LANGUAGE sql STABLE SECURITY DEFINER
+LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = api, private
 SET row_security = off AS $$
+BEGIN
+  RETURN QUERY
   SELECT r.id, r.project_id, p.name, r.secret_id, COALESCE(s.key, ''),
          r.user_id, u.email, u.name, r.reason, r.created_at
   FROM api.secret_access_requests r
@@ -1900,6 +1381,7 @@ SET row_security = off AS $$
     AND api.can_admin_project(r.project_id)
   ORDER BY r.created_at ASC
   LIMIT 100;
+END;
 $$;
 GRANT EXECUTE ON FUNCTION private.pending_access_requests_for_admin TO authenticator, authenticated;
 
