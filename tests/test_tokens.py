@@ -86,13 +86,13 @@ class TestTokens:
     def test_mt_select_policy_allows_readers(self):
         """Reveal-role may list tokens; only writers insert/delete."""
         from pathlib import Path
-        init_sql = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        sel_start = init_sql.index('CREATE POLICY mt_select ON api.machine_tokens')
-        sel_end = init_sql.index(';', sel_start)
-        assert 'can_read_project' in init_sql[sel_start:sel_end]
-        ins_start = init_sql.index('CREATE POLICY mt_insert ON api.machine_tokens')
-        ins_end = init_sql.index(';', ins_start)
-        assert 'can_write_project' in init_sql[ins_start:ins_end]
+        rbac_sql = (REPO_ROOT / 'app' / 'rbac.sql').read_text()
+        sel_start = rbac_sql.index('CREATE POLICY mt_select ON api.machine_tokens')
+        sel_end = rbac_sql.index(';', sel_start)
+        assert 'can_read_project' in rbac_sql[sel_start:sel_end]
+        ins_start = rbac_sql.index('CREATE POLICY mt_insert ON api.machine_tokens')
+        ins_end = rbac_sql.index(';', ins_start)
+        assert 'can_write_project' in rbac_sql[ins_start:ins_end]
 
     def test_pm_policies_use_can_admin_project(self):
         """RBAC bindings write policy requires can_manage_rbac, not mere write."""

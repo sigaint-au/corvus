@@ -306,7 +306,7 @@ def _require_machine_write(cur, project_id, thash) -> tuple[str | None, tuple | 
     role = row["role"] if row else None
     if role is None:
         return None, (jsonify({"error": "unauthorized"}), 401)
-    if role != "service-write":
+    if role != "write":
         return None, (jsonify({"error": "token does not have write access"}), 403)
     return role, None
 
