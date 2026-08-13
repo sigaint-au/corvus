@@ -66,9 +66,9 @@ psql -h <db-host> -U <admin-user> -d secretstore -f secretstore.sql
 After restoring, set the same `MASTER_KEY`, `JWT_SECRET`, and `SECRET_KEY` in
 the app environment so existing ciphertext and tokens remain valid.
 
-> `db/init.sql` is only for a **first** database init. Existing databases are
-> upgraded by `ensure_schema()` at app startup — do **not** re-run `init.sql`
-> over a restored database.
+> `0001_init.sql` / `0002_rbac.sql` are only for a **first** database init.
+> Existing databases are upgraded by `migrations.apply_pending()` at app
+> startup — do **not** re-run the baseline migrations over a restored database.
 
 ---
 

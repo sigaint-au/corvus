@@ -26,10 +26,8 @@ tox -e lint
 ## Repo layout
 
 ```
-app/            # Flask app (flat modules + routes/)
-db/init.sql     # Tables + ENABLE/FORCE RLS (first DB init, applied as 01-init.sql)
-db/rbac.sql     # RBAC schema + auth functions + RLS policies (applied as 02-rbac.sql)
-app/rbac.sql    # Same as db/rbac.sql (without legacy migration) — applied by schema.py
+app/            # Flask app (flat modules + routes/ + lib/)
+db/migrations/  # Versioned SQL migrations (0001_init.sql, 0002_rbac.sql, …)
 docs/           # Documentation (user/, admin/, dev/)
 tests/          # pytest suite
 scripts/        # dev seed (seed_mock.py)
@@ -43,12 +41,12 @@ Dockerfile      # App image
 
 1. **Write a failing test first** where possible. Tests live in `tests/` and
    mock the DB — no live Postgres needed.
-2. **Keep `db/init.sql`, `db/rbac.sql`, `app/rbac.sql`, and `app/schema.py` in
-   sync.** `init.sql` creates tables; `rbac.sql` creates RBAC functions + RLS
-   policies; `schema.py` (`ensure_schema()`) upgrades existing databases. Any
-   schema/RLS change must be applied in all relevant files, idempotently.
-   `db/rbac.sql` and `app/rbac.sql` should be identical except for the legacy
-   data migration block (only in `db/rbac.sql`).
+2. **Schema changes are a migration.** Create `db/migrations/NNNN_slug.sql`
+   (zero-padded next number) with idempotent SQL, then run the full suite and
+   lint. `0001_init.sql` and `0002_rbac.sql` are the baseline (run on fresh
+   volumes) — never edit them. Each migration's version + sha256 checksum is
+   recorded in `private.schema_migrations`; editing a released migration causes
+   a checksum-drift error on startup.
 3. **Run the full suite and lint** before submitting:
    ```bash
    pytest

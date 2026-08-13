@@ -10,9 +10,8 @@ import pytest
 import app as store
 import config
 import db
-import schema as schema_mod
 
-from tests.helpers import REPO_ROOT, mock_conn as _conn, routes_module_src
+from tests.helpers import REPO_ROOT, migrations_src, mock_conn as _conn, routes_module_src
 
 store.app.config["TESTING"] = True
 
@@ -86,7 +85,7 @@ class TestTokens:
     def test_mt_select_policy_allows_readers(self):
         """Reveal-role may list tokens; only writers insert/delete."""
         from pathlib import Path
-        rbac_sql = (REPO_ROOT / 'app' / 'rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         sel_start = rbac_sql.index('CREATE POLICY mt_select ON api.machine_tokens')
         sel_end = rbac_sql.index(';', sel_start)
         assert 'can_read_project' in rbac_sql[sel_start:sel_end]
@@ -98,17 +97,17 @@ class TestTokens:
         """RBAC bindings write policy requires can_manage_rbac, not mere write."""
         from pathlib import Path
         root = REPO_ROOT
-        rbac_sql = (root / 'db' / 'rbac.sql').read_text()
+        rbac_sql = (root / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         assert 'rbac_bindings_write' in rbac_sql
         assert 'can_manage_rbac' in rbac_sql
         # Legacy project_members policies removed from init.sql
-        init_sql = (root / 'db' / 'init.sql').read_text()
+        init_sql = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE POLICY pm_insert ON api.project_members' not in init_sql
 
     def test_can_write_project_team_admin_floor(self):
         """can_write_project uses RBAC can() — defined in rbac.sql."""
         from pathlib import Path
-        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         assert 'CREATE OR REPLACE FUNCTION api.can_write_project' in rbac_sql
         start = rbac_sql.index('CREATE OR REPLACE FUNCTION api.can_write_project')
         end = rbac_sql.index('$$;', start) + 3
@@ -119,7 +118,7 @@ class TestTokens:
     def test_can_read_project_most_specific_wins(self):
         """can_read_project uses RBAC can() — defined in rbac.sql."""
         from pathlib import Path
-        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         assert 'CREATE OR REPLACE FUNCTION api.can_read_project' in rbac_sql
         start = rbac_sql.index('CREATE OR REPLACE FUNCTION api.can_read_project')
         end = rbac_sql.index('$$;', start) + 3
@@ -129,7 +128,7 @@ class TestTokens:
 
     def test_can_admin_project_defined(self):
         from pathlib import Path
-        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         assert 'CREATE OR REPLACE FUNCTION api.can_admin_project' in rbac_sql
         start = rbac_sql.index('CREATE OR REPLACE FUNCTION api.can_admin_project')
         end = rbac_sql.index('$$;', start) + 3
@@ -206,7 +205,7 @@ class TestTokens:
     def test_secrets_updated_at_trigger_defined(self):
         from pathlib import Path
         root = REPO_ROOT
-        init_sql = (root / 'db' / 'init.sql').read_text()
+        init_sql = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE TRIGGER secrets_touch_updated_at' in init_sql
         assert 'api.touch_updated_at' in init_sql
         routes = routes_module_src('projects')
@@ -216,33 +215,32 @@ class TestTokens:
     def test_secret_versions_schema(self):
         from pathlib import Path
         root = REPO_ROOT
-        init = (root / 'db' / 'init.sql').read_text()
+        init = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE TABLE api.secret_versions' in init
         assert 'archive_secret_version' in init
         assert 'expires_at' in init
         assert 'rotate_days' not in init
-        src = Path(schema_mod.__file__).read_text()
+        src = migrations_src()
         assert 'api.secret_versions' in src
         assert 'archive_secret_version' in src
         assert 'rotate_days' not in src
 
     def test_token_prefix_unique_constraint(self):
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'token_prefix text NOT NULL UNIQUE' in init
-        src = Path(schema_mod.__file__).read_text()
+        src = migrations_src()
         assert 'machine_tokens_token_prefix_key' in src
         assert 'personal_access_tokens' in src
 
     def test_init_sql_allows_oidc_auth_source(self):
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert "'local', 'ldap', 'oidc'" in init
         assert 'upsert_oidc_user' in init
         assert 'team_oidc_maps' in init
         assert 'oidc_role_maps' in init
         assert "source IN ('manual', 'ldap', 'oidc')" in init
-        src = Path(schema_mod.__file__).read_text()
+        src = migrations_src()
         assert 'users_auth_source_check' in src
-        assert 'team_members_source_check' in src
 

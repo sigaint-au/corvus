@@ -38,7 +38,7 @@ Layout:
 |------|---------|
 | `app/` | Flask application (container image contents) |
 | `tests/` | Pytest suite (not shipped in the image) |
-| `db/init.sql` | Schema bootstrap |
+| `db/migrations/` | Versioned SQL migrations (baseline + additive) |
 | `docs/` | Deploy, API, RBAC, auth |
 
 ## Pull requests

@@ -24,6 +24,12 @@ def routes_module_src(name: str) -> str:
     return (pkg.with_suffix(".py")).read_text()
 
 
+def migrations_src() -> str:
+    """Return the concatenated versioned migration SQL (db/migrations/*.sql)."""
+    d = REPO_ROOT / "db" / "migrations"
+    return "\n".join(f.read_text() for f in sorted(d.glob("*.sql")))
+
+
 def mock_conn(fetchone=_UNSET, fetchall=_UNSET, side_effect=None):
     """Build a mock DB connection/cursor pair used across unit tests."""
     cur = MagicMock()

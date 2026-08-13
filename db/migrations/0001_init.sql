@@ -1390,3 +1390,15 @@ GRANT ALL ON ALL TABLES IN SCHEMA api TO authenticator;
 GRANT USAGE ON SCHEMA private TO authenticated;
 
 COMMENT ON SCHEMA api IS 'PostgREST + RLS secret store';
+
+-- ── Schema migration tracking (admin-only) ────────────────────────────────
+-- Records applied migration versions + checksums. Written by the app
+-- migration runner (app/migrations.py); private schema is not exposed to
+-- PostgREST, so only the admin role manages this table.
+CREATE TABLE IF NOT EXISTS private.schema_migrations (
+  version text PRIMARY KEY,
+  applied_at timestamptz NOT NULL DEFAULT now(),
+  checksum text NOT NULL
+);
+
+REVOKE ALL ON private.schema_migrations FROM authenticator, authenticated, anon;

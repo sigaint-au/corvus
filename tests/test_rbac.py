@@ -27,7 +27,7 @@ def test_builtin_role_names_match_docs():
 
 def test_rbac_sql_ships_can_and_tables():
     root = Path(__file__).resolve().parents[1]
-    sql = (root / "db" / "rbac.sql").read_text()
+    sql = (root / "db" / "migrations" / "0002_rbac.sql").read_text()
     assert "CREATE TABLE IF NOT EXISTS rbac.roles" in sql
     assert "CREATE TABLE IF NOT EXISTS rbac.bindings" in sql
     assert "CREATE OR REPLACE FUNCTION api.can(" in sql
@@ -54,13 +54,14 @@ def test_rbac_sql_ships_can_and_tables():
     assert "IN ('custom', 'restricted')" not in sql
 
 
-def test_schema_applies_rbac_sql():
+def test_schema_applies_migrations():
     from pathlib import Path
-    import schema as schema_mod
+    import migrations as migrations_mod
 
-    src = Path(schema_mod.__file__).read_text()
-    assert "_apply_rbac_sql" in src
-    assert "rbac.sql" in src
+    src = Path(migrations_mod.__file__).read_text()
+    assert "_split_sql_statements" in src
+    assert "private.schema_migrations" in src
+    assert "apply_pending" in src
 
 
 def test_rbac_routes_registered(app):
@@ -150,13 +151,16 @@ def test_parse_access_mode_accepts_rbac_modes():
 
 
 def test_schema_scrubs_legacy_access_modes():
-    """ensure_schema rewrites custom/writers/… then enforces inherit|restricted."""
-    import schema as schema_mod
+    """The access_mode data migration rewrites custom/writers/… then enforces
+    inherit|restricted, and the follow-up migration drops secret_acl."""
+    from pathlib import Path
 
-    src = Path(schema_mod.__file__).read_text()
-    assert "WHERE access_mode = 'custom'" in src
-    assert "WHERE access_mode NOT IN ('inherit', 'restricted')" in src
-    assert "WHERE default_access_mode = 'custom'" in src
-    assert "DROP COLUMN IF EXISTS acl_mode" in src
-    assert "DROP TABLE IF EXISTS api.secret_acl" in src
-    assert "CHECK (access_mode IN ('inherit', 'restricted'))" in src
+    root = Path(__file__).resolve().parents[1]
+    access = (root / 'db' / 'migrations' / '0004_access_mode.sql').read_text()
+    cleanup = (root / 'db' / 'migrations' / '0017_access_mode_cleanup.sql').read_text()
+    assert "WHERE access_mode = 'custom'" in access
+    assert "WHERE access_mode NOT IN ('inherit', 'restricted')" in access
+    assert "DROP COLUMN IF EXISTS acl_mode" in access
+    assert "CHECK (access_mode IN ('inherit', 'restricted'))" in access
+    assert "WHERE default_access_mode = 'custom'" in cleanup
+    assert "DROP TABLE IF EXISTS api.secret_acl" in cleanup

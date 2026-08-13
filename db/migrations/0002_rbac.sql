@@ -1,5 +1,6 @@
 -- Kubernetes-style RBAC (Subjects + Roles + RoleBindings)
--- Applied by ensure_schema() and on fresh volumes after init.sql.
+-- Baseline migration 0002: applied on fresh volumes after 0001_init.sql and by
+-- the migration runner (app/migrations.py) on existing volumes.
 -- Start-fresh: access is designed around rbac.bindings; legacy tables are not used.
 
 CREATE SCHEMA IF NOT EXISTS rbac;

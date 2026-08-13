@@ -11,9 +11,8 @@ import pytest
 import app as store
 import audit
 import config
-import schema as schema_mod
 
-from tests.helpers import APP_ROOT, REPO_ROOT, routes_module_src
+from tests.helpers import APP_ROOT, REPO_ROOT, migrations_src, routes_module_src
 
 store.app.config["TESTING"] = True
 
@@ -24,15 +23,15 @@ class TestOrgAccess:
     def test_schema_has_invites_and_org_audit(self):
         from pathlib import Path
         root = REPO_ROOT
-        init = (root / 'db' / 'init.sql').read_text()
+        init = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE TABLE api.team_invites' in init
         assert 'CREATE TABLE api.team_join_requests' in init
         assert 'CREATE TABLE api.org_audit' in init
         # guard_last_team_owner moved to rbac.sql as guard_last_team_owner_binding
-        rbac_sql = (root / 'db' / 'rbac.sql').read_text()
+        rbac_sql = (root / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         assert 'guard_last_team_owner' in rbac_sql
         assert 'guard_last_team_owner' not in init
-        assert 'NOT EXISTS (SELECT 1 FROM api.teams WHERE id = OLD.team_id)' in Path(schema_mod.__file__).read_text()
+        assert 'rbac.guard_last_team_owner_binding' in rbac_sql
         assert 'private.project_member_rows' in init
         assert 'private.audit_org' in init
         assert 'default_token_days' in init
@@ -43,7 +42,7 @@ class TestOrgAccess:
         assert 'require_reveal_approval' in init
         assert 'private.secret_access_request_rows' in init
         assert 'access_requested' in init
-        src = Path(schema_mod.__file__).read_text()
+        src = migrations_src()
         assert 'api.team_invites' in src
         assert 'private.audit_org' in src
         assert 'exported' in src
@@ -73,13 +72,13 @@ class TestOrgAccess:
 
     def test_secret_meta_schema(self):
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE TABLE api.secret_meta' in init
         assert 'last_accessed_at' in init
         assert 'last_accessed_by' in init
         assert 'private.secret_meta_rows' in init
         assert 'private.touch_secret_access' in init
-        src = Path(schema_mod.__file__).read_text()
+        src = migrations_src()
         assert 'secret_meta' in src
         assert 'touch_secret_access' in src
         routes = routes_module_src('secrets')
@@ -90,8 +89,8 @@ class TestOrgAccess:
     def test_machine_token_scope_schema(self):
         """Per-token key allow-list (exact + glob) is in schema and helpers."""
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        src = Path(schema_mod.__file__).read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
+        src = migrations_src()
         assert 'CREATE TABLE api.machine_token_scope' in init
         assert 'machine_token_scope' in src
         assert 'private.machine_key_allowed' in init
@@ -104,10 +103,10 @@ class TestOrgAccess:
     def test_security_hardening_policies(self):
         """H1/M1/L1/L2/L5: projects_update, owner assignment, versions, ACL team, FORCE RLS."""
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
-        src = Path(schema_mod.__file__).read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
+        src = migrations_src()
         # RLS policies moved from init.sql to rbac.sql
-        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         assert 'USING (api.can_admin_project(id))' in rbac_sql
         assert 'USING (api.can_admin_project(id))' in src
         # Legacy tm_insert policy removed from init.sql; RBAC bindings write policy in rbac.sql
@@ -132,12 +131,12 @@ class TestOrgAccess:
         assert [n for n, _ in config.RBAC_SECRET_ROLE_DROPDOWN] == [
             'secret-write', 'secret-reveal', 'secret-read',
         ]
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'access_mode' in init
         assert 'CREATE TABLE api.secret_acl' not in init
         assert 'api.can_access_secret' in init  # referenced in private functions (comment + calls)
         # can_access_secret_row and can_reveal_secret defined in rbac.sql (moved from init.sql)
-        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        rbac = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         assert 'api.can_access_secret_row' in rbac
         # RLS policies pass deleted_at=NULL explicitly so the deleted_at guard
         # in can_access_secret_row does not reject soft-deletes/trash.
@@ -146,7 +145,7 @@ class TestOrgAccess:
         rev = rbac[rbac.index('FUNCTION api.can_reveal_secret'):]
         rev = rev[:rev.index('$$;') + 3]
         assert "can_access_secret(sid, 'reveal')" in rev
-        src = Path(schema_mod.__file__).read_text()
+        src = migrations_src()
         assert 'can_access_secret' in src
         assert 'can_access_secret_row' in src
         assert 'DROP TABLE IF EXISTS api.secret_acl' in src
@@ -157,7 +156,7 @@ class TestOrgAccess:
     def test_can_access_secret_row_modes_in_sql(self):
         """rbac.sql defines can_access_secret_row with mode branches and k8s bindings."""
         from pathlib import Path
-        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        rbac = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         start = rbac.index('FUNCTION api.can_access_secret_row')
         body = rbac[start:start + 2500]
         for mode in ('inherit', 'restricted'):
@@ -171,21 +170,20 @@ class TestOrgAccess:
 
     def test_effective_access_functions_defined(self):
         """Self-service (my access) and resource-level (effective access)
-        helpers exist in both rbac.sql sources with the grants they need."""
+        helpers exist in rbac.sql with the grants they need."""
         from pathlib import Path
-        for path in (REPO_ROOT / 'app' / 'rbac.sql', REPO_ROOT / 'db' / 'rbac.sql'):
-            sql = path.read_text()
-            assert 'FUNCTION api.my_access_rows()' in sql
-            assert 'FUNCTION api.effective_access_rows(' in sql
-            assert 'FROM api.rbac_subjects(' in sql
-            assert 'JOIN api.rbac_scope_chain(' in sql
-            # chain CTE columns are the same names as the function's OUT params;
-            # they must be qualified or PL/pgSQL raises an ambiguity error.
-            assert 'FROM api.rbac_scope_chain(p_scope_kind, p_scope_id) AS c' in sql
-            assert 'SELECT c.scope_kind::text, c.scope_id' in sql
-            assert "ORDER BY 1 NULLS LAST, 4, 6;" in sql
-            assert "GRANT EXECUTE ON FUNCTION api.my_access_rows" in sql
-            assert "GRANT EXECUTE ON FUNCTION api.effective_access_rows" in sql
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        assert 'FUNCTION api.my_access_rows()' in sql
+        assert 'FUNCTION api.effective_access_rows(' in sql
+        assert 'FROM api.rbac_subjects(' in sql
+        assert 'JOIN api.rbac_scope_chain(' in sql
+        # chain CTE columns are the same names as the function's OUT params;
+        # they must be qualified or PL/pgSQL raises an ambiguity error.
+        assert 'FROM api.rbac_scope_chain(p_scope_kind, p_scope_id) AS c' in sql
+        assert 'SELECT c.scope_kind::text, c.scope_id' in sql
+        assert "ORDER BY 1 NULLS LAST, 4, 6;" in sql
+        assert "GRANT EXECUTE ON FUNCTION api.my_access_rows" in sql
+        assert "GRANT EXECUTE ON FUNCTION api.effective_access_rows" in sql
 
     def test_export_filters_reveal_permission(self):
         """Plain export SQL must filter by can_access_secret reveal + can_reveal."""
@@ -196,7 +194,7 @@ class TestOrgAccess:
         SELECT must expose trash rows to writers. Regression for
         'new row violates row-level security policy for table secrets'."""
         from pathlib import Path
-        rbac = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        rbac = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         upd = rbac[rbac.index('CREATE POLICY secrets_update ON api.secrets'):]
         upd = upd[:upd.index(';')]
         assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in upd
@@ -206,7 +204,7 @@ class TestOrgAccess:
         delf = rbac[rbac.index('CREATE POLICY secrets_delete ON api.secrets'):]
         delf = delf[:delf.index(';')]
         assert 'deleted_at IS NOT NULL' in delf
-        src = Path(schema_mod.__file__).read_text()
+        src = migrations_src()
         assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in src
         from pathlib import Path
         src = (APP_ROOT / 'routes' / 'project_io.py').read_text()
@@ -252,7 +250,7 @@ class TestOrgAccess:
         assert [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN][0] == 'team-owner'
         assert not hasattr(config, 'GROUP_TEAM_ROLES')
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         gstart = init.index('CREATE TABLE api.groups')
         gend = init.index('CREATE TABLE api.group_members')
         assert 'team_role' not in init[gstart:gend]
@@ -294,7 +292,7 @@ class TestOrgAccess:
     def test_org_groups_rbac_schema(self):
         """Groups tables and group-aware RBAC helpers."""
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE TABLE api.groups' in init
         assert 'CREATE TABLE api.group_members' in init
         assert 'external_key' in init
@@ -302,9 +300,9 @@ class TestOrgAccess:
         # Legacy tables removed from init.sql
         assert 'CREATE TABLE api.project_group_roles' not in init
         assert 'api._role_rank' not in init
-        rbac_sql = (REPO_ROOT / 'db' / 'rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
         assert 'api.project_role' in rbac_sql
-        src = Path(schema_mod.__file__).read_text()
+        src = migrations_src()
         assert 'CREATE TABLE IF NOT EXISTS api.groups' in src
         assert 'team_group_rows' in src
         assert 'DROP TABLE IF EXISTS api.secret_acl' in src

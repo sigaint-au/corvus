@@ -75,12 +75,13 @@ Reveal approval remains a separate layer after the `reveal` verb.
 
 ## Schema
 
-- `rbac.roles`, `rbac.role_rules`, `rbac.bindings` — defined in `db/rbac.sql`
+- `rbac.roles`, `rbac.role_rules`, `rbac.bindings` — defined in `db/migrations/0002_rbac.sql`
 - Unique index on `bindings(role_id, subject_kind, subject_id, scope_kind, scope_id)`
 - `source` column on bindings: `manual`, `ldap`, or `oidc`
-- Applied by `ensure_schema()` via `_apply_rbac_sql()` and on fresh volumes via compose `02-rbac.sql`
-- `db/init.sql` creates tables + `ENABLE/FORCE RLS` (no policies)
-- `db/rbac.sql` creates RBAC functions + all RLS policies
+- Applied by `migrations.apply_pending()` on existing volumes and on fresh
+  volumes via compose `02-rbac.sql`
+- `db/migrations/0001_init.sql` creates tables + `ENABLE/FORCE RLS` (no policies)
+- `db/migrations/0002_rbac.sql` creates RBAC functions + all RLS policies
 - Legacy membership and ACL tables are removed during schema ensure
 - `can()` rejects deleted secrets at the authorizer level
 - Compatibility helpers `can_read_project`, `can_write_project`,

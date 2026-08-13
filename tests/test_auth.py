@@ -142,7 +142,7 @@ class TestAuth:
     def test_register_does_not_auto_promote_first_user(self):
         """register_user SQL must set is_global_admin false (no first_user race)."""
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         start = init.index('CREATE OR REPLACE FUNCTION private.register_user')
         end = init.index('$$;', start)
         body = init[start:end]
@@ -254,7 +254,7 @@ class TestAuth:
 
     def test_password_schema_helpers(self):
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'private.change_password' in init
         assert 'private.set_local_password' in init
         assert 'private.user_sessions' in init

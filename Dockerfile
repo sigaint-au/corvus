@@ -10,6 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY --chown=appuser:appuser app/ .
 
+# Migration SQL (read by app/migrations.py at runtime)
+COPY --chown=appuser:appuser db/migrations/ /db/migrations/
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
