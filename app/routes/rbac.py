@@ -11,6 +11,7 @@ import audit
 import authz
 import config
 import db
+from lib.users import lookup_user_id
 from lib.validate import is_uuid
 
 log = logging.getLogger(__name__)
@@ -563,18 +564,14 @@ def rbac_bindings_create():
 
             subject_id = None
             if subject_kind == "User":
-                cur.execute(
-                    "SELECT private.lookup_user(%s) AS id", (subject_email,)
-                )
-                u = cur.fetchone()
-                if not u or not u.get("id"):
+                subject_id = lookup_user_id(cur, subject_email)
+                if not subject_id:
                     flash("User not found — they must register first", "error")
                     return redirect(
                         url_for(
                             "rbac_bindings", scope=scope_kind, scope_id=scope_id
                         )
                     )
-                subject_id = str(u["id"])
             elif subject_kind == "Group":
                 if not is_uuid(subject_group):
                     flash("Select a valid group", "error")

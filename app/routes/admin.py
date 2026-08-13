@@ -26,6 +26,7 @@ import passwords
 import settings_svc
 import totp_svc
 import user_sessions
+from lib.users import user_email
 
 
 log = __import__("logging").getLogger(__name__)
@@ -764,12 +765,7 @@ def server_settings():
                 link = url_for("reset_password", token=token, _external=True)
                 email = ""
                 with db.connect_admin() as conn, conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT email FROM private.users WHERE id = %s::uuid",
-                        (uid,),
-                    )
-                    row = cur.fetchone()
-                    email = (row or {}).get("email") or ""
+                    email = user_email(cur, uid)
                 mailed = False
                 if email and mailer.smtp_configured():
                     ok, merr = mailer.send_password_reset(email, link)
@@ -795,12 +791,7 @@ def server_settings():
             else:
                 email = ""
                 with db.connect_admin() as conn, conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT email FROM private.users WHERE id = %s::uuid",
-                        (uid,),
-                    )
-                    row = cur.fetchone()
-                    email = (row or {}).get("email") or uid
+                    email = user_email(cur, uid) or uid
                 totp_svc.disable(uid)
                 user_sessions.revoke_all_sessions(uid)
                 flash(

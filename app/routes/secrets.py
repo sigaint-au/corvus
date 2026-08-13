@@ -12,7 +12,7 @@ import db
 import nav
 import paging
 import pins
-from lib.users import user_email
+from lib.users import lookup_user_id, user_email
 from secret_kinds import (
     STRUCTURED_VIEW_KINDS,
     as_utc,
@@ -2435,15 +2435,14 @@ def add_secret_access_binding(project_id, secret_id):
             return redirect(access_url)
         try:
             if subject_kind == "User":
-                cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
-                u = cur.fetchone()
-                if not u or not u.get("id"):
+                subject_id = lookup_user_id(cur, email)
+                if not subject_id:
                     flash(
                         "User not found — they must register or sign in first",
                         "error",
                     )
                     return redirect(access_url)
-                subject_id, who = str(u["id"]), email
+                who = email
             elif subject_kind == "Group":
                 cur.execute(
                     """
