@@ -26,6 +26,14 @@ def _secrets_routes_src() -> str:
     return (pkg.with_suffix(".py")).read_text()
 
 
+def _teams_routes_src() -> str:
+    """Concatenate the teams routes package source (split from teams.py)."""
+    pkg = APP_ROOT / "routes" / "teams"
+    if pkg.is_dir():
+        return "\n".join(f.read_text() for f in sorted(pkg.glob("*.py")))
+    return (pkg.with_suffix(".py")).read_text()
+
+
 class TestOrgAccess:
     """Project members, invites, org audit schema (no live DB)."""
 
@@ -316,7 +324,7 @@ class TestOrgAccess:
         assert 'CREATE TABLE IF NOT EXISTS api.groups' in src
         assert 'team_group_rows' in src
         assert 'DROP TABLE IF EXISTS api.secret_acl' in src
-        teams_src = (APP_ROOT / 'routes' / 'teams.py').read_text()
+        teams_src = _teams_routes_src()
         assert 'create_team_group' in teams_src
         assert 'apply_group_membership_maps' in Path(APP_ROOT / 'ldap_auth.py').read_text()
         seed = (REPO_ROOT / 'scripts' / 'seed_mock.py').read_text()
