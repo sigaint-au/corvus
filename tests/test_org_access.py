@@ -17,6 +17,15 @@ from tests.helpers import APP_ROOT, REPO_ROOT
 
 store.app.config["TESTING"] = True
 
+
+def _secrets_routes_src() -> str:
+    """Concatenate the secrets routes package source (split from secrets.py)."""
+    pkg = APP_ROOT / "routes" / "secrets"
+    if pkg.is_dir():
+        return "\n".join(f.read_text() for f in sorted(pkg.glob("*.py")))
+    return (pkg.with_suffix(".py")).read_text()
+
+
 class TestOrgAccess:
     """Project members, invites, org audit schema (no live DB)."""
 
@@ -81,7 +90,7 @@ class TestOrgAccess:
         src = Path(schema_mod.__file__).read_text()
         assert 'secret_meta' in src
         assert 'touch_secret_access' in src
-        routes = (APP_ROOT / 'routes' / 'secrets.py').read_text()
+        routes = _secrets_routes_src()
         assert routes.count('touch_secret_access') >= 2
         ops = (APP_ROOT / 'secret_ops.py').read_text()
         assert 'secret_meta' in ops
@@ -217,7 +226,7 @@ class TestOrgAccess:
     def test_acl_management_routes_exist(self):
         """Secret ACL mode/grant routes registered and gated to admins."""
         from pathlib import Path
-        src = (APP_ROOT / 'routes' / 'secrets.py').read_text()
+        src = _secrets_routes_src()
         assert 'def update_secret_access' in src
         assert 'def add_secret_access_binding' in src
         assert 'def delete_secret_access_binding' in src
