@@ -153,7 +153,7 @@ class TestAuth:
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid})
         admin_conn, admin_cur = _conn()
-        with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('routes.auth.bootstrap_admin_email', return_value='admin@ex.com'), patch.object(authz, 'is_global_admin', return_value=True), patch('totp_svc.needs_challenge', return_value=None), patch('mailer.login_alerts_enabled', return_value=False):
+        with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('routes.auth.helpers.bootstrap_admin_email', return_value='admin@ex.com'), patch.object(authz, 'is_global_admin', return_value=True), patch('totp_svc.needs_challenge', return_value=None), patch('mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/register', data={'email': 'admin@ex.com', 'password': 'password1', 'name': 'A'}, follow_redirects=False)
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in admin_cur.execute.call_args_list))
