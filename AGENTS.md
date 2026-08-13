@@ -6,7 +6,7 @@ Secret server: self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.i
 
 - Tests: `pytest` from repo root (pythonpath = `.` `app` is in `tests/helpers.py`). **Tests mock the DB — no Postgres needed.** `str | None` syntax requires Python 3.10+; the system `python3` on macOS (3.9) will NOT work.
 - Single test: `pytest tests/test_x.py::Class::test_y` (or `tests/...`).
-- Lint: from `app/` run `pylint --rcfile=../.pylintrc <modules...>` with `PYTHONPATH=app` (repo tox `-e lint` does this). Full-list of lint modules: app.py, audit.py, authz.py, config.py, crypto.py, db.py, dir_sync.py, ldap_auth.py, lockout.py, mailer.py, nav.py, oidc_auth.py, paging.py, passwords.py, pats.py, pins.py, schema.py, secret_kinds.py, secret_ops.py, settings_svc.py, totp_svc.py, user_sessions.py, and `routes`.
+- Lint: from `app/` run `pylint --rcfile=../.pylintrc <modules...>` with `PYTHONPATH=app` (repo tox `-e lint` does this). Full-list of lint modules: app.py, audit, authz.py, config.py, crypto.py, db.py, dir_sync.py, ldap_auth.py, lockout.py, mailer.py, nav.py, oidc_auth.py, paging.py, passwords.py, pats.py, pins.py, schema.py, secret_kinds.py, secret_ops.py, settings_svc.py, totp_svc.py, user_sessions.py, `lib`, and `routes`.
 
 ## Run the app / dev containers
 
