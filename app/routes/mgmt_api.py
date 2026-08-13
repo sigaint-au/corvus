@@ -22,6 +22,7 @@ import pats
 import rbac_sync
 import settings_svc
 from crypto import sha256_hex
+from lib.auth_tokens import classify_token
 from lib.serialize import row_to_dict
 from lib.users import lookup_user_id
 from lib.validate import is_uuid
@@ -38,8 +39,8 @@ def _require_pat():
     """
     raw = bearer_raw()
     if raw and raw.startswith(pats.PREFIX):
-        uid = pats.resolve(raw)
-        if not uid:
+        kind, uid = classify_token(raw)
+        if kind != "pat" or not uid:
             return None, (jsonify({"error": "unauthorized"}), 401)
         return uid, None
     # allow session for completeness

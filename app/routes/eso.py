@@ -21,8 +21,8 @@ import audit
 import config
 import crypto
 import db
-import pats
 from crypto import sha256_hex
+from lib.auth_tokens import classify_token
 from lib.datetime_utils import iso_utc
 from lib.validate import is_uuid
 from secret_ops import _upsert_secret
@@ -52,19 +52,7 @@ def bearer_raw() -> str | None:
 
 
 def bearer_hash():
-    """Extract and hash the Bearer token from the Authorization header.
-
-    Args:
-        None
-
-    Returns:
-        str | None: SHA-256 hex digest of the Bearer token, or None if the
-            header is missing or not a Bearer token.
-
-    Example:
-        >>> # Called from an ESO route with Authorization: Bearer <token>
-        >>> thash = bearer_hash()
-    """
+    """Return the SHA-256 hex of the Bearer token, or None if absent."""
     raw = bearer_raw()
     return sha256_hex(raw) if raw else None
 
@@ -124,13 +112,7 @@ def _parse_auth():
         >>> kind in (None, "machine", "pat")
         True
     """
-    raw = bearer_raw()
-    if not raw:
-        return None, None
-    if raw.startswith(pats.PREFIX):
-        uid = pats.resolve(raw)
-        return ("pat", uid) if uid else (None, None)
-    return "machine", sha256_hex(raw)
+    return classify_token(bearer_raw())
 
 
 def _machine_actor(cur, project_id, thash: str) -> str:
