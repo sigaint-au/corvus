@@ -228,7 +228,7 @@ class TestOrgAccess:
     def test_eso_pat_checks_acl_before_reveal(self):
         """ESO/PAT get-secret must check can_access_secret reveal before approval."""
         from pathlib import Path
-        src = (APP_ROOT / 'routes' / 'eso.py').read_text()
+        src = (APP_ROOT / 'routes' / 'eso' / 'secrets.py').read_text()
         i_acl = src.index("can_access_secret(%s, 'reveal')")
         i_rev = src.index('can_reveal_secret(%s)')
         assert i_acl < i_rev
@@ -238,7 +238,7 @@ class TestOrgAccess:
     def test_eso_pat_bulk_export_filters_reveal_acl(self):
         """PAT bulk list-with-values must filter by can_access_secret(reveal)."""
         from pathlib import Path
-        src = (APP_ROOT / 'routes' / 'eso.py').read_text()
+        src = (APP_ROOT / 'routes' / 'eso' / 'secrets.py').read_text()
         start = src.index('def eso_list_secrets')
         body = src[start:start + 8000]
         assert 'cli/values' in body
