@@ -24,6 +24,7 @@ import pats
 import rbac_sync
 import settings_svc
 from crypto import sha256_hex
+from lib.serialize import json_safe
 from routes.eso import _iso, bearer_raw
 
 log = logging.getLogger(__name__)
@@ -73,15 +74,7 @@ def _is_uuid(s: str) -> bool:
 def _row(r: dict | None) -> dict | None:
     if not r:
         return None
-    out = {}
-    for k, v in r.items():
-        if hasattr(v, "isoformat"):
-            out[k] = _iso(v)
-        elif isinstance(v, UUID):
-            out[k] = str(v)
-        else:
-            out[k] = v
-    return out
+    return {k: json_safe(v) for k, v in r.items()}
 
 
 def _resolve_team(cur, ref: str) -> str | None:
@@ -279,7 +272,7 @@ def register(app):
         body = request.get_json(silent=True) or {}
         email = (body.get("email") or "").strip().lower()
         role = (body.get("role") or "team-member").strip()
-        role_names = [name for name, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        role_names = config.RBAC_TEAM_ROLE_NAMES
         if role not in role_names:
             role = "team-member"
         if not email:
@@ -544,7 +537,7 @@ def register(app):
         body = request.get_json(silent=True) or {}
         email = (body.get("email") or "").strip().lower()
         role = (body.get("role") or "project-read").strip()
-        role_names = [name for name, _ in config.RBAC_PROJECT_ROLE_DROPDOWN]
+        role_names = config.RBAC_PROJECT_ROLE_NAMES
         if role not in role_names:
             role = "project-read"
         if not email:

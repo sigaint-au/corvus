@@ -233,24 +233,10 @@ def split_cert_and_key(value: str) -> tuple[str, str]:
 
 
 def as_utc(dt):
-    """Normalize a datetime to timezone-aware UTC.
+    """Normalize a datetime to timezone-aware UTC (see lib.datetime_utils.as_utc)."""
+    from lib.datetime_utils import as_utc as _as_utc
 
-    Args:
-        dt: A datetime instance, or None.
-
-    Returns:
-        None if dt is None; naive datetimes get UTC tzinfo attached;
-        aware datetimes are returned unchanged.
-
-    Example:
-        >>> as_utc(None) is None
-        True
-    """
-    if dt is None:
-        return None
-    if getattr(dt, "tzinfo", None) is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
+    return _as_utc(dt)
 
 
 def expires_status(expires_at, soon_days=_SOON_DAYS):

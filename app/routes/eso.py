@@ -74,23 +74,10 @@ def bearer_hash():
 
 
 def _iso(dt) -> str | None:
-    """Format a datetime as UTC ISO-8601, or None.
+    """Format a datetime as UTC ISO-8601, or None. See lib.datetime_utils.iso_utc."""
+    from lib.datetime_utils import iso_utc
 
-    Args:
-        dt: A datetime (aware or naive) or None.
-
-    Returns:
-        ISO-8601 string, or None when ``dt`` is None.
-
-    Example:
-        >>> _iso(None) is None
-        True
-    """
-    if dt is None:
-        return None
-    if getattr(dt, "tzinfo", None) is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.isoformat()
+    return iso_utc(dt)
 
 
 def _meta_item(row: dict, *, value: str | None = None) -> dict:

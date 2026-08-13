@@ -434,7 +434,7 @@ def register(app):
         """
         email = request.form["email"].strip().lower()
         role = request.form.get("role", "team-member")
-        role_names = [name for name, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        role_names = config.RBAC_TEAM_ROLE_NAMES
         if role not in role_names:
             role = "team-member"
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -815,7 +815,7 @@ def register(app):
             try:
                 # Role in request row can be 'team-member' or legacy 'member'
                 req_role = req["role"]
-                if req_role not in [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]:
+                if req_role not in config.RBAC_TEAM_ROLE_NAMES:
                     legacy_map = {
                         "owner": "team-owner",
                         "admin": "team-admin",
@@ -1010,7 +1010,7 @@ def register(app):
         """
         ldap_group = (request.form.get("ldap_group") or "").strip()
         role = request.form.get("role", "team-member")
-        team_role_names = [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        team_role_names = config.RBAC_TEAM_ROLE_NAMES
         if role not in team_role_names:
             role = "team-member"
         if not ldap_group:
@@ -1085,7 +1085,7 @@ def register(app):
         """
         oidc_group = (request.form.get("oidc_group") or "").strip()
         role = request.form.get("role", "team-member")
-        team_role_names = [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
+        team_role_names = config.RBAC_TEAM_ROLE_NAMES
         if role not in team_role_names:
             role = "team-member"
         if not oidc_group:

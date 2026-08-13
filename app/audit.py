@@ -793,35 +793,10 @@ def describe_event(row) -> str:
 
 
 def _as_utc_dt(dt):
-    """Coerce a datetime or ISO string to timezone-aware UTC.
+    """Coerce a datetime or ISO string to timezone-aware UTC (delegates to lib)."""
+    from lib.datetime_utils import coerce_utc
 
-    Args:
-        dt: A datetime, ISO-8601 string (Z or offset allowed), or None.
-
-    Returns:
-        Timezone-aware UTC datetime, or None if input is missing/invalid.
-
-    Example:
-        >>> _as_utc_dt("2026-08-08T12:00:00Z").tzinfo is not None
-        True
-        >>> _as_utc_dt(None) is None
-        True
-    """
-    if dt is None:
-        return None
-    if isinstance(dt, str):
-        s = dt.strip()
-        if not s:
-            return None
-        try:
-            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-    if not isinstance(dt, datetime):
-        return None
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+    return coerce_utc(dt)
 
 
 def format_when(dt) -> str:

@@ -668,7 +668,7 @@ def register(app):
         """
         email = (request.form.get("email") or "").strip().lower()
         role = (request.form.get("role") or "project-read").strip()
-        project_role_names = [name for name, _ in config.RBAC_PROJECT_ROLE_DROPDOWN]
+        project_role_names = config.RBAC_PROJECT_ROLE_NAMES
         if role not in project_role_names:
             role = "project-read"
         dest = _project_access_url(project_id)
@@ -762,7 +762,7 @@ def register(app):
         """Grant a team group a project role via RBAC binding only."""
         group_id = (request.form.get("group_id") or "").strip()
         role = (request.form.get("role") or "project-read").strip()
-        project_role_names = [name for name, _ in config.RBAC_PROJECT_ROLE_DROPDOWN]
+        project_role_names = config.RBAC_PROJECT_ROLE_NAMES
         if role not in project_role_names:
             role = "project-read"
         dest = _project_access_url(project_id)
