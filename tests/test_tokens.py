@@ -12,7 +12,7 @@ import config
 import db
 import schema as schema_mod
 
-from tests.helpers import APP_ROOT, REPO_ROOT, mock_conn as _conn
+from tests.helpers import REPO_ROOT, mock_conn as _conn, routes_module_src
 
 store.app.config["TESTING"] = True
 
@@ -209,7 +209,7 @@ class TestTokens:
         init_sql = (root / 'db' / 'init.sql').read_text()
         assert 'CREATE TRIGGER secrets_touch_updated_at' in init_sql
         assert 'api.touch_updated_at' in init_sql
-        routes = (APP_ROOT / 'routes' / 'projects.py').read_text()
+        routes = routes_module_src('projects')
         assert 'updated_at = now()' not in routes
         assert 'updated_at=now()' not in routes
 

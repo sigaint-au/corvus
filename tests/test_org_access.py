@@ -13,25 +13,9 @@ import audit
 import config
 import schema as schema_mod
 
-from tests.helpers import APP_ROOT, REPO_ROOT
+from tests.helpers import APP_ROOT, REPO_ROOT, routes_module_src
 
 store.app.config["TESTING"] = True
-
-
-def _secrets_routes_src() -> str:
-    """Concatenate the secrets routes package source (split from secrets.py)."""
-    pkg = APP_ROOT / "routes" / "secrets"
-    if pkg.is_dir():
-        return "\n".join(f.read_text() for f in sorted(pkg.glob("*.py")))
-    return (pkg.with_suffix(".py")).read_text()
-
-
-def _teams_routes_src() -> str:
-    """Concatenate the teams routes package source (split from teams.py)."""
-    pkg = APP_ROOT / "routes" / "teams"
-    if pkg.is_dir():
-        return "\n".join(f.read_text() for f in sorted(pkg.glob("*.py")))
-    return (pkg.with_suffix(".py")).read_text()
 
 
 class TestOrgAccess:
@@ -98,7 +82,7 @@ class TestOrgAccess:
         src = Path(schema_mod.__file__).read_text()
         assert 'secret_meta' in src
         assert 'touch_secret_access' in src
-        routes = _secrets_routes_src()
+        routes = routes_module_src('secrets')
         assert routes.count('touch_secret_access') >= 2
         ops = (APP_ROOT / 'secret_ops.py').read_text()
         assert 'secret_meta' in ops
@@ -234,7 +218,7 @@ class TestOrgAccess:
     def test_acl_management_routes_exist(self):
         """Secret ACL mode/grant routes registered and gated to admins."""
         from pathlib import Path
-        src = _secrets_routes_src()
+        src = routes_module_src('secrets')
         assert 'def update_secret_access' in src
         assert 'def add_secret_access_binding' in src
         assert 'def delete_secret_access_binding' in src
@@ -324,7 +308,7 @@ class TestOrgAccess:
         assert 'CREATE TABLE IF NOT EXISTS api.groups' in src
         assert 'team_group_rows' in src
         assert 'DROP TABLE IF EXISTS api.secret_acl' in src
-        teams_src = _teams_routes_src()
+        teams_src = routes_module_src('teams')
         assert 'create_team_group' in teams_src
         assert 'apply_group_membership_maps' in Path(APP_ROOT / 'ldap_auth.py').read_text()
         seed = (REPO_ROOT / 'scripts' / 'seed_mock.py').read_text()
