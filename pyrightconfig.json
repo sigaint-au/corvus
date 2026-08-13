@@ -1,0 +1,10 @@
+# pyright type-checker config (progressive; not wired into CI yet).
+[tool.pyright]
+include = ["app"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+reportMissingImports = false
+reportOptionalMemberAccess = false
+reportOptionalSubscript = false
+reportUnusedImport = false
+reportUnusedFunction = false
