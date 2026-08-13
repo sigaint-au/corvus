@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from uuid import UUID
 
 from flask import flash, redirect, render_template, request, session, url_for
 
@@ -12,6 +11,7 @@ import audit
 import authz
 import config
 import db
+from lib.validate import is_uuid
 
 log = logging.getLogger(__name__)
 
@@ -29,14 +29,6 @@ def _role_dropdown_for_scope(scope_kind: str) -> list[tuple[str, str]]:
     if scope_kind == "secret":
         return list(config.RBAC_SECRET_ROLE_DROPDOWN)
     return []
-
-
-def _valid_uuid(value: str) -> bool:
-    try:
-        UUID(str(value))
-        return True
-    except (ValueError, TypeError, AttributeError):
-        return False
 
 
 def _role_allowed_at_scope(role_name: str, scope_kind: str) -> bool:
@@ -584,7 +576,7 @@ def rbac_bindings_create():
                     )
                 subject_id = str(u["id"])
             elif subject_kind == "Group":
-                if not _valid_uuid(subject_group):
+                if not is_uuid(subject_group):
                     flash("Select a valid group", "error")
                     return redirect(
                         url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
@@ -626,7 +618,7 @@ def rbac_bindings_create():
                     )
                 subject_id = subject_group
             elif subject_kind == "ServiceAccount":
-                if not _valid_uuid(subject_sa):
+                if not is_uuid(subject_sa):
                     flash("Enter a valid machine account ID", "error")
                     return redirect(
                         url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)

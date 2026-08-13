@@ -9,10 +9,8 @@ Docstrings follow the project Args/Returns/Example style.
 from __future__ import annotations
 
 import logging
-import re
 import secrets
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
 
 from flask import jsonify, request
 
@@ -24,14 +22,12 @@ import pats
 import rbac_sync
 import settings_svc
 from crypto import sha256_hex
-from lib.serialize import json_safe
+from lib.serialize import row_to_dict
+from lib.users import lookup_user_id
+from lib.validate import is_uuid
 from routes.eso import bearer_raw
 
 log = logging.getLogger(__name__)
-
-_UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
 
 
 def _require_pat():
@@ -61,20 +57,10 @@ def _require_global_admin(uid: str):
     return None
 
 
-def _is_uuid(s: str) -> bool:
-    if not _UUID_RE.match(s or ""):
-        return False
-    try:
-        UUID(s)
-        return True
-    except ValueError:
-        return False
-
-
 def _row(r: dict | None) -> dict | None:
     if not r:
         return None
-    return {k: json_safe(v) for k, v in r.items()}
+    return row_to_dict(r)
 
 
 def _resolve_team(cur, ref: str) -> str | None:
@@ -82,7 +68,7 @@ def _resolve_team(cur, ref: str) -> str | None:
     ref = (ref or "").strip()
     if not ref:
         return None
-    if _is_uuid(ref):
+    if is_uuid(ref):
         cur.execute("SELECT id FROM api.teams WHERE id = %s::uuid", (ref,))
         r = cur.fetchone()
         return str(r["id"]) if r else None
@@ -99,7 +85,7 @@ def _resolve_project(cur, ref: str) -> str | None:
     ref = (ref or "").strip()
     if not ref:
         return None
-    if _is_uuid(ref):
+    if is_uuid(ref):
         cur.execute("SELECT id FROM api.projects WHERE id = %s::uuid", (ref,))
         r = cur.fetchone()
         return str(r["id"]) if r else None
@@ -109,18 +95,6 @@ def _resolve_project(cur, ref: str) -> str | None:
     )
     rows = cur.fetchall() or []
     return str(rows[0]["id"]) if len(rows) == 1 else None
-
-
-def _lookup_user_id(cur, email_or_id: str) -> str | None:
-    """Resolve user id by UUID or email."""
-    ref = (email_or_id or "").strip()
-    if not ref:
-        return None
-    if _is_uuid(ref):
-        return ref
-    cur.execute("SELECT private.lookup_user(%s) AS id", (ref.lower(),))
-    r = cur.fetchone() or {}
-    return str(r["id"]) if r.get("id") else None
 
 
 def register(app):
@@ -297,7 +271,7 @@ def mgmt_add_team_binding(team_ref):
         my_role = (cur.fetchone() or {}).get("r")
         if role == "team-owner" and my_role != "team-owner":
             return jsonify({"error": "only a team owner can grant owner"}), 403
-        mid = _lookup_user_id(cur, email)
+        mid = lookup_user_id(cur, email)
         if not mid:
             return jsonify({"error": "user not found"}), 404
         cur.execute(
@@ -337,7 +311,7 @@ def mgmt_remove_team_binding(team_ref, member_ref):
         cur.execute("SELECT api.can_manage_rbac('team', %s::uuid) AS ok", (tid,))
         if not (cur.fetchone() or {}).get("ok"):
             return jsonify({"error": "forbidden"}), 403
-        mid = _lookup_user_id(cur, member_ref)
+        mid = lookup_user_id(cur, member_ref)
         if not mid:
             return jsonify({"error": "user not found"}), 404
         cur.execute(
@@ -380,7 +354,7 @@ def mgmt_transfer_team(team_ref):
         cur.execute("SELECT api.can_manage_rbac('team', %s::uuid) AS ok", (tid,))
         if not (cur.fetchone() or {}).get("ok"):
             return jsonify({"error": "forbidden"}), 403
-        mid = _lookup_user_id(cur, email)
+        mid = lookup_user_id(cur, email)
         if not mid:
             return jsonify({"error": "user not found"}), 404
         # Promote the new owner first, then demote existing owners.
@@ -547,7 +521,7 @@ def mgmt_add_project_binding(project_ref):
         pid = _resolve_project(cur, project_ref)
         if not pid:
             return jsonify({"error": "not found"}), 404
-        mid = _lookup_user_id(cur, email)
+        mid = lookup_user_id(cur, email)
         if not mid:
             return jsonify({"error": "user not found"}), 404
         cur.execute(
@@ -577,7 +551,7 @@ def mgmt_remove_project_binding(project_ref, member_ref):
         pid = _resolve_project(cur, project_ref)
         if not pid:
             return jsonify({"error": "not found"}), 404
-        mid = _lookup_user_id(cur, member_ref)
+        mid = lookup_user_id(cur, member_ref)
         if not mid:
             return jsonify({"error": "user not found"}), 404
         cur.execute(

@@ -13,9 +13,7 @@ Auth (``Authorization: Bearer …``):
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
 
 from flask import jsonify, request
 
@@ -25,13 +23,11 @@ import crypto
 import db
 import pats
 from crypto import sha256_hex
+from lib.datetime_utils import iso_utc
+from lib.validate import is_uuid
 from secret_ops import _upsert_secret
 
 log = logging.getLogger(__name__)
-
-_UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
 
 
 def bearer_raw() -> str | None:
@@ -73,13 +69,6 @@ def bearer_hash():
     return sha256_hex(raw) if raw else None
 
 
-def _iso(dt) -> str | None:
-    """Format a datetime as UTC ISO-8601, or None. See lib.datetime_utils.iso_utc."""
-    from lib.datetime_utils import iso_utc
-
-    return iso_utc(dt)
-
-
 def _meta_item(row: dict, *, value: str | None = None) -> dict:
     """Build a CLI-friendly secret metadata (and optional value) dict.
 
@@ -100,10 +89,10 @@ def _meta_item(row: dict, *, value: str | None = None) -> dict:
         "key": row.get("key"),
         "note": row.get("note") or "",
         "kind": row.get("kind") or "plain",
-        "expires_at": _iso(row.get("expires_at")),
-        "created_at": _iso(row.get("created_at")),
-        "updated_at": _iso(row.get("updated_at")),
-        "last_accessed_at": _iso(row.get("last_accessed_at")),
+        "expires_at": iso_utc(row.get("expires_at")),
+        "created_at": iso_utc(row.get("created_at")),
+        "updated_at": iso_utc(row.get("updated_at")),
+        "last_accessed_at": iso_utc(row.get("last_accessed_at")),
         "last_accessed_by": row.get("last_accessed_by_email")
         or row.get("last_accessed_by")
         or "",
@@ -317,7 +306,7 @@ def _resolve_project_ref(cur, project_ref: str, *, kind: str, thash: str | None)
     if not ref:
         return None
     if kind == "machine":
-        if not _UUID_RE.match(ref):
+        if not is_uuid(ref):
             return None
         cur.execute(
             "SELECT private.auth_machine(%s::uuid, %s) AS ok",
@@ -327,11 +316,7 @@ def _resolve_project_ref(cur, project_ref: str, *, kind: str, thash: str | None)
         return ref if auth and auth.get("ok") else None
 
     # PAT / user RLS
-    if _UUID_RE.match(ref):
-        try:
-            UUID(ref)
-        except ValueError:
-            return None
+    if is_uuid(ref):
         cur.execute("SELECT id FROM api.projects WHERE id = %s::uuid", (ref,))
         row = cur.fetchone()
         return str(row["id"]) if row else None
@@ -367,31 +352,6 @@ def _pat_can_write(cur, project_id) -> bool:
     cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
     row = cur.fetchone() or {}
     return bool(row.get("w"))
-
-
-def _pat_email(cur, user_id: str) -> str:
-    """Load user email for audit labels (best-effort).
-
-    Args:
-        cur: Open cursor (admin or as_user).
-        user_id: User UUID.
-
-    Returns:
-        Email string or empty string.
-
-    Example:
-        >>> _pat_email(cur, uid)
-        'alice@example.com'
-    """
-    try:
-        cur.execute(
-            "SELECT email FROM private.users WHERE id = %s::uuid",
-            (user_id,),
-        )
-        row = cur.fetchone() or {}
-        return (row.get("email") or "").strip()
-    except Exception:
-        return ""
 
 
 def _meta_list_query() -> tuple[bool, str | None]:
@@ -514,7 +474,7 @@ def eso_get_secret(project_ref, key):
 
     if kind == "machine":
         thash = ident
-        if not _UUID_RE.match((project_ref or "").strip()):
+        if not is_uuid((project_ref or "").strip()):
             return jsonify({"error": "unauthorized"}), 401
         with db.connect() as conn, conn.cursor() as cur:
             pid = _resolve_project_ref(cur, project_ref, kind=kind, thash=thash)

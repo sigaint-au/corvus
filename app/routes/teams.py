@@ -14,6 +14,7 @@ import ldap_auth
 import rbac_sync
 import settings_svc
 from crypto import sha256_hex
+from lib.users import lookup_user_id
 
 log = logging.getLogger(__name__)
 
@@ -345,14 +346,10 @@ def team_access_binding_create(team_id):
                 return redirect(access_url)
             subject_id = None
             if subject_kind == "User":
-                cur.execute(
-                    "SELECT private.lookup_user(%s) AS id", (subject_email,)
-                )
-                u = cur.fetchone()
-                if not u or not u.get("id"):
+                subject_id = lookup_user_id(cur, subject_email)
+                if not subject_id:
                     flash("User not found — they must register first", "error")
                     return redirect(access_url)
-                subject_id = str(u["id"])
             elif subject_kind == "Group":
                 cur.execute(
                     """
@@ -454,9 +451,8 @@ def add_team_binding(team_id):
         if role == "team-owner" and my_role != "team-owner":
             flash("Only a team owner can grant the owner role", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="members"))
-        cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
-        u = cur.fetchone()
-        if not u or not u.get("id"):
+        uid = lookup_user_id(cur, email)
+        if not uid:
             flash("User not found — they must register or sign in via LDAP first", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="members"))
         try:
@@ -477,12 +473,12 @@ def add_team_binding(team_id):
                   AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
                   AND r.name IN ('team-owner','team-admin','team-member','team-viewer')
                 """,
-                (str(u["id"]), str(team_id)),
+                (uid, str(team_id)),
             )
             prev = cur.fetchone()
             rbac_sync.sync_user_team_binding(
                 cur,
-                user_id=u["id"],
+                user_id=uid,
                 team_id=team_id,
                 role=role,
                 created_by=session["user_id"],
@@ -571,12 +567,10 @@ def transfer_team_ownership(team_id):
         if (cur.fetchone() or {}).get("r") != "team-owner":
             flash("Only owners can transfer ownership", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
-        cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
-        u = cur.fetchone()
-        if not u or not u.get("id"):
+        new_uid = lookup_user_id(cur, email)
+        if not new_uid:
             flash("User not found — they must already be registered", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
-        new_uid = str(u["id"])
         if new_uid == session["user_id"]:
             flash("Already owner", "ok")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
@@ -1442,9 +1436,8 @@ def add_group_member(team_id, group_id):
         if not g:
             flash("Group not found", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
-        cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
-        u = cur.fetchone()
-        if not u or not u.get("id"):
+        uid = lookup_user_id(cur, email)
+        if not uid:
             flash("User not found — they must register or sign in first", "error")
             return redirect(_group_detail_url(team_id, group_id))
         try:
@@ -1455,7 +1448,7 @@ def add_group_member(team_id, group_id):
                 ON CONFLICT (group_id, user_id) DO UPDATE
                   SET source = 'manual'
                 """,
-                (str(group_id), str(u["id"])),
+                (str(group_id), uid),
             )
             audit.log_org(
                 cur,

@@ -10,6 +10,7 @@ import config
 import db
 import nav
 import paging
+from lib.users import lookup_user_id
 from secret_kinds import annotate_token_expiry, expires_status, parse_secret_pairs, secret_due_status
 from secret_ops import _load_secrets_page
 
@@ -679,9 +680,8 @@ def add_project_binding(project_id):
         if not (cur.fetchone() or {}).get("ok"):
             flash("You don't have permission to do that", "error")
             return redirect(dest)
-        cur.execute("SELECT private.lookup_user(%s) AS id", (email,))
-        u = cur.fetchone()
-        if not u or not u.get("id"):
+        uid = lookup_user_id(cur, email)
+        if not uid:
             flash(
                 "User not found — they must register or sign in via LDAP first",
                 "error",
@@ -696,7 +696,7 @@ def add_project_binding(project_id):
 
             rbac_sync.sync_user_project_binding(
                 cur,
-                user_id=u["id"],
+                user_id=uid,
                 project_id=project_id,
                 role=role,
                 created_by=session["user_id"],
@@ -882,14 +882,10 @@ def project_access_binding_create(project_id):
             subject_id = None
             detail_who = None
             if subject_kind == "User":
-                cur.execute(
-                    "SELECT private.lookup_user(%s) AS id", (subject_email,)
-                )
-                u = cur.fetchone()
-                if not u or not u.get("id"):
+                subject_id = lookup_user_id(cur, subject_email)
+                if not subject_id:
                     flash("User not found — they must register first", "error")
                     return redirect(dest)
-                subject_id = str(u["id"])
                 detail_who = subject_email
                 rbac_sync.sync_user_project_binding(
                     cur,

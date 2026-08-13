@@ -12,6 +12,7 @@ import db
 import nav
 import paging
 import pins
+from lib.users import user_email
 from secret_kinds import (
     STRUCTURED_VIEW_KINDS,
     as_utc,
@@ -889,18 +890,10 @@ def secret_view(project_id, secret_id):
         row = dict(row)
         row["last_accessed_by_email"] = ""
         if row.get("last_accessed_by"):
-            try:
-                with db.connect_admin() as aconn, aconn.cursor() as acur:
-                    acur.execute(
-                        "SELECT email FROM private.users WHERE id = %s::uuid",
-                        (str(row["last_accessed_by"]),),
-                    )
-                    u = acur.fetchone() or {}
-                    row["last_accessed_by_email"] = (
-                        (u.get("email") if u else None) or ""
-                    )
-            except Exception:
-                row["last_accessed_by_email"] = ""
+            with db.connect_admin() as aconn, aconn.cursor() as acur:
+                row["last_accessed_by_email"] = user_email(
+                    acur, str(row["last_accessed_by"])
+                )
         value_enc = row["value_enc"]
         is_version = False
         if version_id:
