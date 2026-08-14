@@ -47,8 +47,12 @@ def test_migrations_ship_in_order():
 
 
 def test_project_crypto_migration_ships():
-    """0022_project_crypto adds the BYOK key table + per-row provider column."""
-    sql = (migrations.MIGRATIONS_DIR / "0022_project_crypto.sql").read_text()
+    """0024_project_crypto adds the BYOK key table + per-row provider column.
+
+    Numbered 0024 because 0022/0023 were already used for shared-secrets
+    migrations on this branch; version prefixes must stay unique.
+    """
+    sql = (migrations.MIGRATIONS_DIR / "0024_project_crypto.sql").read_text()
     assert "CREATE TABLE private.project_crypto_keys" in sql
     assert "crypto_provider" in sql
     assert "api.secrets" in sql and "api.secret_versions" in sql

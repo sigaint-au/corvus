@@ -11,7 +11,7 @@
 -- Added only: new tables and columns. Existing baseline DDL is untouched
 -- (the runner never re-applies 0001/0002).
 
-CREATE TABLE private.project_crypto_keys (
+CREATE TABLE IF NOT EXISTS private.project_crypto_keys (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
   -- DEK wrapped by MASTER_KEY (Fernet); never store the raw key.
@@ -51,6 +51,8 @@ END;
 $$;
 
 -- Machine read helper returns the provider so the app can pick the right key.
+-- Return type changed (added crypto_provider) → drop old signature first.
+DROP FUNCTION IF EXISTS private.machine_get_row(uuid, text, text);
 CREATE OR REPLACE FUNCTION private.machine_get_row(p_project uuid, p_hash text, p_key text)
         RETURNS TABLE (
           id uuid, key text, value_enc text, note text, kind text,
