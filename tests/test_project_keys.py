@@ -4,6 +4,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 import project_keys
 
 
@@ -82,24 +84,18 @@ class TestProjectKeys:
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn):
             assert project_keys.rewrap_project_keys("old-master-key") == 0
 
-    def test_ensure_project_key_hsm(self):
+    def test_ensure_project_key_hsm_requires_slot(self):
         import hsm
 
         pid = str(uuid4())
         admin_conn, admin_cur = _conn(fetchone=None)
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
-             patch.object(hsm, "ensure_kek"), \
-             patch.object(hsm, "wrap_dek", return_value="hsm-wrapped"), \
-             patch.object(hsm, "kek_label", return_value="byok-kek"):
-            created = project_keys.ensure_project_key(pid, provider="hsm")
-        assert created is True
+             patch.object(hsm, "wrap_dek_for_slot"):
+            with pytest.raises(RuntimeError, match="requires a named slot"):
+                project_keys.ensure_project_key(pid, provider="hsm")
         insert = [c.args for c in admin_cur.execute.call_args_list
                   if "INSERT INTO private.project_crypto_keys" in str(c.args[0])]
-        assert len(insert) == 1
-        params = insert[0][1]
-        assert params[1] == "hsm-wrapped"
-        assert params[2] == "hsm"
-        assert params[3] == "byok-kek"
+        assert insert == []
 
     def test_rewrap_skips_hsm_rows(self):
         """HSM-wrapped DEKs must not be touched by MASTER_KEY rotation."""
@@ -122,18 +118,19 @@ class TestProjectKeys:
         from cryptography.fernet import Fernet
 
         pid = str(uuid4())
+        slot_id = str(uuid4())
         old_dek = Fernet.generate_key()
         new_dek = Fernet.generate_key()
         admin_conn, admin_cur = _conn(fetchone={"key_provider": "local"}, fetchall=[])
+        slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
              patch.object(project_keys.crypto, "project_dek", return_value=old_dek), \
              patch.object(project_keys.crypto, "generate_project_key", return_value=new_dek), \
-             patch.object(hsm, "ensure_kek"), \
-             patch.object(hsm, "wrap_dek", return_value="hsm-wrapped") as wrap_hsm, \
-             patch.object(hsm, "kek_label", return_value="byok-kek"):
-            n = project_keys.migrate_project_key(pid, "hsm")
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "wrap_dek_for_slot", return_value=("hsm-wrapped", "byok-kek")) as wrap_hsm:
+            n = project_keys.migrate_project_key(pid, "hsm", target_slot_id=slot_id)
         assert n == 0
-        wrap_hsm.assert_called_once_with(new_dek)
+        wrap_hsm.assert_called_once_with(slot_url, new_dek)
         updates = [c.args for c in admin_cur.execute.call_args_list
                    if "UPDATE private.project_crypto_keys" in str(c.args[0])]
         assert len(updates) == 1
@@ -141,6 +138,7 @@ class TestProjectKeys:
         assert params[0] == "hsm-wrapped"
         assert params[1] == "hsm"
         assert params[2] == "byok-kek"
+        assert str(params[3]) == slot_id
 
     def test_migrate_project_key_to_local(self):
         from cryptography.fernet import Fernet
@@ -167,19 +165,22 @@ class TestProjectKeys:
     def test_rotate_hsm_kek(self):
         import hsm
 
+        slot_id = str(uuid4())
         rows = [
             {"project_id": str(uuid4()), "key_enc": "old-wrap", "kms_key_ref": "byok-kek"},
         ]
         admin_conn, admin_cur = _conn(fetchone=None, fetchall=rows)
         raw = b"x" * 32
+        slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "parse_pkcs11_url", return_value={"kek_label": "byok-kek"}), \
              patch.object(hsm, "generate_kek"), \
-             patch.object(hsm, "unwrap_dek", return_value=raw) as unwrap, \
-             patch.object(hsm, "wrap_dek", return_value="new-wrap") as wrap, \
-             patch.object(hsm, "kek_label", return_value="byok-kek"):
-            n = project_keys.rotate_hsm_kek()
+             patch.object(hsm, "unwrap_dek_for_slot", return_value=raw) as unwrap, \
+             patch.object(hsm, "wrap_dek_with_label", return_value="new-wrap") as wrap:
+            n = project_keys.rotate_hsm_kek(slot_id)
         assert n == 1
-        unwrap.assert_called_once_with("old-wrap", "byok-kek")
+        unwrap.assert_called_once_with(slot_url, "old-wrap", "byok-kek")
         wrap.assert_called_once()
         updates = [c.args for c in admin_cur.execute.call_args_list
                    if "UPDATE private.project_crypto_keys" in str(c.args[0])]
@@ -205,17 +206,20 @@ class TestProjectKeys:
         assert len(summary["projects"]) == 3
 
     def test_migrate_all_local_to_hsm(self):
-        import hsm
-
+        slot_id = str(uuid4())
         admin_conn, admin_cur = _conn(
             fetchone={"key_provider": "hsm"}, fetchall=[{"project_id": str(uuid4())}]
         )
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
-             patch.object(hsm, "available", return_value=True), \
              patch.object(project_keys, "migrate_project_key", return_value=0) as migrate:
-            n = project_keys.migrate_all_local_to_hsm()
+            n = project_keys.migrate_all_local_to_hsm(target_slot_id=slot_id)
         assert n == 1
         migrate.assert_called_once()
+        assert migrate.call_args.kwargs["target_slot_id"] == slot_id
+
+    def test_migrate_all_local_to_hsm_requires_slot(self):
+        with pytest.raises(RuntimeError, match="target HSM slot"):
+            project_keys.migrate_all_local_to_hsm(target_slot_id=None)
 
     def test_ensure_project_key_hsm_slot(self):
         import hsm

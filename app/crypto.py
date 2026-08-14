@@ -99,7 +99,7 @@ def decrypt(val: str) -> str:
 # Each project may have a dedicated data-encryption key (DEK). The DEK is a
 # random Fernet key (``Fernet.generate_key()``: 44-byte urlsafe-b64 of 32 raw
 # bytes). For local keys it is wrapped by MASTER_KEY; for HSM keys the 32 raw
-# bytes are wrapped by the HSM KEK (see ``hsm.wrap_dek`` / ``unwrap_dek``).
+# bytes are wrapped by the HSM slot's KEK (see ``hsm.wrap_dek_for_slot``).
 # Values encrypted with a project DEK carry ``crypto_provider='project'``;
 # values encrypted with the app master key are ``'master'`` (legacy / non-BYOK).
 # Resolution is cached per process and can be cleared after key events.
@@ -176,16 +176,15 @@ def clear_slot_url_cache() -> None:
 def _dek_for(row: dict) -> bytes:
     """Unwrap the project DEK using its key_provider (master or HSM)."""
     if (row.get("key_provider") or "local") == "hsm":
-        from hsm import unwrap_dek, unwrap_dek_for_slot
+        from hsm import unwrap_dek_for_slot
 
         slot_id = row.get("hsm_slot_id")
-        if slot_id is not None:
-            slot_url_val = _slot_url(str(slot_id))
-            if slot_url_val is not None:
-                return unwrap_dek_for_slot(
-                    slot_url_val, row["key_enc"], row.get("kms_key_ref")
-                )
-        return unwrap_dek(row["key_enc"], row.get("kms_key_ref"))
+        if slot_id is None:
+            raise RuntimeError("HSM project has no slot assigned")
+        slot_url_val = _slot_url(str(slot_id))
+        if slot_url_val is None:
+            raise RuntimeError("HSM slot not found")
+        return unwrap_dek_for_slot(slot_url_val, row["key_enc"], row.get("kms_key_ref"))
     return unwrap_project_key(row["key_enc"])
 
 

@@ -6,7 +6,6 @@ from uuid import UUID, uuid4
 
 import app as store
 import db
-import hsm
 import project_keys
 
 store.app.config["TESTING"] = True
@@ -27,26 +26,39 @@ def _team_conn():
     return conn
 
 
+def _slots_conn(slots):
+    cur = MagicMock()
+    cur.fetchall.return_value = slots
+    cur.__enter__.return_value = cur
+    cur.__exit__.return_value = False
+    conn = MagicMock()
+    conn.cursor.return_value = cur
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    return conn
+
+
 class TestHsmWizard:
     def setup_method(self):
         self.client = store.app.test_client()
         with self.client.session_transaction() as s:
             s["user_id"] = str(uuid4())
 
-    def test_hides_hsm_when_unavailable(self):
+    def test_hides_hsm_when_no_slots(self):
         with patch.object(db, "as_user", return_value=_team_conn()), \
-             patch.object(hsm, "available", return_value=False):
+             patch.object(db, "connect_admin", return_value=_slots_conn([])):
             r = self.client.get("/teams/%s/projects/new" % uuid4())
         assert r.status_code == 200
         assert b'value="hsm"' not in r.data
 
-    def test_shows_hsm_when_available(self):
+    def test_shows_hsm_when_slots_exist(self):
+        slot = {"id": str(uuid4()), "name": "prod-hsm", "is_default": True}
         with patch.object(db, "as_user", return_value=_team_conn()), \
-             patch.object(hsm, "available", return_value=True), \
-             patch.object(hsm, "kek_label", return_value="byok-kek"):
+             patch.object(db, "connect_admin", return_value=_slots_conn([slot])):
             r = self.client.get("/teams/%s/projects/new" % uuid4())
         assert r.status_code == 200
         assert b'value="hsm"' in r.data
+        assert b"prod-hsm" in r.data
 
 
 class TestHsmSettingsAdopt:
@@ -71,9 +83,8 @@ class TestHsmSettingsAdopt:
         conn.__exit__.return_value = False
         return conn
 
-    def test_adopt_hsm_requires_hsm(self):
+    def test_adopt_hsm_requires_slot(self):
         with patch.object(db, "as_user", return_value=self._admin_conn()), \
-             patch.object(hsm, "available", return_value=False), \
              patch.object(project_keys, "ensure_project_key") as ensure, \
              patch.object(project_keys, "adopt_project_key") as adopt:
             r = self.client.post(
@@ -85,24 +96,24 @@ class TestHsmSettingsAdopt:
         adopt.assert_not_called()
 
     def test_adopt_hsm_success(self):
+        slot = str(uuid4())
         with patch.object(db, "as_user", return_value=self._admin_conn()), \
-             patch.object(hsm, "available", return_value=True), \
              patch.object(project_keys, "ensure_project_key", return_value=True), \
              patch.object(project_keys, "adopt_project_key", return_value=5) as adopt:
             r = self.client.post(
                 f"/projects/{self.pid}/crypto",
-                data={"action": "adopt", "provider": "hsm"},
+                data={"action": "adopt", "provider": "hsm", "hsm_slot": slot},
             )
         assert r.status_code == 302
-        adopt.assert_called_once_with(UUID(self.pid), provider="hsm")
+        adopt.assert_called_once_with(UUID(self.pid), provider="hsm", hsm_slot_id=slot)
 
     def test_migrate_hsm_route(self):
+        slot = str(uuid4())
         with patch.object(db, "as_user", return_value=self._admin_conn()), \
-             patch.object(hsm, "available", return_value=True), \
              patch.object(project_keys, "migrate_project_key", return_value=7) as migrate:
             r = self.client.post(
                 f"/projects/{self.pid}/crypto",
-                data={"action": "migrate", "provider": "hsm"},
+                data={"action": "migrate", "provider": "hsm", "target_slot": slot},
             )
         assert r.status_code == 302
-        migrate.assert_called_once_with(UUID(self.pid), "hsm", target_slot_id=None)
+        migrate.assert_called_once_with(UUID(self.pid), "hsm", target_slot_id=slot)

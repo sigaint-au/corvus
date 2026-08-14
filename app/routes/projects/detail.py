@@ -14,7 +14,6 @@ import audit
 import authz
 import config
 import db
-import hsm
 import nav
 import paging
 from secret_kinds import (
@@ -422,7 +421,7 @@ def project_detail(project_id):
         project_crypto=project_crypto,
         project_master_rows=project_master_rows,
         hsm_slots=hsm_slots,
-        hsm_available=hsm.available(),
+        hsm_available=bool(hsm_slots),
     )
 
 
@@ -564,14 +563,19 @@ def project_crypto_action(project_id):
         provider = (request.form.get("provider") or "local").strip().lower()
         if provider not in ("local", "hsm"):
             provider = "local"
-        if provider == "hsm" and not hsm.available():
-            flash("External HSM is not configured", "error")
+        hsm_slot = (request.form.get("hsm_slot") or "").strip() or None
+        if provider == "hsm" and not hsm_slot:
+            flash("External HSM requires a named slot", "error")
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")
             )
         try:
-            created = project_keys.ensure_project_key(project_id, provider=provider)
-            n = project_keys.adopt_project_key(project_id, provider=provider)
+            created = project_keys.ensure_project_key(
+                project_id, provider=provider, hsm_slot_id=hsm_slot
+            )
+            n = project_keys.adopt_project_key(
+                project_id, provider=provider, hsm_slot_id=hsm_slot
+            )
         except Exception as e:
             flash(f"Key adoption failed: {e}", "error")
             return redirect(
@@ -595,8 +599,8 @@ def project_crypto_action(project_id):
         if new_provider not in ("local", "hsm"):
             new_provider = "hsm"
         target_slot = (request.form.get("target_slot") or "").strip() or None
-        if new_provider == "hsm" and not hsm.available():
-            flash("External HSM is not configured", "error")
+        if new_provider == "hsm" and not target_slot:
+            flash("External HSM requires a named slot", "error")
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")
             )

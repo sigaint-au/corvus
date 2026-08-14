@@ -70,11 +70,8 @@ services:
       SECRET_KEY: ${SECRET_KEY:-flask-session-secret-change-me}
       POSTGREST_URL: http://postgrest:3000
       GLOBAL_ADMIN_EMAIL: ${GLOBAL_ADMIN_EMAIL:-}
-      # External HSM (SoftHSM2) — optional; only used when a project opts in.
-      HSM_PKCS11_MODULE: /usr/lib/softhsm/libsofthsm2.so
-      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-secretserver}
-      HSM_PIN: ${HSM_PIN:-1234}
-      HSM_KEK_LABEL: ${HSM_KEK_LABEL:-byok-kek}
+      # SoftHSM2 token dir (the app resolves HSM slots by PKCS#11 URL, which
+      # points at libsofthsm2.so and this token directory).
       SOFTHSM2_CONF: /hsm/tokens/softhsm2.conf
       # Opt-in only — default off so refuse_insecure_defaults() actually runs.
       # For local play with baked-in secrets: ALLOW_INSECURE_DEFAULTS=1

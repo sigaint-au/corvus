@@ -71,19 +71,20 @@ Creating a project with BYOK records an `org_audit` event
 
 ### Configuration
 
-```bash
-export HSM_PKCS11_MODULE=/path/to/module.so
-export HSM_TOKEN_LABEL=secretserver
-export HSM_PIN=<your-pin>
-export HSM_KEK_LABEL=byok-kek
+HSM access is configured per **named slot** (a PKCS#11 URL). Add one in
+**Server Settings → Encryption → HSM slots**:
+
+```text
+pkcs11:token=secretserver;object=byok-kek?module-path=/path/to/module.so&pin-source=/run/secrets/hsm-pin
 ```
 
-`HSM_PIN` is the switch — if unset, the HSM option is hidden in the UI.
+See [Configuring multiple HSMs](#configuring-multiple-hsms-named-slots) below
+for the full URL format and Kubernetes/Docker PIN setup.
 
 ### Verification
 
-1. Create a test project and select **External HSM**.
-2. Check Project Settings → Encryption shows "External HSM · byok-kek".
+1. Create a test project and select **HSM** (choose the slot).
+2. Check Project Settings → Encryption shows the slot name.
 3. Create a secret and reveal it — confirms the full encrypt/decrypt path.
 
 ### Backup
@@ -149,25 +150,25 @@ with the new key are skipped).
 ## Rotating the HSM KEK
 
 ```bash
-flask --app app rekey-hsm-kek
+flask --app app rekey-hsm-kek --slot-id <slot-uuid>
 ```
 
-Generates a fresh KEK, re-wraps every HSM-backed project DEK under it, and
-updates each project's `kms_key_ref`. Also available from Server Settings →
-Encryption ("Rotate HSM KEK").
+Generates a fresh KEK in that slot, re-wraps every project DEK linked to the
+slot, and updates each project's `kms_key_ref`. Also available from Server
+Settings → Encryption → the slot's kebab menu ("Rotate KEK").
 
 Each rotation creates a new KEK (e.g. `byok-kek-1a2b3c4d`). Old KEKs are left
-in place for safety. After verifying every HSM-backed project's `kms_key_ref`
-points at the new label, you can delete an old KEK manually to free HSM key
-slots (e.g. via `hsm.delete_kek("<old-label>")` in a `flask --app app shell`).
+in place for safety. After verifying every project's `kms_key_ref` points at
+the new label, you can delete an old KEK manually to free HSM key slots (via
+`hsm.delete_kek(pkcs11_url, "<old-label>")` in a `flask --app app shell`).
 Deleting a KEK that a project still references makes that project's secrets
 unrecoverable, so only delete after confirming the re-wrap.
 
 ## Migrating all local BYOK projects to HSM
 
-Server Settings → Encryption → "Migrate all local BYOK projects to HSM" (or
-per-project "Migrate to HSM" on the project Settings tab) re-encrypts local
-projects onto HSM-wrapped keys.
+Server Settings → Encryption → choose a slot and "Migrate N local project(s)
+to HSM" (or per-project "Migrate to HSM" on the project Settings tab, selecting
+a target slot) re-encrypts local projects onto HSM-wrapped keys.
 
 ## Configuring multiple HSMs (named slots)
 
@@ -184,16 +185,16 @@ pkcs11:token=<label>;object=<KEK label>?module-path=/path/to/module.so&pin-sourc
   PINs).
 - **Default slot**: new HSM projects auto-select it in the wizard.
 - **Test** verifies the slot's token opens and the KEK exists (non-destructive).
+- **Rotate KEK** generates a fresh KEK and re-wraps the slot's projects.
 - **Delete** is blocked while projects still reference the slot.
-- **Link legacy project(s)**: associates existing env-var-backed HSM projects
-  with a slot whose KEK label matches — metadata only, no re-encryption.
+- **Link legacy project(s)**: associates pre-slot HSM projects (created before
+  named slots) with a slot whose KEK label matches — metadata only, no
+  re-encryption.
 - **Migrating between slots**: per-project Settings → migrate with the target
   slot re-wraps the existing DEK (no secret re-encryption).
-- **Rotation**: rotate a slot's KEK from its row (or the global "Rotate HSM
-  KEK" action for legacy projects). Old KEKs can be cleaned up manually after
-  verifying all projects were re-wrapped.
 
-If no named slots are configured, the legacy env-var config (`HSM_*`) is used.
+If no named slots are configured, external-HSM encryption is unavailable (add a
+slot first).
 
 ### Kubernetes PIN file setup
 

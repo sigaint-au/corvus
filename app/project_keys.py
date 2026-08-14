@@ -21,10 +21,8 @@ def ensure_project_key(project_id, provider: str = "local", hsm_slot_id=None) ->
     """Create and store a project DEK if the project does not have one.
 
     ``provider`` is ``'local'`` (DEK wrapped by MASTER_KEY) or ``'hsm'`` (DEK
-    wrapped by the HSM KEK). When ``provider='hsm'`` and ``hsm_slot_id`` is
-    given, the DEK is wrapped by the KEK in that named slot; otherwise the
-    global env-var HSM config is used. Idempotent; returns True when a new key
-    was created.
+    wrapped by a named slot's KEK — ``hsm_slot_id`` is then required).
+    Idempotent; returns True when a new key was created.
 
     Example:
         >>> if ensure_project_key(pid, provider="hsm", hsm_slot_id=slot):
@@ -41,15 +39,12 @@ def ensure_project_key(project_id, provider: str = "local", hsm_slot_id=None) ->
             if provider == "hsm":
                 import hsm
 
-                if hsm_slot_id is not None:
-                    slot_url = crypto.slot_url(hsm_slot_id)
-                    if not slot_url:
-                        raise RuntimeError("named HSM slot not found")
-                    key_enc, kms_ref = hsm.wrap_dek_for_slot(slot_url, raw)
-                else:
-                    hsm.ensure_kek()
-                    key_enc = hsm.wrap_dek(raw)
-                    kms_ref = hsm.kek_label()
+                if hsm_slot_id is None:
+                    raise RuntimeError("HSM provider requires a named slot")
+                slot_url = crypto.slot_url(hsm_slot_id)
+                if not slot_url:
+                    raise RuntimeError("named HSM slot not found")
+                key_enc, kms_ref = hsm.wrap_dek_for_slot(slot_url, raw)
             else:
                 key_enc = crypto.wrap_project_key(raw)
                 kms_ref = None
@@ -261,15 +256,12 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
     if new_provider == "hsm":
         import hsm
 
-        if target_slot_id is not None:
-            slot_url = crypto.slot_url(target_slot_id)
-            if not slot_url:
-                raise RuntimeError("named HSM slot not found")
-            new_enc, new_ref = hsm.wrap_dek_for_slot(slot_url, new_raw)
-        else:
-            hsm.ensure_kek()
-            new_enc = hsm.wrap_dek(new_raw)
-            new_ref = hsm.kek_label()
+        if target_slot_id is None:
+            raise RuntimeError("HSM provider requires a named slot")
+        slot_url = crypto.slot_url(target_slot_id)
+        if not slot_url:
+            raise RuntimeError("named HSM slot not found")
+        new_enc, new_ref = hsm.wrap_dek_for_slot(slot_url, new_raw)
     else:
         new_enc = crypto.wrap_project_key(new_raw)
         new_ref = None
@@ -372,76 +364,41 @@ def rewrap_project_keys(old_master_key: str) -> int:
     return re_wrapped
 
 
-def rotate_hsm_kek(slot_id=None) -> int:
-    """Rotate the HSM KEK, re-wrapping HSM-backed DEKs under a fresh KEK.
+def rotate_hsm_kek(slot_id) -> int:
+    """Rotate a named slot's KEK, re-wrapping its HSM-backed DEKs.
 
-    When ``slot_id`` is given, only projects linked to that slot are re-wrapped
-    (new KEK created in that slot). When ``None``, only legacy (no slot)
-    projects are re-wrapped using the global env-var config. Returns the number
-    of projects re-wrapped.
+    Generates a new KEK (new label) in the slot and re-wraps every project
+    linked to that slot. Returns the number of projects re-wrapped.
 
     Example:
-        >>> n = rotate_hsm_kek()
+        >>> n = rotate_hsm_kek(slot_id)
         >>> n >= 0
         True
     """
     import hsm
 
-    re_wrapped = 0
-    if slot_id is not None:
-        slot_url = crypto.slot_url(slot_id)
-        if not slot_url:
-            raise RuntimeError("named HSM slot not found")
-        parsed = hsm.parse_pkcs11_url(slot_url)
-        new_label = f"{parsed['kek_label']}-{secrets.token_hex(4)}"
-        hsm.generate_kek(new_label, pkcs11_url=slot_url)
-        with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT project_id, key_enc, kms_key_ref
-                FROM private.project_crypto_keys
-                WHERE key_provider = 'hsm' AND hsm_slot_id = %s
-                """,
-                (str(slot_id),),
-            )
-            for row in cur.fetchall() or []:
-                try:
-                    raw = hsm.unwrap_dek_for_slot(
-                        slot_url, row["key_enc"], row.get("kms_key_ref")
-                    )
-                    new_enc = hsm.wrap_dek_with_label(slot_url, raw, new_label)
-                except Exception:
-                    continue
-                cur.execute(
-                    """
-                    UPDATE private.project_crypto_keys
-                    SET key_enc = %s, kms_key_ref = %s, updated_at = now()
-                    WHERE project_id = %s
-                    """,
-                    (new_enc, new_label, str(row["project_id"])),
-                )
-                re_wrapped += 1
-            conn.commit()
-        crypto.clear_project_key_cache()
-        log.info("rotated HSM KEK for slot %s: %s project(s)", slot_id, re_wrapped)
-        return re_wrapped
-
-    # Legacy (no slot): global env-var config.
-    new_label = f"{hsm.kek_label()}-{secrets.token_hex(4)}"
-    hsm.generate_kek(new_label)
+    slot_url = crypto.slot_url(slot_id)
+    if not slot_url:
+        raise RuntimeError("named HSM slot not found")
+    parsed = hsm.parse_pkcs11_url(slot_url)
+    new_label = f"{parsed['kek_label']}-{secrets.token_hex(4)}"
+    hsm.generate_kek(new_label, pkcs11_url=slot_url)
     re_wrapped = 0
     with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
         cur.execute(
             """
             SELECT project_id, key_enc, kms_key_ref
             FROM private.project_crypto_keys
-            WHERE key_provider = 'hsm' AND hsm_slot_id IS NULL
-            """
+            WHERE key_provider = 'hsm' AND hsm_slot_id = %s
+            """,
+            (str(slot_id),),
         )
         for row in cur.fetchall() or []:
             try:
-                raw = hsm.unwrap_dek(row["key_enc"], row.get("kms_key_ref"))
-                new_enc = hsm.wrap_dek(raw, new_label)
+                raw = hsm.unwrap_dek_for_slot(
+                    slot_url, row["key_enc"], row.get("kms_key_ref")
+                )
+                new_enc = hsm.wrap_dek_with_label(slot_url, raw, new_label)
             except Exception:
                 continue
             cur.execute(
@@ -455,7 +412,7 @@ def rotate_hsm_kek(slot_id=None) -> int:
             re_wrapped += 1
         conn.commit()
     crypto.clear_project_key_cache()
-    log.info("rotated HSM KEK: %s project(s) re-wrapped to %r", re_wrapped, new_label)
+    log.info("rotated HSM KEK for slot %s: %s project(s)", slot_id, re_wrapped)
     return re_wrapped
 
 
@@ -511,16 +468,13 @@ def encryption_summary() -> dict:
     return {"counts": counts, "projects": projects}
 
 
-def migrate_all_local_to_hsm(target_slot_id=None) -> int:
-    """Migrate every local-BYOK project to an HSM-wrapped key.
+def migrate_all_local_to_hsm(target_slot_id) -> int:
+    """Migrate every local-BYOK project to an HSM-wrapped key in a slot.
 
-    When ``target_slot_id`` is given, projects are linked to that slot.
-    Returns the number of projects migrated.
+    ``target_slot_id`` is required. Returns the number of projects migrated.
     """
-    import hsm
-
-    if not hsm.available():
-        raise RuntimeError("HSM is not configured")
+    if target_slot_id is None:
+        raise RuntimeError("a target HSM slot is required")
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
             """

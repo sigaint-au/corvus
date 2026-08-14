@@ -1,9 +1,10 @@
-"""External HSM (SoftHSM2 / PKCS#11) integration for BYOK.
+"""External HSM (PKCS#11) integration for BYOK — named-slot only.
 
-The HSM holds a single AES-256 key-encryption key (KEK). Project data-encryption
-keys (DEKs) are Fernet keys (urlsafe-base64 of 32 raw bytes, as produced by
-``Fernet.generate_key()``). The 32 raw bytes are wrapped with the HSM KEK so
-the KEK never leaves the HSM and ``MASTER_KEY`` is not on the DEK trust path.
+Each HSM is configured as a named slot (a PKCS#11 URL in ``private.hsm_slots``).
+A slot's token holds an AES-256 key-encryption key (KEK); project
+data-encryption keys (DEKs) are Fernet keys (urlsafe-base64 of 32 raw bytes)
+wrapped by that KEK, so the KEK never leaves the HSM and ``MASTER_KEY`` is not
+on the DEK trust path.
 
 Wrap order of preference:
 1. ``AES_KEY_WRAP`` (RFC 3394) when the token supports it
@@ -18,14 +19,9 @@ from __future__ import annotations
 import base64
 import logging
 import os
-import time
 from urllib.parse import unquote
 
 log = logging.getLogger(__name__)
-
-# Cached availability check (avoid opening a PKCS#11 session on every render).
-_avail_cache: tuple[bool, float] | None = None
-_AVAIL_TTL = 30.0
 
 # Raw AES key material inside a Fernet key (before urlsafe-b64 encoding).
 _RAW_DEK_LEN = 32
@@ -35,12 +31,6 @@ _IV_LEN = 16
 # Blob version prefixes so unwrap can tell CBC from key-wrap.
 _FMT_CBC = b"\x01"
 _FMT_KEY_WRAP = b"\x02"
-
-
-def _cfg() -> tuple[str, str, str, str]:
-    from config import HSM_KEK_LABEL, HSM_PIN, HSM_PKCS11_MODULE, HSM_TOKEN_LABEL
-
-    return HSM_PKCS11_MODULE, HSM_TOKEN_LABEL, HSM_PIN, HSM_KEK_LABEL
 
 
 def parse_pkcs11_url(url: str) -> dict:
@@ -122,32 +112,6 @@ def redact_pkcs11_url(url: str) -> str:
     return re.sub(r"(?i)(pin-value)=[^&;]*", r"\1=***", url or "")
 
 
-def available() -> bool:
-    """Return True when HSM is configured and the token can be opened.
-
-    Requires ``HSM_PIN``, a present PKCS#11 module, and a successful session
-    open (so a missing/uninit token does not show HSM options in the UI).
-
-    Result is cached for 30 seconds to avoid opening a PKCS#11 session on
-    every page load.
-    """
-    global _avail_cache
-    if _avail_cache and time.time() - _avail_cache[1] < _AVAIL_TTL:
-        return _avail_cache[0]
-    module, _token, pin, _kek = _cfg()
-    if not pin or not os.path.exists(module):
-        _avail_cache = (False, time.time())
-        return False
-    try:
-        with _session():
-            result = True
-    except Exception as e:
-        log.warning("HSM available() check failed: %s", e)
-        result = False
-    _avail_cache = (result, time.time())
-    return result
-
-
 def _pkcs11():
     try:
         import pkcs11
@@ -156,24 +120,14 @@ def _pkcs11():
     return pkcs11
 
 
-def _session(rw: bool = True, pkcs11_url: str | None = None):
-    """Open a PKCS#11 session (logged in).
-
-    When ``pkcs11_url`` is given it is parsed and used for the module, token,
-    and PIN; otherwise the global env-var config is used.
-    """
+def _session(rw: bool, pkcs11_url: str):
+    """Open a PKCS#11 session (logged in) against a named slot's PKCS#11 URL."""
+    parsed = parse_pkcs11_url(pkcs11_url)
     pkcs11 = _pkcs11()
-    if pkcs11_url:
-        parsed = parse_pkcs11_url(pkcs11_url)
-        module = parsed["module_path"]
-        token_label = parsed["token_label"]
-        pin = parsed["pin"]
-    else:
-        module, token_label, pin, _kek = _cfg()
     try:
-        lib = pkcs11.lib(module)
-        token = lib.get_token(token_label=token_label)
-        return token.open(user_pin=pin, rw=rw)
+        lib = pkcs11.lib(parsed["module_path"])
+        token = lib.get_token(token_label=parsed["token_label"])
+        return token.open(user_pin=parsed["pin"], rw=rw)
     except Exception as e:
         raise RuntimeError(f"HSM open failed: {e}") from e
 
@@ -224,28 +178,13 @@ def raw_to_fernet_key(raw: bytes) -> bytes:
     return base64.urlsafe_b64encode(raw)
 
 
-def ensure_kek() -> str:
-    """Create the AES-256 KEK at the configured label if missing.
+def generate_kek(label: str, pkcs11_url: str) -> str:
+    """Create an AES-256 KEK with ``label`` in a slot if missing.
 
-    Idempotent — reuses an existing key with the same label.
-
-    Example:
-        >>> label = ensure_kek()
-        >>> label == 'byok-kek'
-        True
-    """
-    return generate_kek(kek_label())
-
-
-def generate_kek(label: str, pkcs11_url: str | None = None) -> str:
-    """Create an AES-256 KEK with ``label`` if missing; return the label.
-
-    Used both for the initial KEK and for KEK rotation (new label). When
-    ``pkcs11_url`` is given the KEK is created in that slot instead of the
-    global config.
+    Used for the initial KEK and for KEK rotation (new label).
 
     Example:
-        >>> generate_kek("byok-kek-2")
+        >>> generate_kek("byok-kek-2", "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x")
         'byok-kek-2'
     """
     pkcs11 = _pkcs11()
@@ -286,17 +225,17 @@ def generate_kek(label: str, pkcs11_url: str | None = None) -> str:
     return label
 
 
-def delete_kek(label: str) -> None:
-    """Delete a KEK by label (e.g. an old one after KEK rotation).
+def delete_kek(pkcs11_url: str, label: str) -> None:
+    """Delete a KEK by label from a slot (e.g. an old one after KEK rotation).
 
     Only safe once every project DEK stored under this KEK has been re-wrapped
     to a new KEK — otherwise those projects become unrecoverable.
 
     Example:
-        >>> delete_kek("byok-kek-old")
+        >>> delete_kek("pkcs11:token=t;object=k?module-path=/m.so&pin-value=x", "byok-kek-old")
     """
     pkcs11 = _pkcs11()
-    with _session(rw=True) as session:
+    with _session(rw=True, pkcs11_url=pkcs11_url) as session:
         for key in session.get_objects(
             {
                 pkcs11.Attribute.CLASS: pkcs11.ObjectClass.SECRET_KEY,
@@ -305,11 +244,6 @@ def delete_kek(label: str) -> None:
         ):
             key.destroy()
             log.info("deleted HSM KEK %r", label)
-
-
-def kek_label() -> str:
-    """Return the configured KEK label (used as ``kms_key_ref``)."""
-    return _cfg()[3]
 
 
 def _wrap_raw(key, pkcs11, raw: bytes) -> str:
@@ -359,61 +293,6 @@ def _unwrap_key(key, pkcs11, fmt: bytes, rest: bytes) -> bytes:
     raise ValueError("unknown wrapped DEK format")
 
 
-def wrap_dek(dek: bytes, label: str | None = None) -> str:
-    """Wrap a Fernet DEK with the HSM KEK; return base64 blob.
-
-    ``dek`` may be a 44-byte Fernet key (preferred) or 32 raw bytes. Prefer
-    AES key-wrap when the token supports it; otherwise AES-CBC + random IV.
-    ``label`` selects the KEK (defaults to the configured label).
-
-    Example:
-        >>> from cryptography.fernet import Fernet
-        >>> wrapped = wrap_dek(Fernet.generate_key())
-        >>> isinstance(wrapped, str)
-        True
-    """
-    raw = fernet_key_to_raw(dek)
-    label = label or kek_label()
-    pkcs11 = _pkcs11()
-    with _session(rw=False) as session:
-        key = _find_kek(session, pkcs11, label)
-        if key is None:
-            raise RuntimeError("HSM KEK not found; call ensure_kek() first")
-        return _wrap_raw(key, pkcs11, raw)
-
-
-def unwrap_dek(wrapped: str, label: str | None = None) -> bytes:
-    """Unwrap a DEK previously produced by :func:`wrap_dek` to a Fernet key.
-
-    Returns 44-byte urlsafe-base64 key material suitable for ``Fernet(key)``.
-    ``label`` selects the KEK (defaults to the configured label).
-
-    Example:
-        >>> k = Fernet.generate_key()
-        >>> unwrap_dek(wrap_dek(k)) == k
-        True
-    """
-    label = label or kek_label()
-    fmt, rest = _decode_wrapped_blob(wrapped)
-    pkcs11 = _pkcs11()
-    with _session(rw=False) as session:
-        key = _find_kek(session, pkcs11, label)
-        if key is None:
-            raise RuntimeError("HSM KEK not found; call ensure_kek() first")
-        try:
-            raw = _unwrap_key(key, pkcs11, fmt, rest)
-        except ValueError:
-            raise
-        except Exception as e:
-            raise RuntimeError(f"HSM unwrap failed: {e}") from e
-    if len(raw) != _RAW_DEK_LEN:
-        raise ValueError(f"unwrapped DEK has length {len(raw)}, expected {_RAW_DEK_LEN}")
-    return raw_to_fernet_key(raw)
-
-
-# ── Slot-aware variants (named PKCS#11 URLs) ─────────────────────────────
-
-
 def available_for_slot(pkcs11_url: str) -> bool:
     """Return True when the specified slot's token can be opened."""
     try:
@@ -425,7 +304,7 @@ def available_for_slot(pkcs11_url: str) -> bool:
 
 
 def status_for_slot(pkcs11_url: str) -> dict:
-    """Return slot status in the same shape as :func:`status`."""
+    """Return slot status: module/token/KEK + availability + error."""
     c = parse_pkcs11_url(pkcs11_url)
     result = {
         "available": False,
@@ -518,88 +397,5 @@ def test_connection_for_slot(pkcs11_url: str) -> tuple[bool, str]:
         if not has:
             return False, "token reachable but KEK not present yet"
         return True, "connection OK; KEK present"
-    except Exception as e:
-        return False, str(e)
-
-
-def status() -> dict:
-    """Return HSM configuration and availability for the admin UI.
-
-    Never exposes the PIN — only whether one is set. Reuses the cached
-    :func:`available` check and short-circuits if the HSM is down (no extra
-    session open).
-
-    Example:
-        >>> s = status()
-        >>> s["available"] in (True, False)
-        True
-    """
-    module, token_label, pin, kek_label = _cfg()
-    result = {
-        "available": False,
-        "module": module,
-        "token_label": token_label,
-        "kek_label": kek_label,
-        "pin_set": bool(pin),
-        "error": None,
-        "kek_exists": False,
-    }
-    if not pin:
-        result["error"] = "Not configured (HSM_PIN not set)"
-        return result
-    if not os.path.exists(module):
-        result["error"] = f"PKCS#11 module not found: {module}"
-        return result
-    if not available():
-        result["error"] = "Could not connect to the HSM token (see app logs)"
-        return result
-    try:
-        pkcs11 = _pkcs11()
-        with _session(rw=False) as session:
-            result["available"] = True
-            result["kek_exists"] = _find_kek(session, pkcs11, result["kek_label"]) is not None
-    except Exception as e:
-        result["error"] = str(e)
-    return result
-
-
-def test_connection() -> tuple[bool, str]:
-    """Verify the HSM token can be opened and the KEK is present.
-
-    Non-destructive: does not create a KEK or write anything. Used by the
-    "Test HSM connection" button in Server Settings.
-
-    Example:
-        >>> ok, msg = test_connection()
-        >>> isinstance(ok, bool)
-        True
-    """
-    try:
-        pkcs11 = _pkcs11()
-        with _session(rw=False) as session:
-            has = _find_kek(session, pkcs11, kek_label()) is not None
-        if not has:
-            return False, "token reachable but KEK not present yet"
-        return True, "connection OK; KEK present"
-    except Exception as e:
-        return False, str(e)
-
-
-def test_roundtrip() -> tuple[bool, str]:
-    """Perform a wrap/unwrap round-trip with a throwaway DEK.
-
-    Verifies the full HSM path (token open, KEK presence, wrap, unwrap).
-    Creates the KEK if missing, so prefer :func:`test_connection` for a
-    read-only health check. Returns ``(ok, message)``.
-    """
-    from cryptography.fernet import Fernet
-
-    try:
-        ensure_kek()
-        test_dek = Fernet.generate_key()
-        wrapped = wrap_dek(test_dek)
-        if unwrap_dek(wrapped) != test_dek:
-            return False, "wrap/unwrap round-trip mismatch"
-        return True, "wrap/unwrap round-trip succeeded"
     except Exception as e:
         return False, str(e)

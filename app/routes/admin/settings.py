@@ -425,31 +425,13 @@ def server_settings():
                     "They must set up 2FA again at next sign-in if required.",
                     "ok",
                 )
-        elif action == "hsm_test":
-            ok, msg = hsm.test_connection()
-            flash(f"HSM check: {msg}", "ok" if ok else "error")
-        elif action == "hsm_kek_rotate":
-            if not hsm.available():
-                flash("External HSM is not configured", "error")
-            else:
-                try:
-                    n = project_keys.rotate_hsm_kek()
-                    with db.connect_admin() as conn, conn.cursor() as cur:
-                        audit.log_org(
-                            cur,
-                            action="hsm_kek_rotated",
-                            detail=f"re-wrapped={n}",
-                        )
-                        conn.commit()
-                    flash(f"HSM KEK rotated — re-wrapped {n} project key(s)", "ok")
-                except Exception as e:
-                    flash(f"HSM KEK rotation failed: {e}", "error")
         elif action == "hsm_migrate_all":
-            if not hsm.available():
-                flash("External HSM is not configured", "error")
+            target_slot = (request.form.get("target_slot") or "").strip() or None
+            if not target_slot:
+                flash("Choose a target HSM slot", "error")
             else:
                 try:
-                    n = project_keys.migrate_all_local_to_hsm()
+                    n = project_keys.migrate_all_local_to_hsm(target_slot)
                     with db.connect_admin() as conn, conn.cursor() as cur:
                         audit.log_org(
                             cur,
@@ -510,6 +492,23 @@ def server_settings():
                 flash(f"Linked {n} legacy HSM project(s) to this slot", "ok")
             except Exception as e:
                 flash(f"Slot link failed: {e}", "error")
+        elif action == "hsm_slot_rotate":
+            slot_id = (request.form.get("slot_id") or "").strip()
+            if not slot_id:
+                flash("Slot required", "error")
+            else:
+                try:
+                    n = project_keys.rotate_hsm_kek(slot_id)
+                    with db.connect_admin() as conn, conn.cursor() as cur:
+                        audit.log_org(
+                            cur,
+                            action="hsm_kek_rotated",
+                            detail=f"slot={slot_id} re-wrapped={n}",
+                        )
+                        conn.commit()
+                    flash(f"HSM KEK rotated — re-wrapped {n} project key(s)", "ok")
+                except Exception as e:
+                    flash(f"HSM KEK rotation failed: {e}", "error")
         # Stay on the relevant tab after save
         tab_for = {
             "server_url": "general",
@@ -532,14 +531,13 @@ def server_settings():
             "user_enable": "users",
             "user_reset_password": "users",
             "user_reset_2fa": "users",
-            "hsm_test": "encryption",
-            "hsm_kek_rotate": "encryption",
             "hsm_migrate_all": "encryption",
             "hsm_slot_add": "encryption",
             "hsm_slot_edit": "encryption",
             "hsm_slot_delete": "encryption",
             "hsm_slot_test": "encryption",
             "hsm_slot_link": "encryption",
+            "hsm_slot_rotate": "encryption",
         }
         tab = tab_for.get(action, "general")
         return redirect(url_for("server_settings", tab=tab))
@@ -636,7 +634,6 @@ def server_settings():
             )
             legacy_hsm_count = int((cur.fetchone() or {}).get("n") or 0)
         encryption = {
-            "hsm": hsm.status(),
             "master_key_is_default": config.master_key_is_default(),
             "summary": summary,
             "hsm_slots": hsm_slots,

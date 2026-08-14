@@ -221,16 +221,13 @@ def rekey_project_keys_command(old_master_key):
 
 
 @app.cli.command("rekey-hsm-kek")
-def rekey_hsm_kek_command():
-    """Rotate the HSM KEK, re-wrapping every HSM-backed project DEK."""
-    import hsm
+@click.option("--slot-id", "slot_id", required=True, help="HSM slot UUID to rotate")
+def rekey_hsm_kek_command(slot_id):
+    """Rotate a named HSM slot's KEK, re-wrapping its project DEKs."""
     import project_keys
 
-    if not hsm.available():
-        click.echo("HSM is not configured (HSM_PIN unset or module missing)")
-        return
-    n = project_keys.rotate_hsm_kek()
-    click.echo(f"rotated HSM KEK — re-wrapped {n} project key(s)")
+    n = project_keys.rotate_hsm_kek(slot_id)
+    click.echo(f"rotated HSM KEK for slot {slot_id} — re-wrapped {n} project key(s)")
 
 
 if __name__ == "__main__":

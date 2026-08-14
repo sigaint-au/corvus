@@ -738,7 +738,6 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   </form>
 </section>
 {% elif active_tab == 'encryption' %}
-{% set hs = encryption.hsm %}
 {% set c = encryption.summary.counts %}
 
 <section class="crypto-panel">
@@ -773,8 +772,8 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 <section class="crypto-panel">
   <div class="section-head"><h2>HSM slots</h2></div>
   {% if encryption.hsm_slots %}
-  <div class="table"><table>
-    <thead><tr><th>Name</th><th>PKCS#11 URL</th><th></th><th></th><th></th></tr></thead>
+  <div class="table" style="overflow: visible"><table>
+    <thead><tr><th>Name</th><th>PKCS#11 URL</th><th class="acts-menu"></th></tr></thead>
     <tbody>
     {% for slot in encryption.hsm_slots %}
       <tr>
@@ -782,41 +781,53 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
           {{ slot.name }}
           {% if slot.is_default %}<span class="badge" data-variant="primary">default</span>{% endif %}
         </td>
-        <td class="muted"><code class="k">{{ slot.pkcs11_url|redact_pin }}</code></td>
-        <td>
-          <form method="post" class="inline">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <input type="hidden" name="action" value="hsm_slot_test">
-            <input type="hidden" name="slot_id" value="{{ slot.id }}">
-            <button type="submit" class="link">Test</button>
-          </form>
-        </td>
-        <td>
-          <form method="post" class="inline"
-                onsubmit="return confirm('Delete HSM slot “{{ slot.name }}”?');">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <input type="hidden" name="action" value="hsm_slot_delete">
-            <input type="hidden" name="slot_id" value="{{ slot.id }}">
-            <button type="submit" class="link danger">Delete</button>
-          </form>
-        </td>
-        <td>
-          {% if encryption.legacy_hsm_count %}
-          <form method="post" class="inline"
-                onsubmit="return confirm('Link {{ encryption.legacy_hsm_count }} legacy HSM project(s) to this slot?');">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <input type="hidden" name="action" value="hsm_slot_link">
-            <input type="hidden" name="slot_id" value="{{ slot.id }}">
-            <button type="submit" class="link">Link legacy project(s)</button>
-          </form>
-          {% endif %}
+        <td class="muted col-note"><code class="k">{{ slot.pkcs11_url|redact_pin }}</code></td>
+        <td class="acts-menu">
+          {% set _menu = 'slot-menu-' ~ slot.id %}
+          <ot-dropdown>
+            <button type="button" class="ghost icon" popovertarget="{{ _menu }}" aria-label="Actions for {{ slot.name }}">
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+                <circle cx="8" cy="3" r="1.5"/>
+                <circle cx="8" cy="8" r="1.5"/>
+                <circle cx="8" cy="13" r="1.5"/>
+              </svg>
+            </button>
+            <menu popover id="{{ _menu }}">
+              <button type="button" role="menuitem" class="ghost"
+                      hx-post="{{ url_for('server_settings', tab='encryption') }}"
+                      hx-vals='{"action":"hsm_slot_test","slot_id":"{{ slot.id }}"}'
+                      hx-target="body" hx-swap="outerHTML"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Test connection</button>
+              {% if encryption.legacy_hsm_count %}
+              <button type="button" role="menuitem" class="ghost"
+                      hx-post="{{ url_for('server_settings', tab='encryption') }}"
+                      hx-vals='{"action":"hsm_slot_link","slot_id":"{{ slot.id }}"}'
+                      hx-target="body" hx-swap="outerHTML"
+                      hx-confirm="Link {{ encryption.legacy_hsm_count }} legacy HSM project(s) to this slot?"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Link legacy project(s)</button>
+              {% endif %}
+              <button type="button" role="menuitem" class="ghost"
+                      hx-post="{{ url_for('server_settings', tab='encryption') }}"
+                      hx-vals='{"action":"hsm_slot_rotate","slot_id":"{{ slot.id }}"}'
+                      hx-target="body" hx-swap="outerHTML"
+                      hx-confirm="Rotate this slot's KEK and re-wrap all its project keys?"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Rotate KEK</button>
+              <hr>
+              <button type="button" role="menuitem" class="ghost" data-variant="danger"
+                      hx-post="{{ url_for('server_settings', tab='encryption') }}"
+                      hx-vals='{"action":"hsm_slot_delete","slot_id":"{{ slot.id }}"}'
+                      hx-target="body" hx-swap="outerHTML"
+                      hx-confirm="Delete HSM slot “{{ slot.name }}”?"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Delete</button>
+            </menu>
+          </ot-dropdown>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table></div>
   {% else %}
-  <p class="muted">No named slots configured. {% if hs.available %}The legacy env-var config ({{ hs.module }}) is used as fallback.{% else %}Configure a slot to manage per-slot encryption.{% endif %}</p>
+  <p class="muted">No named slots configured. Add a slot above to enable external-HSM encryption.</p>
   {% endif %}
 
   <form method="post" action="{{ url_for('server_settings', tab='encryption') }}" class="settings-form">
@@ -842,91 +853,20 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     </p>
   </form>
   <p class="field-hint">PKCS#11 URL format: <code>pkcs11:token=&lt;label&gt;;object=&lt;KEK label&gt;?module-path=&lt;.so&gt;&amp;pin-source=&lt;pin file&gt;</code>.</p>
-</section>
 
-<section class="crypto-panel">
-  <div class="section-head">
-    <h2>External HSM</h2>
-    <div class="section-tools">
-      <form method="post" class="inline">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <input type="hidden" name="action" value="hsm_test">
-        <button type="submit" class="button outline small" {% if not hs.available %}disabled{% endif %}>Test</button>
-      </form>
-      {% if hs.available %}
-      <form method="post" class="inline"
-            onsubmit="return confirm('Rotate the HSM KEK? All HSM-backed project keys will be re-wrapped.');">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <input type="hidden" name="action" value="hsm_kek_rotate">
-        <button type="submit" class="button outline small">Rotate KEK</button>
-      </form>
-      {% if (c.local or 0) > 0 %}
-      <form method="post" class="inline"
-            onsubmit="return confirm('Migrate all {{ c.local }} local project key(s) to HSM?');">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <input type="hidden" name="action" value="hsm_migrate_all">
-        <button type="submit" class="button outline small">Migrate {{ c.local }} local</button>
-      </form>
-      {% endif %}
-      {% endif %}
-    </div>
-  </div>
-  <div class="table">
-    <table class="hsm-status-table">
-      <thead>
-        <tr>
-          <th>Property</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <th scope="row">Status</th>
-          <td>
-            {% if hs.available %}
-            <span class="badge" data-variant="success">Connected</span>
-            {% else %}
-            <span class="badge" data-variant="danger">Unavailable</span>
-            {% if hs.error %}<span class="muted"> {{ hs.error }}</span>{% endif %}
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Token</th>
-          <td>{% if hs.token_label %}<code class="k">{{ hs.token_label }}</code>{% else %}<span class="muted">-</span>{% endif %}</td>
-        </tr>
-        <tr>
-          <th scope="row">KEK</th>
-          <td>
-            {% if hs.available %}
-              {% if hs.kek_exists %}
-              <span class="badge" data-variant="success">Present</span>
-              {% else %}
-              <span class="badge" data-variant="warning">Missing</span>
-              {% endif %}
-              {% if hs.kek_label %} <code class="k">{{ hs.kek_label }}</code>{% endif %}
-            {% else %}
-            <span class="muted">-</span>
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <th scope="row">Module</th>
-          <td>{% if hs.module %}<code class="k">{{ hs.module }}</code>{% else %}<span class="muted">-</span>{% endif %}</td>
-        </tr>
-        <tr>
-          <th scope="row">PIN</th>
-          <td>
-            {% if hs.pin_set %}
-            <span class="badge" data-variant="secondary">Set</span>
-            {% else %}
-            <span class="badge" data-variant="warning">Not set</span>
-            {% endif %}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+  {% if encryption.hsm_slots and (c.local or 0) > 0 %}
+  <form method="post" action="{{ url_for('server_settings', tab='encryption') }}" class="row"
+        onsubmit="return confirm('Migrate all {{ c.local }} local project key(s) to the selected HSM slot?');">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="hsm_migrate_all">
+    <select name="target_slot" aria-label="Target HSM slot">
+      {% for s in encryption.hsm_slots %}
+      <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="button outline small">Migrate {{ c.local }} local project(s) to HSM</button>
+  </form>
+  {% endif %}
 </section>
 
 <section class="crypto-panel">

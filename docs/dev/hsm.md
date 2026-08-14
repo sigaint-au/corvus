@@ -3,15 +3,14 @@
 BYOK projects can use an **external HSM** as their key-encryption key (KEK).
 For local development the external HSM is [SoftHSM2](https://www.opendnssec.org/softhsm/),
 a software PKCS#11 token. The same PKCS#11 interface works with a real network
-HSM in production by pointing `HSM_PKCS11_MODULE` / `HSM_TOKEN_LABEL` / `HSM_PIN`
-at it.
+HSM in production by configuring a named slot's PKCS#11 URL.
 
 ---
 
 ## How it works
 
-- The HSM holds a single AES-256 **KEK** (label `HSM_KEK_LABEL`, default
-  `byok-kek`). The KEK never leaves the HSM.
+- Each HSM slot holds an AES-256 **KEK** (labelled by the slot URL's `object`
+  segment). The KEK never leaves the HSM.
 - Each BYOK project still has a 32-byte Fernet **data-encryption key (DEK)**
   for its secrets. For HSM-backed projects the DEK is wrapped with the HSM KEK
   (AES-CBC) instead of `MASTER_KEY`.
@@ -48,17 +47,11 @@ HSM-backed projects.
 
 ## App configuration (env)
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `HSM_PKCS11_MODULE` | `/usr/lib/softhsm/libsofthsm2.so` | PKCS#11 module path |
-| `HSM_TOKEN_LABEL` | `secretserver` | Token label |
-| `HSM_PIN` | `1234` | User PIN (also the init PIN) |
-| `HSM_KEK_LABEL` | `byok-kek` | AES KEK label within the token |
-| `SOFTHSM2_CONF` | (package default) | SoftHSM config path; compose sets this to the shared volume conf |
-
-`HSM_PIN` must be set and the token must open successfully for
-`hsm.available()` to be true (UI hides HSM otherwise). The KEK is created
-lazily on the first HSM-backed project (`hsm.ensure_kek()`).
+The app holds **no global HSM configuration** — HSM access is configured per
+**named slot** (a PKCS#11 URL in `private.hsm_slots`). The only runtime env is
+`SOFTHSM2_CONF` (compose sets it to the shared token directory's `softhsm2.conf`
+so `libsofthsm2.so` can find the token); everything else lives in each slot's
+URL.
 
 **DEK format:** project keys are Fernet keys (`Fernet.generate_key()`, 44-byte
 urlsafe base64). The HSM wraps the decoded 32 raw bytes (AES key-wrap when
@@ -68,8 +61,8 @@ supported, else AES-CBC). Unwrap returns a Fernet key again.
 
 | File | Role |
 |------|------|
-| `app/hsm.py` | PKCS#11 wrapper: `parse_pkcs11_url`/`redact_pkcs11_url`, `available` (cached), `status`, `test_connection`, `test_roundtrip`, `ensure_kek`/`generate_kek`/`delete_kek`, `wrap_dek`/`unwrap_dek` (KEK-label aware), plus slot-aware `*_for_slot` variants |
-| `app/config.py` | `HSM_*` env vars + `master_key_is_default()` |
+| `app/hsm.py` | PKCS#11 wrapper: `parse_pkcs11_url`/`redact_pkcs11_url`, `generate_kek`/`delete_kek`, and slot-aware `available_for_slot`/`status_for_slot`/`ensure_kek_for_slot`/`wrap_dek_for_slot`/`unwrap_dek_for_slot`/`wrap_dek_with_label`/`test_connection_for_slot` |
+| `app/config.py` | `master_key_is_default()` (no HSM env vars) |
 | `app/crypto.py` | `_dek_for()` dispatches unwrap by `key_provider` (local vs hsm) and `hsm_slot_id` via `_slot_url()`; `project_dek()`; `slot_url()`/`clear_slot_url_cache()`; `encrypt_for_project`/`decrypt_for_project` |
 | `app/project_keys.py` | `ensure_project_key(provider, hsm_slot_id)`, `adopt_project_key`, `migrate_project_key(target_slot_id)`, `rotate_hsm_kek(slot_id)`, `encryption_summary`, `migrate_all_local_to_hsm(target_slot_id)`, `link_legacy_to_slot`, `rewrap_project_keys` |
 | `db/migrations/0027_hsm_slots.sql` | `private.hsm_slots` table + `api.list_hsm_slots`/`hsm_slot_url`/`hsm_slot_upsert`/`hsm_slot_delete` |
@@ -84,11 +77,13 @@ export SOFTHSM2_CONF=/etc/softhsm/softhsm2.conf
 
 # init a token
 softhsm2-util --init-token --free --label secretserver --so-pin 1234 --pin 1234
+```
 
-# run the app with:
-export HSM_PKCS11_MODULE=/usr/lib/softhsm/libsofthsm2.so
-export HSM_TOKEN_LABEL=secretserver
-export HSM_PIN=1234
+Then create a slot in **Server Settings → Encryption → HSM slots** with a
+PKCS#11 URL (see below), e.g.:
+
+```
+pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-value=1234
 ```
 
 ---
@@ -129,26 +124,12 @@ pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofths
 - The **crypto layer** resolves a project's slot URL via `crypto._slot_url()`
   (cached, 64 entries) and unwraps with the slot's KEK; both the slot-URL and
   project-key caches are cleared together after key events.
-- **Backward compatibility**: projects with `hsm_slot_id IS NULL` keep using
-  the global env-var config (legacy path). The wizard still offers "HSM" when
-  `hsm.available()` (global config) is true.
+- **Backward compatibility**: pre-slot projects have `hsm_slot_id IS NULL` and
+  cannot be decrypted until linked to a slot. The wizard offers "HSM" only when
+  named slots exist.
 - **Linking legacy projects**: once a slot's KEK label matches a legacy
   project's `kms_key_ref`, use the "Link legacy project(s)" action — a
   metadata-only `UPDATE` (no re-encryption).
-
-```bash
-# install
-sudo apt-get install softhsm2 opensc
-export SOFTHSM2_CONF=/etc/softhsm/softhsm2.conf
-
-# init a token
-softhsm2-util --init-token --free --label secretserver --so-pin 1234 --pin 1234
-
-# run the app with:
-export HSM_PKCS11_MODULE=/usr/lib/softhsm/libsofthsm2.so
-export HSM_TOKEN_LABEL=secretserver
-export HSM_PIN=1234
-```
 
 ## Notes / caveats
 

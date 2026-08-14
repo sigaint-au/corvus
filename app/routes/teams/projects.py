@@ -13,7 +13,6 @@ from flask import (
 import authz
 import db
 import audit
-import hsm
 
 
 @authz.login_required
@@ -40,20 +39,18 @@ def new_project_wizard(team_id):
         flash("You don't have permission to create projects", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
     hsm_slots = []
-    if hsm.available():
-        try:
-            with db.connect_admin() as conn, conn.cursor() as cur:
-                cur.execute("SELECT * FROM api.list_hsm_slots()")
-                hsm_slots = cur.fetchall() or []
-        except Exception:
-            hsm_slots = []
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM api.list_hsm_slots()")
+            hsm_slots = cur.fetchall() or []
+    except Exception:
+        hsm_slots = []
     return render_template(
         "team_new_project.html",
         team=team,
         my_role=my_role,
         encryption="managed",
-        hsm_available=hsm.available(),
-        hsm_kek_label=hsm.kek_label() if hsm.available() else None,
+        hsm_available=bool(hsm_slots),
         hsm_slots=hsm_slots,
     )
 
@@ -100,15 +97,15 @@ def create_project(team_id):
         import project_keys
 
         provider = "hsm" if encryption == "hsm" else "local"
-        if provider == "hsm" and not hsm.available():
+        if provider == "hsm" and not hsm_slot:
             try:
                 with db.connect_admin() as aconn, aconn.cursor() as acur:
                     acur.execute("DELETE FROM api.projects WHERE id = %s", (str(pid),))
             except Exception:
                 pass
             flash(
-                "External HSM is not available; choose Managed or Project key, "
-                "or configure HSM_PIN / the PKCS#11 token.",
+                "External HSM requires a named slot; choose Managed or Project key, "
+                "or configure an HSM slot first.",
                 "error",
             )
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
