@@ -14,6 +14,15 @@ DATABASE_ADMIN_URL = os.environ.get("DATABASE_ADMIN_URL", "").strip()
 JWT_SECRET = os.environ.get("JWT_SECRET", _DEFAULT_JWT_SECRET)
 MASTER_KEY = os.environ.get("MASTER_KEY", _DEFAULT_MASTER_KEY)
 POSTGREST_URL = os.environ.get("POSTGREST_URL", "http://localhost:3000")
+
+# ── External HSM (SoftHSM2 via PKCS#11) for BYOK ─────────────────────────
+# Only used when a project opts into external-HSM encryption. The app talks to
+# a local PKCS#11 module (SoftHSM2 in dev); production would point these at a
+# real HSM's module/token/PIN.
+HSM_PKCS11_MODULE = os.environ.get("HSM_PKCS11_MODULE", "/usr/lib/softhsm/libsofthsm2.so")
+HSM_TOKEN_LABEL = os.environ.get("HSM_TOKEN_LABEL", "secretserver")
+HSM_PIN = os.environ.get("HSM_PIN", "")
+HSM_KEK_LABEL = os.environ.get("HSM_KEK_LABEL", "byok-kek")
 GLOBAL_ADMIN_EMAIL = os.environ.get("GLOBAL_ADMIN_EMAIL", "").strip().lower()
 # Alias: promote this email once no global admin exists yet (same as GLOBAL_ADMIN_EMAIL).
 BOOTSTRAP_ADMIN_EMAIL = os.environ.get("BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()

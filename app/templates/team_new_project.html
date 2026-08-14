@@ -49,6 +49,17 @@
           <span class="muted">Dedicated key for this project{% if my_role not in ('team-owner', 'team-admin') %} (owners/admins only){% endif %}</span>
         </span>
       </label>
+      {% if hsm_available %}
+      <label class="radio-card">
+        <input type="radio" name="encryption" value="hsm"
+               {% if encryption == 'hsm' %}checked{% endif %}
+               {% if my_role not in ('team-owner', 'team-admin') %}disabled{% endif %}>
+        <span class="radio-card-body">
+          <strong>External HSM</strong>
+          <span class="muted">Project key wrapped by an external HSM (SoftHSM2){% if my_role not in ('team-owner', 'team-admin') %} (owners/admins only){% endif %}</span>
+        </span>
+      </label>
+      {% endif %}
     </fieldset>
   </section>
 

@@ -81,3 +81,39 @@ class TestProjectKeys:
         admin_conn, admin_cur = _conn(fetchall=[{"project_id": str(uuid4()), "key_enc": "not-a-fernet"}])
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn):
             assert project_keys.rewrap_project_keys("old-master-key") == 0
+
+    def test_ensure_project_key_hsm(self):
+        import hsm
+
+        pid = str(uuid4())
+        admin_conn, admin_cur = _conn(fetchone=None)
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(hsm, "ensure_kek"), \
+             patch.object(hsm, "wrap_dek", return_value="hsm-wrapped"), \
+             patch.object(hsm, "kek_label", return_value="byok-kek"):
+            created = project_keys.ensure_project_key(pid, provider="hsm")
+        assert created is True
+        insert = [c.args for c in admin_cur.execute.call_args_list
+                  if "INSERT INTO private.project_crypto_keys" in str(c.args[0])]
+        assert len(insert) == 1
+        params = insert[0][1]
+        assert params[1] == "hsm-wrapped"
+        assert params[2] == "hsm"
+        assert params[3] == "byok-kek"
+
+    def test_rewrap_skips_hsm_rows(self):
+        """HSM-wrapped DEKs must not be touched by MASTER_KEY rotation."""
+        rows = [
+            {"project_id": str(uuid4()), "key_enc": "hsm-blob", "key_provider": "hsm"},
+            {"project_id": str(uuid4()), "key_enc": "local-blob", "key_provider": "local"},
+        ]
+        admin_conn, admin_cur = _conn(fetchone=None, fetchall=rows)
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn):
+            n = project_keys.rewrap_project_keys("old-master-key")
+        # only the 'local' row is even attempted; 'local-blob' isn't valid Fernet
+        # under the old key, so it's skipped → 0 re-wrapped, and the hsm row is
+        # never UPDATEd.
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert n == 0
+        assert not any("hsm-blob" in str(u[1]) for u in updates)

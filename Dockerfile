@@ -3,6 +3,10 @@ FROM docker.io/library/python:3.12-slim
 # Non-root runtime user
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
 
+# SoftHSM2 PKCS#11 module for external-HSM BYOK (dev / self-hosted HSM).
+RUN apt-get update && apt-get install -y --no-install-recommends softhsm2 opensc \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \

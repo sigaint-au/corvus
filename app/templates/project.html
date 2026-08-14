@@ -744,6 +744,12 @@
           onsubmit="return confirm({% if project_crypto %}'Re-encrypt {{ project_master_rows }} secret(s) with the project key?'{% else %}'Create a project key and re-encrypt secrets onto it?'{% endif %});">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="action" value="adopt">
+      {% if not project_crypto and hsm_available %}
+      <select name="provider" aria-label="Key provider">
+        <option value="local">Local (server-managed)</option>
+        <option value="hsm">External HSM (SoftHSM2)</option>
+      </select>
+      {% endif %}
       <button type="submit" class="button outline small">
         {% if project_crypto %}Re-encrypt {{ project_master_rows }}{% else %}Adopt project key{% endif %}
       </button>
@@ -755,7 +761,8 @@
     <div class="crypto-status-row">
       {% if project_crypto %}
       <span class="badge" data-variant="success">Project key</span>
-      <span class="muted">{{ project_crypto.key_provider or 'local' }}
+      <span class="muted">
+        {% if project_crypto.key_provider == 'hsm' %}External HSM ({{ project_crypto.kms_key_ref or 'SoftHSM2' }}){% else %}Local (server-managed){% endif %}
         {% if project_crypto.created_at %} · {{ project_crypto.created_at.strftime('%Y-%m-%d') }}{% endif %}
       </span>
       {% else %}

@@ -13,6 +13,7 @@ from flask import (
 import authz
 import db
 import audit
+import hsm
 
 
 @authz.login_required
@@ -39,7 +40,11 @@ def new_project_wizard(team_id):
         flash("You don't have permission to create projects", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
     return render_template(
-        "team_new_project.html", team=team, my_role=my_role, encryption="managed"
+        "team_new_project.html",
+        team=team,
+        my_role=my_role,
+        encryption="managed",
+        hsm_available=hsm.available(),
     )
 
 
@@ -80,11 +85,12 @@ def create_project(team_id):
         except Exception as e:
             flash(str(e), "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
-    if encryption in ("byok", "project"):
+    if encryption in ("byok", "project", "hsm"):
         import project_keys
 
+        provider = "hsm" if encryption == "hsm" else "local"
         try:
-            project_keys.ensure_project_key(pid)
+            project_keys.ensure_project_key(pid, provider=provider)
         except Exception:
             # Roll back the creation: remove the project so we never leave a
             # project that advertised BYOK but has no key. CASCADE clears any
@@ -102,7 +108,7 @@ def create_project(team_id):
                 team_id=team_id,
                 project_id=pid,
                 action="project_key_created",
-                detail="byok (local key)",
+                detail=f"byok ({provider} key)",
             )
             conn.commit()
     return redirect(url_for("project_detail", project_id=pid))

@@ -53,7 +53,7 @@ def test_project_crypto_migration_ships():
     migrations on this branch; version prefixes must stay unique.
     """
     sql = (migrations.MIGRATIONS_DIR / "0024_project_crypto.sql").read_text()
-    assert "CREATE TABLE private.project_crypto_keys" in sql
+    assert "CREATE TABLE IF NOT EXISTS private.project_crypto_keys" in sql
     assert "crypto_provider" in sql
     assert "api.secrets" in sql and "api.secret_versions" in sql
     assert "machine_upsert_enc" in sql

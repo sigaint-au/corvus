@@ -38,6 +38,7 @@ app/
   authz.py          # auth decorators, CSRF, safe redirect
   crypto.py         # Fernet encrypt/decrypt (MASTER_KEY) + per-project BYOK seam
   project_keys.py   # per-project DEK lifecycle (create/adopt/re-encrypt)
+  hsm.py            # PKCS#11 wrapper for external-HSM (SoftHSM2) BYOK
   audit.py          # audit helpers + formatting
   nav.py            # sidebar navigation context
   pins.py           # secret pins / recent

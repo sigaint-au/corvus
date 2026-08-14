@@ -85,6 +85,43 @@ class TestProjectCrypto:
             with pytest.raises(ValueError):
                 crypto.decrypt_for_project(pid2, token, "project")
 
+    def test_hsm_provider_roundtrip(self):
+        import hsm
+
+        pid = str(uuid4())
+        raw = crypto.generate_project_key()
+        conn, _ = _conn(
+            fetchone={
+                "key_enc": "hsm-wrapped",
+                "key_provider": "hsm",
+                "kms_key_ref": "byok-kek",
+            }
+        )
+        with patch.object(crypto.db, "connect_admin", return_value=conn), \
+             patch.object(hsm, "unwrap_dek", return_value=raw):
+            token, provider = crypto.encrypt_for_project(pid, "secret-value")
+        assert provider == "project"
+        with patch.object(crypto.db, "connect_admin", return_value=conn), \
+             patch.object(hsm, "unwrap_dek", return_value=raw):
+            assert crypto.decrypt_for_project(pid, token, "project") == "secret-value"
+
+    def test_hsm_unwrap_used_for_hsm_provider(self):
+        import hsm
+
+        pid = str(uuid4())
+        raw = crypto.generate_project_key()
+        conn, _ = _conn(
+            fetchone={
+                "key_enc": "hsm-wrapped",
+                "key_provider": "hsm",
+                "kms_key_ref": "byok-kek",
+            }
+        )
+        with patch.object(crypto.db, "connect_admin", return_value=conn), \
+             patch.object(hsm, "unwrap_dek", return_value=raw) as unwrap:
+            crypto.encrypt_for_project(pid, "x")
+        unwrap.assert_called_once_with("hsm-wrapped")
+
 
 def _conn(fetchone=None, fetch_key=None):
     from unittest.mock import MagicMock

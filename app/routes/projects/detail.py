@@ -14,6 +14,7 @@ import audit
 import authz
 import config
 import db
+import hsm
 import nav
 import paging
 from secret_kinds import (
@@ -397,6 +398,7 @@ def project_detail(project_id):
         access_mode_labels=config.ACCESS_MODE_LABELS,
         project_crypto=project_crypto,
         project_master_rows=project_master_rows,
+        hsm_available=hsm.available(),
     )
 
 
@@ -535,7 +537,15 @@ def project_crypto_action(project_id):
     if action == "adopt":
         import project_keys
 
-        created = project_keys.ensure_project_key(project_id)
+        provider = (request.form.get("provider") or "local").strip().lower()
+        if provider not in ("local", "hsm"):
+            provider = "local"
+        if provider == "hsm" and not hsm.available():
+            flash("External HSM is not configured", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="settings")
+            )
+        created = project_keys.ensure_project_key(project_id, provider=provider)
         n = project_keys.adopt_project_key(project_id)
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             audit.log_org(
@@ -543,7 +553,8 @@ def project_crypto_action(project_id):
                 team_id=team_id,
                 project_id=project_id,
                 action="project_key_adopted",
-                detail=f"re-encrypted={n}" + (" (key created)" if created else ""),
+                detail=f"provider={provider} re-encrypted={n}"
+                + (" (key created)" if created else ""),
             )
             conn.commit()
         flash(f"Project key adopted — re-encrypted {n} secret row(s)", "ok")

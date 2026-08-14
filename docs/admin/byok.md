@@ -5,9 +5,10 @@ single server-wide key (`MASTER_KEY`) is used. Projects can opt in to a
 **dedicated data-encryption key (DEK)** — "bring your own key" per project.
 
 The first supported tier generates and stores the project key **locally**
-(server-side, wrapped by `MASTER_KEY`). External KMS-backed keys (true external
-BYOK) are planned for a future release using the same `key_provider`
-mechanism.
+(server-side, wrapped by `MASTER_KEY`). An **external HSM** tier (SoftHSM2 in
+development) wraps the project key with an HSM key-encryption key so
+`MASTER_KEY` is out of the DEK's trust path; see
+[../dev/hsm.md](../dev/hsm.md) for setup.
 
 ---
 
@@ -38,6 +39,8 @@ Create a project via **Add project →** the new-project onboarding page
    - **Managed — platform key** (default): secrets use the server key.
    - **Project key — bring your own key**: the wizard creates a project DEK at
      creation time. All new secrets are encrypted under it.
+   - **External HSM** (shown when an HSM is configured): the project DEK is
+     wrapped by the HSM's key-encryption key.
 3. **Create** — review and submit.
 
 Creating a project with BYOK records an `org_audit` event
@@ -98,7 +101,4 @@ with the new key are skipped).
   or global admin), add `key_version` to `api.secrets`/`api.secret_versions`
   plus a DEK history so old ciphertext stays decryptable, require a
   confirmation step, and record an `org_audit` event (`project_key_rotated`).
-- **External KMS** (`key_provider='kms'` + `kms_key_ref`) — a real external
-  BYOK where the raw DEK is retrieved from AWS/GCP/Azure instead of being
-  unwrapped locally.
 - Per-team keys (today granularity is per-project).

@@ -17,6 +17,18 @@ services:
       timeout: 3s
       retries: 20
 
+  softhsm2:
+    build:
+      context: .
+      dockerfile: softhsm2/Dockerfile
+    environment:
+      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-secretserver}
+      HSM_SO_PIN: ${HSM_SO_PIN:-1234}
+      HSM_PIN: ${HSM_PIN:-1234}
+      SOFTHSM2_CONF: /etc/softhsm/softhsm2.conf
+    volumes:
+      - hsmdata:/var/lib/softhsm/tokens
+
   postgrest:
     image: docker.io/postgrest/postgrest:v12.2.3
     depends_on:
@@ -39,6 +51,8 @@ services:
         condition: service_healthy
       postgrest:
         condition: service_started
+      softhsm2:
+        condition: service_started
     environment:
       DATABASE_URL: postgres://authenticator:authenticator@db:5432/secretserver
       DATABASE_ADMIN_URL: postgres://postgres:postgres@db:5432/secretserver
@@ -47,9 +61,16 @@ services:
       SECRET_KEY: ${SECRET_KEY:-flask-session-secret-change-me}
       POSTGREST_URL: http://postgrest:3000
       GLOBAL_ADMIN_EMAIL: ${GLOBAL_ADMIN_EMAIL:-}
+      # External HSM (SoftHSM2) — optional; only used when a project opts in.
+      HSM_PKCS11_MODULE: /usr/lib/softhsm/libsofthsm2.so
+      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-secretserver}
+      HSM_PIN: ${HSM_PIN:-1234}
+      HSM_KEK_LABEL: ${HSM_KEK_LABEL:-byok-kek}
       # Opt-in only — default off so refuse_insecure_defaults() actually runs.
       # For local play with baked-in secrets: ALLOW_INSECURE_DEFAULTS=1
       ALLOW_INSECURE_DEFAULTS: ${ALLOW_INSECURE_DEFAULTS:-0}
+    volumes:
+      - hsmdata:/var/lib/softhsm/tokens
     ports:
       - "8080:8080"
     # Hardened runtime: non-root image USER + drop caps + read-only root FS
@@ -64,3 +85,4 @@ services:
 
 volumes:
   pgdata:
+  hsmdata:

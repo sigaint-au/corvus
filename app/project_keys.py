@@ -16,10 +16,12 @@ import db
 log = logging.getLogger(__name__)
 
 
-def ensure_project_key(project_id) -> bool:
+def ensure_project_key(project_id, provider: str = "local") -> bool:
     """Create and store a project DEK if the project does not have one.
 
-    Idempotent. Returns True when a new key was created.
+    ``provider`` is ``'local'`` (DEK wrapped by MASTER_KEY) or ``'hsm'`` (DEK
+    wrapped by the HSM KEK). Idempotent; returns True when a new key was
+    created.
 
     Example:
         >>> if ensure_project_key(pid):
@@ -34,13 +36,22 @@ def ensure_project_key(project_id) -> bool:
         )
         if not cur.fetchone():
             raw = crypto.generate_project_key()
+            if provider == "hsm":
+                import hsm
+
+                hsm.ensure_kek()
+                key_enc = hsm.wrap_dek(raw)
+                kms_ref = hsm.kek_label()
+            else:
+                key_enc = crypto.wrap_project_key(raw)
+                kms_ref = None
             cur.execute(
                 """
                 INSERT INTO private.project_crypto_keys
-                  (project_id, key_enc, key_provider)
-                VALUES (%s, %s, 'local')
+                  (project_id, key_enc, key_provider, kms_key_ref)
+                VALUES (%s, %s, %s, %s)
                 """,
-                (str(project_id), crypto.wrap_project_key(raw)),
+                (str(project_id), key_enc, provider, kms_ref),
             )
             created = True
     crypto.clear_project_key_cache()
@@ -170,8 +181,13 @@ def rewrap_project_keys(old_master_key: str) -> int:
     old = crypto.fernet_for(old_master_key)
     re_wrapped = 0
     with db.connect_admin() as conn, conn.cursor() as cur:
-        cur.execute("SELECT project_id, key_enc FROM private.project_crypto_keys")
+        cur.execute(
+            "SELECT project_id, key_enc, key_provider FROM private.project_crypto_keys"
+        )
         for row in cur.fetchall() or []:
+            if (row.get("key_provider") or "local") != "local":
+                # HSM-wrapped DEKs don't depend on MASTER_KEY — nothing to do.
+                continue
             try:
                 raw = old.decrypt(row["key_enc"].encode())
             except Exception:

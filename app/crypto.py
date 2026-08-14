@@ -120,16 +120,19 @@ def unwrap_project_key(key_enc: str) -> bytes:
 
 
 @lru_cache(maxsize=512)
-def _project_key_enc(project_id: str) -> str | None:
-    """Return the wrapped project DEK row, or None when the project has no key."""
+def _project_key(project_id: str) -> dict | None:
+    """Return the project's crypto-key row, or None when it has no key."""
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT key_enc FROM private.project_crypto_keys WHERE project_id = %s",
+                """
+                SELECT key_enc, key_provider, kms_key_ref
+                FROM private.project_crypto_keys WHERE project_id = %s
+                """,
                 (str(project_id),),
             )
             row = cur.fetchone()
-        return row["key_enc"] if row else None
+        return dict(row) if row else None
     except Exception:
         # Key lookup is best-effort: when it fails (e.g. admin DSN unavailable,
         # table not migrated, or unit-test mocks) fall back to the master key.
@@ -138,29 +141,45 @@ def _project_key_enc(project_id: str) -> str | None:
         return None
 
 
+def _project_key_enc(project_id: str) -> str | None:
+    """Return the wrapped project DEK string, or None when the project has no key."""
+    row = _project_key(str(project_id))
+    return row["key_enc"] if row else None
+
+
+def _dek_for(row: dict) -> bytes:
+    """Unwrap the project DEK using its key_provider (master or HSM)."""
+    if (row.get("key_provider") or "local") == "hsm":
+        from hsm import unwrap_dek
+
+        return unwrap_dek(row["key_enc"])
+    return unwrap_project_key(row["key_enc"])
+
+
 def project_has_key(project_id) -> bool:
     """Return True when the project has a dedicated data-encryption key."""
-    return _project_key_enc(str(project_id)) is not None
+    return _project_key(str(project_id)) is not None
 
 
 def clear_project_key_cache() -> None:
     """Forget cached project keys (call after adopt/rotate/revoke)."""
-    _project_key_enc.cache_clear()
+    _project_key.cache_clear()
 
 
 def encrypt_for_project(project_id, value: str) -> tuple[str, str]:
     """Encrypt a secret value for a project.
 
     Uses the project's DEK when one exists (``crypto_provider='project'``),
-    otherwise the app master key (``crypto_provider='master'``).
+    otherwise the app master key (``crypto_provider='master'``). The DEK may be
+    master-wrapped or HSM-wrapped.
 
     Returns:
         Tuple ``(ciphertext, crypto_provider)`` for storage.
     """
-    key_enc = _project_key_enc(str(project_id))
-    if key_enc is None:
+    row = _project_key(str(project_id))
+    if row is None:
         return _fernet().encrypt(value.encode()).decode(), "master"
-    return Fernet(unwrap_project_key(key_enc)).encrypt(value.encode()).decode(), "project"
+    return Fernet(_dek_for(row)).encrypt(value.encode()).decode(), "project"
 
 
 def decrypt_for_project(project_id, token: str, provider: str = "master") -> str:
@@ -175,9 +194,9 @@ def decrypt_for_project(project_id, token: str, provider: str = "master") -> str
 
     try:
         if provider == "project":
-            key_enc = _project_key_enc(str(project_id))
-            if key_enc is not None:
-                return Fernet(unwrap_project_key(key_enc)).decrypt(token.encode()).decode()
+            row = _project_key(str(project_id))
+            if row is not None:
+                return Fernet(_dek_for(row)).decrypt(token.encode()).decode()
         return _fernet().decrypt(token.encode()).decode()
     except InvalidToken as e:
         raise ValueError(
