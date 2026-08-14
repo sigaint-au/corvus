@@ -59,6 +59,7 @@
     </div>
   </div>
   {% if projects %}
+  <p class="muted">{{ projects|length }} project(s): {{ hsm_count }} HSM-backed, {{ local_count }} local BYOK, {{ managed_count }} managed</p>
   <div class="table"><table>
     <thead><tr><th>Name</th><th>Description</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th></th>{% endif %}</tr></thead>
     <tbody>

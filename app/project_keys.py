@@ -9,6 +9,7 @@ project key. Key resolution itself lives in :mod:`crypto`.
 from __future__ import annotations
 
 import logging
+import secrets
 
 import crypto
 import db
@@ -305,3 +306,120 @@ def rewrap_project_keys(old_master_key: str) -> int:
     crypto.clear_project_key_cache()
     log.info("re-wrapped %s project key(s) to the current MASTER_KEY", re_wrapped)
     return re_wrapped
+
+
+def rotate_hsm_kek() -> int:
+    """Rotate the HSM KEK: re-wrap every HSM-backed DEK under a fresh KEK.
+
+    Generates a new KEK (new label), re-wraps each HSM-backed DEK from its
+    current KEK to the new one, and updates ``key_enc``/``kms_key_ref``.
+    Returns the number of HSM-backed projects re-wrapped. The old KEK is left
+    in place (inert once unreferenced) so a partial run can be retried.
+
+    Example:
+        >>> n = rotate_hsm_kek()
+        >>> n >= 0
+        True
+    """
+    import hsm
+
+    new_label = f"{hsm.kek_label()}-{secrets.token_hex(4)}"
+    hsm.generate_kek(new_label)
+    with db.connect_admin() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT project_id, key_enc, kms_key_ref
+            FROM private.project_crypto_keys
+            WHERE key_provider = 'hsm'
+            """
+        )
+        rows = cur.fetchall() or []
+    re_wrapped = 0
+    for row in rows:
+        try:
+            raw = hsm.unwrap_dek(row["key_enc"], row.get("kms_key_ref"))
+            new_enc = hsm.wrap_dek(raw, new_label)
+        except Exception:
+            continue
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE private.project_crypto_keys
+                SET key_enc = %s, kms_key_ref = %s, updated_at = now()
+                WHERE project_id = %s
+                """,
+                (new_enc, new_label, str(row["project_id"])),
+            )
+        re_wrapped += 1
+    crypto.clear_project_key_cache()
+    log.info("rotated HSM KEK: %s project(s) re-wrapped to %r", re_wrapped, new_label)
+    return re_wrapped
+
+
+def encryption_summary() -> dict:
+    """Return per-project encryption posture for the admin Encryption tab.
+
+    Returns ``{"counts": {...}, "projects": [...]}`` where each project row has
+    team/project name, provider, key created-at, key id, and pending (master)
+    row count. Managed projects (no key row) are included with provider
+    ``'managed'``.
+    """
+    with db.connect_admin() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT p.id AS project_id, p.name AS project_name,
+                   t.name AS team_name,
+                   k.key_provider, k.created_at AS key_created_at, k.id AS key_id
+            FROM api.projects p
+            JOIN api.teams t ON t.id = p.team_id
+            LEFT JOIN private.project_crypto_keys k ON k.project_id = p.id
+            ORDER BY t.name, p.name
+            """
+        )
+        rows = cur.fetchall() or []
+    counts = {"managed": 0, "local": 0, "hsm": 0}
+    projects = []
+    for r in rows:
+        provider = (r.get("key_provider") or "managed")
+        if provider not in ("local", "hsm"):
+            provider = "managed"
+        counts[provider] = counts.get(provider, 0) + 1
+        projects.append(
+            {
+                "project_id": str(r["project_id"]),
+                "project_name": r["project_name"],
+                "team_name": r["team_name"],
+                "provider": provider,
+                "key_created_at": r.get("key_created_at"),
+                "key_id": str(r["key_id"]) if r.get("key_id") else None,
+                "pending": count_master_rows(str(r["project_id"])),
+            }
+        )
+    return {"counts": counts, "projects": projects}
+
+
+def migrate_all_local_to_hsm() -> int:
+    """Migrate every local-BYOK project to an HSM-wrapped key.
+
+    Returns the number of projects migrated.
+    """
+    import hsm
+
+    if not hsm.available():
+        raise RuntimeError("HSM is not configured")
+    with db.connect_admin() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT project_id FROM private.project_crypto_keys
+            WHERE key_provider = 'local'
+            """
+        )
+        ids = [str(r["project_id"]) for r in (cur.fetchall() or [])]
+    migrated = 0
+    for pid in ids:
+        try:
+            migrate_project_key(pid, "hsm")
+            migrated += 1
+        except Exception as e:
+            log.warning("migrate_all_local_to_hsm: project %s failed: %s", pid, e)
+    return migrated

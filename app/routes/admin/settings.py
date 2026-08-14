@@ -15,9 +15,11 @@ import authz
 import config
 import crypto
 import db
+import hsm
 import ldap_auth
 import mailer
 import passwords
+import project_keys
 import settings_svc
 import totp_svc
 import user_sessions
@@ -422,6 +424,30 @@ def server_settings():
                     "They must set up 2FA again at next sign-in if required.",
                     "ok",
                 )
+        elif action == "hsm_test":
+
+            ok, msg = hsm.test_roundtrip()
+            flash(f"HSM check: {msg}", "ok" if ok else "error")
+        elif action == "hsm_kek_rotate":
+
+            if not hsm.available():
+                flash("External HSM is not configured", "error")
+            else:
+                try:
+                    n = project_keys.rotate_hsm_kek()
+                    flash(f"HSM KEK rotated — re-wrapped {n} project key(s)", "ok")
+                except Exception as e:
+                    flash(f"HSM KEK rotation failed: {e}", "error")
+        elif action == "hsm_migrate_all":
+
+            if not hsm.available():
+                flash("External HSM is not configured", "error")
+            else:
+                try:
+                    n = project_keys.migrate_all_local_to_hsm()
+                    flash(f"Migrated {n} local project key(s) to HSM", "ok")
+                except Exception as e:
+                    flash(f"Bulk migration failed: {e}", "error")
         # Stay on the relevant tab after save
         tab_for = {
             "server_url": "general",
@@ -444,6 +470,9 @@ def server_settings():
             "user_enable": "users",
             "user_reset_password": "users",
             "user_reset_2fa": "users",
+            "hsm_test": "encryption",
+            "hsm_kek_rotate": "encryption",
+            "hsm_migrate_all": "encryption",
         }
         tab = tab_for.get(action, "general")
         return redirect(url_for("server_settings", tab=tab))
@@ -458,6 +487,7 @@ def server_settings():
         "ldap",
         "oidc",
         "email",
+        "encryption",
     ):
         tab = "general"
     settings = settings_svc.get_settings()
@@ -509,6 +539,14 @@ def server_settings():
     oidc_redirect_uri = (
         (server_url + "/login/oidc/callback") if server_url else ""
     )
+    encryption = None
+    if tab == "encryption":
+
+        encryption = {
+            "hsm": hsm.status(),
+            "master_key_is_default": config.master_key_is_default(),
+            "summary": project_keys.encryption_summary(),
+        }
     return render_template(
         "settings.html",
         settings=settings,
@@ -521,4 +559,5 @@ def server_settings():
         smtp_encryption_modes=config.SMTP_ENCRYPTION_MODES,
         server_url=server_url,
         oidc_redirect_uri=oidc_redirect_uri,
+        encryption=encryption,
     )

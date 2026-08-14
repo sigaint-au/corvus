@@ -15,6 +15,14 @@ JWT_SECRET = os.environ.get("JWT_SECRET", _DEFAULT_JWT_SECRET)
 MASTER_KEY = os.environ.get("MASTER_KEY", _DEFAULT_MASTER_KEY)
 POSTGREST_URL = os.environ.get("POSTGREST_URL", "http://localhost:3000")
 
+
+def master_key_is_default() -> bool:
+    """Return True when MASTER_KEY is still the baked-in dev default.
+
+    Used by the admin Encryption tab to flag an insecure default key.
+    """
+    return MASTER_KEY == _DEFAULT_MASTER_KEY
+
 # ── External HSM (SoftHSM2 via PKCS#11) for BYOK ─────────────────────────
 # Only used when a project opts into external-HSM encryption. The app talks to
 # a local PKCS#11 module (SoftHSM2 in dev); production would point these at a

@@ -120,7 +120,7 @@ class TestProjectCrypto:
         with patch.object(crypto.db, "connect_admin", return_value=conn), \
              patch.object(hsm, "unwrap_dek", return_value=raw) as unwrap:
             crypto.encrypt_for_project(pid, "x")
-        unwrap.assert_called_once_with("hsm-wrapped")
+        unwrap.assert_called_once_with("hsm-wrapped", "byok-kek")
 
 
 class TestHsmDekContract:

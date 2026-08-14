@@ -153,7 +153,7 @@ def _dek_for(row: dict) -> bytes:
     if (row.get("key_provider") or "local") == "hsm":
         from hsm import unwrap_dek
 
-        return unwrap_dek(row["key_enc"])
+        return unwrap_dek(row["key_enc"], row.get("kms_key_ref"))
     return unwrap_project_key(row["key_enc"])
 
 

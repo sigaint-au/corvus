@@ -103,6 +103,7 @@ def team_detail(team_id):
         tab = "projects"
     q = (request.args.get("q") or "").strip()
     members, projects, ldap_maps, oidc_maps = [], [], [], []
+    hsm_count = local_count = managed_count = 0
     groups = []
     invites, join_requests, org_events = [], [], []
     access_bindings = []
@@ -155,6 +156,12 @@ def team_detail(team_id):
                     p["key_provider"] = (cur.fetchone() or {}).get("kp")
                 except Exception:
                     p["key_provider"] = None
+                if p["key_provider"] == "hsm":
+                    hsm_count += 1
+                elif p["key_provider"] == "local":
+                    local_count += 1
+                else:
+                    managed_count += 1
         elif tab == "members":
             # User subjects only (people + invites)
 
@@ -281,6 +288,9 @@ def team_detail(team_id):
         search_q=q,
         members=members,
         projects=projects,
+        hsm_count=hsm_count,
+        local_count=local_count,
+        managed_count=managed_count,
         groups=groups,
         my_role=my_role,
         ldap_maps=ldap_maps,

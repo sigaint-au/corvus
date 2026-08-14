@@ -163,3 +163,56 @@ class TestProjectKeys:
         assert params[0] == "local-wrapped"
         assert params[1] == "local"
         assert params[2] is None
+
+    def test_rotate_hsm_kek(self):
+        import hsm
+
+        rows = [
+            {"project_id": str(uuid4()), "key_enc": "old-wrap", "kms_key_ref": "byok-kek"},
+        ]
+        admin_conn, admin_cur = _conn(fetchone=None, fetchall=rows)
+        raw = b"x" * 32
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(hsm, "generate_kek"), \
+             patch.object(hsm, "unwrap_dek", return_value=raw) as unwrap, \
+             patch.object(hsm, "wrap_dek", return_value="new-wrap") as wrap, \
+             patch.object(hsm, "kek_label", return_value="byok-kek"):
+            n = project_keys.rotate_hsm_kek()
+        assert n == 1
+        unwrap.assert_called_once_with("old-wrap", "byok-kek")
+        wrap.assert_called_once()
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert len(updates) == 1
+        params = updates[0][1]
+        assert params[0] == "new-wrap"
+        assert params[1].startswith("byok-kek-")
+
+    def test_encryption_summary(self):
+        rows = [
+            {"project_id": str(uuid4()), "project_name": "a", "team_name": "T",
+             "key_provider": "hsm", "key_created_at": None, "key_id": None},
+            {"project_id": str(uuid4()), "project_name": "b", "team_name": "T",
+             "key_provider": "local", "key_created_at": None, "key_id": None},
+            {"project_id": str(uuid4()), "project_name": "c", "team_name": "T",
+             "key_provider": None, "key_created_at": None, "key_id": None},
+        ]
+        admin_conn, admin_cur = _conn(fetchone=None, fetchall=rows)
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys, "count_master_rows", return_value=0):
+            summary = project_keys.encryption_summary()
+        assert summary["counts"] == {"managed": 1, "local": 1, "hsm": 1}
+        assert len(summary["projects"]) == 3
+
+    def test_migrate_all_local_to_hsm(self):
+        import hsm
+
+        admin_conn, admin_cur = _conn(
+            fetchone={"key_provider": "hsm"}, fetchall=[{"project_id": str(uuid4())}]
+        )
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(hsm, "available", return_value=True), \
+             patch.object(project_keys, "migrate_project_key", return_value=0) as migrate:
+            n = project_keys.migrate_all_local_to_hsm()
+        assert n == 1
+        migrate.assert_called_once()

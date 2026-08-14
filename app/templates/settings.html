@@ -29,6 +29,9 @@
   <a href="{{ url_for('server_settings', tab='email') }}"
      class="tab {% if active_tab == 'email' %}active{% endif %}"
 >Email</a>
+  <a href="{{ url_for('server_settings', tab='encryption') }}"
+     class="tab {% if active_tab == 'encryption' %}active{% endif %}"
+>Encryption</a>
 </nav>
 
 {% if active_tab == 'general' %}
@@ -733,6 +736,97 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     </label>
     <button type="submit">Send test</button>
   </form>
+</section>
+{% elif active_tab == 'encryption' %}
+<section>
+  <div class="section-head"><h2>Server-wide key (MASTER_KEY)</h2></div>
+  {% if encryption.master_key_is_default %}
+  <p><span class="badge" data-variant="danger">Default key in use</span>
+    <span class="muted">Set a custom <code>MASTER_KEY</code> environment variable in production.</span></p>
+  {% else %}
+  <p><span class="badge" data-variant="success">Custom key configured</span></p>
+  {% endif %}
+  <p class="field-hint">
+    To rotate <code>MASTER_KEY</code>: set the new key, then run
+    <code>flask --app app rekey-project-keys --old-master-key &lt;old-key&gt;</code>
+    to re-wrap local BYOK DEKs. HSM-backed projects are unaffected.
+  </p>
+</section>
+
+<section>
+  <div class="section-head"><h2>External HSM</h2></div>
+  {% set hs = encryption.hsm %}
+  {% if hs.available %}
+  <div class="crypto-status-row">
+    <span class="badge" data-variant="success">HSM connected</span>
+    <span class="muted">
+      Module: <code>{{ hs.module }}</code>
+      · Token: <code>{{ hs.token_label }}</code>
+      · KEK: <code>{{ hs.kek_label }}</code>
+      {% if hs.kek_exists %}· KEK present{% endif %}
+    </span>
+  </div>
+  {% else %}
+  <div class="crypto-status-row">
+    <span class="badge" data-variant="danger">HSM unavailable</span>
+    <span class="muted">{{ hs.error or 'Not configured (HSM_PIN not set)' }}</span>
+  </div>
+  <details>
+    <summary>How to enable external HSM</summary>
+    <pre>export HSM_PKCS11_MODULE=/path/to/module.so
+export HSM_TOKEN_LABEL=secretserver
+export HSM_PIN=&lt;your-pin&gt;
+export HSM_KEK_LABEL=byok-kek</pre>
+    <p class="field-hint">Restart the app after setting these variables. See the HSM guide in <code>docs/dev/hsm.md</code> for details.</p>
+  </details>
+  {% endif %}
+  <form method="post" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="hsm_test">
+    <button type="submit" class="outline small" {% if not hs.available %}disabled{% endif %}>Test HSM connection</button>
+  </form>
+  {% if hs.available %}
+  <form method="post" class="row"
+        onsubmit="return confirm('Rotate the HSM KEK? All HSM-backed project keys will be re-wrapped. The HSM must remain available.');">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="hsm_kek_rotate">
+    <button type="submit" class="outline small">Rotate HSM KEK</button>
+  </form>
+  <form method="post" class="row"
+        onsubmit="return confirm('Migrate ALL local BYOK projects to HSM-wrapped keys? This re-encrypts every secret in those projects.');">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="hsm_migrate_all">
+    <button type="submit" class="outline small">Migrate all local BYOK projects to HSM</button>
+  </form>
+  <p class="field-hint" data-variant="warning">
+    ⚠ If the HSM token or PIN is lost, all HSM-backed secrets become
+    unrecoverable. Back up the token directory regularly.
+  </p>
+  {% endif %}
+</section>
+
+<section>
+  <div class="section-head"><h2>Project encryption posture</h2></div>
+  {% set c = encryption.summary.counts %}
+  <p class="muted">{{ c.managed or 0 }} managed, {{ c.local or 0 }} local BYOK, {{ c.hsm or 0 }} HSM-backed projects.</p>
+  <div class="table"><table>
+    <thead><tr><th>Team</th><th>Project</th><th>Encryption</th><th>Key created</th><th>Sync</th></tr></thead>
+    <tbody>
+    {% for p in encryption.summary.projects %}
+      <tr>
+        <td>{{ p.team_name }}</td>
+        <td><a href="{{ url_for('project_detail', project_id=p.project_id) }}">{{ p.project_name }}</a></td>
+        <td>
+          {% if p.provider == 'hsm' %}<span class="badge" data-variant="info">HSM</span>
+          {% elif p.provider == 'local' %}<span class="badge" data-variant="secondary">BYOK</span>
+          {% else %}<span class="muted">Managed</span>{% endif %}
+        </td>
+        <td class="muted">{{ p.key_created_at.strftime('%Y-%m-%d') if p.key_created_at else '—' }}</td>
+        <td class="muted">{% if p.provider == 'managed' %}—{% elif p.pending %}⚠ {{ p.pending }} pending{% else %}In sync{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
 </section>
 {% endif %}
 {% endblock %}

@@ -135,7 +135,7 @@ def raw_to_fernet_key(raw: bytes) -> bytes:
 
 
 def ensure_kek() -> str:
-    """Create the AES-256 KEK in the HSM if missing; return its label.
+    """Create the AES-256 KEK at the configured label if missing.
 
     Idempotent — reuses an existing key with the same label.
 
@@ -144,10 +144,21 @@ def ensure_kek() -> str:
         >>> label == 'byok-kek'
         True
     """
+    return generate_kek(kek_label())
+
+
+def generate_kek(label: str) -> str:
+    """Create an AES-256 KEK with ``label`` if missing; return the label.
+
+    Used both for the initial KEK and for KEK rotation (new label).
+
+    Example:
+        >>> generate_kek("byok-kek-2")
+        'byok-kek-2'
+    """
     pkcs11 = _pkcs11()
-    _module, _token, _pin, kek_label = _cfg()
-    with _session() as session:
-        key = _find_kek(session, pkcs11, kek_label)
+    with _session(rw=True) as session:
+        key = _find_kek(session, pkcs11, label)
         if key is None:
             # python-pkcs11 0.7: capabilities via Attribute template, not kwargs
             template = {
@@ -162,7 +173,7 @@ def ensure_kek() -> str:
                 session.generate_key(
                     pkcs11.KeyType.AES,
                     256,
-                    label=kek_label,
+                    label=label,
                     store=True,
                     template=template,
                 )
@@ -171,7 +182,7 @@ def ensure_kek() -> str:
                 session.generate_key(
                     pkcs11.KeyType.AES,
                     256,
-                    label=kek_label,
+                    label=label,
                     store=True,
                     template={
                         pkcs11.Attribute.ENCRYPT: True,
@@ -179,8 +190,8 @@ def ensure_kek() -> str:
                         pkcs11.Attribute.SENSITIVE: True,
                     },
                 )
-            log.info("generated HSM KEK %r", kek_label)
-    return kek_label
+            log.info("generated HSM KEK %r", label)
+    return label
 
 
 def kek_label() -> str:
@@ -188,11 +199,12 @@ def kek_label() -> str:
     return _cfg()[3]
 
 
-def wrap_dek(dek: bytes) -> str:
+def wrap_dek(dek: bytes, label: str | None = None) -> str:
     """Wrap a Fernet DEK with the HSM KEK; return base64 blob.
 
     ``dek`` may be a 44-byte Fernet key (preferred) or 32 raw bytes. Prefer
     AES key-wrap when the token supports it; otherwise AES-CBC + random IV.
+    ``label`` selects the KEK (defaults to the configured label).
 
     Example:
         >>> from cryptography.fernet import Fernet
@@ -201,9 +213,10 @@ def wrap_dek(dek: bytes) -> str:
         True
     """
     raw = fernet_key_to_raw(dek)
+    label = label or kek_label()
     pkcs11 = _pkcs11()
     with _session(rw=False) as session:
-        key = _find_kek(session, pkcs11, kek_label())
+        key = _find_kek(session, pkcs11, label)
         if key is None:
             raise RuntimeError("HSM KEK not found; call ensure_kek() first")
         # Prefer authenticated AES key wrap when the module supports it.
@@ -224,16 +237,18 @@ def wrap_dek(dek: bytes) -> str:
     return base64.b64encode(_FMT_CBC + iv + ct).decode()
 
 
-def unwrap_dek(wrapped: str) -> bytes:
+def unwrap_dek(wrapped: str, label: str | None = None) -> bytes:
     """Unwrap a DEK previously produced by :func:`wrap_dek` to a Fernet key.
 
     Returns 44-byte urlsafe-base64 key material suitable for ``Fernet(key)``.
+    ``label`` selects the KEK (defaults to the configured label).
 
     Example:
         >>> k = Fernet.generate_key()
         >>> unwrap_dek(wrap_dek(k)) == k
         True
     """
+    label = label or kek_label()
     try:
         blob = base64.b64decode(wrapped)
     except Exception as e:
@@ -247,7 +262,7 @@ def unwrap_dek(wrapped: str) -> bytes:
         fmt, rest = blob[:1], blob[1:]
     pkcs11 = _pkcs11()
     with _session(rw=False) as session:
-        key = _find_kek(session, pkcs11, kek_label())
+        key = _find_kek(session, pkcs11, label)
         if key is None:
             raise RuntimeError("HSM KEK not found; call ensure_kek() first")
         try:
@@ -272,3 +287,58 @@ def unwrap_dek(wrapped: str) -> bytes:
     if len(raw) != _RAW_DEK_LEN:
         raise ValueError(f"unwrapped DEK has length {len(raw)}, expected {_RAW_DEK_LEN}")
     return raw_to_fernet_key(raw)
+
+
+def status() -> dict:
+    """Return HSM configuration and availability for the admin UI.
+
+    Never exposes the PIN — only whether one is set.
+
+    Example:
+        >>> s = status()
+        >>> s["available"] in (True, False)
+        True
+    """
+    module, token_label, pin, kek_label = _cfg()
+    result = {
+        "available": False,
+        "module": module,
+        "token_label": token_label,
+        "kek_label": kek_label,
+        "pin_set": bool(pin),
+        "error": None,
+        "kek_exists": False,
+    }
+    if not pin:
+        result["error"] = "Not configured (HSM_PIN not set)"
+        return result
+    if not os.path.exists(module):
+        result["error"] = f"PKCS#11 module not found: {module}"
+        return result
+    try:
+        pkcs11 = _pkcs11()
+        with _session() as session:
+            result["available"] = True
+            result["kek_exists"] = _find_kek(session, pkcs11, kek_label) is not None
+    except Exception as e:
+        result["error"] = str(e)
+    return result
+
+
+def test_roundtrip() -> tuple[bool, str]:
+    """Perform a wrap/unwrap round-trip with a throwaway DEK.
+
+    Verifies the full HSM path (token open, KEK presence, wrap, unwrap).
+    Returns ``(ok, message)``.
+    """
+    from cryptography.fernet import Fernet
+
+    try:
+        ensure_kek()
+        test_dek = Fernet.generate_key()
+        wrapped = wrap_dek(test_dek)
+        if unwrap_dek(wrapped) != test_dek:
+            return False, "wrap/unwrap round-trip mismatch"
+        return True, "wrap/unwrap round-trip succeeded"
+    except Exception as e:
+        return False, str(e)

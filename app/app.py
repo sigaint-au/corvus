@@ -216,6 +216,19 @@ def rekey_project_keys_command(old_master_key):
     click.echo(f"re-wrapped {n} project key(s) to the current MASTER_KEY")
 
 
+@app.cli.command("rekey-hsm-kek")
+def rekey_hsm_kek_command():
+    """Rotate the HSM KEK, re-wrapping every HSM-backed project DEK."""
+    import hsm
+    import project_keys
+
+    if not hsm.available():
+        click.echo("HSM is not configured (HSM_PIN unset or module missing)")
+        return
+    n = project_keys.rotate_hsm_kek()
+    click.echo(f"rotated HSM KEK — re-wrapped {n} project key(s)")
+
+
 if __name__ == "__main__":
     from crypto import decrypt, encrypt
 

@@ -143,6 +143,29 @@ This unwraps each DEK with the old key and re-wraps it with the current
 `MASTER_KEY`. Run it once per rotation; it is idempotent (rows already wrapped
 with the new key are skipped).
 
+## Rotating the HSM KEK
+
+```bash
+flask --app app rekey-hsm-kek
+```
+
+Generates a fresh KEK, re-wraps every HSM-backed project DEK under it, and
+updates each project's `kms_key_ref`. Also available from Server Settings →
+Encryption ("Rotate HSM KEK").
+
+## Migrating all local BYOK projects to HSM
+
+Server Settings → Encryption → "Migrate all local BYOK projects to HSM" (or
+per-project "Migrate to HSM" on the project Settings tab) re-encrypts local
+projects onto HSM-wrapped keys.
+
+## Reverting to managed is not offered in the UI
+
+Downgrading a project from a dedicated key back to the server-wide key is
+intentionally not exposed: it weakens the trust boundary and complicates
+history. If you must, use the admin/CLI tooling to migrate (a project can be
+migrated `local → hsm`; the reverse is not exposed).
+
 ---
 
 ## Roadmap / not yet shipped
@@ -151,4 +174,6 @@ with the new key are skipped).
   or global admin), add `key_version` to `api.secrets`/`api.secret_versions`
   plus a DEK history so old ciphertext stays decryptable, require a
   confirmation step, and record an `org_audit` event (`project_key_rotated`).
+- **"Require HSM" policy** — a server setting that disables Managed/Local in
+  the new-project wizard so every new project must be HSM-backed.
 - Per-team keys (today granularity is per-project).
