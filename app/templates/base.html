@@ -682,6 +682,25 @@
       align-items: center;
       gap: .45rem .6rem;
     }
+    .crypto-panel .section-tools form.inline {
+      display: inline-flex;
+    }
+    .crypto-panel .section-tools .toolbar {
+      margin: 0;
+    }
+    .crypto-panel .field-hint {
+      margin: .65rem 0 0;
+    }
+    .hsm-status-table th[scope="row"] {
+      width: 7.5rem;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      white-space: nowrap;
+    }
+    .hsm-status-table td,
+    .hsm-status-table th[scope="row"] {
+      vertical-align: middle;
+    }
     .crypto-choice {
       display: flex;
       flex-direction: column;
@@ -2717,8 +2736,7 @@
              href="{{ url_for('admin_audit') }}">Auditing</a>
           <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}"
              href="{{ url_for('server_settings') }}">Server settings</a>
-          <a class="side-nav-link {% if ep == 'server_settings' and request.args.get('tab') == 'encryption' %}active{% endif %}"
-             href="{{ url_for('server_settings', tab='encryption') }}">Encryption</a>
+
         </div>
       </details>
       {% endif %}

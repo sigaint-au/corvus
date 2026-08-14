@@ -738,95 +738,183 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   </form>
 </section>
 {% elif active_tab == 'encryption' %}
-<section>
-  <div class="section-head"><h2>Server-wide key (MASTER_KEY)</h2></div>
-  {% if encryption.master_key_is_default %}
-  <p><span class="badge" data-variant="danger">Default key in use</span>
-    <span class="muted">Set a custom <code>MASTER_KEY</code> environment variable in production.</span></p>
-  {% else %}
-  <p><span class="badge" data-variant="success">Custom key configured</span></p>
-  {% endif %}
-  <p class="field-hint">
-    To rotate <code>MASTER_KEY</code>: set the new key, then run
-    <code>flask --app app rekey-project-keys --old-master-key &lt;old-key&gt;</code>
-    to re-wrap local BYOK DEKs. HSM-backed projects are unaffected.
-  </p>
+{% set hs = encryption.hsm %}
+{% set c = encryption.summary.counts %}
+
+<section class="crypto-panel">
+  <div class="section-head">
+    <h2>Server-wide key</h2>
+  </div>
+  <div class="table">
+    <table>
+      <tbody>
+        <tr>
+          <th scope="row">Status</th>
+          <td>
+            {% if encryption.master_key_is_default %}
+            <span class="badge" data-variant="danger">Default</span>
+            {% else %}
+            <span class="badge" data-variant="success">Custom</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">Rotate</th>
+          <td class="muted">
+            <code class="k">flask --app app rekey-project-keys --old-master-key &lt;old&gt;</code>
+            <span class="muted">(local keys only)</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
-<section>
-  <div class="section-head"><h2>External HSM</h2></div>
-  {% set hs = encryption.hsm %}
-  {% if hs.available %}
-  <div class="crypto-status-row">
-    <span class="badge" data-variant="success">HSM connected</span>
-    <span class="muted">
-      Module: <code>{{ hs.module }}</code>
-      · Token: <code>{{ hs.token_label }}</code>
-      · KEK: <code>{{ hs.kek_label }}</code>
-      {% if hs.kek_exists %}· KEK present{% endif %}
-    </span>
+<section class="crypto-panel">
+  <div class="section-head">
+    <h2>External HSM</h2>
+    <div class="section-tools">
+      <form method="post" class="inline">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="hsm_test">
+        <button type="submit" class="button outline small" {% if not hs.available %}disabled{% endif %}>Test</button>
+      </form>
+      {% if hs.available %}
+      <form method="post" class="inline"
+            onsubmit="return confirm('Rotate the HSM KEK? All HSM-backed project keys will be re-wrapped.');">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="hsm_kek_rotate">
+        <button type="submit" class="button outline small">Rotate KEK</button>
+      </form>
+      {% if (c.local or 0) > 0 %}
+      <form method="post" class="inline"
+            onsubmit="return confirm('Migrate all {{ c.local }} local project key(s) to HSM?');">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="hsm_migrate_all">
+        <button type="submit" class="button outline small">Migrate {{ c.local }} local</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </div>
   </div>
-  {% else %}
-  <div class="crypto-status-row">
-    <span class="badge" data-variant="danger">HSM unavailable</span>
-    <span class="muted">{{ hs.error or 'Not configured (HSM_PIN not set)' }}</span>
+  <div class="table">
+    <table class="hsm-status-table">
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">Status</th>
+          <td>
+            {% if hs.available %}
+            <span class="badge" data-variant="success">Connected</span>
+            {% else %}
+            <span class="badge" data-variant="danger">Unavailable</span>
+            {% if hs.error %}<span class="muted"> {{ hs.error }}</span>{% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">Token</th>
+          <td>{% if hs.token_label %}<code class="k">{{ hs.token_label }}</code>{% else %}<span class="muted">-</span>{% endif %}</td>
+        </tr>
+        <tr>
+          <th scope="row">KEK</th>
+          <td>
+            {% if hs.available %}
+              {% if hs.kek_exists %}
+              <span class="badge" data-variant="success">Present</span>
+              {% else %}
+              <span class="badge" data-variant="warning">Missing</span>
+              {% endif %}
+              {% if hs.kek_label %} <code class="k">{{ hs.kek_label }}</code>{% endif %}
+            {% else %}
+            <span class="muted">-</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">Module</th>
+          <td>{% if hs.module %}<code class="k">{{ hs.module }}</code>{% else %}<span class="muted">-</span>{% endif %}</td>
+        </tr>
+        <tr>
+          <th scope="row">PIN</th>
+          <td>
+            {% if hs.pin_set %}
+            <span class="badge" data-variant="secondary">Set</span>
+            {% else %}
+            <span class="badge" data-variant="warning">Not set</span>
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
-  <details>
-    <summary>How to enable external HSM</summary>
-    <pre>export HSM_PKCS11_MODULE=/path/to/module.so
-export HSM_TOKEN_LABEL=secretserver
-export HSM_PIN=&lt;your-pin&gt;
-export HSM_KEK_LABEL=byok-kek</pre>
-    <p class="field-hint">Restart the app after setting these variables. See the HSM guide in <code>docs/dev/hsm.md</code> for details.</p>
-  </details>
-  {% endif %}
-  <form method="post" class="row">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="action" value="hsm_test">
-    <button type="submit" class="outline small" {% if not hs.available %}disabled{% endif %}>Test HSM connection</button>
-  </form>
-  {% if hs.available %}
-  <form method="post" class="row"
-        onsubmit="return confirm('Rotate the HSM KEK? All HSM-backed project keys will be re-wrapped. The HSM must remain available.');">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="action" value="hsm_kek_rotate">
-    <button type="submit" class="outline small">Rotate HSM KEK</button>
-  </form>
-  <form method="post" class="row"
-        onsubmit="return confirm('Migrate ALL local BYOK projects to HSM-wrapped keys? This re-encrypts every secret in those projects.');">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="action" value="hsm_migrate_all">
-    <button type="submit" class="outline small">Migrate all local BYOK projects to HSM</button>
-  </form>
-  <p class="field-hint" data-variant="warning">
-    ⚠ If the HSM token or PIN is lost, all HSM-backed secrets become
-    unrecoverable. Back up the token directory regularly.
-  </p>
-  {% endif %}
 </section>
 
-<section>
-  <div class="section-head"><h2>Project encryption posture</h2></div>
-  {% set c = encryption.summary.counts %}
-  <p class="muted">{{ c.managed or 0 }} managed, {{ c.local or 0 }} local BYOK, {{ c.hsm or 0 }} HSM-backed projects.</p>
+<section class="crypto-panel">
+  <div class="section-head">
+    <h2>Project posture</h2>
+    <form method="get" action="{{ url_for('server_settings') }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="encryption">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ encryption_q or '' }}"
+               placeholder="Search" autocomplete="off" aria-label="Search projects">
+      </fieldset>
+      {% if encryption_q %}
+      <a class="button ghost small" href="{{ url_for('server_settings', tab='encryption') }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+
+  {% set projects = encryption.summary.projects %}
+  {% if projects %}
   <div class="table"><table>
-    <thead><tr><th>Team</th><th>Project</th><th>Encryption</th><th>Key created</th><th>Sync</th></tr></thead>
-    <tbody>
-    {% for p in encryption.summary.projects %}
+    <thead>
       <tr>
-        <td>{{ p.team_name }}</td>
-        <td><a href="{{ url_for('project_detail', project_id=p.project_id) }}">{{ p.project_name }}</a></td>
+        <th>Team</th>
+        <th>Project</th>
+        <th>Encryption</th>
+        <th>Key created</th>
+        <th>Sync</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td class="muted">{{ p.team_name }}</td>
         <td>
-          {% if p.provider == 'hsm' %}<span class="badge" data-variant="info">HSM</span>
-          {% elif p.provider == 'local' %}<span class="badge" data-variant="secondary">BYOK</span>
-          {% else %}<span class="muted">Managed</span>{% endif %}
+          <a href="{{ url_for('project_detail', project_id=p.project_id, tab='settings') }}">{{ p.project_name }}</a>
         </td>
-        <td class="muted">{{ p.key_created_at.strftime('%Y-%m-%d') if p.key_created_at else '—' }}</td>
-        <td class="muted">{% if p.provider == 'managed' %}—{% elif p.pending %}⚠ {{ p.pending }} pending{% else %}In sync{% endif %}</td>
+        <td class="muted">
+          {% if p.provider == 'hsm' %}HSM
+          {% elif p.provider == 'local' %}Local
+          {% else %}Managed{% endif %}
+        </td>
+        <td class="muted">
+          {% if p.key_created_at %}{{ p.key_created_at.strftime('%Y-%m-%d') }}{% else %}-{% endif %}
+        </td>
+        <td class="muted">
+          {% if p.provider == 'managed' %}-
+          {% elif p.pending %}{{ p.pending }} pending
+          {% else %}In sync{% endif %}
+        </td>
       </tr>
     {% endfor %}
     </tbody>
   </table></div>
+  <p class="muted" style="margin-top:.65rem">
+    {{ c.managed or 0 }} managed · {{ c.local or 0 }} local · {{ c.hsm or 0 }} HSM
+  </p>
+  {% else %}
+  <p class="empty">
+    {% if encryption_q %}No projects match “{{ encryption_q }}”.{% else %}No projects yet.{% endif %}
+  </p>
+  {% endif %}
 </section>
 {% endif %}
 {% endblock %}

@@ -540,12 +540,27 @@ def server_settings():
         (server_url + "/login/oidc/callback") if server_url else ""
     )
     encryption = None
+    encryption_q = ""
     if tab == "encryption":
-
+        encryption_q = (request.args.get("q") or "").strip()
+        summary = project_keys.encryption_summary()
+        if encryption_q:
+            qn = encryption_q.lower()
+            summary = {
+                "counts": summary["counts"],
+                "projects": [
+                    p
+                    for p in summary["projects"]
+                    if qn in (p.get("team_name") or "").lower()
+                    or qn in (p.get("project_name") or "").lower()
+                    or qn in (p.get("provider") or "").lower()
+                    or qn in (p.get("key_id") or "").lower()
+                ],
+            }
         encryption = {
             "hsm": hsm.status(),
             "master_key_is_default": config.master_key_is_default(),
-            "summary": project_keys.encryption_summary(),
+            "summary": summary,
         }
     return render_template(
         "settings.html",
@@ -560,4 +575,5 @@ def server_settings():
         server_url=server_url,
         oidc_redirect_uri=oidc_redirect_uri,
         encryption=encryption,
+        encryption_q=encryption_q,
     )

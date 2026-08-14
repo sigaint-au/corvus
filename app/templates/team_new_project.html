@@ -11,10 +11,10 @@
 <div class="page-head">
   <h1>New project</h1>
 </div>
-<p class="page-desc muted">In {{ team.name }}</p>
+<p class="page-desc muted">{{ team.name }}</p>
 
 <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="settings-form"
-      onsubmit="var h=this.querySelector('input[name=encryption]:checked');return h&&h.value==='hsm'?confirm('Create a project with an HSM-wrapped key? The HSM must remain available for all future secret access.'):true;">
+      onsubmit="var h=this.querySelector('input[name=encryption]:checked');return h&&h.value==='hsm'?confirm('Create with an HSM-wrapped key? The HSM must stay available for future access.'):true;">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
   <section>
@@ -26,7 +26,7 @@
       </label>
       <label class="span-2">Description
         <input type="text" name="description" maxlength="500"
-               placeholder="optional purpose" autocomplete="off">
+               placeholder="optional" autocomplete="off">
       </label>
     </div>
   </section>
@@ -34,7 +34,7 @@
   <section>
     <div class="section-head"><h2>Encryption</h2></div>
     <fieldset class="crypto-choice">
-      <legend class="sr-only">Encryption</legend>
+      <legend class="visually-hidden">Encryption</legend>
       <label class="radio-card">
         <input type="radio" name="encryption" value="managed" {% if encryption == 'managed' %}checked{% endif %}>
         <span class="radio-card-body">
@@ -47,8 +47,8 @@
                {% if encryption == 'byok' %}checked{% endif %}
                {% if my_role not in ('team-owner', 'team-admin') %}disabled{% endif %}>
         <span class="radio-card-body">
-          <strong>Project key</strong>
-          <span class="muted">Dedicated key for this project{% if my_role not in ('team-owner', 'team-admin') %} (owners/admins only){% endif %}</span>
+          <strong>Local</strong>
+          <span class="muted">Project key{% if my_role not in ('team-owner', 'team-admin') %} · owners/admins only{% endif %}</span>
         </span>
       </label>
       {% if hsm_available %}
@@ -57,25 +57,12 @@
                {% if encryption == 'hsm' %}checked{% endif %}
                {% if my_role not in ('team-owner', 'team-admin') %}disabled{% endif %}>
         <span class="radio-card-body">
-          <strong>External HSM</strong>
-          <span class="muted">Project key wrapped by the HSM (KEK: {{ hsm_kek_label }}){% if my_role not in ('team-owner', 'team-admin') %} (owners/admins only){% endif %}</span>
+          <strong>HSM</strong>
+          <span class="muted">Project key in HSM{% if my_role not in ('team-owner', 'team-admin') %} · owners/admins only{% endif %}</span>
         </span>
       </label>
       {% endif %}
     </fieldset>
-    {% if hsm_available %}
-    <p class="field-hint">
-      <span class="badge" data-variant="success">HSM connected</span>
-      KEK label: <code>{{ hsm_kek_label }}</code>
-    </p>
-    {% endif %}
-    <p class="field-hint">
-      <strong>Managed</strong> — fastest setup; the server key encrypts all secrets.<br>
-      <strong>Project key</strong> — per-project key wrapped by the server master key.<br>
-      <strong>External HSM</strong> — per-project key wrapped by a hardware security module;
-      the server master key is not in the trust path.
-      See <code>docs/admin/byok.md</code> for details.
-    </p>
   </section>
 
   <p class="create-actions">

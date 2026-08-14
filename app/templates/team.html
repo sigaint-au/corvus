@@ -59,17 +59,18 @@
     </div>
   </div>
   {% if projects %}
-  <p class="muted">{{ projects|length }} project(s): {{ hsm_count }} HSM-backed, {{ local_count }} local BYOK, {{ managed_count }} managed</p>
   <div class="table"><table>
-    <thead><tr><th>Name</th><th>Description</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>Name</th><th>Description</th><th>Encryption</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for p in projects %}
       <tr>
-        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a>
-          {% if p.key_provider == 'hsm' %}<span class="badge" data-variant="info">HSM</span>
-          {% elif p.key_provider == 'local' %}<span class="badge" data-variant="secondary">BYOK</span>{% endif %}
-        </td>
+        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
         <td class="muted col-note">{{ p.description or '-' }}</td>
+        <td class="muted">
+          {% if p.key_provider == 'hsm' %}HSM
+          {% elif p.key_provider == 'local' %}Local
+          {% else %}Managed{% endif %}
+        </td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
         {% if my_role in ('team-owner', 'team-admin') %}
         <td class="acts">

@@ -758,7 +758,7 @@
       <span class="badge" data-variant="success">Project key</span>
       <span class="muted">
         {% if project_crypto.key_provider == 'hsm' %}
-          External HSM{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
+          HSM{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
         {% else %}
           Local
         {% endif %}
@@ -817,7 +817,7 @@
       <label class="radio-card">
         <input type="radio" name="provider" value="hsm">
         <span class="radio-card-body">
-          <strong>External HSM</strong>
+          <strong>HSM</strong>
           <span class="muted">Project key wrapped by the HSM</span>
         </span>
       </label>
