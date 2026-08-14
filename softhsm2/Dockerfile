@@ -9,7 +9,7 @@ FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends softhsm2 opensc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY init.sh /init.sh
+COPY softhsm2/init.sh /init.sh
 RUN chmod +x /init.sh
 
 ENTRYPOINT ["/init.sh"]

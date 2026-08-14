@@ -123,6 +123,70 @@ class TestProjectCrypto:
         unwrap.assert_called_once_with("hsm-wrapped")
 
 
+class TestHsmDekContract:
+    """Fernet.generate_key() is 44 bytes; HSM wraps the decoded 32 raw bytes."""
+
+    def test_fernet_key_to_raw_accepts_generate_project_key(self):
+        import hsm
+
+        fkey = crypto.generate_project_key()
+        assert len(fkey) == 44
+        raw = hsm.fernet_key_to_raw(fkey)
+        assert len(raw) == 32
+        assert hsm.raw_to_fernet_key(raw) == fkey
+
+    def test_fernet_key_to_raw_accepts_32_bytes(self):
+        import hsm
+        import os
+
+        raw = os.urandom(32)
+        assert hsm.fernet_key_to_raw(raw) == raw
+
+    def test_fernet_key_to_raw_rejects_bad_length(self):
+        import hsm
+
+        with pytest.raises(ValueError, match="DEK must be"):
+            hsm.fernet_key_to_raw(b"too-short")
+
+    def test_ensure_project_key_hsm_passes_fernet_key_to_wrap(self):
+        """Regression: wrap_dek must receive Fernet.generate_key() material."""
+        import hsm
+        import project_keys
+
+        pid = str(uuid4())
+        seen = {}
+
+        def capture_wrap(dek):
+            seen["dek"] = dek
+            # Validate the DEK contract the same way wrap_dek does before PKCS#11
+            hsm.fernet_key_to_raw(dek)
+            return "hsm-wrapped"
+
+        admin_conn, admin_cur = _project_keys_conn(fetchone=None)
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(hsm, "ensure_kek"), \
+             patch.object(hsm, "wrap_dek", side_effect=capture_wrap), \
+             patch.object(hsm, "kek_label", return_value="byok-kek"):
+            assert project_keys.ensure_project_key(pid, provider="hsm") is True
+        assert len(seen["dek"]) == 44
+        assert hsm.fernet_key_to_raw(seen["dek"])  # does not raise
+
+
+def _project_keys_conn(fetchone=None, fetchall=None):
+    from unittest.mock import MagicMock
+
+    cur = MagicMock()
+    cur.fetchone.return_value = fetchone
+    cur.fetchall.return_value = fetchall if fetchall is not None else []
+    conn = MagicMock()
+    conn.cursor.return_value = cur
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    cur.__enter__.return_value = cur
+    cur.__exit__.return_value = False
+    return conn, cur
+
+
 def _conn(fetchone=None, fetch_key=None):
     from unittest.mock import MagicMock
     cur = MagicMock()

@@ -89,6 +89,18 @@ def create_project(team_id):
         import project_keys
 
         provider = "hsm" if encryption == "hsm" else "local"
+        if provider == "hsm" and not hsm.available():
+            try:
+                with db.connect_admin() as aconn, aconn.cursor() as acur:
+                    acur.execute("DELETE FROM api.projects WHERE id = %s", (str(pid),))
+            except Exception:
+                pass
+            flash(
+                "External HSM is not available; choose Managed or Project key, "
+                "or configure HSM_PIN / the PKCS#11 token.",
+                "error",
+            )
+            return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
         try:
             project_keys.ensure_project_key(pid, provider=provider)
         except Exception:

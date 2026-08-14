@@ -25,9 +25,18 @@ services:
       HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-secretserver}
       HSM_SO_PIN: ${HSM_SO_PIN:-1234}
       HSM_PIN: ${HSM_PIN:-1234}
-      SOFTHSM2_CONF: /etc/softhsm/softhsm2.conf
+      # Shared volume path must be world-traversable for appuser (uid 10001).
+      # Do not use /var/lib/softhsm (package dir is root:softhsm 770).
+      SOFTHSM2_TOKEN_DIR: /hsm/tokens
+      SOFTHSM2_CONF: /hsm/tokens/softhsm2.conf
     volumes:
-      - hsmdata:/var/lib/softhsm/tokens
+      - hsmdata:/hsm/tokens
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /hsm/tokens/.ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
 
   postgrest:
     image: docker.io/postgrest/postgrest:v12.2.3
@@ -52,7 +61,7 @@ services:
       postgrest:
         condition: service_started
       softhsm2:
-        condition: service_started
+        condition: service_healthy
     environment:
       DATABASE_URL: postgres://authenticator:authenticator@db:5432/secretserver
       DATABASE_ADMIN_URL: postgres://postgres:postgres@db:5432/secretserver
@@ -66,11 +75,12 @@ services:
       HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-secretserver}
       HSM_PIN: ${HSM_PIN:-1234}
       HSM_KEK_LABEL: ${HSM_KEK_LABEL:-byok-kek}
+      SOFTHSM2_CONF: /hsm/tokens/softhsm2.conf
       # Opt-in only — default off so refuse_insecure_defaults() actually runs.
       # For local play with baked-in secrets: ALLOW_INSECURE_DEFAULTS=1
       ALLOW_INSECURE_DEFAULTS: ${ALLOW_INSECURE_DEFAULTS:-0}
     volumes:
-      - hsmdata:/var/lib/softhsm/tokens
+      - hsmdata:/hsm/tokens
     ports:
       - "8080:8080"
     # Hardened runtime: non-root image USER + drop caps + read-only root FS

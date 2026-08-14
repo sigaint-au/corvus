@@ -97,11 +97,12 @@ def decrypt(val: str) -> str:
 
 # ── Per-project Bring-Your-Own-Key (BYOK) ────────────────────────────────
 # Each project may have a dedicated data-encryption key (DEK). The DEK is a
-# random Fernet key, wrapped by MASTER_KEY and stored in
-# private.project_crypto_keys. Values encrypted with a project DEK carry
-# ``crypto_provider='project'``; values encrypted with the app master key are
-# ``'master'`` (legacy / non-BYOK). Resolution is cached per process and can
-# be cleared after key events (adopt/rotate/revoke).
+# random Fernet key (``Fernet.generate_key()``: 44-byte urlsafe-b64 of 32 raw
+# bytes). For local keys it is wrapped by MASTER_KEY; for HSM keys the 32 raw
+# bytes are wrapped by the HSM KEK (see ``hsm.wrap_dek`` / ``unwrap_dek``).
+# Values encrypted with a project DEK carry ``crypto_provider='project'``;
+# values encrypted with the app master key are ``'master'`` (legacy / non-BYOK).
+# Resolution is cached per process and can be cleared after key events.
 
 
 def generate_project_key() -> bytes:

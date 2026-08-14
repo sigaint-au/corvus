@@ -30,8 +30,12 @@ initialises the token into a shared `hsmdata` volume, plus the `app` service
 mounts the same volume and loads `libsofthsm2.so`:
 
 ```
-softhsm2  ──init token──►  hsmdata:/var/lib/softhsm/tokens  ◄──mount──  app (libsofthsm2.so + python-pkcs11)
+softhsm2  ──init token──►  hsmdata:/hsm/tokens  ◄──mount──  app (libsofthsm2.so + python-pkcs11)
 ```
+
+Both services mount the volume at ``/hsm/tokens`` (not the package path
+``/var/lib/softhsm``, which is mode ``770`` root:softhsm and blocks the
+non-root app user).
 
 Run the stack as usual:
 
@@ -50,10 +54,15 @@ HSM-backed projects.
 | `HSM_TOKEN_LABEL` | `secretserver` | Token label |
 | `HSM_PIN` | `1234` | User PIN (also the init PIN) |
 | `HSM_KEK_LABEL` | `byok-kek` | AES KEK label within the token |
+| `SOFTHSM2_CONF` | (package default) | SoftHSM config path; compose sets this to the shared volume conf |
 
-`HSM_PIN` is the switch: if unset, `hsm.available()` is false and the UI hides
-the HSM option. The KEK is created lazily on the first HSM-backed project
-(`hsm.ensure_kek()`).
+`HSM_PIN` must be set and the token must open successfully for
+`hsm.available()` to be true (UI hides HSM otherwise). The KEK is created
+lazily on the first HSM-backed project (`hsm.ensure_kek()`).
+
+**DEK format:** project keys are Fernet keys (`Fernet.generate_key()`, 44-byte
+urlsafe base64). The HSM wraps the decoded 32 raw bytes (AES key-wrap when
+supported, else AES-CBC). Unwrap returns a Fernet key again.
 
 ## Code map
 

@@ -56,7 +56,7 @@
                {% if my_role not in ('team-owner', 'team-admin') %}disabled{% endif %}>
         <span class="radio-card-body">
           <strong>External HSM</strong>
-          <span class="muted">Project key wrapped by an external HSM (SoftHSM2){% if my_role not in ('team-owner', 'team-admin') %} (owners/admins only){% endif %}</span>
+          <span class="muted">Project key wrapped by the HSM{% if my_role not in ('team-owner', 'team-admin') %} (owners/admins only){% endif %}</span>
         </span>
       </label>
       {% endif %}

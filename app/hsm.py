@@ -1,17 +1,16 @@
 """External HSM (SoftHSM2 / PKCS#11) integration for BYOK.
 
 The HSM holds a single AES-256 key-encryption key (KEK). Project data-encryption
-keys (DEKs, 32-byte Fernet keys) are wrapped with that KEK via AES-CBC — the
-KEK never leaves the HSM, so ``MASTER_KEY`` is not in the DEK's trust path for
-HSM-backed projects.
+keys (DEKs) are Fernet keys (urlsafe-base64 of 32 raw bytes, as produced by
+``Fernet.generate_key()``). The 32 raw bytes are wrapped with the HSM KEK so
+the KEK never leaves the HSM and ``MASTER_KEY`` is not on the DEK trust path.
 
-This module is a thin wrapper around ``python-pkcs11`` and is only exercised
-when :func:`available` is true (``HSM_PIN`` set and the PKCS#11 module present).
-Every entry point raises a clear ``RuntimeError`` when the HSM is unavailable
-or a call fails, so callers can surface a useful message.
+Wrap order of preference:
+1. ``AES_KEY_WRAP`` (RFC 3394) when the token supports it
+2. ``AES_CBC`` with a random IV (SoftHSM2 always supports this)
 
-Developer note: the exact PKCS#11 calls here are written for SoftHSM2 2.6 with
-``python-pkcs11`` 0.7 — see ``docs/dev/hsm.md``.
+Developer note: exercised with SoftHSM2 2.6 + ``python-pkcs11`` 0.7 —
+see ``docs/dev/hsm.md``.
 """
 
 from __future__ import annotations
@@ -22,9 +21,14 @@ import os
 
 log = logging.getLogger(__name__)
 
-# DEK is a 32-byte Fernet key (exactly two AES blocks) → no padding needed.
-_DEK_LEN = 32
+# Raw AES key material inside a Fernet key (before urlsafe-b64 encoding).
+_RAW_DEK_LEN = 32
+# Fernet.generate_key() length (urlsafe-b64 of 32 bytes).
+_FERNET_KEY_LEN = 44
 _IV_LEN = 16
+# Blob version prefixes so unwrap can tell CBC from key-wrap.
+_FMT_CBC = b"\x01"
+_FMT_KEY_WRAP = b"\x02"
 
 
 def _cfg() -> tuple[str, str, str, str]:
@@ -34,9 +38,19 @@ def _cfg() -> tuple[str, str, str, str]:
 
 
 def available() -> bool:
-    """Return True when the HSM is configured and reachable at import time."""
+    """Return True when HSM is configured and the token can be opened.
+
+    Requires ``HSM_PIN``, a present PKCS#11 module, and a successful session
+    open (so a missing/uninit token does not show HSM options in the UI).
+    """
     module, _token, pin, _kek = _cfg()
-    return bool(pin) and os.path.exists(module)
+    if not pin or not os.path.exists(module):
+        return False
+    try:
+        with _session():
+            return True
+    except Exception:
+        return False
 
 
 def _pkcs11():
@@ -54,7 +68,8 @@ def _session():
     try:
         lib = pkcs11.lib(module)
         token = lib.get_token(token_label=token_label)
-        return token.open(user_pin=pin)
+        # rw=True is required to generate/store the KEK
+        return token.open(user_pin=pin, rw=True)
     except Exception as e:
         raise RuntimeError(f"HSM open failed: {e}") from e
 
@@ -69,6 +84,40 @@ def _find_kek(session, pkcs11, kek_label):
     ):
         return obj
     return None
+
+
+def fernet_key_to_raw(dek: bytes) -> bytes:
+    """Normalize a Fernet key or raw 32-byte key to 32 raw bytes for wrapping.
+
+    Accepts:
+      - 44-byte ``Fernet.generate_key()`` material (urlsafe base64 of 32 bytes)
+      - 32 raw key bytes
+    """
+    if not isinstance(dek, (bytes, bytearray)):
+        raise TypeError("DEK must be bytes")
+    if len(dek) == _RAW_DEK_LEN:
+        return bytes(dek)
+    if len(dek) == _FERNET_KEY_LEN:
+        try:
+            raw = base64.urlsafe_b64decode(dek)
+        except Exception as e:
+            raise ValueError("invalid Fernet DEK encoding") from e
+        if len(raw) != _RAW_DEK_LEN:
+            raise ValueError(
+                f"Fernet DEK decoded to {len(raw)} bytes, expected {_RAW_DEK_LEN}"
+            )
+        return raw
+    raise ValueError(
+        f"DEK must be {_RAW_DEK_LEN} raw bytes or {_FERNET_KEY_LEN}-byte "
+        f"Fernet key, got {len(dek)}"
+    )
+
+
+def raw_to_fernet_key(raw: bytes) -> bytes:
+    """Encode 32 raw key bytes as a Fernet-compatible key."""
+    if len(raw) != _RAW_DEK_LEN:
+        raise ValueError(f"raw DEK must be {_RAW_DEK_LEN} bytes, got {len(raw)}")
+    return base64.urlsafe_b64encode(raw)
 
 
 def ensure_kek() -> str:
@@ -86,14 +135,36 @@ def ensure_kek() -> str:
     with _session() as session:
         key = _find_kek(session, pkcs11, kek_label)
         if key is None:
-            session.generate_key(
-                pkcs11.KeyType.AES,
-                256,
-                label=kek_label,
-                store=True,
-                encrypt=True,
-                decrypt=True,
-            )
+            # python-pkcs11 0.7: capabilities via Attribute template, not kwargs
+            template = {
+                pkcs11.Attribute.ENCRYPT: True,
+                pkcs11.Attribute.DECRYPT: True,
+                pkcs11.Attribute.WRAP: True,
+                pkcs11.Attribute.UNWRAP: True,
+                pkcs11.Attribute.SENSITIVE: True,
+                pkcs11.Attribute.EXTRACTABLE: False,
+            }
+            try:
+                session.generate_key(
+                    pkcs11.KeyType.AES,
+                    256,
+                    label=kek_label,
+                    store=True,
+                    template=template,
+                )
+            except Exception:
+                # Minimal template if WRAP attributes are rejected
+                session.generate_key(
+                    pkcs11.KeyType.AES,
+                    256,
+                    label=kek_label,
+                    store=True,
+                    template={
+                        pkcs11.Attribute.ENCRYPT: True,
+                        pkcs11.Attribute.DECRYPT: True,
+                        pkcs11.Attribute.SENSITIVE: True,
+                    },
+                )
             log.info("generated HSM KEK %r", kek_label)
     return kek_label
 
@@ -104,48 +175,86 @@ def kek_label() -> str:
 
 
 def wrap_dek(dek: bytes) -> str:
-    """Wrap a 32-byte DEK with the HSM KEK (AES-CBC), returning base64(iv||ct).
+    """Wrap a Fernet DEK with the HSM KEK; return base64 blob.
+
+    ``dek`` may be a 44-byte Fernet key (preferred) or 32 raw bytes. Prefer
+    AES key-wrap when the token supports it; otherwise AES-CBC + random IV.
 
     Example:
-        >>> wrapped = wrap_dek(raw)
-        >>> wrapped != raw
+        >>> from cryptography.fernet import Fernet
+        >>> wrapped = wrap_dek(Fernet.generate_key())
+        >>> isinstance(wrapped, str)
         True
     """
-    if len(dek) != _DEK_LEN:
-        raise ValueError(f"DEK must be {_DEK_LEN} bytes, got {len(dek)}")
+    raw = fernet_key_to_raw(dek)
     pkcs11 = _pkcs11()
     with _session() as session:
         key = _find_kek(session, pkcs11, kek_label())
         if key is None:
             raise RuntimeError("HSM KEK not found; call ensure_kek() first")
+        # Prefer authenticated AES key wrap when the module supports it.
+        kw = getattr(pkcs11.Mechanism, "AES_KEY_WRAP", None)
+        if kw is not None:
+            try:
+                ct = key.encrypt(raw, mechanism=kw)
+                return base64.b64encode(_FMT_KEY_WRAP + ct).decode()
+            except Exception as e:
+                log.debug("AES_KEY_WRAP unavailable, falling back to CBC: %s", e)
         iv = os.urandom(_IV_LEN)
         try:
-            ct = key.encrypt(dek, mechanism=pkcs11.Mechanism.AES_CBC, mechanism_param=iv)
+            ct = key.encrypt(
+                raw, mechanism=pkcs11.Mechanism.AES_CBC, mechanism_param=iv
+            )
         except Exception as e:
             raise RuntimeError(f"HSM wrap failed: {e}") from e
-    return base64.b64encode(iv + ct).decode()
+    return base64.b64encode(_FMT_CBC + iv + ct).decode()
 
 
 def unwrap_dek(wrapped: str) -> bytes:
-    """Unwrap a DEK previously produced by :func:`wrap_dek`.
+    """Unwrap a DEK previously produced by :func:`wrap_dek` to a Fernet key.
+
+    Returns 44-byte urlsafe-base64 key material suitable for ``Fernet(key)``.
 
     Example:
-        >>> unwrap_dek(wrap_dek(raw)) == raw
+        >>> k = Fernet.generate_key()
+        >>> unwrap_dek(wrap_dek(k)) == k
         True
     """
     try:
         blob = base64.b64decode(wrapped)
     except Exception as e:
         raise ValueError("invalid wrapped DEK encoding") from e
-    if len(blob) != _IV_LEN + _DEK_LEN:
+    if len(blob) < 2:
         raise ValueError("invalid wrapped DEK length")
-    iv, ct = blob[:_IV_LEN], blob[_IV_LEN:]
+    # Legacy blobs (no format prefix): iv(16) || ct(32) from early SoftHSM path
+    if blob[0] not in (_FMT_CBC[0], _FMT_KEY_WRAP[0]) and len(blob) == _IV_LEN + _RAW_DEK_LEN:
+        fmt, rest = _FMT_CBC, blob
+    else:
+        fmt, rest = blob[:1], blob[1:]
     pkcs11 = _pkcs11()
     with _session() as session:
         key = _find_kek(session, pkcs11, kek_label())
         if key is None:
             raise RuntimeError("HSM KEK not found; call ensure_kek() first")
         try:
-            return key.decrypt(ct, mechanism=pkcs11.Mechanism.AES_CBC, mechanism_param=iv)
+            if fmt == _FMT_KEY_WRAP:
+                kw = getattr(pkcs11.Mechanism, "AES_KEY_WRAP", None)
+                if kw is None:
+                    raise RuntimeError("AES_KEY_WRAP not supported by python-pkcs11")
+                raw = key.decrypt(rest, mechanism=kw)
+            elif fmt == _FMT_CBC:
+                if len(rest) != _IV_LEN + _RAW_DEK_LEN:
+                    raise ValueError("invalid CBC wrapped DEK length")
+                iv, ct = rest[:_IV_LEN], rest[_IV_LEN:]
+                raw = key.decrypt(
+                    ct, mechanism=pkcs11.Mechanism.AES_CBC, mechanism_param=iv
+                )
+            else:
+                raise ValueError("unknown wrapped DEK format")
+        except ValueError:
+            raise
         except Exception as e:
             raise RuntimeError(f"HSM unwrap failed: {e}") from e
+    if len(raw) != _RAW_DEK_LEN:
+        raise ValueError(f"unwrapped DEK has length {len(raw)}, expected {_RAW_DEK_LEN}")
+    return raw_to_fernet_key(raw)

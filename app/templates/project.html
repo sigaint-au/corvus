@@ -738,20 +738,15 @@
 <section class="crypto-panel">
   <div class="section-head">
     <h2>Encryption</h2>
-    {% if can_manage_keys and (not project_crypto or project_master_rows) %}
+    {% if can_manage_keys and project_crypto and project_master_rows %}
     <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
           class="inline"
-          onsubmit="return confirm({% if project_crypto %}'Re-encrypt {{ project_master_rows }} secret(s) with the project key?'{% else %}'Create a project key and re-encrypt secrets onto it?'{% endif %});">
+          onsubmit="return confirm('Re-encrypt {{ project_master_rows }} secret(s) with the project key?');">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="action" value="adopt">
-      {% if not project_crypto and hsm_available %}
-      <select name="provider" aria-label="Key provider">
-        <option value="local">Local (server-managed)</option>
-        <option value="hsm">External HSM (SoftHSM2)</option>
-      </select>
-      {% endif %}
+      <input type="hidden" name="provider" value="{{ project_crypto.key_provider or 'local' }}">
       <button type="submit" class="button outline small">
-        {% if project_crypto %}Re-encrypt {{ project_master_rows }}{% else %}Adopt project key{% endif %}
+        Re-encrypt {{ project_master_rows }}
       </button>
     </form>
     {% endif %}
@@ -762,7 +757,11 @@
       {% if project_crypto %}
       <span class="badge" data-variant="success">Project key</span>
       <span class="muted">
-        {% if project_crypto.key_provider == 'hsm' %}External HSM ({{ project_crypto.kms_key_ref or 'SoftHSM2' }}){% else %}Local (server-managed){% endif %}
+        {% if project_crypto.key_provider == 'hsm' %}
+          External HSM{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
+        {% else %}
+          Local
+        {% endif %}
         {% if project_crypto.created_at %} · {{ project_crypto.created_at.strftime('%Y-%m-%d') }}{% endif %}
       </span>
       {% else %}
@@ -782,6 +781,36 @@
       {% endif %}
     </div>
   </div>
+
+  {% if can_manage_keys and not project_crypto %}
+  <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
+        class="crypto-adopt"
+        onsubmit="var p=this.querySelector('input[name=provider]:checked');var h=p&&p.value==='hsm';return confirm(h?'Create an HSM-wrapped project key and re-encrypt secrets onto it?':'Create a project key and re-encrypt secrets onto it?');">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="adopt">
+    <fieldset class="crypto-choice">
+      <label class="radio-card">
+        <input type="radio" name="provider" value="local" checked>
+        <span class="radio-card-body">
+          <strong>Local</strong>
+          <span class="muted">Project key wrapped by the server</span>
+        </span>
+      </label>
+      {% if hsm_available %}
+      <label class="radio-card">
+        <input type="radio" name="provider" value="hsm">
+        <span class="radio-card-body">
+          <strong>External HSM</strong>
+          <span class="muted">Project key wrapped by the HSM</span>
+        </span>
+      </label>
+      {% endif %}
+    </fieldset>
+    <p class="form-actions">
+      <button type="submit" class="button outline small">Adopt project key</button>
+    </p>
+  </form>
+  {% endif %}
 </section>
 {% endif %}
 {% if can_delete %}
