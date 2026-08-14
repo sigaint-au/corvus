@@ -676,3 +676,68 @@ def server_settings():
         encryption_page=encryption_page,
         projects_pager=projects_pager,
     )
+
+
+@authz.global_admin_required
+def hsm_slot_new_wizard():
+    """Render and handle the New HSM slot wizard page (Test + Create).
+
+    Example:
+        GET /settings/encryption/hsm-slots/new
+    """
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+        name = (request.form.get("name") or "").strip()
+        pkcs11_url = (request.form.get("pkcs11_url") or "").strip()
+        description = (request.form.get("description") or "").strip()[:200]
+        is_default = bool(request.form.get("is_default"))
+        if not name or not pkcs11_url:
+            return render_template(
+                "hsm_slot_new.html",
+                name=name,
+                pkcs11_url=pkcs11_url,
+                description=description,
+                is_default=is_default,
+                test_result=None,
+                test_error="Name and PKCS#11 URL are required",
+            )
+        test_ok = False
+        test_error = None
+        try:
+            ok, msg = hsm.test_connection_for_slot(pkcs11_url)
+            test_ok = ok
+            test_error = None if ok else msg
+        except Exception as e:
+            test_ok = False
+            test_error = str(e)
+        if action == "create" and test_ok:
+            try:
+                with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT api.hsm_slot_upsert(NULL::uuid, %s, %s, %s, %s) AS id",
+                        (name, pkcs11_url, description, is_default),
+                    )
+                crypto.clear_slot_url_cache()
+                flash("HSM slot created", "ok")
+                return redirect(url_for("server_settings", tab="encryption"))
+            except Exception as e:
+                flash(f"HSM slot save failed: {e}", "error")
+                return redirect(url_for("server_settings", tab="encryption"))
+        return render_template(
+            "hsm_slot_new.html",
+            name=name,
+            pkcs11_url=pkcs11_url,
+            description=description,
+            is_default=is_default,
+            test_result=test_ok,
+            test_error=test_error,
+        )
+    return render_template(
+        "hsm_slot_new.html",
+        name="",
+        pkcs11_url="",
+        description="",
+        is_default=False,
+        test_result=None,
+        test_error=None,
+    )

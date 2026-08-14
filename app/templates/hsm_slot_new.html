@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}New HSM slot - {{ app_name }}{% endblock %}
+{% block body %}
+{% set breadcrumbs = [
+  ('Server settings', url_for('server_settings', tab='encryption')),
+  ('New HSM slot', none),
+] %}
+{% include "partials/breadcrumb.html" %}
+
+<div class="page-head">
+  <h1>New HSM slot</h1>
+</div>
+<p class="page-desc muted">Add a named PKCS#11 slot. The app will open a session against this module/token and store the key-encryption key.</p>
+
+<form method="post" action="{{ url_for('hsm_slot_new_wizard') }}" class="settings-form">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+  <section>
+    <div class="section-head"><h2>Details</h2></div>
+    <div class="field-grid">
+      <label class="span-2">Name
+        <input type="text" name="name" value="{{ name or '' }}" required maxlength="80"
+               placeholder="e.g. prod-hsm" autocomplete="off">
+      </label>
+      <label class="span-2">PKCS#11 URL
+        <input type="text" name="pkcs11_url" value="{{ pkcs11_url or '' }}" required
+               placeholder="pkcs11:token=...;object=...?module-path=/path/to/module.so&pin-source=/run/secrets/hsm-pin" autocomplete="off">
+        <span class="field-hint">Format: <code>pkcs11:token=&lt;label&gt;;object=&lt;KEK label&gt;?module-path=&lt;.so&gt;&amp;pin-source=&lt;pin file&gt;</code></span>
+      </label>
+      <label class="span-2">Description
+        <input type="text" name="description" value="{{ description or '' }}" maxlength="200" autocomplete="off">
+      </label>
+      <label class="check-row span-2">
+        <input type="checkbox" name="is_default" value="1" {% if is_default %}checked{% endif %}> Default slot
+      </label>
+    </div>
+
+    {% if test_result is not none %}
+    <p class="form-actions">
+      {% if test_result %}
+      <span class="badge" data-variant="success">Connection OK</span>
+      <span class="muted">KEK present</span>
+      {% else %}
+      <span class="badge" data-variant="danger">Connection failed</span>
+      <span class="muted">{{ test_error or 'Could not open the token.' }}</span>
+      {% endif %}
+    </p>
+    {% endif %}
+
+    <p class="form-actions">
+      <a class="button ghost" href="{{ url_for('server_settings', tab='encryption') }}">Cancel</a>
+      <button type="submit" name="action" value="test" class="button outline">Test connection</button>
+      <button type="submit" name="action" value="create" class="button">Create slot</button>
+    </p>
+  </section>
+</form>
+{% endblock %}

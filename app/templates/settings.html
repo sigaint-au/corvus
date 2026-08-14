@@ -770,7 +770,10 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 </section>
 
 <section class="crypto-panel">
-  <div class="section-head"><h2>HSM slots</h2></div>
+  <div class="section-head">
+    <h2>HSM slots</h2>
+    <a class="button outline small" href="{{ url_for('hsm_slot_new_wizard') }}">+ Add HSM slot</a>
+  </div>
   {% if encryption.hsm_slots %}
   <div class="table" style="overflow: visible"><table>
     <thead><tr><th>Name</th><th>PKCS#11 URL</th><th class="acts-menu"></th></tr></thead>
@@ -827,34 +830,8 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     </tbody>
   </table></div>
   {% else %}
-  <p class="muted">No named slots configured. Add a slot above to enable external-HSM encryption.</p>
+  <p class="muted">No named slots configured.</p>
   {% endif %}
-
-  <form method="post" action="{{ url_for('server_settings', tab='encryption') }}" class="settings-form">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="action" value="hsm_slot_add">
-    <fieldset class="field-group">
-      <legend>New slot</legend>
-      <div class="field-grid">
-        <label class="span-2">Name
-          <input type="text" name="name" placeholder="e.g. prod-hsm" maxlength="80" autocomplete="off">
-        </label>
-        <label class="span-2">PKCS#11 URL
-          <input type="text" name="pkcs11_url" placeholder="pkcs11:token=...?module-path=..." autocomplete="off">
-          <span class="field-hint">PKCS#11 URL format: <code>pkcs11:token=&lt;label&gt;;object=&lt;KEK label&gt;?module-path=&lt;.so&gt;&amp;pin-source=&lt;pin file&gt;</code></span>
-        </label>
-        <label class="span-2">Description
-          <input type="text" name="description" maxlength="200" autocomplete="off">
-        </label>
-        <label class="check-row span-2">
-          <input type="checkbox" name="is_default" value="1"> Default slot
-        </label>
-      </div>
-    </fieldset>
-    <p class="form-actions">
-      <button type="submit" class="button">Add slot</button>
-    </p>
-  </form>
 </section>
 
 <section class="crypto-panel">
@@ -944,9 +921,6 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   {% with pager = projects_pager %}
     {% include "partials/pager.html" %}
   {% endwith %}
-  <p class="muted" style="margin-top:.65rem">
-    {{ c.managed or 0 }} managed · {{ c.local or 0 }} local · {{ c.hsm or 0 }} HSM
-  </p>
   {% else %}
   <p class="empty">
     {% if encryption_q %}No projects match “{{ encryption_q }}”.{% else %}No projects yet.{% endif %}
