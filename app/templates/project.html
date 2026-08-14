@@ -763,7 +763,7 @@
           Local
         {% endif %}
         {% if project_crypto.created_at %} · {{ project_crypto.created_at.strftime('%Y-%m-%d') }}{% endif %}
-        {% if project_crypto.key_id %} · key <code class="k">{{ project_crypto.key_id[:8] }}</code>{% endif %}
+        {% if project_crypto.key_id %} · key <code class="k">{{ project_crypto.key_id|string|truncate(8, True, '') }}</code>{% endif %}
       </span>
       {% else %}
       <span class="badge" data-variant="secondary">Managed</span>
