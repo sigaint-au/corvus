@@ -160,6 +160,30 @@ def add_secret_access_binding(project_id, secret_id):
                     flash("Machine account not found in this project", "error")
                     return redirect(access_url)
                 subject_id, who = str(sa["id"]), f"machine account {sa_id[:8]}"
+            external_user = False
+            if subject_kind == "User":
+                cur.execute(
+                    """
+                    SELECT api.can('list', 'secrets', 'team', %s::uuid, %s::uuid)
+                      AS member
+                    """,
+                    (str(sec["team_id"]), subject_id),
+                )
+                external_user = not bool((cur.fetchone() or {}).get("member"))
+                if external_user:
+                    cur.execute(
+                        "SELECT api.secret_requires_approval(%s::uuid) AS a",
+                        (str(secret_id),),
+                    )
+                    if bool((cur.fetchone() or {}).get("a")):
+                        flash(
+                            "Cannot share secrets that require reveal approval "
+                            "with users outside the team. Turn off reveal approval "
+                            "on this secret (or the project default), or add them "
+                            "to the team first.",
+                            "error",
+                        )
+                        return redirect(access_url)
             # Replace any existing secret-scope binding for this subject
             cur.execute(
                 """
@@ -200,7 +224,14 @@ def add_secret_access_binding(project_id, secret_id):
                 action="updated",
             )
             conn.commit()
-            flash(f"Bound {who} as {role_name}", "ok")
+            if external_user:
+                flash(
+                    f"Bound {who} as {role_name}. They are not on this team - "
+                    "they will only see this secret under Workspace → Shared secrets.",
+                    "ok",
+                )
+            else:
+                flash(f"Bound {who} as {role_name}", "ok")
         except Exception as e:
             conn.rollback()
             flash(str(e), "error")

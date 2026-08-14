@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}My profile — {{ app_name }}{% endblock %}
+{% block title %}My profile - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head"><h1>My profile</h1></div>
 <p class="page-desc muted">Your account, security, memberships, and recent activity.</p>
@@ -31,7 +31,7 @@
   <dl class="profile-dl">
     <div>
       <dt>Name</dt>
-      <dd>{{ user.name or '—' }}</dd>
+      <dd>{{ user.name or '-' }}</dd>
     </div>
     <div>
       <dt>Email</dt>
@@ -63,7 +63,7 @@
     </div>
     <div>
       <dt>Member since</dt>
-      <dd class="muted">{{ user.created_at or '—' }}</dd>
+      <dd class="muted">{{ user.created_at or '-' }}</dd>
     </div>
   </dl>
 </section>
@@ -178,10 +178,10 @@
       <tr>
         <td>{{ t.name }}</td>
         <td><code class="k">{{ t.token_prefix }}…</code></td>
-        <td class="muted" title="{{ t.created_at }}">{{ t.created_at|time_ago if t.created_at else '—' }}</td>
+        <td class="muted" title="{{ t.created_at }}">{{ t.created_at|time_ago if t.created_at else '-' }}</td>
         <td class="muted">{{ t.expires_at or 'never' }}</td>
         <td class="muted" title="{{ t.last_used_at }}">
-          {% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}—{% endif %}
+          {% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}-{% endif %}
         </td>
         <td class="acts">
           <form method="post" action="{{ url_for('delete_personal_token', token_id=t.id) }}" class="inline"
@@ -222,7 +222,7 @@
   <form method="post" action="{{ url_for('totp_disable') }}" class="mt-1"
         onsubmit="return confirm('Disable two-factor authentication?')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Disable — confirm with code
+    <label>Disable - confirm with code
       <input type="text" name="code" required autocomplete="one-time-code"
              placeholder="123456 or xxxx-xxxx">
     </label>
@@ -300,7 +300,7 @@
           <span class="badge" data-variant="secondary">This device</span>
           {% endif %}
         </td>
-        <td class="muted">{{ s.ip or '—' }}</td>
+        <td class="muted">{{ s.ip or '-' }}</td>
         <td class="muted" title="{{ s.last_seen_at|time_when }}">{{ s.last_seen_at|time_ago }}</td>
         <td class="acts">
           <form method="post"
@@ -351,7 +351,7 @@
         <tr>
           <td>
             {% if r.scope_kind == 'secret' and r.scope_label %}<code class="k">{{ r.scope_label }}</code>
-            {% else %}{{ r.scope_label or '—' }}{% endif %}
+            {% else %}{{ r.scope_label or '-' }}{% endif %}
           </td>
           <td>
             <span class="badge" data-variant="secondary" title="{{ r.role_description or r.role_name }}">{{ r.role_name }}</span>
@@ -360,7 +360,7 @@
             <span class="badge">{{ r.grant_kind }}</span>
             {{ r.grant_subject }}
           </td>
-          <td class="muted">{{ r.created_at|time_ago if r.created_at else '—' }}</td>
+          <td class="muted">{{ r.created_at|time_ago if r.created_at else '-' }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -404,7 +404,7 @@
         {% if t.role %}
         <span class="badge" data-variant="secondary" title="{{ role_help.get(t.role, '') }}">{{ t.role }}</span>
         {% else %}
-        <span class="muted">—</span>
+        <span class="muted">-</span>
         {% endif %}
       </td>
       <td class="muted">{{ t.source or 'manual' }}</td>
@@ -472,7 +472,7 @@
           {% elif user.is_global_admin %}
           <span class="badge" data-variant="secondary">global admin</span>
           {% else %}
-          <span class="muted">—</span>
+          <span class="muted">-</span>
           {% endif %}
         </td>
         <td>{{ p.secret_count }}</td>

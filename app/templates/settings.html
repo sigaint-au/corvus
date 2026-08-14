@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Server settings — {{ app_name }}{% endblock %}
+{% block title %}Server settings - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head"><h1>Server settings</h1></div>
 <p class="page-desc muted">Global admin only. Changes apply immediately for all users.</p>
@@ -149,7 +149,7 @@
     <label>Banner text
       <input type="text" name="classification_text" maxlength="120"
              value="{{ settings.classification_text }}"
-             placeholder="OFFICIAL — SENSITIVE" required>
+             placeholder="OFFICIAL - SENSITIVE" required>
     </label>
     <div class="row">
       <div>
@@ -249,7 +249,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     {% for u in all_users %}
       <tr>
         <td>
-          {{ u.name or '—' }}
+          {{ u.name or '-' }}
           <span class="muted">{{ u.email }}</span>
           {% if u.id|string == session.user_id %}
           <span class="badge" data-variant="secondary">you</span>
@@ -315,7 +315,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
             </form>
             {% endif %}
           {% else %}
-          <span class="muted">—</span>
+          <span class="muted">-</span>
           {% endif %}
         </td>
       </tr>
@@ -379,7 +379,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <h2>LDAP authentication</h2>
   <p class="muted page-desc">
     Directory login alongside local accounts. Groups are read on each sign-in.
-    Use <code class="k">ldaps://</code> or StartTLS — plain <code class="k">ldap://</code> without TLS is refused.
+    Use <code class="k">ldaps://</code> or StartTLS - plain <code class="k">ldap://</code> without TLS is refused.
   </p>
   <form method="post" class="settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -645,7 +645,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
       <code class="k">{{ oidc_redirect_uri }}</code>
       {% else %}
       <code class="k">https://&lt;server-url&gt;/login/oidc/callback</code>
-      — set <strong>Server URL</strong> under General to fill this in
+      - set <strong>Server URL</strong> under General to fill this in
       {% endif %}
     </li>
     <li>Allowed web / CORS origin: the same host as the server URL (or your IdP’s equivalent of “+” / allow all for that origin)</li>

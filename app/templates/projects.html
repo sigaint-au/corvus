@@ -1,38 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Projects — {{ app_name }}{% endblock %}
+{% block title %}Projects - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head">
   <h1>Projects</h1>
   {% if team %}
-  <form method="get" action="{{ url_for('projects_list') }}" class="toolbar" role="search">
-    <label class="search-field">
-      <span class="visually-hidden">Search projects</span>
-      <input type="search" name="q" value="{{ search_q or '' }}"
-             placeholder="Search name or description…" autocomplete="off"
-             aria-label="Search projects">
-    </label>
-    <button type="submit">Search</button>
-    {% if search_q %}
-    <a class="button ghost small" href="{{ url_for('projects_list') }}">Clear</a>
-    {% endif %}
-  </form>
+  <div class="section-tools">
+    <form method="get" action="{{ url_for('projects_list') }}" class="toolbar" role="search">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search" autocomplete="off" aria-label="Search projects">
+      </fieldset>
+      {% if search_q %}
+      <a class="button ghost small" href="{{ url_for('projects_list') }}">Clear</a>
+      {% endif %}
+    </form>
+    <button type="button" class="button outline small"
+            data-open-dialog="create-project-dlg">+ Add project</button>
+  </div>
   {% endif %}
 </div>
 {% if not team %}
 <p class="empty">Select a team in the sidebar.</p>
 {% else %}
 <p class="page-desc muted">Team: <strong>{{ team.name }}</strong>
-  · <a href="{{ url_for('team_detail', team_id=team.id) }}">Manage access</a>
+  · <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}">Manage access</a>
 </p>
 <section class="list-panel">
-  <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
-    <label>Description
-      <input type="text" name="description" maxlength="500" placeholder="optional purpose">
-    </label>
-    <button type="submit">Create</button>
-  </form>
   {% if projects %}
   <div class="table"><table class="table-spaced">
     <thead>
@@ -47,8 +41,8 @@
     {% for p in projects %}
       <tr>
         <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
-        <td class="muted col-note">{{ p.description or '—' }}</td>
-        <td class="muted">{{ p.secret_count if p.secret_count is defined else '—' }}</td>
+        <td class="muted col-note">{{ p.description or '-' }}</td>
+        <td class="muted">{{ p.secret_count if p.secret_count is defined else '-' }}</td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
       </tr>
     {% endfor %}
@@ -63,5 +57,29 @@
   </p>
   {% endif %}
 </section>
+
+<dialog id="create-project-dlg" closedby="any" class="access-dlg">
+  <form method="post" action="{{ url_for('create_project', team_id=team.id) }}">
+    <header>
+      <h3>Add project</h3>
+      <p>Create a project in <strong>{{ team.name }}</strong> to hold secrets.</p>
+    </header>
+    <div>
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>Name
+        <input type="text" name="name" required placeholder="e.g. production-api"
+               autocomplete="off" maxlength="200">
+      </label>
+      <label>Description
+        <input type="text" name="description" maxlength="500"
+               placeholder="optional purpose" autocomplete="off">
+      </label>
+    </div>
+    <footer>
+      <button type="button" class="outline" data-close-dialog="create-project-dlg">Cancel</button>
+      <button type="submit">Create project</button>
+    </footer>
+  </form>
+</dialog>
 {% endif %}
 {% endblock %}

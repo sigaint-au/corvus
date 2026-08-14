@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from flask import (
     flash,
     redirect,
@@ -16,7 +18,9 @@ import config
 import db
 import nav
 import paging
-from secret_ops import _load_team_secrets_page
+from secret_ops import _load_shared_secrets_page, _load_team_secrets_page
+
+log = logging.getLogger(__name__)
 
 
 @authz.login_required
@@ -71,6 +75,37 @@ def secrets_list():
         filter_due=due,
         filter_access_mode=access_mode,
         secret_kinds=config.SECRET_KINDS,
+    )
+
+
+@authz.login_required
+def shared_secrets_list():
+    """List secrets shared with the current user outside team membership.
+
+    Only secret-scope grants where the user is not a team member, and the
+    secret does not require reveal approval. Used by Workspace → Shared secrets.
+
+    Query params: ``q``, ``page``.
+
+    Example:
+        GET /shared?q=API
+    """
+    q = paging.list_state_q()
+    page = paging.page_arg()
+    secrets, secrets_pager = [], None
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        try:
+            secrets, secrets_pager = _load_shared_secrets_page(cur, page, q)
+        except Exception:
+            log.exception("shared_secrets_list failed")
+            flash("Could not load shared secrets", "error")
+            secrets, secrets_pager = [], paging.page_window(0, page)
+            secrets_pager.update(endpoint="shared_secrets_list", q=q or None)
+    return render_template(
+        "shared_secrets.html",
+        secrets=secrets,
+        search_q=q,
+        secrets_pager=secrets_pager,
     )
 
 

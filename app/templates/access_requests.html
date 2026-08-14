@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Requests — {{ app_name }}{% endblock %}
+{% block title %}Requests - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head">
   <h1>Requests</h1>
 </div>
 <p class="page-desc muted">
   Pending secret-reveal approvals for projects you administer.
-  Showing pending only — open a project’s <strong>Requests</strong> tab for full history.
+  Showing pending only - open a project’s <strong>Requests</strong> tab for full history.
 </p>
 
 {% if requests %}
@@ -34,14 +34,14 @@
         {% if r.secret_key %}
         <code class="k">{{ r.secret_key }}</code>
         {% else %}
-        <span class="muted">—</span>
+        <span class="muted">-</span>
         {% endif %}
       </td>
       <td>
         {{ r.name or r.email }}
         {% if r.name %}<span class="muted">{{ r.email }}</span>{% endif %}
       </td>
-      <td class="muted col-note">{{ r.reason or '—' }}</td>
+      <td class="muted col-note">{{ r.reason or '-' }}</td>
       <td class="muted">{{ r.created_at }}</td>
       <td class="acts access-acts">
         <div class="access-acts-stack">

@@ -157,9 +157,13 @@ def redirect_after_team_switch(nxt: str | None, team_id: str | None) -> str:
     qs = parts.query or ""
 
     # Team-scoped index pages: keep (session team drives content).
-    if path in ("/secrets", "/trash", "/machines", "/projects") or path.startswith(
-        "/search"
-    ):
+    if path in (
+        "/secrets",
+        "/shared",
+        "/trash",
+        "/machines",
+        "/projects",
+    ) or path.startswith("/search"):
         return nxt
 
     m = _PROJECT_PATH_RE.match(path)

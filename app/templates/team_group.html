@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ group.name }} — {{ team.name }} — {{ app_name }}{% endblock %}
+{% block title %}{{ group.name }} - {{ team.name }} - {{ app_name }}{% endblock %}
 {% block body %}
 {% set breadcrumbs = [
   ('Teams', url_for('teams')),
@@ -18,7 +18,7 @@
   </div>
 </div>
 <p class="page-desc muted">
-  Group membership only — grant this group team or project access via
+  Group membership only - grant this group team or project access via
   <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}">Access</a>
   (bind subject kind <strong>Group</strong>) or project Access.
 </p>
@@ -45,12 +45,11 @@
     <h2>Members</h2>
     <form method="get" action="{{ url_for('team_group_detail', team_id=team.id, group_id=group.id) }}"
           class="toolbar" role="search">
-      <label class="search-field">
-        <span class="visually-hidden">Search members</span>
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
         <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search members">
-      </label>
-      <button type="submit">Search</button>
+               placeholder="Search" autocomplete="off" aria-label="Search members">
+      </fieldset>
       {% if search_q %}
       <a class="button ghost small" href="{{ url_for('team_group_detail', team_id=team.id, group_id=group.id) }}">Clear</a>
       {% endif %}

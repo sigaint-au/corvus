@@ -1,29 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Teams — {{ app_name }}{% endblock %}
+{% block title %}Teams - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head">
   <h1>Teams</h1>
-  <form method="get" action="{{ url_for('teams') }}" class="toolbar" role="search">
-    <label class="search-field">
-      <span class="visually-hidden">Search teams</span>
-      <input type="search" name="q" value="{{ search_q or '' }}"
-             placeholder="Search…" autocomplete="off" aria-label="Search teams">
-    </label>
-    <button type="submit">Search</button>
-    {% if search_q %}
-    <a class="button ghost small" href="{{ url_for('teams') }}">Clear</a>
+  <div class="section-tools">
+    <form method="get" action="{{ url_for('teams') }}" class="toolbar" role="search">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search" autocomplete="off" aria-label="Search teams">
+      </fieldset>
+      {% if search_q %}
+      <a class="button ghost small" href="{{ url_for('teams') }}">Clear</a>
+      {% endif %}
+    </form>
+    {% if can_create_team %}
+    <button type="button" class="button outline small"
+            data-open-dialog="create-team-dlg">+ Add team</button>
     {% endif %}
-  </form>
+  </div>
 </div>
 <p class="page-desc muted">Teams own projects. Access is managed via role bindings.</p>
 
-{% if can_create_team %}
-<form method="post" action="{{ url_for('create_team') }}" class="row">
-  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-  <label>New team <input type="text" name="name" required placeholder="e.g. Platform"></label>
-  <button type="submit">Create</button>
-</form>
-{% else %}
+{% if not can_create_team %}
 <p class="muted">Team creation is restricted to global admins.</p>
 {% endif %}
 
@@ -45,4 +44,26 @@
 <p class="empty">{% if search_q %}No teams match “{{ search_q }}”.{% elif can_create_team %}No teams yet. Create one.{% else %}No teams yet.{% endif %}</p>
 {% endif %}
 </section>
+
+{% if can_create_team %}
+<dialog id="create-team-dlg" closedby="any" class="access-dlg">
+  <form method="post" action="{{ url_for('create_team') }}">
+    <header>
+      <h3>Add team</h3>
+      <p>Teams own projects and define access boundaries.</p>
+    </header>
+    <div>
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>Name
+        <input type="text" name="name" required placeholder="e.g. Platform"
+               autocomplete="off" maxlength="200">
+      </label>
+    </div>
+    <footer>
+      <button type="button" class="outline" data-close-dialog="create-team-dlg">Cancel</button>
+      <button type="submit">Create team</button>
+    </footer>
+  </form>
+</dialog>
+{% endif %}
 {% endblock %}

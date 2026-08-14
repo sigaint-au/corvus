@@ -327,6 +327,7 @@ def _render_secret_view(
             last_accessed_by_email=row.get("last_accessed_by_email") or "",
             custom_meta=custom_meta or [],
             effective_access=effective_access or [],
+            shared_access=bool(row.get("shared_access")),
         ),
         status,
     )

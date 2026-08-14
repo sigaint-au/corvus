@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ team.name }} — {{ app_name }}{% endblock %}
+{% block title %}{{ team.name }} - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head"><h1>{{ team.name }}</h1></div>
 <p class="page-desc muted">Your role: <span class="badge" data-variant="secondary">{{ my_role }}</span></p>
@@ -7,7 +7,7 @@
 {% if new_invite_url %}
 <div class="token-once">
   <div class="section-head tight">
-    <strong>Invite link (copy now — shown once)</strong>
+    <strong>Invite link (copy now - shown once)</strong>
     <button type="button" class="link copy-btn" data-copy-target="new-invite-pre" data-clear-seconds="60">Copy link</button>
   </div>
   <pre id="new-invite-pre">{{ new_invite_url }}</pre>
@@ -41,29 +41,24 @@
 <section>
   <div class="section-head">
     <h2>Projects</h2>
-    <form method="get" action="{{ url_for('team_detail', team_id=team.id) }}" class="toolbar" role="search">
-      <input type="hidden" name="tab" value="projects">
-      <label class="search-field">
-        <span class="visually-hidden">Search projects</span>
-        <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search projects">
-      </label>
-      <button type="submit">Search</button>
-      {% if search_q %}
-      <a class="button ghost small" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Clear</a>
+    <div class="section-tools">
+      <form method="get" action="{{ url_for('team_detail', team_id=team.id) }}" class="toolbar" role="search">
+        <input type="hidden" name="tab" value="projects">
+        <fieldset class="group search-input">
+          {% include "partials/search_icon.html" %}
+          <input type="search" name="q" value="{{ search_q or '' }}"
+                 placeholder="Search" autocomplete="off" aria-label="Search projects">
+        </fieldset>
+        {% if search_q %}
+        <a class="button ghost small" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Clear</a>
+        {% endif %}
+      </form>
+      {% if my_role in ('team-owner', 'team-admin', 'team-member') %}
+      <button type="button" class="button outline small"
+              data-open-dialog="create-project-dlg">+ Add project</button>
       {% endif %}
-    </form>
+    </div>
   </div>
-  {% if my_role in ('team-owner', 'team-admin', 'team-member') %}
-  <form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="row">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>New project <input type="text" name="name" required placeholder="e.g. production-api"></label>
-    <label>Description
-      <input type="text" name="description" maxlength="500" placeholder="optional purpose">
-    </label>
-    <button type="submit">Create</button>
-  </form>
-  {% endif %}
   {% if projects %}
   <div class="table"><table>
     <thead><tr><th>Name</th><th>Description</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th></th>{% endif %}</tr></thead>
@@ -71,7 +66,7 @@
     {% for p in projects %}
       <tr>
         <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
-        <td class="muted col-note">{{ p.description or '—' }}</td>
+        <td class="muted col-note">{{ p.description or '-' }}</td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
         {% if my_role in ('team-owner', 'team-admin') %}
         <td class="acts">
@@ -92,6 +87,31 @@
   <p class="empty">{% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}</p>
   {% endif %}
 </section>
+{% if my_role in ('team-owner', 'team-admin', 'team-member') %}
+<dialog id="create-project-dlg" closedby="any" class="access-dlg">
+  <form method="post" action="{{ url_for('create_project', team_id=team.id) }}">
+    <header>
+      <h3>Add project</h3>
+      <p>Create a project in this team to hold secrets.</p>
+    </header>
+    <div>
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>Name
+        <input type="text" name="name" required placeholder="e.g. production-api"
+               autocomplete="off" maxlength="200">
+      </label>
+      <label>Description
+        <input type="text" name="description" maxlength="500"
+               placeholder="optional purpose" autocomplete="off">
+      </label>
+    </div>
+    <footer>
+      <button type="button" class="outline" data-close-dialog="create-project-dlg">Cancel</button>
+      <button type="submit">Create project</button>
+    </footer>
+  </form>
+</dialog>
+{% endif %}
 
 {% elif active_tab == 'access' and is_admin %}
 {% set panel_title = 'Access' %}
@@ -142,7 +162,7 @@
             <span class="badge" data-variant="secondary"
                   title="{{ b.role_name }}">{{ b.role_short if b.role_short and b.role_short != b.role_name else b.role_name }}</span>
           </td>
-          <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
+          <td class="muted">{{ b.created_at|time_ago if b.created_at else '-' }}</td>
           {% if is_admin %}
           <td class="acts">
             <form method="post"
@@ -242,12 +262,11 @@
     <h2>Groups</h2>
     <form method="get" action="{{ url_for('team_detail', team_id=team.id) }}" class="toolbar" role="search">
       <input type="hidden" name="tab" value="groups">
-      <label class="search-field">
-        <span class="visually-hidden">Search groups</span>
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
         <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search groups">
-      </label>
-      <button type="submit">Search</button>
+               placeholder="Search" autocomplete="off" aria-label="Search groups">
+      </fieldset>
       {% if search_q %}
       <a class="button ghost small" href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Clear</a>
       {% endif %}
@@ -286,7 +305,7 @@
       <tr>
         <td><a href="{{ url_for('team_group_detail', team_id=team.id, group_id=g.id) }}">{{ g.name }}</a></td>
         <td><span class="badge" data-variant="secondary">{{ g.source }}</span></td>
-        <td class="muted"><code class="k">{{ g.external_key or '—' }}</code></td>
+        <td class="muted"><code class="k">{{ g.external_key or '-' }}</code></td>
         <td>{{ g.member_count }}</td>
         <td class="acts">
           {% if is_admin %}
@@ -360,7 +379,7 @@
       <label>Banner text
         <input type="text" name="classification_text" id="classification_text" maxlength="120"
                value="{{ team.classification_text or classification.text or 'OFFICIAL' }}"
-               placeholder="OFFICIAL — SENSITIVE"
+               placeholder="OFFICIAL - SENSITIVE"
                oninput="updateTeamBannerPreview()">
       </label>
       <div class="row">

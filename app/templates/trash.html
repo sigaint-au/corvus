@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Trash — {{ app_name }}{% endblock %}
+{% block title %}Trash - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head">
   <h1>Trash</h1>
@@ -25,12 +25,11 @@
     </div>
     {% endif %}
     <form method="get" action="{{ url_for('trash') }}" class="toolbar" role="search">
-      <label class="search-field">
-        <span class="visually-hidden">Search trash</span>
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
         <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search trash">
-      </label>
-      <button type="submit">Search</button>
+               placeholder="Search" autocomplete="off" aria-label="Search trash">
+      </fieldset>
       {% if search_q %}
       <a class="button ghost small" href="{{ url_for('trash') }}">Clear</a>
       {% endif %}
@@ -82,7 +81,7 @@
           <button type="submit" class="link">Restore</button>
         </form>
         <form method="post" action="{{ url_for('purge_secret', secret_id=item.id, q=search_q or none) }}" class="inline"
-                             onsubmit="return confirm({{ ('Permanently delete ' ~ item.key ~ '?')|tojson }}) && confirm('Delete forever — this cannot be undone. Continue?')">
+                             onsubmit="return confirm({{ ('Permanently delete ' ~ item.key ~ '?')|tojson }}) && confirm('Delete forever - this cannot be undone. Continue?')">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="link danger">Delete forever</button>
         </form>

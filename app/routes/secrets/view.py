@@ -186,9 +186,12 @@ def secret_view(project_id, secret_id):
             SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
                    s.requires_approval, s.access_mode, s.created_at, s.updated_at,
                    s.last_accessed_at, s.last_accessed_by,
-                   p.name AS project_name, p.require_reveal_approval
+                   p.name AS project_name, p.require_reveal_approval,
+                   p.team_id, t.name AS team_name,
+                   api.is_team_member(p.team_id) AS is_team_member
             FROM api.secrets s
             JOIN api.projects p ON p.id = s.project_id
+            LEFT JOIN api.teams t ON t.id = p.team_id
             WHERE s.id = %s AND s.project_id = %s AND s.deleted_at IS NULL
             """,
             (str(secret_id), str(project_id)),
@@ -197,6 +200,7 @@ def secret_view(project_id, secret_id):
         if not row:
             return "Not found", 404
         row = dict(row)
+        row["shared_access"] = row.get("is_team_member") is False
         row["last_accessed_by_email"] = ""
         if row.get("last_accessed_by"):
             with db.connect_admin() as aconn, aconn.cursor() as acur:

@@ -185,6 +185,21 @@ class TestOrgAccess:
         assert "GRANT EXECUTE ON FUNCTION api.my_access_rows" in sql
         assert "GRANT EXECUTE ON FUNCTION api.effective_access_rows" in sql
 
+    def test_shared_with_me_and_project_select_for_grantees(self):
+        """Shared secrets helper exists; projects/teams SELECT allow secret grantees."""
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0022_shared_with_me.sql').read_text()
+        assert 'FUNCTION private.shared_with_me_secret_rows()' in sql
+        assert "GRANT EXECUTE ON FUNCTION private.shared_with_me_secret_rows" in sql
+        assert "scope_kind = 'secret'" in sql
+        assert 'secret_requires_approval' in sql
+        assert 'NOT api.is_team_member(p.team_id)' in sql
+        proj = sql[sql.index('CREATE POLICY projects_select ON api.projects'):]
+        proj = proj[:proj.index(';')]
+        assert 'can_access_secret_row' in proj
+        teams = sql[sql.index('CREATE POLICY teams_select ON api.teams'):]
+        teams = teams[:teams.index(';')]
+        assert 'can_access_secret_row' in teams
+
     def test_export_filters_reveal_permission(self):
         """Plain export SQL must filter by can_access_secret reveal + can_reveal."""
 

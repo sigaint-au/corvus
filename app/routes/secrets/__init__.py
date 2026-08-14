@@ -13,6 +13,7 @@ from .helpers import (
 )
 from .list import (
     secrets_list,
+    shared_secrets_list,
     trash,
     restore_secret,
     purge_secret,
@@ -53,6 +54,7 @@ from .bindings import (
 
 def register(app):
     app.get("/secrets")(secrets_list)
+    app.get("/shared")(shared_secrets_list)
     app.get("/trash")(trash)
     app.post("/trash/secrets/<uuid:secret_id>/restore")(restore_secret)
     app.post("/trash/secrets/<uuid:secret_id>/purge")(purge_secret)

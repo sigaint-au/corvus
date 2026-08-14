@@ -422,3 +422,85 @@ class TestSecrets:
         assert str(sa_id) in all_args
         assert 'secret-reveal' in all_args
 
+    def test_add_secret_access_binding_external_user_ok(self):
+        """Non-team user can be bound when secret does not require approval."""
+        sid, uid, role_id, pid, tid = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'a': True},
+            {'id': sid, 'key': 'KEY', 'access_mode': 'inherit', 'team_id': tid},
+            {'id': role_id},
+            {'id': uid},
+            {'member': False},
+            {'a': False},  # secret_requires_approval
+        ]
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/projects/{pid}/secrets/{sid}/access/bindings',
+                data={
+                    'subject_kind': 'User',
+                    'subject_email': 'ext@ex.com',
+                    'role_name': 'secret-reveal',
+                },
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        conn.commit.assert_called()
+        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        assert 'INSERT INTO rbac.bindings' in all_args
+
+    def test_add_secret_access_binding_external_user_blocked_if_approval(self):
+        """Cannot share approval-required secrets with non-team users."""
+        sid, uid, role_id, pid, tid = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'a': True},
+            {'id': sid, 'key': 'KEY', 'access_mode': 'restricted', 'team_id': tid},
+            {'id': role_id},
+            {'id': uid},
+            {'member': False},
+            {'a': True},  # secret_requires_approval
+        ]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/projects/{pid}/secrets/{sid}/access/bindings',
+                data={
+                    'subject_kind': 'User',
+                    'subject_email': 'ext@ex.com',
+                    'role_name': 'secret-reveal',
+                },
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        conn.commit.assert_not_called()
+        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        assert 'INSERT INTO rbac.bindings' not in all_args
+
+    def test_shared_secrets_list(self):
+        sid, pid = uuid4(), uuid4()
+        rows = [{
+            'id': sid,
+            'key': 'SHARED_KEY',
+            'note': '',
+            'kind': 'plain',
+            'project_id': pid,
+            'project_name': 'prod',
+            'team_id': uuid4(),
+            'team_name': 'Ops',
+            'access_mode': 'restricted',
+            'updated_at': '2026-01-01',
+            'expires_at': None,
+            'role_name': 'secret-reveal',
+        }]
+        conn, cur = _conn()
+        cur.fetchall.side_effect = [rows]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get('/shared')
+        assert r.status_code == 200
+        assert b'Shared secrets' in r.data
+        assert b'SHARED_KEY' in r.data
+        assert b'prod' in r.data
+        assert b'Ops' in r.data
+        assert b'secret-reveal' in r.data
+

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Import preview — {{ project.name }} — {{ app_name }}{% endblock %}
+{% block title %}Import preview - {{ project.name }} - {{ app_name }}{% endblock %}
 {% block body %}
 {% set breadcrumbs = [
   (project.name, url_for('project_detail', project_id=project.id, tab='import')),
@@ -58,7 +58,7 @@
         </td>
         <td class="import-value">
           {% if item.enc %}
-          <p class="muted">Encrypted ciphertext (from backup) — type still applies on import.</p>
+          <p class="muted">Encrypted ciphertext (from backup) - type still applies on import.</p>
           {% else %}
           <label class="visually-hidden" for="import-val-{{ loop.index0 }}">Value for {{ item.key }}</label>
           <textarea name="value" id="import-val-{{ loop.index0 }}" rows="4"

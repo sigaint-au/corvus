@@ -138,7 +138,7 @@ class TestNav:
         assert b'DB_URL' in r.data
         assert b'Restore' in r.data
         assert b'Delete forever' in r.data
-        assert 'Delete forever — this cannot be undone'.encode() in r.data
+        assert 'Delete forever - this cannot be undone'.encode() in r.data
         assert b'&& confirm(' in r.data
 
     def test_restore_secret(self):

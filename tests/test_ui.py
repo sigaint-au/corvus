@@ -40,6 +40,7 @@ class TestUIShell:
         assert b'Log out' in r.data
         assert b'Projects' in r.data
         assert b'Secrets' in r.data
+        assert b'Shared secrets' in r.data
         assert b'Machine accounts' in r.data
         assert b'Trash' in r.data
         assert b'side-team-select' in r.data
