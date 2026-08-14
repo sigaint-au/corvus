@@ -69,15 +69,22 @@ def projects_list():
                     (*params, projects_pager["limit"], projects_pager["offset"]),
                 )
                 projects = cur.fetchall() or []
-                for p in projects:
+                provider_map = {}
+                ids = [p["id"] for p in projects]
+                if ids:
                     try:
                         cur.execute(
-                            "SELECT api.project_key_provider(%s) AS kp",
-                            (str(p["id"]),),
+                            "SELECT * FROM api.project_key_providers(%s::uuid[])",
+                            (ids,),
                         )
-                        p["key_provider"] = (cur.fetchone() or {}).get("kp")
+                        provider_map = {
+                            str(r["project_id"]): r["key_provider"]
+                            for r in (cur.fetchall() or [])
+                        }
                     except Exception:
-                        p["key_provider"] = None
+                        provider_map = {}
+                for p in projects:
+                    p["key_provider"] = provider_map.get(str(p["id"]))
     return render_template(
         "projects.html",
         team=team,

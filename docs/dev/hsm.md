@@ -68,10 +68,10 @@ supported, else AES-CBC). Unwrap returns a Fernet key again.
 
 | File | Role |
 |------|------|
-| `app/hsm.py` | PKCS#11 wrapper (`available`, `ensure_kek`, `wrap_dek`, `unwrap_dek`) |
-| `app/config.py` | `HSM_*` env vars |
-| `app/crypto.py` | `_dek_for()` dispatches unwrap by `key_provider` (local vs hsm) |
-| `app/project_keys.py` | `ensure_project_key(provider='hsm')` wraps the DEK via the HSM |
+| `app/hsm.py` | PKCS#11 wrapper: `available` (cached), `status`, `test_connection`, `test_roundtrip`, `ensure_kek`/`generate_kek`, `delete_kek`, `wrap_dek`/`unwrap_dek` (KEK-label aware), `kek_label` |
+| `app/config.py` | `HSM_*` env vars + `master_key_is_default()` |
+| `app/crypto.py` | `_dek_for()` dispatches unwrap by `key_provider` (local vs hsm) and passes `kms_key_ref`; `project_dek()`; `encrypt_for_project`/`decrypt_for_project` |
+| `app/project_keys.py` | `ensure_project_key(provider)`, `adopt_project_key`, `migrate_project_key`, `rotate_hsm_kek`, `encryption_summary`, `migrate_all_local_to_hsm`, `rewrap_project_keys` |
 | `softhsm2/` | Dev token-initialiser container |
 
 ## Manual SoftHSM2 setup (no compose)

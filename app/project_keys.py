@@ -312,9 +312,10 @@ def rotate_hsm_kek() -> int:
     """Rotate the HSM KEK: re-wrap every HSM-backed DEK under a fresh KEK.
 
     Generates a new KEK (new label), re-wraps each HSM-backed DEK from its
-    current KEK to the new one, and updates ``key_enc``/``kms_key_ref``.
-    Returns the number of HSM-backed projects re-wrapped. The old KEK is left
-    in place (inert once unreferenced) so a partial run can be retried.
+    current KEK to the new one, and updates ``key_enc``/``kms_key_ref`` — all in
+    a single admin transaction. Returns the number of HSM-backed projects
+    re-wrapped. The old KEK is left in place (use :func:`hsm.delete_kek` to
+    clean it up after verifying all projects were re-wrapped).
 
     Example:
         >>> n = rotate_hsm_kek()
@@ -325,7 +326,8 @@ def rotate_hsm_kek() -> int:
 
     new_label = f"{hsm.kek_label()}-{secrets.token_hex(4)}"
     hsm.generate_kek(new_label)
-    with db.connect_admin() as conn, conn.cursor() as cur:
+    re_wrapped = 0
+    with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
         cur.execute(
             """
             SELECT project_id, key_enc, kms_key_ref
@@ -333,15 +335,12 @@ def rotate_hsm_kek() -> int:
             WHERE key_provider = 'hsm'
             """
         )
-        rows = cur.fetchall() or []
-    re_wrapped = 0
-    for row in rows:
-        try:
-            raw = hsm.unwrap_dek(row["key_enc"], row.get("kms_key_ref"))
-            new_enc = hsm.wrap_dek(raw, new_label)
-        except Exception:
-            continue
-        with db.connect_admin() as conn, conn.cursor() as cur:
+        for row in cur.fetchall() or []:
+            try:
+                raw = hsm.unwrap_dek(row["key_enc"], row.get("kms_key_ref"))
+                new_enc = hsm.wrap_dek(raw, new_label)
+            except Exception:
+                continue
             cur.execute(
                 """
                 UPDATE private.project_crypto_keys
@@ -350,7 +349,8 @@ def rotate_hsm_kek() -> int:
                 """,
                 (new_enc, new_label, str(row["project_id"])),
             )
-        re_wrapped += 1
+            re_wrapped += 1
+        conn.commit()
     crypto.clear_project_key_cache()
     log.info("rotated HSM KEK: %s project(s) re-wrapped to %r", re_wrapped, new_label)
     return re_wrapped
@@ -369,7 +369,13 @@ def encryption_summary() -> dict:
             """
             SELECT p.id AS project_id, p.name AS project_name,
                    t.name AS team_name,
-                   k.key_provider, k.created_at AS key_created_at, k.id AS key_id
+                   k.key_provider, k.created_at AS key_created_at, k.id AS key_id,
+                   ((SELECT count(*) FROM api.secrets s
+                      WHERE s.project_id = p.id
+                        AND s.crypto_provider = 'master' AND s.deleted_at IS NULL)
+                  + (SELECT count(*) FROM api.secret_versions v
+                      JOIN api.secrets s ON s.id = v.secret_id
+                      WHERE s.project_id = p.id AND v.crypto_provider = 'master')) AS pending
             FROM api.projects p
             JOIN api.teams t ON t.id = p.team_id
             LEFT JOIN private.project_crypto_keys k ON k.project_id = p.id
@@ -392,7 +398,7 @@ def encryption_summary() -> dict:
                 "provider": provider,
                 "key_created_at": r.get("key_created_at"),
                 "key_id": str(r["key_id"]) if r.get("key_id") else None,
-                "pending": count_master_rows(str(r["project_id"])),
+                "pending": int(r.get("pending") or 0),
             }
         )
     return {"counts": counts, "projects": projects}

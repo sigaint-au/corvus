@@ -92,6 +92,12 @@ def admin_audit():
     actor = (request.args.get("actor") or "").strip()
     since = (request.args.get("since") or "").strip()
     until = (request.args.get("until") or "").strip()
+    role_actions = (request.args.get("role_actions") or "roles").strip().lower()
+    active_actions = (
+        audit.ENC_CHANGE_ACTIONS
+        if role_actions == "encryption"
+        else audit.ROLE_CHANGE_ACTIONS
+    )
 
     with db.connect_admin() as conn, conn.cursor() as cur:
         if tab == "access":
@@ -99,7 +105,7 @@ def admin_audit():
         elif tab == "roles":
             role_total = audit.count_org_audit(
                 cur,
-                actions=audit.ROLE_CHANGE_ACTIONS,
+                actions=active_actions,
                 q=q,
                 actor=actor,
                 since=since,
@@ -107,7 +113,7 @@ def admin_audit():
             )
             role_rows = audit.list_org_audit(
                 cur,
-                actions=audit.ROLE_CHANGE_ACTIONS,
+                actions=active_actions,
                 q=q,
                 actor=actor,
                 since=since,
@@ -123,6 +129,7 @@ def admin_audit():
         access_rows=access_rows,
         role_rows=role_rows,
         role_total=role_total,
+        role_actions=role_actions,
         counts=counts,
         retention_days=retention_days,
         search_q=q,

@@ -880,6 +880,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         <th>Project</th>
         <th>Encryption</th>
         <th>Key created</th>
+        <th>Key ID</th>
         <th>Sync</th>
       </tr>
     </thead>
@@ -897,6 +898,9 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         </td>
         <td class="muted">
           {% if p.key_created_at %}{{ p.key_created_at.strftime('%Y-%m-%d') }}{% else %}-{% endif %}
+        </td>
+        <td class="muted">
+          {% if p.key_id %}<code class="k">{{ p.key_id[:8] }}</code>{% else %}-{% endif %}
         </td>
         <td class="muted">
           {% if p.provider == 'managed' %}-

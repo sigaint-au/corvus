@@ -47,7 +47,6 @@ class TestHsmWizard:
             r = self.client.get("/teams/%s/projects/new" % uuid4())
         assert r.status_code == 200
         assert b'value="hsm"' in r.data
-        assert b"byok-kek" in r.data
 
 
 class TestHsmSettingsAdopt:

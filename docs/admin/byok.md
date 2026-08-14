@@ -121,10 +121,13 @@ If the HSM is lost:
 - **Protects:** separates encryption keys per project, so a compromise of one
   project's key (or a re-encryption mishap) does not affect other projects; and
   enables per-project key rotation later.
-- **Does not protect:** the server-wide `MASTER_KEY` wraps every project DEK, so
-  a compromise of `MASTER_KEY` compromises all projects regardless of BYOK.
-  Projects remain in the same trust boundary as the app server. True external
-  BYOK (KMS-backed keys) is required to move keys out of that boundary.
+- **Local BYOK:** the project DEK is wrapped by the server-wide `MASTER_KEY`, so
+  a compromise of `MASTER_KEY` compromises local-BYOK projects. Local-BYOK
+  projects remain in the same trust boundary as the app server.
+- **HSM-backed:** the DEK is wrapped by the HSM key-encryption key, so
+  `MASTER_KEY` is *not* in the trust path — a `MASTER_KEY` compromise does not
+  affect HSM-backed projects. (They still rely on the HSM being online and on
+  the HSM's own protection of the KEK.)
 
 ---
 
@@ -152,6 +155,13 @@ flask --app app rekey-hsm-kek
 Generates a fresh KEK, re-wraps every HSM-backed project DEK under it, and
 updates each project's `kms_key_ref`. Also available from Server Settings →
 Encryption ("Rotate HSM KEK").
+
+Each rotation creates a new KEK (e.g. `byok-kek-1a2b3c4d`). Old KEKs are left
+in place for safety. After verifying every HSM-backed project's `kms_key_ref`
+points at the new label, you can delete an old KEK manually to free HSM key
+slots (e.g. via `hsm.delete_kek("<old-label>")` in a `flask --app app shell`).
+Deleting a KEK that a project still references makes that project's secrets
+unrecoverable, so only delete after confirming the re-wrap.
 
 ## Migrating all local BYOK projects to HSM
 

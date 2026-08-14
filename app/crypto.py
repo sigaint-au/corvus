@@ -210,3 +210,7 @@ def decrypt_for_project(project_id, token: str, provider: str = "master") -> str
             "Cannot decrypt secret value — the encryption key for this project "
             "does not match the key used when this secret was stored."
         ) from e
+    except RuntimeError as e:
+        raise ValueError(
+            "HSM is unavailable; this secret cannot be decrypted right now."
+        ) from e

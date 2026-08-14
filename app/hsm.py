@@ -194,6 +194,27 @@ def generate_kek(label: str) -> str:
     return label
 
 
+def delete_kek(label: str) -> None:
+    """Delete a KEK by label (e.g. an old one after KEK rotation).
+
+    Only safe once every project DEK stored under this KEK has been re-wrapped
+    to a new KEK — otherwise those projects become unrecoverable.
+
+    Example:
+        >>> delete_kek("byok-kek-old")
+    """
+    pkcs11 = _pkcs11()
+    with _session(rw=True) as session:
+        for key in session.get_objects(
+            {
+                pkcs11.Attribute.CLASS: pkcs11.ObjectClass.SECRET_KEY,
+                pkcs11.Attribute.LABEL: label,
+            }
+        ):
+            key.destroy()
+            log.info("deleted HSM KEK %r", label)
+
+
 def kek_label() -> str:
     """Return the configured KEK label (used as ``kms_key_ref``)."""
     return _cfg()[3]
@@ -292,7 +313,9 @@ def unwrap_dek(wrapped: str, label: str | None = None) -> bytes:
 def status() -> dict:
     """Return HSM configuration and availability for the admin UI.
 
-    Never exposes the PIN — only whether one is set.
+    Never exposes the PIN — only whether one is set. Reuses the cached
+    :func:`available` check and short-circuits if the HSM is down (no extra
+    session open).
 
     Example:
         >>> s = status()
@@ -315,21 +338,47 @@ def status() -> dict:
     if not os.path.exists(module):
         result["error"] = f"PKCS#11 module not found: {module}"
         return result
+    if not available():
+        result["error"] = "Could not connect to the HSM token (see app logs)"
+        return result
     try:
         pkcs11 = _pkcs11()
-        with _session() as session:
+        with _session(rw=False) as session:
             result["available"] = True
-            result["kek_exists"] = _find_kek(session, pkcs11, kek_label) is not None
+            result["kek_exists"] = _find_kek(session, pkcs11, result["kek_label"]) is not None
     except Exception as e:
         result["error"] = str(e)
     return result
+
+
+def test_connection() -> tuple[bool, str]:
+    """Verify the HSM token can be opened and the KEK is present.
+
+    Non-destructive: does not create a KEK or write anything. Used by the
+    "Test HSM connection" button in Server Settings.
+
+    Example:
+        >>> ok, msg = test_connection()
+        >>> isinstance(ok, bool)
+        True
+    """
+    try:
+        pkcs11 = _pkcs11()
+        with _session(rw=False) as session:
+            has = _find_kek(session, pkcs11, kek_label()) is not None
+        if not has:
+            return False, "token reachable but KEK not present yet"
+        return True, "connection OK; KEK present"
+    except Exception as e:
+        return False, str(e)
 
 
 def test_roundtrip() -> tuple[bool, str]:
     """Perform a wrap/unwrap round-trip with a throwaway DEK.
 
     Verifies the full HSM path (token open, KEK presence, wrap, unwrap).
-    Returns ``(ok, message)``.
+    Creates the KEK if missing, so prefer :func:`test_connection` for a
+    read-only health check. Returns ``(ok, message)``.
     """
     from cryptography.fernet import Fernet
 

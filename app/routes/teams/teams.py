@@ -147,15 +147,23 @@ def team_detail(team_id):
                     (str(team_id),),
                 )
             projects = cur.fetchall()
-            for p in projects:
+            provider_map = {}
+            ids = [p["id"] for p in projects]
+            if ids:
                 try:
                     cur.execute(
-                        "SELECT api.project_key_provider(%s) AS kp",
-                        (str(p["id"]),),
+                        "SELECT * FROM api.project_key_providers(%s::uuid[])",
+                        (ids,),
                     )
-                    p["key_provider"] = (cur.fetchone() or {}).get("kp")
+                    provider_map = {
+                        str(r["project_id"]): r["key_provider"]
+                        for r in (cur.fetchall() or [])
+                    }
                 except Exception:
-                    p["key_provider"] = None
+                    provider_map = {}
+            hsm_count = local_count = managed_count = 0
+            for p in projects:
+                p["key_provider"] = provider_map.get(str(p["id"]))
                 if p["key_provider"] == "hsm":
                     hsm_count += 1
                 elif p["key_provider"] == "local":

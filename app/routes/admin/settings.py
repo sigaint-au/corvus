@@ -12,6 +12,7 @@ from flask import (
     url_for,
 )
 import authz
+import audit
 import config
 import crypto
 import db
@@ -425,26 +426,37 @@ def server_settings():
                     "ok",
                 )
         elif action == "hsm_test":
-
-            ok, msg = hsm.test_roundtrip()
+            ok, msg = hsm.test_connection()
             flash(f"HSM check: {msg}", "ok" if ok else "error")
         elif action == "hsm_kek_rotate":
-
             if not hsm.available():
                 flash("External HSM is not configured", "error")
             else:
                 try:
                     n = project_keys.rotate_hsm_kek()
+                    with db.connect_admin() as conn, conn.cursor() as cur:
+                        audit.log_org(
+                            cur,
+                            action="hsm_kek_rotated",
+                            detail=f"re-wrapped={n}",
+                        )
+                        conn.commit()
                     flash(f"HSM KEK rotated — re-wrapped {n} project key(s)", "ok")
                 except Exception as e:
                     flash(f"HSM KEK rotation failed: {e}", "error")
         elif action == "hsm_migrate_all":
-
             if not hsm.available():
                 flash("External HSM is not configured", "error")
             else:
                 try:
                     n = project_keys.migrate_all_local_to_hsm()
+                    with db.connect_admin() as conn, conn.cursor() as cur:
+                        audit.log_org(
+                            cur,
+                            action="hsm_bulk_migrated",
+                            detail=f"migrated={n}",
+                        )
+                        conn.commit()
                     flash(f"Migrated {n} local project key(s) to HSM", "ok")
                 except Exception as e:
                     flash(f"Bulk migration failed: {e}", "error")
