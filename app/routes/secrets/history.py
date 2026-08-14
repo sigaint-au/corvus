@@ -103,7 +103,7 @@ def reveal_secret_version(project_id, secret_id, version_id):
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT v.value_enc, s.key, s.note, s.kind, s.id AS secret_id
+            SELECT v.value_enc, v.crypto_provider, s.key, s.note, s.kind, s.id AS secret_id
             FROM api.secret_versions v
             JOIN api.secrets s ON s.id = v.secret_id
             WHERE v.id = %s AND s.id = %s AND s.project_id = %s
@@ -133,7 +133,9 @@ def reveal_secret_version(project_id, secret_id, version_id):
                 version_id=version_id,
             )
         try:
-            plaintext = crypto.decrypt(row["value_enc"])
+            plaintext = crypto.decrypt_for_project(
+            project_id, row["value_enc"], row.get("crypto_provider") or "master"
+        )
         except ValueError as e:
             conn.rollback()
             return str(e), 422
@@ -232,7 +234,7 @@ def rollback_secret(project_id, secret_id, version_id):
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT s.id, s.key, v.value_enc, v.note
+            SELECT s.id, s.key, v.value_enc, v.crypto_provider, v.note
             FROM api.secret_versions v
             JOIN api.secrets s ON s.id = v.secret_id
             WHERE v.id = %s AND s.id = %s AND s.project_id = %s
@@ -249,10 +251,16 @@ def rollback_secret(project_id, secret_id, version_id):
         cur.execute(
             """
             UPDATE api.secrets
-            SET value_enc = %s, note = %s
+            SET value_enc = %s, note = %s, crypto_provider = %s
             WHERE id = %s AND project_id = %s AND deleted_at IS NULL
             """,
-            (row["value_enc"], row["note"] or "", str(secret_id), str(project_id)),
+            (
+                row["value_enc"],
+                row["note"] or "",
+                row.get("crypto_provider") or "master",
+                str(secret_id),
+                str(project_id),
+            ),
         )
         if cur.rowcount == 0:
             flash("You don't have permission to do that", "error")

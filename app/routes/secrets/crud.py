@@ -318,11 +318,11 @@ def update_secret_value(project_id, secret_id):
         if set_expires:
             cur.execute(
                 """
-                UPDATE api.secrets SET value_enc = %s, expires_at = %s
+                UPDATE api.secrets SET value_enc = %s, expires_at = %s, crypto_provider = %s
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
                 (
-                    crypto.encrypt(value),
+                    *crypto.encrypt_for_project(project_id, value),
                     expires_at,
                     str(secret_id),
                     str(project_id),
@@ -331,10 +331,14 @@ def update_secret_value(project_id, secret_id):
         else:
             cur.execute(
                 """
-                UPDATE api.secrets SET value_enc = %s
+                UPDATE api.secrets SET value_enc = %s, crypto_provider = %s
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
-                (crypto.encrypt(value), str(secret_id), str(project_id)),
+                (
+                    *crypto.encrypt_for_project(project_id, value),
+                    str(secret_id),
+                    str(project_id),
+                ),
             )
         if cur.rowcount == 0:
             conn.rollback()

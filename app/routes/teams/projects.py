@@ -5,12 +5,42 @@ from __future__ import annotations
 from flask import (
     flash,
     redirect,
+    render_template,
     request,
     session,
     url_for,
 )
 import authz
 import db
+import audit
+
+
+@authz.login_required
+def new_project_wizard(team_id):
+    """Render the project onboarding wizard (Basics → Encryption → Create).
+
+    Args:
+        team_id: UUID of the parent team.
+
+    Returns:
+        HTML onboarding page, or redirect to the team when not permitted.
+
+    Example:
+        GET /teams/<team_id>/projects/new
+    """
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
+        team = cur.fetchone()
+        if not team:
+            return "Not found", 404
+        cur.execute("SELECT api.team_role(%s::uuid) AS r", (str(team_id),))
+        my_role = (cur.fetchone() or {}).get("r") or ""
+    if my_role not in ("team-owner", "team-admin", "team-member"):
+        flash("You don't have permission to create projects", "error")
+        return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
+    return render_template(
+        "team_new_project.html", team=team, my_role=my_role, encryption="managed"
+    )
 
 
 @authz.login_required
@@ -24,10 +54,13 @@ def create_project(team_id):
         Redirect to the new project detail page, or back to the team on error.
 
     Example:
-        POST /teams/<team_id>/projects with form field name=My Project
+        POST /teams/<team_id>/projects with form fields name=My Project,
+        encryption=byok
     """
     name = request.form["name"].strip()
     description = (request.form.get("description") or "").strip()[:500]
+    encryption = (request.form.get("encryption") or "managed").strip().lower()
+    pid = None
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
             cur.execute(
@@ -47,6 +80,31 @@ def create_project(team_id):
         except Exception as e:
             flash(str(e), "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
+    if encryption in ("byok", "project"):
+        import project_keys
+
+        try:
+            project_keys.ensure_project_key(pid)
+        except Exception:
+            # Roll back the creation: remove the project so we never leave a
+            # project that advertised BYOK but has no key. CASCADE clears any
+            # partially-created key row.
+            try:
+                with db.connect_admin() as aconn, aconn.cursor() as acur:
+                    acur.execute("DELETE FROM api.projects WHERE id = %s", (str(pid),))
+            except Exception:
+                pass
+            flash("Could not create the project key; project creation was rolled back", "error")
+            return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            audit.log_org(
+                cur,
+                team_id=team_id,
+                project_id=pid,
+                action="project_key_created",
+                detail="byok (local key)",
+            )
+            conn.commit()
     return redirect(url_for("project_detail", project_id=pid))
 
 

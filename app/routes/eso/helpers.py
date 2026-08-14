@@ -367,21 +367,23 @@ def _upsert_body(project_ref, key: str, body: dict):
             _, err = _require_machine_write(cur, pid, thash)
             if err:
                 return err
+            value_enc, enc_provider = crypto.encrypt_for_project(str(pid), str(value))
             cur.execute(
                 """
                 SELECT private.machine_upsert_enc(
-                  %s::uuid, %s, %s, %s, %s, %s, %s, %s
+                  %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s
                 ) AS id
                 """,
                 (
                     pid,
                     thash,
                     key,
-                    crypto.encrypt(str(value)),
+                    value_enc,
                     note,
                     kind_s,
                     expires_at,
                     set_expires,
+                    enc_provider,
                 ),
             )
             out = cur.fetchone()

@@ -36,7 +36,8 @@ app/
   schema.py         # schema bootstrap: apply pending migrations + promote admin
   migrations.py     # versioned migration runner (db/migrations/*.sql)
   authz.py          # auth decorators, CSRF, safe redirect
-  crypto.py         # Fernet encrypt/decrypt (MASTER_KEY)
+  crypto.py         # Fernet encrypt/decrypt (MASTER_KEY) + per-project BYOK seam
+  project_keys.py   # per-project DEK lifecycle (create/adopt/re-encrypt)
   audit.py          # audit helpers + formatting
   nav.py            # sidebar navigation context
   pins.py           # secret pins / recent
@@ -136,6 +137,10 @@ functions key off that value.
   decrypt them. PostgREST only ever sees `value_enc`.
 - **RBAC** is the only authorization model — `rbac.bindings` stores all
   user/group/service-account access at cluster/team/project/secret scope.
+- **Per-project crypto keys are not an RBAC resource.** Key lifecycle
+  (create/adopt/rotate) is gated by app-side admin predicates (team
+  owner/admin or global admin), not `rbac.role_rules` — keep `keys` out of
+  `RBAC_RESOURCES` so wildcard grants never cover key management.
 
 ---
 

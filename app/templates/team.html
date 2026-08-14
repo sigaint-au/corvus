@@ -54,8 +54,7 @@
         {% endif %}
       </form>
       {% if my_role in ('team-owner', 'team-admin', 'team-member') %}
-      <button type="button" class="button outline small"
-              data-open-dialog="create-project-dlg">+ Add project</button>
+      <a class="button outline small" href="{{ url_for('new_project_wizard', team_id=team.id) }}">+ Add project</a>
       {% endif %}
     </div>
   </div>
@@ -87,31 +86,6 @@
   <p class="empty">{% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}</p>
   {% endif %}
 </section>
-{% if my_role in ('team-owner', 'team-admin', 'team-member') %}
-<dialog id="create-project-dlg" closedby="any" class="access-dlg">
-  <form method="post" action="{{ url_for('create_project', team_id=team.id) }}">
-    <header>
-      <h3>Add project</h3>
-      <p>Create a project in this team to hold secrets.</p>
-    </header>
-    <div>
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <label>Name
-        <input type="text" name="name" required placeholder="e.g. production-api"
-               autocomplete="off" maxlength="200">
-      </label>
-      <label>Description
-        <input type="text" name="description" maxlength="500"
-               placeholder="optional purpose" autocomplete="off">
-      </label>
-    </div>
-    <footer>
-      <button type="button" class="outline" data-close-dialog="create-project-dlg">Cancel</button>
-      <button type="submit">Create project</button>
-    </footer>
-  </form>
-</dialog>
-{% endif %}
 
 {% elif active_tab == 'access' and is_admin %}
 {% set panel_title = 'Access' %}

@@ -112,10 +112,11 @@ def eso_patch_secret(project_ref, key):
 
             if "value" in body and body.get("value") is not None:
                 value = str(body["value"])
-                value_enc = crypto.encrypt(value)
+                value_enc, enc_provider = crypto.encrypt_for_project(pid, value)
             else:
                 value_enc = existing["value_enc"]
-                value = crypto.decrypt(value_enc)
+                enc_provider = existing.get("crypto_provider") or "master"
+                value = crypto.decrypt_for_project(pid, value_enc, enc_provider)
 
             if "note" in body:
                 note = str(body.get("note") or "").strip()
@@ -146,7 +147,7 @@ def eso_patch_secret(project_ref, key):
             cur.execute(
                 """
                 SELECT private.machine_upsert_enc(
-                  %s::uuid, %s, %s, %s, %s, %s, %s, %s
+                  %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s
                 ) AS id
                 """,
                 (
@@ -158,6 +159,7 @@ def eso_patch_secret(project_ref, key):
                     kind_s,
                     expires_at,
                     set_expires,
+                    enc_provider,
                 ),
             )
             out = cur.fetchone()
@@ -190,7 +192,7 @@ def eso_patch_secret(project_ref, key):
             return jsonify({"error": "forbidden"}), 403
         cur.execute(
             """
-            SELECT id, key, value_enc, note, kind, expires_at, created_at, updated_at
+            SELECT id, key, value_enc, note, kind, expires_at, created_at, updated_at, crypto_provider
               FROM api.secrets
              WHERE project_id = %s AND key = %s AND deleted_at IS NULL
             """,
@@ -201,10 +203,11 @@ def eso_patch_secret(project_ref, key):
             return jsonify({"error": "not found"}), 404
         if "value" in body and body.get("value") is not None:
             value = str(body["value"])
-            value_enc = crypto.encrypt(value)
+            value_enc, enc_provider = crypto.encrypt_for_project(pid, value)
         else:
             value_enc = existing["value_enc"]
-            value = crypto.decrypt(value_enc)
+            enc_provider = existing.get("crypto_provider") or "master"
+            value = crypto.decrypt_for_project(pid, value_enc, enc_provider)
         note = (
             str(body.get("note") or "").strip()
             if "note" in body
@@ -235,6 +238,7 @@ def eso_patch_secret(project_ref, key):
                 expires_at=expires_at,
                 kind=kind_s,
                 already_enc=True,
+                crypto_provider=enc_provider,
             )
         except Exception as e:
             log.exception("pat patch failed")

@@ -31,6 +31,7 @@ Roles in the UI are **RBAC names** (`team-owner/team-admin/...` and project-role
 ## Gotchas
 
 - `MASTER_KEY` encrypts secret values; `crypto.py`. Schema changes are a **migration story** — add a new `db/migrations/NNNN_slug.sql` file, never edit the baseline.
+- Per-project BYOK: a project may have its own data-encryption key (`private.project_crypto_keys`, DEK wrapped by `MASTER_KEY`). Secret rows record `crypto_provider` (`master`/`project`); server settings always use `MASTER_KEY`. Management lives in `app/project_keys.py`; onboarding is the new-project wizard page (`routes/teams/projects.py`).
 - `ALLOW_INSECURE_DEFAULTS=1` only for local dev; `refuse_insecure_defaults()` otherwise errors.
 - Don't add `pyotp`/TOTP libs — the stdlib TOTP (hmac/hashlib/struct/time) is the chosen one.
 

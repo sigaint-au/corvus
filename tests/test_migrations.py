@@ -46,6 +46,15 @@ def test_migrations_ship_in_order():
         assert name[4] == "_"
 
 
+def test_project_crypto_migration_ships():
+    """0022_project_crypto adds the BYOK key table + per-row provider column."""
+    sql = (migrations.MIGRATIONS_DIR / "0022_project_crypto.sql").read_text()
+    assert "CREATE TABLE private.project_crypto_keys" in sql
+    assert "crypto_provider" in sql
+    assert "api.secrets" in sql and "api.secret_versions" in sql
+    assert "machine_upsert_enc" in sql
+
+
 class TestPendingMigrations:
     def test_returns_unapplied_in_order(self, tmp_path):
         d = _write_migrations(tmp_path, {

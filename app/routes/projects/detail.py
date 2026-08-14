@@ -154,8 +154,14 @@ def project_detail(project_id):
         team_role = (cur.fetchone() or {}).get("r")
         # Project delete: team owner/admin (matches projects_delete RLS)
         can_delete = team_role in ("team-owner", "team-admin")
+        # Key management is an org-level policy: team owner/admin or global admin.
+        cur.execute("SELECT api.is_global_admin() AS g", ())
+        is_global_admin = bool((cur.fetchone() or {}).get("g"))
+        can_manage_keys = bool(is_global_admin or team_role in ("team-owner", "team-admin"))
         # Settings: project admins manage members; team owner/admin also see danger zone
         can_settings = bool(can_admin or can_delete)
+        project_crypto = None
+        project_master_rows = 0
 
         if tab == "settings" and not can_settings:
             tab = "secrets"
@@ -259,8 +265,10 @@ def project_detail(project_id):
             except Exception:
                 project_secret_keys = []
         elif tab == "settings":
-            # Membership moved to Access tab (RBAC bindings)
-            pass
+            import project_keys
+
+            project_crypto = project_keys.project_crypto_status(project_id)
+            project_master_rows = project_keys.count_master_rows(project_id)
         elif tab == "access" and can_admin:
             import rbac_sync
 
@@ -364,6 +372,7 @@ def project_detail(project_id):
         can_admin=can_admin,
         can_delete=can_delete,
         can_settings=can_settings,
+        can_manage_keys=can_manage_keys,
         active_tab=tab,
         search_q=q,
         audit_actor=audit_actor,
@@ -386,6 +395,8 @@ def project_detail(project_id):
         else False,
         access_modes=config.ACCESS_MODES,
         access_mode_labels=config.ACCESS_MODE_LABELS,
+        project_crypto=project_crypto,
+        project_master_rows=project_master_rows,
     )
 
 
@@ -480,4 +491,62 @@ def update_project_settings(project_id):
             )
             conn.commit()
             flash("Project settings saved", "ok")
+    return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
+
+
+@authz.login_required
+def project_crypto_action(project_id):
+    """Manage the project's data-encryption key (BYOK).
+
+    Actions:
+        - ``adopt``: create the project key if absent, then re-encrypt any
+          master-keyed secrets/versions onto it.
+
+    Args:
+        project_id: UUID of the project.
+
+    Returns:
+        Redirect to the project Settings tab.
+
+    Example:
+        POST /projects/<project_id>/crypto with action=adopt
+    """
+    action = (request.form.get("action") or "").strip().lower()
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),)
+        )
+        proj = cur.fetchone() or {}
+        if not proj:
+            flash("Project not found", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="settings")
+            )
+        team_id = proj.get("team_id")
+        cur.execute("SELECT api.is_global_admin() AS g", ())
+        is_global_admin = bool((cur.fetchone() or {}).get("g"))
+        cur.execute("SELECT api.team_role(%s::uuid) AS r", (str(team_id),))
+        team_role = (cur.fetchone() or {}).get("r")
+    if not (is_global_admin or team_role in ("team-owner", "team-admin")):
+        flash("Only team owners, team admins, or global admins can manage the project key", "error")
+        return redirect(
+            url_for("project_detail", project_id=project_id, tab="settings")
+        )
+    if action == "adopt":
+        import project_keys
+
+        created = project_keys.ensure_project_key(project_id)
+        n = project_keys.adopt_project_key(project_id)
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            audit.log_org(
+                cur,
+                team_id=team_id,
+                project_id=project_id,
+                action="project_key_adopted",
+                detail=f"re-encrypted={n}" + (" (key created)" if created else ""),
+            )
+            conn.commit()
+        flash(f"Project key adopted — re-encrypted {n} secret row(s)", "ok")
+    else:
+        flash("Unknown encryption action", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="settings"))

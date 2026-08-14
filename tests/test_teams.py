@@ -216,6 +216,40 @@ class TestTeams:
         assert r.status_code == 302
         assert str(pid) in r.location
 
+    def test_create_project_wizard_page(self):
+        tid = uuid4()
+        cur = MagicMock()
+        cur.fetchone.side_effect = [
+            {'id': tid, 'name': 'Platform'},
+            {'r': 'team-owner'},
+        ]
+        cur.__enter__.return_value = cur
+        cur.__exit__.return_value = False
+        conn = MagicMock()
+        conn.cursor.return_value = cur
+        conn.__enter__.return_value = conn
+        conn.__exit__.return_value = False
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/teams/{tid}/projects/new')
+        assert r.status_code == 200
+        assert b'Encryption' in r.data
+        assert b'project key' in r.data.lower()
+
+    def test_create_project_byok_creates_key(self):
+        tid, pid = (uuid4(), uuid4())
+        conn, _ = _conn(fetchone={'id': pid})
+        import project_keys
+        with patch.object(db, 'as_user', return_value=conn), \
+             patch.object(project_keys, 'ensure_project_key', return_value=True) as ensure:
+            r = self.client.post(
+                f'/teams/{tid}/projects',
+                data={'name': 'prod', 'encryption': 'byok'},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        ensure.assert_called_once()
+        assert str(pid) in r.location
+
     def test_delete_team_owner_ok(self):
         tid = uuid4()
         conn, cur = _conn(fetchone={'r': 'team-owner'})

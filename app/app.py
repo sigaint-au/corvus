@@ -190,6 +190,32 @@ def purge_audit_command(days, dry_run):
     )
 
 
+@app.cli.command("rekey-project-keys")
+@click.option(
+    "--old-master-key",
+    type=str,
+    default=None,
+    help="Previous MASTER_KEY value (reads MASTER_KEY_OLD env var if omitted).",
+)
+def rekey_project_keys_command(old_master_key):
+    """Re-wrap all project BYOK keys from an old MASTER_KEY to the current one.
+
+    Run after rotating ``MASTER_KEY`` so per-project encryption keys survive.
+    The old key is only used to unwrap the wrapped DEKs; pass it explicitly or
+    via the ``MASTER_KEY_OLD`` environment variable.
+    """
+    import project_keys
+
+    old_key = old_master_key or os.environ.get("MASTER_KEY_OLD", "")
+    if not old_key:
+        click.echo(
+            "Missing old MASTER_KEY — pass --old-master-key or set MASTER_KEY_OLD"
+        )
+        return
+    n = project_keys.rewrap_project_keys(old_key)
+    click.echo(f"re-wrapped {n} project key(s) to the current MASTER_KEY")
+
+
 if __name__ == "__main__":
     from crypto import decrypt, encrypt
 

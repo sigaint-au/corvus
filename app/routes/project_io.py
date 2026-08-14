@@ -105,7 +105,7 @@ def export_secrets(project_id):
         if mode == "plain":
             cur.execute(
                 """
-                SELECT key, value_enc, note FROM api.secrets
+                SELECT key, value_enc, note, crypto_provider FROM api.secrets
                 WHERE project_id = %s AND deleted_at IS NULL
                   AND api.can_access_secret(id, 'reveal')
                   AND api.can_reveal_secret(id)
@@ -116,7 +116,7 @@ def export_secrets(project_id):
         else:
             cur.execute(
                 """
-                SELECT key, value_enc, note FROM api.secrets
+                SELECT key, value_enc, note, crypto_provider FROM api.secrets
                 WHERE project_id = %s AND deleted_at IS NULL
                   AND api.can_access_secret(id, 'read')
                 ORDER BY key
@@ -145,7 +145,15 @@ def export_secrets(project_id):
                 "Cache-Control": "no-store",
             },
         )
-    pairs = [(r["key"], crypto.decrypt(r["value_enc"])) for r in rows]
+    pairs = [
+        (
+            r["key"],
+            crypto.decrypt_for_project(
+                project_id, r["value_enc"], r.get("crypto_provider") or "master"
+            ),
+        )
+        for r in rows
+    ]
     if fmt == "json":
         body = json.dumps({k: v for k, v in pairs}, indent=2)
         mime, name = "application/json", f"secrets-{project_id}.json"
@@ -342,6 +350,9 @@ def import_commit(project_id):
                         kind=item.get("kind") or "plain",
                         already_enc=True,
                         touch_meta=False,
+                        crypto_provider=(
+                            "project" if crypto.project_has_key(project_id) else "master"
+                        ),
                     )
                 else:
                     val = item.get("value") or ""
@@ -399,7 +410,7 @@ def bulk_export(project_id):
             return "Not found", 404
         cur.execute(
             """
-            SELECT key, value_enc FROM api.secrets
+            SELECT key, value_enc, crypto_provider FROM api.secrets
             WHERE project_id = %s AND deleted_at IS NULL
               AND id = ANY(%s::uuid[])
               AND api.can_access_secret(id, 'reveal')
@@ -432,7 +443,15 @@ def bulk_export(project_id):
                 f"skipped {skipped} without reveal permission",
                 "ok",
             )
-    pairs = [(r["key"], crypto.decrypt(r["value_enc"])) for r in rows]
+    pairs = [
+        (
+            r["key"],
+            crypto.decrypt_for_project(
+                project_id, r["value_enc"], r.get("crypto_provider") or "master"
+            ),
+        )
+        for r in rows
+    ]
     if fmt == "json":
         body = json.dumps({k: v for k, v in pairs}, indent=2)
         mime, name = "application/json", f"secrets-selected.json"

@@ -13,6 +13,7 @@ from .detail import (
     project_detail,
     delete_project,
     update_project_settings,
+    project_crypto_action,
 )
 from .access import (
     add_project_binding,
@@ -39,3 +40,4 @@ def register(app):
     app.post("/projects/<uuid:project_id>/access/bindings")(project_access_binding_create)
     app.post("/projects/<uuid:project_id>/access/bindings/<uuid:binding_id>/delete")(project_access_binding_delete)
     app.post("/projects/<uuid:project_id>/settings")(update_project_settings)
+    app.post("/projects/<uuid:project_id>/crypto")(project_crypto_action)

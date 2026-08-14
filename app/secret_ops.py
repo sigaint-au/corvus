@@ -383,6 +383,7 @@ def _upsert_secret(
     set_requires_approval=False,
     access_mode="inherit",
     set_access_mode=False,
+    crypto_provider: str | None = None,
 ):
     """Insert/update one secret; returns (id, was_new).
 
@@ -402,6 +403,9 @@ def _upsert_secret(
         set_requires_approval: When True, write requires_approval column.
         access_mode: Per-secret access mode (see config.ACCESS_MODES).
         set_access_mode: When True, write access_mode on insert/update.
+        crypto_provider: ``'master'``/``'project'`` recorded with the ciphertext.
+            When already_enc is False it defaults to the project key state;
+            when already_enc is True it defaults to ``'master'``.
 
     Returns:
         Tuple (secret_id, was_new) where was_new is True when no live row
@@ -415,7 +419,13 @@ def _upsert_secret(
 
     kind = normalize_kind(kind)
     mode = _parse_access_mode(access_mode)
-    enc = value_or_enc if already_enc else crypto.encrypt(str(value_or_enc))
+    if already_enc:
+        enc = value_or_enc
+        provider = crypto_provider or "master"
+    else:
+        enc, provider = crypto.encrypt_for_project(str(project_id), str(value_or_enc))
+        if crypto_provider:
+            provider = crypto_provider
     cur.execute(
         """
         SELECT id FROM api.secrets
@@ -425,13 +435,14 @@ def _upsert_secret(
     )
     existing = cur.fetchone()
     if touch_meta:
-        cols = ["project_id", "key", "value_enc", "note", "expires_at", "kind"]
-        vals = [str(project_id), key, enc, note or "", expires_at, kind]
+        cols = ["project_id", "key", "value_enc", "note", "expires_at", "kind", "crypto_provider"]
+        vals = [str(project_id), key, enc, note or "", expires_at, kind, provider]
         updates = [
             "value_enc = EXCLUDED.value_enc",
             "note = EXCLUDED.note",
             "expires_at = EXCLUDED.expires_at",
             "kind = EXCLUDED.kind",
+            "crypto_provider = EXCLUDED.crypto_provider",
         ]
         if set_requires_approval:
             cols.append("requires_approval")
@@ -458,16 +469,17 @@ def _upsert_secret(
     else:
         cur.execute(
             """
-            INSERT INTO api.secrets (project_id, key, value_enc, note, kind)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO api.secrets (project_id, key, value_enc, note, kind, crypto_provider)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
               SET value_enc = EXCLUDED.value_enc,
+                  crypto_provider = EXCLUDED.crypto_provider,
                   note = CASE WHEN EXCLUDED.note = '' THEN api.secrets.note
                               ELSE EXCLUDED.note END,
                   kind = EXCLUDED.kind
             RETURNING id
             """,
-            (str(project_id), key, enc, note or "", kind),
+            (str(project_id), key, enc, note or "", kind, provider),
         )
     row = cur.fetchone()
     return (row["id"] if row else None), (existing is None)

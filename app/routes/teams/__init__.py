@@ -32,6 +32,7 @@ from .dir_maps import (
 from .projects import (
     create_project,
     delete_project_from_team,
+    new_project_wizard,
 )
 from .groups import (
     team_group_detail,
@@ -63,6 +64,7 @@ def register(app):
     app.post("/teams/<uuid:team_id>/oidc-maps")(add_team_oidc_map)
     app.post("/teams/<uuid:team_id>/oidc-maps/<uuid:map_id>/delete")(delete_team_oidc_map)
     app.post("/teams/<uuid:team_id>/projects")(create_project)
+    app.get("/teams/<uuid:team_id>/projects/new")(new_project_wizard)
     app.post("/teams/<uuid:team_id>/delete")(delete_team)
     app.post("/teams/<uuid:team_id>/projects/<uuid:project_id>/delete")(delete_project_from_team)
     app.get("/teams/<uuid:team_id>/groups/<uuid:group_id>")(team_group_detail)

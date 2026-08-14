@@ -81,8 +81,8 @@ The app connects as `authenticator`, then `SET ROLE authenticated` and sets
 | `teams` | api | Teams and settings |
 | `projects` | api | Projects and settings |
 | `groups` / `group_members` | api | Team-scoped groups + membership |
-| `secrets` | api | Secret rows (`value_enc` = Fernet ciphertext) |
-| `secret_versions` | api | Archived prior ciphertext on update |
+| `secrets` | api | Secret rows (`value_enc` = Fernet ciphertext; `crypto_provider` records which key) |
+| `secret_versions` | api | Archived prior ciphertext on update (also carries `crypto_provider`) |
 | `secret_meta` | api | Custom searchable metadata |
 | `secret_access_requests` | api | Reveal-approval requests + grants |
 | `secret_audit` / `org_audit` | api | Append-only audit |
@@ -90,6 +90,7 @@ The app connects as `authenticator`, then `SET ROLE authenticated` and sets
 | `machine_token_scope` | api | Per-token key allow-lists |
 | `secret_pins` / `secret_recent` | api | User pins / recent |
 | `roles` / `role_rules` / `bindings` | rbac | K8s-style RBAC |
+| `project_crypto_keys` | private | Per-project BYOK data-encryption keys (wrapped by MASTER_KEY) |
 | `users` | private | Users (not exposed) |
 | `user_sessions` | private | Server-side sessions |
 | `personal_access_tokens` | private | PATs (hash only) |
@@ -232,6 +233,7 @@ INSERT INTO api.machine_token_scope (token_id, key_pattern) VALUES (tok, 'prod/*
 ## Related docs
 
 - [architecture.md](architecture.md) — request flow
-- [rbac.md](../admin/rbac.md) — access rules in plain terms
+- [../admin/rbac.md](../admin/rbac.md) — access rules in plain terms
+- [../admin/byok.md](../admin/byok.md) — per-project encryption keys (BYOK)
 - [rbac-k8s.md](../admin/rbac-k8s.md) — K8s RBAC model
 - [api.md](api.md) — API reference

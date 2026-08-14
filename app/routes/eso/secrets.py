@@ -53,7 +53,9 @@ def eso_get_secret(project_ref, key):
             )
             row = cur.fetchone()
             if row and row.get("value_enc"):
-                plaintext = crypto.decrypt(row["value_enc"])
+                plaintext = crypto.decrypt_for_project(
+                    pid, row["value_enc"], row.get("crypto_provider") or "master"
+                )
                 actor = _machine_actor(cur, pid, thash)
                 _audit(
                     cur,
@@ -74,7 +76,7 @@ def eso_get_secret(project_ref, key):
         cur.execute(
             """
             SELECT id, key, value_enc, note, kind, expires_at,
-                   created_at, updated_at, last_accessed_at
+                   created_at, updated_at, last_accessed_at, crypto_provider
               FROM api.secrets
              WHERE project_id = %s AND key = %s AND deleted_at IS NULL
             """,
@@ -148,7 +150,9 @@ def eso_get_secret(project_ref, key):
             )
         except Exception:
             pass
-        value = crypto.decrypt(row["value_enc"])
+        value = crypto.decrypt_for_project(
+            pid, row["value_enc"], row.get("crypto_provider") or "master"
+        )
         _audit(
             cur,
             project_id=pid,
@@ -214,7 +218,12 @@ def eso_list_secrets(project_ref):
                 (pid, thash),
             )
             rows = cur.fetchall() or []
-            data = {r["key"]: crypto.decrypt(r["value_enc"]) for r in rows}
+            data = {
+                r["key"]: crypto.decrypt_for_project(
+                    pid, r["value_enc"], r.get("crypto_provider") or "master"
+                )
+                for r in rows
+            }
             _audit(
                 cur,
                 project_id=pid,
@@ -285,7 +294,7 @@ def eso_list_secrets(project_ref):
         # PAT bulk values: only secrets the caller may reveal (ACL + approval)
         cur.execute(
             """
-            SELECT key, value_enc FROM api.secrets
+            SELECT key, value_enc, crypto_provider FROM api.secrets
              WHERE project_id = %s AND deleted_at IS NULL
                AND api.can_access_secret(id, 'reveal')
                AND api.can_reveal_secret(id)
@@ -296,7 +305,9 @@ def eso_list_secrets(project_ref):
         data = {}
         for r in rows:
             try:
-                data[r["key"]] = crypto.decrypt(r["value_enc"])
+                data[r["key"]] = crypto.decrypt_for_project(
+                    pid, r["value_enc"], r.get("crypto_provider") or "master"
+                )
             except Exception:
                 data[r["key"]] = ""
         _audit(

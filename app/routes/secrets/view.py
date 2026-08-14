@@ -57,7 +57,8 @@ def reveal_secret(project_id, secret_id):
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, key, value_enc, note, kind, expires_at FROM api.secrets
+            SELECT id, key, value_enc, note, kind, expires_at, crypto_provider
+            FROM api.secrets
             WHERE id = %s AND project_id = %s AND deleted_at IS NULL
             """,
             (str(secret_id), str(project_id)),
@@ -111,7 +112,9 @@ def reveal_secret(project_id, secret_id):
             is_fav = pins.is_pinned(cur, session["user_id"], secret_id)
         except Exception:
             pass
-        plaintext = crypto.decrypt(row["value_enc"])
+        plaintext = crypto.decrypt_for_project(
+            project_id, row["value_enc"], row.get("crypto_provider") or "master"
+        )
         kind = normalize_kind(row.get("kind"))
         audit.log_secret(
             cur,
@@ -185,7 +188,7 @@ def secret_view(project_id, secret_id):
             """
             SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
                    s.requires_approval, s.access_mode, s.created_at, s.updated_at,
-                   s.last_accessed_at, s.last_accessed_by,
+                   s.last_accessed_at, s.last_accessed_by, s.crypto_provider,
                    p.name AS project_name, p.require_reveal_approval,
                    p.team_id, t.name AS team_name,
                    api.is_team_member(p.team_id) AS is_team_member
@@ -208,11 +211,12 @@ def secret_view(project_id, secret_id):
                     acur, str(row["last_accessed_by"])
                 )
         value_enc = row["value_enc"]
+        crypto_provider = row.get("crypto_provider") or "master"
         is_version = False
         if version_id:
             cur.execute(
                 """
-                SELECT value_enc FROM api.secret_versions
+                SELECT value_enc, crypto_provider FROM api.secret_versions
                 WHERE id = %s::uuid AND secret_id = %s::uuid
                 """,
                 (version_id, str(secret_id)),
@@ -221,6 +225,7 @@ def secret_view(project_id, secret_id):
             if not ver:
                 return "Not found", 404
             value_enc = ver["value_enc"]
+            crypto_provider = ver.get("crypto_provider") or "master"
             is_version = True
         cur.execute(
             "SELECT api.can_access_secret(%s, 'write') AS w",
@@ -328,7 +333,9 @@ def secret_view(project_id, secret_id):
                     project_id=project_id,
                     secret_id=secret_id,
                     row=row_view,
-                    plaintext=crypto.decrypt(row["value_enc"]),
+                    plaintext=crypto.decrypt_for_project(
+                        project_id, row["value_enc"], row.get("crypto_provider") or "master"
+                    ),
                     kind=kind,
                     can_write=True,
                     status=400,
@@ -355,11 +362,11 @@ def secret_view(project_id, secret_id):
             cur.execute(
                 """
                 UPDATE api.secrets
-                SET value_enc = %s, note = %s, expires_at = %s, kind = %s
+                SET value_enc = %s, note = %s, expires_at = %s, kind = %s, crypto_provider = %s
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
                 (
-                    crypto.encrypt(value),
+                    *crypto.encrypt_for_project(project_id, value),
                     note,
                     expires_at,
                     kind,
@@ -439,7 +446,7 @@ def secret_view(project_id, secret_id):
             return body, code
 
         try:
-            plaintext = crypto.decrypt(value_enc)
+            plaintext = crypto.decrypt_for_project(project_id, value_enc, crypto_provider)
         except ValueError as e:
             conn.rollback()
             flash(str(e), "error")

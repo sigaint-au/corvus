@@ -2570,7 +2570,7 @@
     {% set ep = request.endpoint or '' %}
     {% set workspace_eps = (
       'projects_list', 'project_detail', 'create_secret', 'delete_secret',
-      'reveal_secret', 'create_token', 'delete_token', 'create_project',
+      'reveal_secret', 'create_token', 'delete_token', 'create_project', 'new_project_wizard',
       'secrets_list', 'shared_secrets_list', 'machines_list', 'global_search'
     ) %}
     {% set account_eps = (
@@ -2601,7 +2601,7 @@
       <details class="side-group" data-side-group="workspace"{% if workspace_open %} open{% endif %}>
         <summary>Workspace</summary>
         <div class="side-group-body">
-          <a class="side-nav-link {% if ep in ('projects_list', 'project_detail', 'create_secret', 'delete_secret', 'reveal_secret', 'create_token', 'delete_token', 'create_project') %}active{% endif %}"
+          <a class="side-nav-link {% if ep in ('projects_list', 'project_detail', 'create_secret', 'delete_secret', 'reveal_secret', 'create_token', 'delete_token', 'create_project', 'new_project_wizard') %}active{% endif %}"
              href="{{ url_for('projects_list') }}">Projects</a>
           <a class="side-nav-link {% if ep == 'secrets_list' %}active{% endif %}"
              href="{{ url_for('secrets_list') }}">Secrets</a>

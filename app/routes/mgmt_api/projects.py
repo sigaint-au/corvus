@@ -28,6 +28,7 @@ def mgmt_create_project(team_ref):
     name = (body.get("name") or "").strip()
     if not name:
         return jsonify({"error": "name required"}), 400
+    encryption = (body.get("encryption") or "managed").strip().lower()
     with db.as_user(uid) as conn, conn.cursor() as cur:
         tid = _resolve_team(cur, team_ref)
         if not tid:
@@ -47,6 +48,31 @@ def mgmt_create_project(team_ref):
             conn.commit()
         except Exception as e:
             return jsonify({"error": str(e)}), 400
+    if encryption in ("byok", "project"):
+        import project_keys
+
+        try:
+            project_keys.ensure_project_key(str(row["id"]))
+        except Exception:
+            # Compensate (see ui create_project for rationale).
+            try:
+                with db.connect_admin() as aconn, aconn.cursor() as acur:
+                    acur.execute(
+                        "DELETE FROM api.projects WHERE id = %s",
+                        (str(row["id"]),),
+                    )
+            except Exception:
+                pass
+            return jsonify({"error": "could not create project key; creation rolled back"}), 400
+        with db.as_user(uid) as conn, conn.cursor() as cur:
+            audit.log_org(
+                cur,
+                team_id=tid,
+                project_id=row["id"],
+                action="project_key_created",
+                detail="byok (local key)",
+            )
+            conn.commit()
     return jsonify({"ok": True, **(_row(row) or {})}), 201
 
 

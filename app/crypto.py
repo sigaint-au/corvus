@@ -6,6 +6,7 @@ from hashlib import sha256
 from cryptography.fernet import Fernet
 
 from config import MASTER_KEY
+import db
 
 
 def sha256_hex(val: str) -> str:
@@ -28,26 +29,23 @@ def sha256_hex(val: str) -> str:
     return sha256((val or "").encode("utf-8")).hexdigest()
 
 
+def fernet_for(master_key: str) -> Fernet:
+    """Build a Fernet instance from a raw master key string.
+
+    The key is SHA-256 of ``master_key``, then url-safe base64-encoded to
+    satisfy Fernet's 32-byte key requirement.
+    """
+    key = urlsafe_b64encode(sha256(master_key.encode()).digest())
+    return Fernet(key)
+
+
 @lru_cache(maxsize=1)
 def _fernet() -> Fernet:
     """Build and cache the Fernet instance derived from ``MASTER_KEY``.
 
-    The key is SHA-256 of ``MASTER_KEY``, then url-safe base64-encoded to
-    satisfy Fernet's 32-byte key requirement. Cached for process lifetime.
-
-    Args:
-        None.
-
-    Returns:
-        A ``cryptography.fernet.Fernet`` instance ready to encrypt/decrypt.
-
-    Example:
-        >>> f = _fernet()
-        >>> isinstance(f, Fernet)
-        True
+    Cached for process lifetime (see :func:`fernet_for` for an explicit key).
     """
-    key = urlsafe_b64encode(sha256(MASTER_KEY.encode()).digest())
-    return Fernet(key)
+    return fernet_for(MASTER_KEY)
 
 
 def encrypt(val: str) -> str:
@@ -94,4 +92,95 @@ def decrypt(val: str) -> str:
         raise ValueError(
             "Cannot decrypt secret value — MASTER_KEY does not match the key "
             "used when this secret was stored (or the ciphertext is corrupt)."
+        ) from e
+
+
+# ── Per-project Bring-Your-Own-Key (BYOK) ────────────────────────────────
+# Each project may have a dedicated data-encryption key (DEK). The DEK is a
+# random Fernet key, wrapped by MASTER_KEY and stored in
+# private.project_crypto_keys. Values encrypted with a project DEK carry
+# ``crypto_provider='project'``; values encrypted with the app master key are
+# ``'master'`` (legacy / non-BYOK). Resolution is cached per process and can
+# be cleared after key events (adopt/rotate/revoke).
+
+
+def generate_project_key() -> bytes:
+    """Return a new random Fernet data-encryption key (32-byte urlsafe)."""
+    return Fernet.generate_key()
+
+
+def wrap_project_key(raw_key: bytes) -> str:
+    """Wrap a raw DEK with MASTER_KEY so only the raw key is never stored."""
+    return _fernet().encrypt(raw_key).decode()
+
+
+def unwrap_project_key(key_enc: str) -> bytes:
+    """Unwrap a project DEK stored via :func:`wrap_project_key`."""
+    return _fernet().decrypt(key_enc.encode())
+
+
+@lru_cache(maxsize=512)
+def _project_key_enc(project_id: str) -> str | None:
+    """Return the wrapped project DEK row, or None when the project has no key."""
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT key_enc FROM private.project_crypto_keys WHERE project_id = %s",
+                (str(project_id),),
+            )
+            row = cur.fetchone()
+        return row["key_enc"] if row else None
+    except Exception:
+        # Key lookup is best-effort: when it fails (e.g. admin DSN unavailable,
+        # table not migrated, or unit-test mocks) fall back to the master key.
+        # The write path records crypto_provider='master' in that case, so the
+        # row stays consistent and decryptable.
+        return None
+
+
+def project_has_key(project_id) -> bool:
+    """Return True when the project has a dedicated data-encryption key."""
+    return _project_key_enc(str(project_id)) is not None
+
+
+def clear_project_key_cache() -> None:
+    """Forget cached project keys (call after adopt/rotate/revoke)."""
+    _project_key_enc.cache_clear()
+
+
+def encrypt_for_project(project_id, value: str) -> tuple[str, str]:
+    """Encrypt a secret value for a project.
+
+    Uses the project's DEK when one exists (``crypto_provider='project'``),
+    otherwise the app master key (``crypto_provider='master'``).
+
+    Returns:
+        Tuple ``(ciphertext, crypto_provider)`` for storage.
+    """
+    key_enc = _project_key_enc(str(project_id))
+    if key_enc is None:
+        return _fernet().encrypt(value.encode()).decode(), "master"
+    return Fernet(unwrap_project_key(key_enc)).encrypt(value.encode()).decode(), "project"
+
+
+def decrypt_for_project(project_id, token: str, provider: str = "master") -> str:
+    """Decrypt a secret value using this project's key (or the master fallback).
+
+    Args:
+        project_id: Owning project (used to resolve the DEK).
+        provider: Row's ``crypto_provider`` — ``'project'`` uses the project
+            key, anything else uses the master key.
+    """
+    from cryptography.fernet import InvalidToken
+
+    try:
+        if provider == "project":
+            key_enc = _project_key_enc(str(project_id))
+            if key_enc is not None:
+                return Fernet(unwrap_project_key(key_enc)).decrypt(token.encode()).decode()
+        return _fernet().decrypt(token.encode()).decode()
+    except InvalidToken as e:
+        raise ValueError(
+            "Cannot decrypt secret value — the encryption key for this project "
+            "does not match the key used when this secret was stored."
         ) from e
