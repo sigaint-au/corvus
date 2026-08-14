@@ -39,6 +39,14 @@ def new_project_wizard(team_id):
     if my_role not in ("team-owner", "team-admin", "team-member"):
         flash("You don't have permission to create projects", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
+    hsm_slots = []
+    if hsm.available():
+        try:
+            with db.connect_admin() as conn, conn.cursor() as cur:
+                cur.execute("SELECT * FROM api.list_hsm_slots()")
+                hsm_slots = cur.fetchall() or []
+        except Exception:
+            hsm_slots = []
     return render_template(
         "team_new_project.html",
         team=team,
@@ -46,6 +54,7 @@ def new_project_wizard(team_id):
         encryption="managed",
         hsm_available=hsm.available(),
         hsm_kek_label=hsm.kek_label() if hsm.available() else None,
+        hsm_slots=hsm_slots,
     )
 
 
@@ -66,6 +75,7 @@ def create_project(team_id):
     name = request.form["name"].strip()
     description = (request.form.get("description") or "").strip()[:500]
     encryption = (request.form.get("encryption") or "managed").strip().lower()
+    hsm_slot = (request.form.get("hsm_slot") or "").strip() or None
     pid = None
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
@@ -103,7 +113,7 @@ def create_project(team_id):
             )
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
         try:
-            project_keys.ensure_project_key(pid, provider=provider)
+            project_keys.ensure_project_key(pid, provider=provider, hsm_slot_id=hsm_slot)
         except Exception as e:
             # Roll back the creation: remove the project so we never leave a
             # project that advertised BYOK but has no key. CASCADE clears any

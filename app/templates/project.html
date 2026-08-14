@@ -758,7 +758,7 @@
       <span class="badge" data-variant="success">Project key</span>
       <span class="muted">
         {% if project_crypto.key_provider == 'hsm' %}
-          HSM{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
+          HSM{% if project_crypto.hsm_slot_name %} · {{ project_crypto.hsm_slot_name }}{% elif project_crypto.hsm_slot_id is none %} · Legacy{% endif %}{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
         {% else %}
           Local
         {% endif %}
@@ -794,6 +794,13 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="migrate">
     <input type="hidden" name="provider" value="hsm">
+    {% if hsm_slots %}
+    <select name="target_slot" aria-label="HSM slot">
+      {% for s in hsm_slots %}
+      <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
     <button type="submit" class="button outline small">Migrate to HSM</button>
   </form>
   {% endif %}

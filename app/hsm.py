@@ -19,6 +19,7 @@ import base64
 import logging
 import os
 import time
+from urllib.parse import unquote
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,85 @@ def _cfg() -> tuple[str, str, str, str]:
     from config import HSM_KEK_LABEL, HSM_PIN, HSM_PKCS11_MODULE, HSM_TOKEN_LABEL
 
     return HSM_PKCS11_MODULE, HSM_TOKEN_LABEL, HSM_PIN, HSM_KEK_LABEL
+
+
+def parse_pkcs11_url(url: str) -> dict:
+    """Parse an RFC 7512 PKCS#11 URI into connection values.
+
+    Format: ``pkcs11:token=...;object=...;slot-id=...?module-path=...&pin-source=...&pin-value=...``
+
+    Returns a dict with keys ``module_path``, ``token_label``, ``kek_label``
+    (the ``object`` segment), ``pin``, ``pin_set`` and ``slot_id``.
+
+    Raises:
+        ValueError: When ``module-path`` or ``token`` is missing.
+
+    Example:
+        >>> parse_pkcs11_url("pkcs11:token=t;object=k?module-path=/m.so&pin-value=1234")
+        {'module_path': '/m.so', 'token_label': 't', 'kek_label': 'k', ...}
+    """
+    url = (url or "").strip()
+    if not url.startswith("pkcs11:"):
+        raise ValueError("PKCS#11 URL must start with pkcs11:")
+    rest = url[len("pkcs11:"):]
+    path, _, query = rest.partition("?")
+
+    path_parts: dict[str, str] = {}
+    for seg in path.split(";"):
+        if "=" in seg:
+            k, v = seg.split("=", 1)
+            path_parts[k.strip().lower()] = unquote(v.strip())
+    query_parts: dict[str, str] = {}
+    for seg in query.split("&"):
+        if "=" in seg:
+            k, v = seg.split("=", 1)
+            query_parts[k.strip().lower()] = unquote(v.strip())
+
+    module_path = query_parts.get("module-path")
+    if not module_path:
+        raise ValueError("PKCS#11 URL missing module-path")
+    token_label = path_parts.get("token")
+    if not token_label:
+        raise ValueError("PKCS#11 URL missing token")
+
+    pin = None
+    pin_source = query_parts.get("pin-source")
+    pin_value = query_parts.get("pin-value")
+    if pin_value is not None:
+        pin = pin_value
+    elif pin_source:
+        with open(pin_source, "r", encoding="utf-8") as fh:
+            pin = fh.read().strip()
+
+    slot_id = (
+        path_parts.get("slot-id")
+        or path_parts.get("slotid")
+        or query_parts.get("slot-id")
+        or query_parts.get("slotid")
+    )
+    return {
+        "module_path": module_path,
+        "token_label": token_label,
+        "kek_label": path_parts.get("object"),
+        "pin": pin,
+        "pin_set": bool(pin),
+        "slot_id": slot_id,
+    }
+
+
+def redact_pkcs11_url(url: str) -> str:
+    """Redact the PIN from a PKCS#11 URL for display.
+
+    ``pin-value=...`` is masked (``pin-value=***``); ``pin-source`` paths are
+    left untouched (they do not expose the PIN).
+
+    Example:
+        >>> redact_pkcs11_url("pkcs11:token=t?module-path=/m.so&pin-value=1234")
+        'pkcs11:token=t?module-path=/m.so&pin-value=***'
+    """
+    import re
+
+    return re.sub(r"(?i)(pin-value)=[^&;]*", r"\1=***", url or "")
 
 
 def available() -> bool:
@@ -76,10 +156,20 @@ def _pkcs11():
     return pkcs11
 
 
-def _session(rw: bool = True):
-    """Open a PKCS#11 session on the configured token (logged in)."""
+def _session(rw: bool = True, pkcs11_url: str | None = None):
+    """Open a PKCS#11 session (logged in).
+
+    When ``pkcs11_url`` is given it is parsed and used for the module, token,
+    and PIN; otherwise the global env-var config is used.
+    """
     pkcs11 = _pkcs11()
-    module, token_label, pin, _kek = _cfg()
+    if pkcs11_url:
+        parsed = parse_pkcs11_url(pkcs11_url)
+        module = parsed["module_path"]
+        token_label = parsed["token_label"]
+        pin = parsed["pin"]
+    else:
+        module, token_label, pin, _kek = _cfg()
     try:
         lib = pkcs11.lib(module)
         token = lib.get_token(token_label=token_label)
@@ -147,17 +237,19 @@ def ensure_kek() -> str:
     return generate_kek(kek_label())
 
 
-def generate_kek(label: str) -> str:
+def generate_kek(label: str, pkcs11_url: str | None = None) -> str:
     """Create an AES-256 KEK with ``label`` if missing; return the label.
 
-    Used both for the initial KEK and for KEK rotation (new label).
+    Used both for the initial KEK and for KEK rotation (new label). When
+    ``pkcs11_url`` is given the KEK is created in that slot instead of the
+    global config.
 
     Example:
         >>> generate_kek("byok-kek-2")
         'byok-kek-2'
     """
     pkcs11 = _pkcs11()
-    with _session(rw=True) as session:
+    with _session(rw=True, pkcs11_url=pkcs11_url) as session:
         key = _find_kek(session, pkcs11, label)
         if key is None:
             # python-pkcs11 0.7: capabilities via Attribute template, not kwargs
@@ -220,6 +312,53 @@ def kek_label() -> str:
     return _cfg()[3]
 
 
+def _wrap_raw(key, pkcs11, raw: bytes) -> str:
+    """Wrap raw key bytes with the given KEK object; return a prefixed blob."""
+    # Prefer authenticated AES key wrap when the module supports it.
+    kw = getattr(pkcs11.Mechanism, "AES_KEY_WRAP", None)
+    if kw is not None:
+        try:
+            ct = key.encrypt(raw, mechanism=kw)
+            return base64.b64encode(_FMT_KEY_WRAP + ct).decode()
+        except Exception as e:
+            log.debug("AES_KEY_WRAP unavailable, falling back to CBC: %s", e)
+    iv = os.urandom(_IV_LEN)
+    try:
+        ct = key.encrypt(raw, mechanism=pkcs11.Mechanism.AES_CBC, mechanism_param=iv)
+    except Exception as e:
+        raise RuntimeError(f"HSM wrap failed: {e}") from e
+    return base64.b64encode(_FMT_CBC + iv + ct).decode()
+
+
+def _decode_wrapped_blob(wrapped: str) -> tuple[bytes, bytes]:
+    """Return ``(fmt, rest)`` parsed from a wrapped-DEK base64 string."""
+    try:
+        blob = base64.b64decode(wrapped)
+    except Exception as e:
+        raise ValueError("invalid wrapped DEK encoding") from e
+    if len(blob) < 2:
+        raise ValueError("invalid wrapped DEK length")
+    # Legacy blobs (no format prefix): iv(16) || ct(32) from early SoftHSM path.
+    if blob[0] not in (_FMT_CBC[0], _FMT_KEY_WRAP[0]) and len(blob) == _IV_LEN + _RAW_DEK_LEN:
+        return _FMT_CBC, blob
+    return blob[:1], blob[1:]
+
+
+def _unwrap_key(key, pkcs11, fmt: bytes, rest: bytes) -> bytes:
+    """Decrypt a wrapped DEK's payload with the given KEK object."""
+    if fmt == _FMT_KEY_WRAP:
+        kw = getattr(pkcs11.Mechanism, "AES_KEY_WRAP", None)
+        if kw is None:
+            raise RuntimeError("AES_KEY_WRAP not supported by python-pkcs11")
+        return key.decrypt(rest, mechanism=kw)
+    if fmt == _FMT_CBC:
+        if len(rest) != _IV_LEN + _RAW_DEK_LEN:
+            raise ValueError("invalid CBC wrapped DEK length")
+        iv, ct = rest[:_IV_LEN], rest[_IV_LEN:]
+        return key.decrypt(ct, mechanism=pkcs11.Mechanism.AES_CBC, mechanism_param=iv)
+    raise ValueError("unknown wrapped DEK format")
+
+
 def wrap_dek(dek: bytes, label: str | None = None) -> str:
     """Wrap a Fernet DEK with the HSM KEK; return base64 blob.
 
@@ -240,22 +379,7 @@ def wrap_dek(dek: bytes, label: str | None = None) -> str:
         key = _find_kek(session, pkcs11, label)
         if key is None:
             raise RuntimeError("HSM KEK not found; call ensure_kek() first")
-        # Prefer authenticated AES key wrap when the module supports it.
-        kw = getattr(pkcs11.Mechanism, "AES_KEY_WRAP", None)
-        if kw is not None:
-            try:
-                ct = key.encrypt(raw, mechanism=kw)
-                return base64.b64encode(_FMT_KEY_WRAP + ct).decode()
-            except Exception as e:
-                log.debug("AES_KEY_WRAP unavailable, falling back to CBC: %s", e)
-        iv = os.urandom(_IV_LEN)
-        try:
-            ct = key.encrypt(
-                raw, mechanism=pkcs11.Mechanism.AES_CBC, mechanism_param=iv
-            )
-        except Exception as e:
-            raise RuntimeError(f"HSM wrap failed: {e}") from e
-    return base64.b64encode(_FMT_CBC + iv + ct).decode()
+        return _wrap_raw(key, pkcs11, raw)
 
 
 def unwrap_dek(wrapped: str, label: str | None = None) -> bytes:
@@ -270,37 +394,14 @@ def unwrap_dek(wrapped: str, label: str | None = None) -> bytes:
         True
     """
     label = label or kek_label()
-    try:
-        blob = base64.b64decode(wrapped)
-    except Exception as e:
-        raise ValueError("invalid wrapped DEK encoding") from e
-    if len(blob) < 2:
-        raise ValueError("invalid wrapped DEK length")
-    # Legacy blobs (no format prefix): iv(16) || ct(32) from early SoftHSM path
-    if blob[0] not in (_FMT_CBC[0], _FMT_KEY_WRAP[0]) and len(blob) == _IV_LEN + _RAW_DEK_LEN:
-        fmt, rest = _FMT_CBC, blob
-    else:
-        fmt, rest = blob[:1], blob[1:]
+    fmt, rest = _decode_wrapped_blob(wrapped)
     pkcs11 = _pkcs11()
     with _session(rw=False) as session:
         key = _find_kek(session, pkcs11, label)
         if key is None:
             raise RuntimeError("HSM KEK not found; call ensure_kek() first")
         try:
-            if fmt == _FMT_KEY_WRAP:
-                kw = getattr(pkcs11.Mechanism, "AES_KEY_WRAP", None)
-                if kw is None:
-                    raise RuntimeError("AES_KEY_WRAP not supported by python-pkcs11")
-                raw = key.decrypt(rest, mechanism=kw)
-            elif fmt == _FMT_CBC:
-                if len(rest) != _IV_LEN + _RAW_DEK_LEN:
-                    raise ValueError("invalid CBC wrapped DEK length")
-                iv, ct = rest[:_IV_LEN], rest[_IV_LEN:]
-                raw = key.decrypt(
-                    ct, mechanism=pkcs11.Mechanism.AES_CBC, mechanism_param=iv
-                )
-            else:
-                raise ValueError("unknown wrapped DEK format")
+            raw = _unwrap_key(key, pkcs11, fmt, rest)
         except ValueError:
             raise
         except Exception as e:
@@ -308,6 +409,117 @@ def unwrap_dek(wrapped: str, label: str | None = None) -> bytes:
     if len(raw) != _RAW_DEK_LEN:
         raise ValueError(f"unwrapped DEK has length {len(raw)}, expected {_RAW_DEK_LEN}")
     return raw_to_fernet_key(raw)
+
+
+# ── Slot-aware variants (named PKCS#11 URLs) ─────────────────────────────
+
+
+def available_for_slot(pkcs11_url: str) -> bool:
+    """Return True when the specified slot's token can be opened."""
+    try:
+        with _session(rw=False, pkcs11_url=pkcs11_url):
+            return True
+    except Exception as e:
+        log.warning("HSM slot availability check failed: %s", e)
+        return False
+
+
+def status_for_slot(pkcs11_url: str) -> dict:
+    """Return slot status in the same shape as :func:`status`."""
+    c = parse_pkcs11_url(pkcs11_url)
+    result = {
+        "available": False,
+        "module": c["module_path"],
+        "token_label": c["token_label"],
+        "kek_label": c["kek_label"],
+        "pin_set": bool(c["pin"]),
+        "error": None,
+        "kek_exists": False,
+    }
+    if not c["pin"]:
+        result["error"] = "Not configured (no PIN in URL)"
+        return result
+    if not os.path.exists(c["module_path"]):
+        result["error"] = f"PKCS#11 module not found: {c['module_path']}"
+        return result
+    try:
+        pkcs11 = _pkcs11()
+        with _session(rw=False, pkcs11_url=pkcs11_url) as session:
+            result["available"] = True
+            result["kek_exists"] = (
+                _find_kek(session, pkcs11, c["kek_label"]) is not None
+            )
+    except Exception as e:
+        result["error"] = str(e)
+    return result
+
+
+def ensure_kek_for_slot(pkcs11_url: str) -> str:
+    """Ensure the KEK exists in the specified slot; return its label."""
+    label = parse_pkcs11_url(pkcs11_url)["kek_label"]
+    return generate_kek(label, pkcs11_url=pkcs11_url)
+
+
+def wrap_dek_for_slot(pkcs11_url: str, dek: bytes) -> tuple[str, str]:
+    """Wrap a DEK in the specified slot; return ``(wrapped_blob, kek_label)``."""
+    c = parse_pkcs11_url(pkcs11_url)
+    raw = fernet_key_to_raw(dek)
+    pkcs11 = _pkcs11()
+    with _session(rw=False, pkcs11_url=pkcs11_url) as session:
+        key = _find_kek(session, pkcs11, c["kek_label"])
+        if key is None:
+            raise RuntimeError("HSM KEK not found; call ensure_kek_for_slot first")
+        return _wrap_raw(key, pkcs11, raw), c["kek_label"]
+
+
+def unwrap_dek_for_slot(pkcs11_url: str, wrapped: str, kek_label: str | None = None) -> bytes:
+    """Unwrap a DEK with the KEK in the specified slot to a Fernet key."""
+    c = parse_pkcs11_url(pkcs11_url)
+    label = kek_label or c["kek_label"]
+    fmt, rest = _decode_wrapped_blob(wrapped)
+    pkcs11 = _pkcs11()
+    with _session(rw=False, pkcs11_url=pkcs11_url) as session:
+        key = _find_kek(session, pkcs11, label)
+        if key is None:
+            raise RuntimeError("HSM KEK not found; call ensure_kek_for_slot first")
+        try:
+            raw = _unwrap_key(key, pkcs11, fmt, rest)
+        except ValueError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"HSM unwrap failed: {e}") from e
+    if len(raw) != _RAW_DEK_LEN:
+        raise ValueError(f"unwrapped DEK has length {len(raw)}, expected {_RAW_DEK_LEN}")
+    return raw_to_fernet_key(raw)
+
+
+def wrap_dek_with_label(pkcs11_url: str, dek: bytes, kek_label: str) -> str:
+    """Wrap a DEK in the specified slot using an explicit KEK label.
+
+    Used for KEK rotation, where a freshly generated KEK (with a new label) must
+    wrap the re-wrapped DEKs.
+    """
+    raw = fernet_key_to_raw(dek)
+    pkcs11 = _pkcs11()
+    with _session(rw=False, pkcs11_url=pkcs11_url) as session:
+        key = _find_kek(session, pkcs11, kek_label)
+        if key is None:
+            raise RuntimeError("HSM KEK not found; generate it first")
+        return _wrap_raw(key, pkcs11, raw)
+
+
+def test_connection_for_slot(pkcs11_url: str) -> tuple[bool, str]:
+    """Open a read-only session on the slot and check KEK existence."""
+    try:
+        c = parse_pkcs11_url(pkcs11_url)
+        pkcs11 = _pkcs11()
+        with _session(rw=False, pkcs11_url=pkcs11_url) as session:
+            has = _find_kek(session, pkcs11, c["kek_label"]) is not None
+        if not has:
+            return False, "token reachable but KEK not present yet"
+        return True, "connection OK; KEK present"
+    except Exception as e:
+        return False, str(e)
 
 
 def status() -> dict:

@@ -82,6 +82,7 @@ The app connects as `authenticator`, then `SET ROLE authenticated` and sets
 | `projects` | api | Projects and settings |
 | `groups` / `group_members` | api | Team-scoped groups + membership |
 | `secrets` | api | Secret rows (`value_enc` = Fernet ciphertext; `crypto_provider` records which key) |
+| `project_crypto_keys.hsm_slot_id` | uuid FK → `hsm_slots` | NULL = legacy env-var HSM config; non-NULL = named slot's KEK wraps the DEK |
 | `secret_versions` | api | Archived prior ciphertext on update (also carries `crypto_provider`) |
 | `secret_meta` | api | Custom searchable metadata |
 | `secret_access_requests` | api | Reveal-approval requests + grants |
@@ -90,7 +91,8 @@ The app connects as `authenticator`, then `SET ROLE authenticated` and sets
 | `machine_token_scope` | api | Per-token key allow-lists |
 | `secret_pins` / `secret_recent` | api | User pins / recent |
 | `roles` / `role_rules` / `bindings` | rbac | K8s-style RBAC |
-| `project_crypto_keys` | private | Per-project BYOK data-encryption keys (wrapped by MASTER_KEY) |
+| `project_crypto_keys` | private | Per-project BYOK data-encryption keys (wrapped by MASTER_KEY or a named HSM slot) |
+| `hsm_slots` | private | Named PKCS#11 URL slot configurations (multi-HSM) |
 | `users` | private | Users (not exposed) |
 | `user_sessions` | private | Server-side sessions |
 | `personal_access_tokens` | private | PATs (hash only) |

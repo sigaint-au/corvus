@@ -127,7 +127,7 @@ def _project_key(project_id: str) -> dict | None:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT key_enc, key_provider, kms_key_ref
+                SELECT key_enc, key_provider, kms_key_ref, hsm_slot_id
                 FROM private.project_crypto_keys WHERE project_id = %s
                 """,
                 (str(project_id),),
@@ -148,11 +148,43 @@ def _project_key_enc(project_id: str) -> str | None:
     return row["key_enc"] if row else None
 
 
+@lru_cache(maxsize=64)
+def _slot_url(slot_id: str) -> str | None:
+    """Return a named HSM slot's PKCS#11 URL, or None when it cannot be read."""
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT pkcs11_url FROM private.hsm_slots WHERE id = %s",
+                (str(slot_id),),
+            )
+            row = cur.fetchone()
+        return row["pkcs11_url"] if row else None
+    except Exception:
+        return None
+
+
+def slot_url(slot_id) -> str | None:
+    """Public accessor for a named HSM slot's PKCS#11 URL (cached)."""
+    return _slot_url(str(slot_id))
+
+
+def clear_slot_url_cache() -> None:
+    """Forget cached slot URLs (call after slot add/edit/delete)."""
+    _slot_url.cache_clear()
+
+
 def _dek_for(row: dict) -> bytes:
     """Unwrap the project DEK using its key_provider (master or HSM)."""
     if (row.get("key_provider") or "local") == "hsm":
-        from hsm import unwrap_dek
+        from hsm import unwrap_dek, unwrap_dek_for_slot
 
+        slot_id = row.get("hsm_slot_id")
+        if slot_id is not None:
+            slot_url_val = _slot_url(str(slot_id))
+            if slot_url_val is not None:
+                return unwrap_dek_for_slot(
+                    slot_url_val, row["key_enc"], row.get("kms_key_ref")
+                )
         return unwrap_dek(row["key_enc"], row.get("kms_key_ref"))
     return unwrap_project_key(row["key_enc"])
 
@@ -171,6 +203,7 @@ def project_has_key(project_id) -> bool:
 def clear_project_key_cache() -> None:
     """Forget cached project keys (call after adopt/rotate/revoke)."""
     _project_key.cache_clear()
+    clear_slot_url_cache()
 
 
 def encrypt_for_project(project_id, value: str) -> tuple[str, str]:

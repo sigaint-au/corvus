@@ -32,6 +32,10 @@ app.jinja_env.filters["time_ago"] = _audit.format_time_ago
 app.jinja_env.filters["time_when"] = _audit.format_when
 app.jinja_env.filters["expires"] = lambda dt: _audit.format_expires(dt, prefix=False)
 
+import hsm as _hsm  # noqa: E402
+
+app.jinja_env.filters["redact_pin"] = _hsm.redact_pkcs11_url
+
 
 _schema_ready = False
 

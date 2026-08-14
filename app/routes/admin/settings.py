@@ -460,6 +460,56 @@ def server_settings():
                     flash(f"Migrated {n} local project key(s) to HSM", "ok")
                 except Exception as e:
                     flash(f"Bulk migration failed: {e}", "error")
+        elif action in ("hsm_slot_add", "hsm_slot_edit"):
+            slot_id = (request.form.get("slot_id") or "").strip() or None
+            name = (request.form.get("name") or "").strip()
+            slot_url = (request.form.get("pkcs11_url") or "").strip()
+            description = (request.form.get("description") or "").strip()[:200]
+            is_default = bool(request.form.get("is_default"))
+            if not name or not slot_url:
+                flash("Slot name and PKCS#11 URL are required", "error")
+            else:
+                try:
+                    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT api.hsm_slot_upsert(%s::uuid, %s, %s, %s, %s) AS id",
+                            (slot_id, name, slot_url, description, is_default),
+                        )
+                    crypto.clear_slot_url_cache()
+                    flash("HSM slot saved", "ok")
+                except Exception as e:
+                    flash(f"HSM slot save failed: {e}", "error")
+        elif action == "hsm_slot_delete":
+            slot_id = (request.form.get("slot_id") or "").strip()
+            if not slot_id:
+                flash("Slot required", "error")
+            else:
+                try:
+                    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+                        cur.execute("SELECT api.hsm_slot_delete(%s::uuid)", (slot_id,))
+                    crypto.clear_slot_url_cache()
+                    flash("HSM slot deleted", "ok")
+                except Exception as e:
+                    flash(f"HSM slot delete failed: {e}", "error")
+        elif action == "hsm_slot_test":
+            slot_id = (request.form.get("slot_id") or "").strip()
+            slot_url = None
+            with db.connect_admin() as conn, conn.cursor() as cur:
+                if slot_id:
+                    cur.execute("SELECT api.hsm_slot_url(%s::uuid) AS u", (slot_id,))
+                    slot_url = (cur.fetchone() or {}).get("u")
+            if not slot_url:
+                flash("HSM slot not found", "error")
+            else:
+                ok, msg = hsm.test_connection_for_slot(slot_url)
+                flash(f"HSM slot check: {msg}", "ok" if ok else "error")
+        elif action == "hsm_slot_link":
+            slot_id = (request.form.get("slot_id") or "").strip()
+            try:
+                n = project_keys.link_legacy_to_slot(slot_id)
+                flash(f"Linked {n} legacy HSM project(s) to this slot", "ok")
+            except Exception as e:
+                flash(f"Slot link failed: {e}", "error")
         # Stay on the relevant tab after save
         tab_for = {
             "server_url": "general",
@@ -485,6 +535,11 @@ def server_settings():
             "hsm_test": "encryption",
             "hsm_kek_rotate": "encryption",
             "hsm_migrate_all": "encryption",
+            "hsm_slot_add": "encryption",
+            "hsm_slot_edit": "encryption",
+            "hsm_slot_delete": "encryption",
+            "hsm_slot_test": "encryption",
+            "hsm_slot_link": "encryption",
         }
         tab = tab_for.get(action, "general")
         return redirect(url_for("server_settings", tab=tab))
@@ -567,12 +622,26 @@ def server_settings():
                     or qn in (p.get("project_name") or "").lower()
                     or qn in (p.get("provider") or "").lower()
                     or qn in (p.get("key_id") or "").lower()
+                    or qn in (p.get("hsm_slot_name") or "").lower()
                 ],
             }
+        hsm_slots = []
+        legacy_hsm_count = 0
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM api.list_hsm_slots()")
+            hsm_slots = cur.fetchall() or []
+            cur.execute(
+                "SELECT count(*) AS n FROM private.project_crypto_keys "
+                "WHERE key_provider = 'hsm' AND hsm_slot_id IS NULL"
+            )
+            legacy_hsm_count = int((cur.fetchone() or {}).get("n") or 0)
         encryption = {
             "hsm": hsm.status(),
             "master_key_is_default": config.master_key_is_default(),
             "summary": summary,
+            "hsm_slots": hsm_slots,
+            "legacy_hsm_count": legacy_hsm_count,
+            "redact": hsm.redact_pkcs11_url,
         }
     return render_template(
         "settings.html",

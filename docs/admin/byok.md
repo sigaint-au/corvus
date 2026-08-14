@@ -169,6 +169,68 @@ Server Settings → Encryption → "Migrate all local BYOK projects to HSM" (or
 per-project "Migrate to HSM" on the project Settings tab) re-encrypts local
 projects onto HSM-wrapped keys.
 
+## Configuring multiple HSMs (named slots)
+
+Named **HSM slots** (PKCS#11 URL configurations) let you manage several HSMs
+and link projects to specific ones. Manage them from **Server Settings →
+Encryption → HSM slots**.
+
+```text
+pkcs11:token=<label>;object=<KEK label>?module-path=/path/to/module.so&pin-source=/run/secrets/hsm-pin
+```
+
+- **Add a slot** with a name and PKCS#11 URL (the PIN is either inline as
+  `pin-value=` or read from a file via `pin-source=`; the UI redacts inline
+  PINs).
+- **Default slot**: new HSM projects auto-select it in the wizard.
+- **Test** verifies the slot's token opens and the KEK exists (non-destructive).
+- **Delete** is blocked while projects still reference the slot.
+- **Link legacy project(s)**: associates existing env-var-backed HSM projects
+  with a slot whose KEK label matches — metadata only, no re-encryption.
+- **Migrating between slots**: per-project Settings → migrate with the target
+  slot re-wraps the existing DEK (no secret re-encryption).
+- **Rotation**: rotate a slot's KEK from its row (or the global "Rotate HSM
+  KEK" action for legacy projects). Old KEKs can be cleaned up manually after
+  verifying all projects were re-wrapped.
+
+If no named slots are configured, the legacy env-var config (`HSM_*`) is used.
+
+### Kubernetes PIN file setup
+
+Use a Secret + volume mount for `pin-source`:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hsm-pin
+stringData:
+  hsm-pin: "your-pin-here"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secretserver
+spec:
+  template:
+    spec:
+      volumes:
+        - name: hsm-pin
+          secret:
+            secretName: hsm-pin
+            defaultMode: 0400
+      containers:
+        - name: app
+          volumeMounts:
+            - name: hsm-pin
+              mountPath: /run/secrets/hsm-pin
+              readOnly: true
+```
+
+Then use `pkcs11:token=...;object=...?module-path=...&pin-source=/run/secrets/hsm-pin`
+as the slot URL. Under Docker, mount a PIN file similarly and point
+`pin-source` at it.
+
 ## Reverting to managed is not offered in the UI
 
 Downgrading a project from a dedicated key back to the server-wide key is

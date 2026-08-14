@@ -771,6 +771,80 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 </section>
 
 <section class="crypto-panel">
+  <div class="section-head"><h2>HSM slots</h2></div>
+  {% if encryption.hsm_slots %}
+  <div class="table"><table>
+    <thead><tr><th>Name</th><th>PKCS#11 URL</th><th></th><th></th><th></th></tr></thead>
+    <tbody>
+    {% for slot in encryption.hsm_slots %}
+      <tr>
+        <td>
+          {{ slot.name }}
+          {% if slot.is_default %}<span class="badge" data-variant="primary">default</span>{% endif %}
+        </td>
+        <td class="muted"><code class="k">{{ slot.pkcs11_url|redact_pin }}</code></td>
+        <td>
+          <form method="post" class="inline">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="hsm_slot_test">
+            <input type="hidden" name="slot_id" value="{{ slot.id }}">
+            <button type="submit" class="link">Test</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" class="inline"
+                onsubmit="return confirm('Delete HSM slot “{{ slot.name }}”?');">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="hsm_slot_delete">
+            <input type="hidden" name="slot_id" value="{{ slot.id }}">
+            <button type="submit" class="link danger">Delete</button>
+          </form>
+        </td>
+        <td>
+          {% if encryption.legacy_hsm_count %}
+          <form method="post" class="inline"
+                onsubmit="return confirm('Link {{ encryption.legacy_hsm_count }} legacy HSM project(s) to this slot?');">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="hsm_slot_link">
+            <input type="hidden" name="slot_id" value="{{ slot.id }}">
+            <button type="submit" class="link">Link legacy project(s)</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">No named slots configured. {% if hs.available %}The legacy env-var config ({{ hs.module }}) is used as fallback.{% else %}Configure a slot to manage per-slot encryption.{% endif %}</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('server_settings', tab='encryption') }}" class="settings-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="hsm_slot_add">
+    <div class="field-grid">
+      <label>Name
+        <input type="text" name="name" placeholder="e.g. prod-hsm" maxlength="80" autocomplete="off">
+      </label>
+      <label>PKCS#11 URL
+        <input type="text" name="pkcs11_url" placeholder="pkcs11:token=...?module-path=/path/softhsm2.so&pin-source=/run/secrets/hsm-pin"
+               autocomplete="off">
+      </label>
+      <label>Description
+        <input type="text" name="description" maxlength="200" autocomplete="off">
+      </label>
+      <label class="check-row">
+        <input type="checkbox" name="is_default" value="1"> Default slot
+      </label>
+    </div>
+    <p class="form-actions">
+      <button type="submit" class="button">Add slot</button>
+    </p>
+  </form>
+  <p class="field-hint">PKCS#11 URL format: <code>pkcs11:token=&lt;label&gt;;object=&lt;KEK label&gt;?module-path=&lt;.so&gt;&amp;pin-source=&lt;pin file&gt;</code>.</p>
+</section>
+
+<section class="crypto-panel">
   <div class="section-head">
     <h2>External HSM</h2>
     <div class="section-tools">
@@ -879,6 +953,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         <th>Team</th>
         <th>Project</th>
         <th>Encryption</th>
+        <th>Slot</th>
         <th>Key created</th>
         <th>Key ID</th>
         <th>Sync</th>
@@ -895,6 +970,11 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
           {% if p.provider == 'hsm' %}HSM
           {% elif p.provider == 'local' %}Local
           {% else %}Managed{% endif %}
+        </td>
+        <td class="muted">
+          {% if p.provider == 'hsm' %}
+            {% if p.hsm_slot_name %}{{ p.hsm_slot_name }}{% else %}Legacy{% endif %}
+          {% else %}-{% endif %}
         </td>
         <td class="muted">
           {% if p.key_created_at %}{{ p.key_created_at.strftime('%Y-%m-%d') }}{% else %}-{% endif %}

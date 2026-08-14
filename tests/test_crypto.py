@@ -202,3 +202,29 @@ def _conn(fetchone=None, fetch_key=None):
     cur.__exit__.return_value = False
     return conn, cur
 
+
+    def test_dek_for_hsm_slot(self):
+        import hsm
+
+        pid = str(uuid4())
+        raw = crypto.generate_project_key()
+        row = {
+            "key_enc": "slot-wrapped",
+            "key_provider": "hsm",
+            "kms_key_ref": "byok-kek",
+            "hsm_slot_id": "s1",
+        }
+        with patch.object(crypto, "_slot_url", return_value="pkcs11:token=t;object=k?module-path=/m.so&pin-value=x") as slot_url, \
+             patch.object(hsm, "unwrap_dek_for_slot", return_value=raw) as unwrap:
+            out = crypto._dek_for(row)
+        assert out == raw
+        unwrap.assert_called_once_with("pkcs11:token=t;object=k?module-path=/m.so&pin-value=x", "slot-wrapped", "byok-kek")
+
+    def test_dek_for_hsm_legacy_fallback(self):
+        import hsm
+
+        row = {"key_enc": "legacy", "key_provider": "hsm", "kms_key_ref": "byok-kek", "hsm_slot_id": None}
+        with patch.object(hsm, "unwrap_dek", return_value=b"y" * 32) as unwrap:
+            out = crypto._dek_for(row)
+        assert out == b"y" * 32
+        unwrap.assert_called_once_with("legacy", "byok-kek")

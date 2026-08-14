@@ -17,16 +17,17 @@ import db
 log = logging.getLogger(__name__)
 
 
-def ensure_project_key(project_id, provider: str = "local") -> bool:
+def ensure_project_key(project_id, provider: str = "local", hsm_slot_id=None) -> bool:
     """Create and store a project DEK if the project does not have one.
 
     ``provider`` is ``'local'`` (DEK wrapped by MASTER_KEY) or ``'hsm'`` (DEK
-    wrapped by the HSM KEK). Idempotent; returns True when a new key was
-    created.
+    wrapped by the HSM KEK). When ``provider='hsm'`` and ``hsm_slot_id`` is
+    given, the DEK is wrapped by the KEK in that named slot; otherwise the
+    global env-var HSM config is used. Idempotent; returns True when a new key
+    was created.
 
     Example:
-        >>> if ensure_project_key(pid):
-        ...     # project now has a dedicated data-encryption key
+        >>> if ensure_project_key(pid, provider="hsm", hsm_slot_id=slot):
         ...     pass
     """
     created = False
@@ -40,19 +41,26 @@ def ensure_project_key(project_id, provider: str = "local") -> bool:
             if provider == "hsm":
                 import hsm
 
-                hsm.ensure_kek()
-                key_enc = hsm.wrap_dek(raw)
-                kms_ref = hsm.kek_label()
+                if hsm_slot_id is not None:
+                    slot_url = crypto.slot_url(hsm_slot_id)
+                    if not slot_url:
+                        raise RuntimeError("named HSM slot not found")
+                    key_enc, kms_ref = hsm.wrap_dek_for_slot(slot_url, raw)
+                else:
+                    hsm.ensure_kek()
+                    key_enc = hsm.wrap_dek(raw)
+                    kms_ref = hsm.kek_label()
             else:
                 key_enc = crypto.wrap_project_key(raw)
                 kms_ref = None
             cur.execute(
                 """
                 INSERT INTO private.project_crypto_keys
-                  (project_id, key_enc, key_provider, kms_key_ref)
-                VALUES (%s, %s, %s, %s)
+                  (project_id, key_enc, key_provider, kms_key_ref, hsm_slot_id)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                (str(project_id), key_enc, provider, kms_ref),
+                (str(project_id), key_enc, provider, kms_ref,
+                 str(hsm_slot_id) if hsm_slot_id is not None else None),
             )
             created = True
     crypto.clear_project_key_cache()
@@ -62,23 +70,36 @@ def ensure_project_key(project_id, provider: str = "local") -> bool:
 def project_crypto_status(project_id) -> dict | None:
     """Return the project's key row (provider, kms ref, created_at) or None.
 
+    Includes ``hsm_slot_id`` and (when set) ``hsm_slot_name``.
+
     Example:
         >>> status = project_crypto_status(pid)
         >>> (status or {}).get("key_provider")
         'local'
     """
+    slot_name = None
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id AS key_id, key_provider, kms_key_ref, created_at
+                SELECT id AS key_id, key_provider, kms_key_ref, created_at, hsm_slot_id
                 FROM private.project_crypto_keys
                 WHERE project_id = %s
                 """,
                 (str(project_id),),
             )
             row = cur.fetchone()
-        return dict(row) if row else None
+            if row and row.get("hsm_slot_id"):
+                cur.execute(
+                    "SELECT name FROM private.hsm_slots WHERE id = %s",
+                    (str(row["hsm_slot_id"]),),
+                )
+                srow = cur.fetchone()
+                slot_name = srow["name"] if srow else None
+        status = dict(row) if row else None
+        if status is not None:
+            status["hsm_slot_name"] = slot_name
+        return status
     except Exception:
         return None
 
@@ -104,23 +125,24 @@ def count_master_rows(project_id) -> int:
         return 0
 
 
-def adopt_project_key(project_id, provider: str = "local") -> int:
+def adopt_project_key(project_id, provider: str = "local", hsm_slot_id=None) -> int:
     """Re-encrypt all master-keyed secrets/versions into the project DEK.
 
     Creates the project key on demand. ``provider`` is passed to
     :func:`ensure_project_key` so the correct key-encryption key (MASTER_KEY or
-    HSM KEK) is used when the project key must be created on demand. Runs in a
-    single admin connection with a per-row ``try/except`` so one corrupt row
-    cannot abort the whole batch; failed rows keep ``crypto_provider='master'``
-    and stay decryptable, so the run can be retried. Returns the number of rows
-    re-encrypted.
+    HSM KEK) is used when the project key must be created on demand; when
+    ``provider='hsm'`` and ``hsm_slot_id`` is given the key is created in that
+    named slot. Runs in a single admin connection with a per-row ``try/except``
+    so one corrupt row cannot abort the whole batch; failed rows keep
+    ``crypto_provider='master'`` and stay decryptable, so the run can be
+    retried. Returns the number of rows re-encrypted.
 
     Example:
-        >>> n = adopt_project_key(pid)
+        >>> n = adopt_project_key(pid, provider="hsm", hsm_slot_id=slot)
         >>> n >= 0
         True
     """
-    ensure_project_key(project_id, provider=provider)
+    ensure_project_key(project_id, provider=provider, hsm_slot_id=hsm_slot_id)
     re_encrypted = 0
     with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
         cur.execute(
@@ -170,16 +192,17 @@ def adopt_project_key(project_id, provider: str = "local") -> int:
     return re_encrypted
 
 
-def migrate_project_key(project_id, new_provider: str = "hsm") -> int:
-    """Re-wrap the project DEK under a new key provider.
+def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=None) -> int:
+    """Re-wrap the project DEK under a new key provider (and optionally slot).
 
-    Generates a fresh DEK, wraps it with the new provider (``'hsm'`` or
-    ``'local'``), re-encrypts all project-keyed secrets and versions from the
-    old DEK to the new one, and updates ``private.project_crypto_keys``.
-    Returns the number of rows re-encrypted.
+    When moving between two HSM slots (already HSM, ``target_slot_id`` given)
+    the existing DEK is simply re-wrapped by the target slot's KEK — no secret
+    re-encryption. In all other cases a fresh DEK is generated, wrapped with
+    the new provider/slot, and every project-keyed secret/version is
+    re-encrypted. Returns the number of rows re-encrypted.
 
     Example:
-        >>> n = migrate_project_key(pid, "hsm")
+        >>> n = migrate_project_key(pid, "hsm", target_slot_id=slot)
         >>> n >= 0
         True
     """
@@ -187,14 +210,47 @@ def migrate_project_key(project_id, new_provider: str = "hsm") -> int:
 
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT key_provider FROM private.project_crypto_keys WHERE project_id = %s",
+            "SELECT key_provider, hsm_slot_id FROM private.project_crypto_keys WHERE project_id = %s",
             (str(project_id),),
         )
         existing = cur.fetchone()
     if existing is None:
         # No project key yet — just create one under the requested provider.
-        ensure_project_key(project_id, provider=new_provider)
-        return adopt_project_key(project_id, provider=new_provider)
+        ensure_project_key(project_id, provider=new_provider, hsm_slot_id=target_slot_id)
+        return adopt_project_key(project_id, provider=new_provider, hsm_slot_id=target_slot_id)
+
+    cur_provider = existing.get("key_provider") or "local"
+    cur_slot = existing.get("hsm_slot_id")
+
+    if (
+        new_provider == "hsm"
+        and target_slot_id is not None
+        and cur_provider == "hsm"
+        and (cur_slot is None or str(cur_slot) != str(target_slot_id))
+    ):
+        # Same DEK, different slot: re-wrap only (no secret re-encryption).
+        slot_url = crypto.slot_url(target_slot_id)
+        if not slot_url:
+            raise RuntimeError("named HSM slot not found")
+        old_dek = crypto.project_dek(project_id)
+        if old_dek is None:
+            raise RuntimeError("project key exists but its DEK could not be resolved")
+        import hsm
+
+        new_enc, new_ref = hsm.wrap_dek_for_slot(slot_url, old_dek)
+        with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE private.project_crypto_keys
+                SET key_enc = %s, kms_key_ref = %s, hsm_slot_id = %s, updated_at = now()
+                WHERE project_id = %s
+                """,
+                (new_enc, new_ref, str(target_slot_id), str(project_id)),
+            )
+            conn.commit()
+        crypto.clear_project_key_cache()
+        log.info("project DEK re-wrapped to slot %s", target_slot_id)
+        return 0
 
     old_dek = crypto.project_dek(project_id)
     if old_dek is None:
@@ -205,9 +261,15 @@ def migrate_project_key(project_id, new_provider: str = "hsm") -> int:
     if new_provider == "hsm":
         import hsm
 
-        hsm.ensure_kek()
-        new_enc = hsm.wrap_dek(new_raw)
-        new_ref = hsm.kek_label()
+        if target_slot_id is not None:
+            slot_url = crypto.slot_url(target_slot_id)
+            if not slot_url:
+                raise RuntimeError("named HSM slot not found")
+            new_enc, new_ref = hsm.wrap_dek_for_slot(slot_url, new_raw)
+        else:
+            hsm.ensure_kek()
+            new_enc = hsm.wrap_dek(new_raw)
+            new_ref = hsm.kek_label()
     else:
         new_enc = crypto.wrap_project_key(new_raw)
         new_ref = None
@@ -257,10 +319,12 @@ def migrate_project_key(project_id, new_provider: str = "hsm") -> int:
         cur.execute(
             """
             UPDATE private.project_crypto_keys
-            SET key_enc = %s, key_provider = %s, kms_key_ref = %s, updated_at = now()
+            SET key_enc = %s, key_provider = %s, kms_key_ref = %s, hsm_slot_id = %s, updated_at = now()
             WHERE project_id = %s
             """,
-            (new_enc, new_provider, new_ref, str(project_id)),
+            (new_enc, new_provider, new_ref,
+             str(target_slot_id) if target_slot_id is not None else None,
+             str(project_id)),
         )
         conn.commit()
     crypto.clear_project_key_cache()
@@ -308,14 +372,13 @@ def rewrap_project_keys(old_master_key: str) -> int:
     return re_wrapped
 
 
-def rotate_hsm_kek() -> int:
-    """Rotate the HSM KEK: re-wrap every HSM-backed DEK under a fresh KEK.
+def rotate_hsm_kek(slot_id=None) -> int:
+    """Rotate the HSM KEK, re-wrapping HSM-backed DEKs under a fresh KEK.
 
-    Generates a new KEK (new label), re-wraps each HSM-backed DEK from its
-    current KEK to the new one, and updates ``key_enc``/``kms_key_ref`` — all in
-    a single admin transaction. Returns the number of HSM-backed projects
-    re-wrapped. The old KEK is left in place (use :func:`hsm.delete_kek` to
-    clean it up after verifying all projects were re-wrapped).
+    When ``slot_id`` is given, only projects linked to that slot are re-wrapped
+    (new KEK created in that slot). When ``None``, only legacy (no slot)
+    projects are re-wrapped using the global env-var config. Returns the number
+    of projects re-wrapped.
 
     Example:
         >>> n = rotate_hsm_kek()
@@ -324,6 +387,46 @@ def rotate_hsm_kek() -> int:
     """
     import hsm
 
+    re_wrapped = 0
+    if slot_id is not None:
+        slot_url = crypto.slot_url(slot_id)
+        if not slot_url:
+            raise RuntimeError("named HSM slot not found")
+        parsed = hsm.parse_pkcs11_url(slot_url)
+        new_label = f"{parsed['kek_label']}-{secrets.token_hex(4)}"
+        hsm.generate_kek(new_label, pkcs11_url=slot_url)
+        with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT project_id, key_enc, kms_key_ref
+                FROM private.project_crypto_keys
+                WHERE key_provider = 'hsm' AND hsm_slot_id = %s
+                """,
+                (str(slot_id),),
+            )
+            for row in cur.fetchall() or []:
+                try:
+                    raw = hsm.unwrap_dek_for_slot(
+                        slot_url, row["key_enc"], row.get("kms_key_ref")
+                    )
+                    new_enc = hsm.wrap_dek_with_label(slot_url, raw, new_label)
+                except Exception:
+                    continue
+                cur.execute(
+                    """
+                    UPDATE private.project_crypto_keys
+                    SET key_enc = %s, kms_key_ref = %s, updated_at = now()
+                    WHERE project_id = %s
+                    """,
+                    (new_enc, new_label, str(row["project_id"])),
+                )
+                re_wrapped += 1
+            conn.commit()
+        crypto.clear_project_key_cache()
+        log.info("rotated HSM KEK for slot %s: %s project(s)", slot_id, re_wrapped)
+        return re_wrapped
+
+    # Legacy (no slot): global env-var config.
     new_label = f"{hsm.kek_label()}-{secrets.token_hex(4)}"
     hsm.generate_kek(new_label)
     re_wrapped = 0
@@ -332,7 +435,7 @@ def rotate_hsm_kek() -> int:
             """
             SELECT project_id, key_enc, kms_key_ref
             FROM private.project_crypto_keys
-            WHERE key_provider = 'hsm'
+            WHERE key_provider = 'hsm' AND hsm_slot_id IS NULL
             """
         )
         for row in cur.fetchall() or []:
@@ -360,8 +463,8 @@ def encryption_summary() -> dict:
     """Return per-project encryption posture for the admin Encryption tab.
 
     Returns ``{"counts": {...}, "projects": [...]}`` where each project row has
-    team/project name, provider, key created-at, key id, and pending (master)
-    row count. Managed projects (no key row) are included with provider
+    team/project name, provider, key created-at, key id, slot name, and pending
+    (master) row count. Managed projects (no key row) are included with provider
     ``'managed'``.
     """
     with db.connect_admin() as conn, conn.cursor() as cur:
@@ -370,15 +473,17 @@ def encryption_summary() -> dict:
             SELECT p.id AS project_id, p.name AS project_name,
                    t.name AS team_name,
                    k.key_provider, k.created_at AS key_created_at, k.id AS key_id,
-                   ((SELECT count(*) FROM api.secrets s
-                      WHERE s.project_id = p.id
-                        AND s.crypto_provider = 'master' AND s.deleted_at IS NULL)
+                   k.hsm_slot_id, s.name AS hsm_slot_name,
+                   ((SELECT count(*) FROM api.secrets s2
+                      WHERE s2.project_id = p.id
+                        AND s2.crypto_provider = 'master' AND s2.deleted_at IS NULL)
                   + (SELECT count(*) FROM api.secret_versions v
-                      JOIN api.secrets s ON s.id = v.secret_id
-                      WHERE s.project_id = p.id AND v.crypto_provider = 'master')) AS pending
+                      JOIN api.secrets s3 ON s3.id = v.secret_id
+                      WHERE s3.project_id = p.id AND v.crypto_provider = 'master')) AS pending
             FROM api.projects p
             JOIN api.teams t ON t.id = p.team_id
             LEFT JOIN private.project_crypto_keys k ON k.project_id = p.id
+            LEFT JOIN private.hsm_slots s ON s.id = k.hsm_slot_id
             ORDER BY t.name, p.name
             """
         )
@@ -398,15 +503,18 @@ def encryption_summary() -> dict:
                 "provider": provider,
                 "key_created_at": r.get("key_created_at"),
                 "key_id": str(r["key_id"]) if r.get("key_id") else None,
+                "hsm_slot_id": str(r["hsm_slot_id"]) if r.get("hsm_slot_id") else None,
+                "hsm_slot_name": r.get("hsm_slot_name"),
                 "pending": int(r.get("pending") or 0),
             }
         )
     return {"counts": counts, "projects": projects}
 
 
-def migrate_all_local_to_hsm() -> int:
+def migrate_all_local_to_hsm(target_slot_id=None) -> int:
     """Migrate every local-BYOK project to an HSM-wrapped key.
 
+    When ``target_slot_id`` is given, projects are linked to that slot.
     Returns the number of projects migrated.
     """
     import hsm
@@ -424,8 +532,38 @@ def migrate_all_local_to_hsm() -> int:
     migrated = 0
     for pid in ids:
         try:
-            migrate_project_key(pid, "hsm")
+            migrate_project_key(pid, "hsm", target_slot_id=target_slot_id)
             migrated += 1
         except Exception as e:
             log.warning("migrate_all_local_to_hsm: project %s failed: %s", pid, e)
     return migrated
+
+
+def link_legacy_to_slot(slot_id) -> int:
+    """Associate legacy HSM projects (hsm_slot_id IS NULL) with a slot.
+
+    Only links projects whose stored DEK was wrapped by a KEK that matches the
+    slot's KEK label (parsed from its PKCS#11 URL) — this guarantees all rows
+    remain decryptable. Metadata-only (no re-encryption). Returns the number of
+    projects linked.
+    """
+    import hsm
+
+    slot_url = crypto.slot_url(slot_id)
+    if not slot_url:
+        raise RuntimeError("named HSM slot not found")
+    slot_kek = hsm.parse_pkcs11_url(slot_url)["kek_label"]
+    with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE private.project_crypto_keys
+            SET hsm_slot_id = %s, updated_at = now()
+            WHERE key_provider = 'hsm' AND hsm_slot_id IS NULL AND kms_key_ref = %s
+            """,
+            (str(slot_id), slot_kek),
+        )
+        n = cur.rowcount
+        conn.commit()
+    crypto.clear_project_key_cache()
+    log.info("linked %s legacy HSM project(s) to slot %s", n, slot_id)
+    return n

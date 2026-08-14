@@ -179,6 +179,7 @@ def project_detail(project_id):
         can_settings = bool(can_admin or can_delete)
         project_crypto = None
         project_master_rows = 0
+        hsm_slots = []
 
         if tab == "settings" and not can_settings:
             tab = "secrets"
@@ -286,6 +287,12 @@ def project_detail(project_id):
 
             project_crypto = project_keys.project_crypto_status(project_id)
             project_master_rows = project_keys.count_master_rows(project_id)
+            try:
+                with db.connect_admin() as conn, conn.cursor() as cur:
+                    cur.execute("SELECT * FROM api.list_hsm_slots()")
+                    hsm_slots = cur.fetchall() or []
+            except Exception:
+                hsm_slots = []
         elif tab == "access" and can_admin:
             import rbac_sync
 
@@ -414,6 +421,7 @@ def project_detail(project_id):
         access_mode_labels=config.ACCESS_MODE_LABELS,
         project_crypto=project_crypto,
         project_master_rows=project_master_rows,
+        hsm_slots=hsm_slots,
         hsm_available=hsm.available(),
     )
 
@@ -586,13 +594,16 @@ def project_crypto_action(project_id):
         new_provider = (request.form.get("provider") or "hsm").strip().lower()
         if new_provider not in ("local", "hsm"):
             new_provider = "hsm"
+        target_slot = (request.form.get("target_slot") or "").strip() or None
         if new_provider == "hsm" and not hsm.available():
             flash("External HSM is not configured", "error")
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")
             )
         try:
-            n = project_keys.migrate_project_key(project_id, new_provider)
+            n = project_keys.migrate_project_key(
+                project_id, new_provider, target_slot_id=target_slot
+            )
         except Exception as e:
             flash(f"Key migration failed: {e}", "error")
             return redirect(

@@ -61,6 +61,15 @@
           <span class="muted">Project key in HSM{% if my_role not in ('team-owner', 'team-admin') %} · owners/admins only{% endif %}</span>
         </span>
       </label>
+      {% if hsm_slots %}
+      <label>HSM slot
+        <select name="hsm_slot">
+          {% for s in hsm_slots %}
+          <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
       {% endif %}
     </fieldset>
   </section>

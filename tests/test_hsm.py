@@ -105,4 +105,4 @@ class TestHsmSettingsAdopt:
                 data={"action": "migrate", "provider": "hsm"},
             )
         assert r.status_code == 302
-        migrate.assert_called_once_with(UUID(self.pid), "hsm")
+        migrate.assert_called_once_with(UUID(self.pid), "hsm", target_slot_id=None)
