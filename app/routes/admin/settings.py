@@ -606,23 +606,42 @@ def server_settings():
     )
     encryption = None
     encryption_q = ""
+    encryption_page = 1
+    projects_pager = None
     if tab == "encryption":
         encryption_q = (request.args.get("q") or "").strip()
+        encryption_page_s = (request.args.get("page") or "1").strip()
+        try:
+            encryption_page = max(1, int(encryption_page_s))
+        except ValueError:
+            encryption_page = 1
         summary = project_keys.encryption_summary()
+        all_projects = summary["projects"]
         if encryption_q:
             qn = encryption_q.lower()
-            summary = {
-                "counts": summary["counts"],
-                "projects": [
-                    p
-                    for p in summary["projects"]
-                    if qn in (p.get("team_name") or "").lower()
-                    or qn in (p.get("project_name") or "").lower()
-                    or qn in (p.get("provider") or "").lower()
-                    or qn in (p.get("key_id") or "").lower()
-                    or qn in (p.get("hsm_slot_name") or "").lower()
-                ],
-            }
+            all_projects = [
+                p
+                for p in all_projects
+                if qn in (p.get("team_name") or "").lower()
+                or qn in (p.get("project_name") or "").lower()
+                or qn in (p.get("provider") or "").lower()
+                or qn in (p.get("key_id") or "").lower()
+                or qn in (p.get("hsm_slot_name") or "").lower()
+            ]
+        import paging
+        per_page = 25
+        total = len(all_projects)
+        projects_pager = paging.page_window(total, encryption_page, per_page)
+        projects_pager["endpoint"] = "server_settings"
+        projects_pager["tab"] = "encryption"
+        projects_pager["q"] = encryption_q or None
+        offset = (encryption_page - 1) * per_page
+        sliced = all_projects[offset:offset + per_page]
+        summary = {
+            "counts": summary["counts"],
+            "projects": sliced,
+            "total": total,
+        }
         hsm_slots = []
         legacy_hsm_count = 0
         with db.connect_admin() as conn, conn.cursor() as cur:
@@ -654,4 +673,6 @@ def server_settings():
         oidc_redirect_uri=oidc_redirect_uri,
         encryption=encryption,
         encryption_q=encryption_q,
+        encryption_page=encryption_page,
+        projects_pager=projects_pager,
     )

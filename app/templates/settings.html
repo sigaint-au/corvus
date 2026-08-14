@@ -833,40 +833,28 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   <form method="post" action="{{ url_for('server_settings', tab='encryption') }}" class="settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="hsm_slot_add">
-    <div class="field-grid">
-      <label>Name
-        <input type="text" name="name" placeholder="e.g. prod-hsm" maxlength="80" autocomplete="off">
-      </label>
-      <label>PKCS#11 URL
-        <input type="text" name="pkcs11_url" placeholder="pkcs11:token=...?module-path=/path/softhsm2.so&pin-source=/run/secrets/hsm-pin"
-               autocomplete="off">
-      </label>
-      <label>Description
-        <input type="text" name="description" maxlength="200" autocomplete="off">
-      </label>
-      <label class="check-row">
-        <input type="checkbox" name="is_default" value="1"> Default slot
-      </label>
-    </div>
+    <fieldset class="field-group">
+      <legend>New slot</legend>
+      <div class="field-grid">
+        <label class="span-2">Name
+          <input type="text" name="name" placeholder="e.g. prod-hsm" maxlength="80" autocomplete="off">
+        </label>
+        <label class="span-2">PKCS#11 URL
+          <input type="text" name="pkcs11_url" placeholder="pkcs11:token=...?module-path=..." autocomplete="off">
+          <span class="field-hint">PKCS#11 URL format: <code>pkcs11:token=&lt;label&gt;;object=&lt;KEK label&gt;?module-path=&lt;.so&gt;&amp;pin-source=&lt;pin file&gt;</code></span>
+        </label>
+        <label class="span-2">Description
+          <input type="text" name="description" maxlength="200" autocomplete="off">
+        </label>
+        <label class="check-row span-2">
+          <input type="checkbox" name="is_default" value="1"> Default slot
+        </label>
+      </div>
+    </fieldset>
     <p class="form-actions">
       <button type="submit" class="button">Add slot</button>
     </p>
   </form>
-  <p class="field-hint">PKCS#11 URL format: <code>pkcs11:token=&lt;label&gt;;object=&lt;KEK label&gt;?module-path=&lt;.so&gt;&amp;pin-source=&lt;pin file&gt;</code>.</p>
-
-  {% if encryption.hsm_slots and (c.local or 0) > 0 %}
-  <form method="post" action="{{ url_for('server_settings', tab='encryption') }}" class="row"
-        onsubmit="return confirm('Migrate all {{ c.local }} local project key(s) to the selected HSM slot?');">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="action" value="hsm_migrate_all">
-    <select name="target_slot" aria-label="Target HSM slot">
-      {% for s in encryption.hsm_slots %}
-      <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %}>{{ s.name }}</option>
-      {% endfor %}
-    </select>
-    <button type="submit" class="button outline small">Migrate {{ c.local }} local project(s) to HSM</button>
-  </form>
-  {% endif %}
 </section>
 
 <section class="crypto-panel">
@@ -897,6 +885,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         <th>Key created</th>
         <th>Key ID</th>
         <th>Sync</th>
+        <th class="acts-menu"></th>
       </tr>
     </thead>
     <tbody>
@@ -927,10 +916,34 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
           {% elif p.pending %}{{ p.pending }} pending
           {% else %}In sync{% endif %}
         </td>
+        <td class="acts-menu">
+          {% if p.provider == 'local' or (p.provider == 'hsm' and p.pending) %}
+          {% set _menu = 'pp-menu-' ~ p.project_id %}
+          <ot-dropdown>
+            <button type="button" class="ghost icon" popovertarget="{{ _menu }}" aria-label="Actions for {{ p.project_name }}">
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+                <circle cx="8" cy="3" r="1.5"/>
+                <circle cx="8" cy="8" r="1.5"/>
+                <circle cx="8" cy="13" r="1.5"/>
+              </svg>
+            </button>
+            <menu popover id="{{ _menu }}">
+              <button type="button" role="menuitem" class="ghost"
+                      data-nav="{{ url_for('project_detail', project_id=p.project_id, tab='settings') }}"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">
+                {% if p.provider == 'local' %}Migrate to HSM{% elif p.pending %}Re-encrypt{% endif %}
+              </button>
+            </menu>
+          </ot-dropdown>
+          {% endif %}
+        </td>
       </tr>
     {% endfor %}
     </tbody>
   </table></div>
+  {% with pager = projects_pager %}
+    {% include "partials/pager.html" %}
+  {% endwith %}
   <p class="muted" style="margin-top:.65rem">
     {{ c.managed or 0 }} managed · {{ c.local or 0 }} local · {{ c.hsm or 0 }} HSM
   </p>
