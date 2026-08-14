@@ -605,6 +605,30 @@ def main() -> None:
     print("CLI needs a project UUID (above) + a machine token ss_… from UI Integrations.")
     print("Groups: team Groups tab; project Access and secret Access for scoped bindings.")
     print("Access review: Administration > Access review (custom roles included).")
+    seed_hsm_slot()
+
+
+def seed_hsm_slot():
+    """Seed a named HSM slot for the dev SoftHSM2 token, if not already present."""
+    inserted = False
+    with db.connect_admin() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO private.hsm_slots (name, pkcs11_url, description, is_default)
+            VALUES (
+                'dev-hsm',
+                'pkcs11:token=secretserver;object=byok-kek'
+                '?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-value=1234',
+                'Local SoftHSM2 development slot',
+                true
+            )
+            ON CONFLICT (name) DO NOTHING
+            """
+        )
+        inserted = cur.rowcount > 0
+    crypto.clear_slot_url_cache()
+    if inserted:
+        print("HSM slot: dev-hsm (SoftHSM2)")
 
 
 if __name__ == "__main__":
