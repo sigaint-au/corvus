@@ -735,39 +735,46 @@
 </section>
 {% endif %}
 {% if can_settings %}
-<section>
+<section class="crypto-panel">
   <div class="section-head">
     <h2>Encryption</h2>
-    <p class="muted" style="margin:0">How secret values in this project are encrypted at rest.</p>
+    {% if can_manage_keys and (not project_crypto or project_master_rows) %}
+    <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
+          class="inline"
+          onsubmit="return confirm({% if project_crypto %}'Re-encrypt {{ project_master_rows }} secret(s) with the project key?'{% else %}'Create a project key and re-encrypt secrets onto it?'{% endif %});">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="adopt">
+      <button type="submit" class="button outline small">
+        {% if project_crypto %}Re-encrypt {{ project_master_rows }}{% else %}Adopt project key{% endif %}
+      </button>
+    </form>
+    {% endif %}
   </div>
-  {% if project_crypto %}
-  <p>
-    <strong>Project key</strong>
-    <span class="badge" data-variant="primary">{{ project_crypto.key_provider }}</span>
-    <span class="muted"> — dedicated key created {{ project_crypto.created_at.strftime('%Y-%m-%d') if project_crypto.created_at else 'on creation' }}.
-    Algorithm: Fernet (AES-128-CBC + HMAC-SHA256). All new secrets are encrypted under this project's own key.</span>
-  </p>
-  {% else %}
-  <p class="muted"><strong>Managed</strong> — currently using the server-wide encryption key. Adopt a dedicated project key to bring your own key (generated and stored locally).</p>
-  {% endif %}
-  {% if project_crypto and not project_master_rows %}
-  <p class="ok">✓ All secrets encrypted with the project key.</p>
-  {% elif project_master_rows %}
-  <p class="muted">{{ project_master_rows }} secret row(s) are still encrypted with the server-wide key.
-  {% if not project_crypto %}Adopting creates a project key and {% else %}Re-encrypting moves them onto the project key.{% endif %}</p>
-  {% endif %}
-  {% if can_manage_keys %}
-  <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
-        onsubmit="return confirm('Re-encrypt all secrets onto the project key? This cannot be undone.')">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="action" value="adopt">
-    <button type="submit" class="button"
-            {% if project_crypto and not project_master_rows %}disabled{% endif %}>
-      {% if project_crypto %}Re-encrypt {{ project_master_rows }} legacy row(s) onto the project key{% else %}Adopt project key{% endif %}
-    </button>
-  </form>
-  {% endif %}
-  <p class="field-hint">Re-encryption is additive and audited. A per-project key separates one project's secrets from another's, but it does <strong>not</strong> protect against compromise of the server-wide <code>MASTER_KEY</code> (which wraps every project key). External KMS-backed keys are planned for a future release.</p>
+
+  <div class="crypto-status">
+    <div class="crypto-status-row">
+      {% if project_crypto %}
+      <span class="badge" data-variant="success">Project key</span>
+      <span class="muted">{{ project_crypto.key_provider or 'local' }}
+        {% if project_crypto.created_at %} · {{ project_crypto.created_at.strftime('%Y-%m-%d') }}{% endif %}
+      </span>
+      {% else %}
+      <span class="badge" data-variant="secondary">Managed</span>
+      <span class="muted">Server-wide key</span>
+      {% endif %}
+    </div>
+    <div class="crypto-status-row">
+      {% if project_crypto and not project_master_rows %}
+      <span class="badge" data-variant="success">In sync</span>
+      <span class="muted">All secrets use the project key</span>
+      {% elif project_master_rows %}
+      <span class="badge" data-variant="warning">{{ project_master_rows }} pending</span>
+      <span class="muted">Still on the server-wide key</span>
+      {% else %}
+      <span class="muted">New secrets use the server-wide key until you adopt a project key</span>
+      {% endif %}
+    </div>
+  </div>
 </section>
 {% endif %}
 {% if can_delete %}
