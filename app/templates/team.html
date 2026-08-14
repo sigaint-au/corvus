@@ -64,7 +64,10 @@
     <tbody>
     {% for p in projects %}
       <tr>
-        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
+        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a>
+          {% if p.key_provider == 'hsm' %}<span class="badge" data-variant="info">HSM</span>
+          {% elif p.key_provider == 'local' %}<span class="badge" data-variant="secondary">BYOK</span>{% endif %}
+        </td>
         <td class="muted col-note">{{ p.description or '-' }}</td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
         {% if my_role in ('team-owner', 'team-admin') %}

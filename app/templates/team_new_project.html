@@ -13,7 +13,8 @@
 </div>
 <p class="page-desc muted">In {{ team.name }}</p>
 
-<form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="settings-form">
+<form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="settings-form"
+      onsubmit="var h=this.querySelector('input[name=encryption]:checked');return h&&h.value==='hsm'?confirm('Create a project with an HSM-wrapped key? The HSM must remain available for all future secret access.'):true;">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
   <section>
@@ -33,6 +34,7 @@
   <section>
     <div class="section-head"><h2>Encryption</h2></div>
     <fieldset class="crypto-choice">
+      <legend class="sr-only">Encryption</legend>
       <label class="radio-card">
         <input type="radio" name="encryption" value="managed" {% if encryption == 'managed' %}checked{% endif %}>
         <span class="radio-card-body">
@@ -56,11 +58,23 @@
                {% if my_role not in ('team-owner', 'team-admin') %}disabled{% endif %}>
         <span class="radio-card-body">
           <strong>External HSM</strong>
-          <span class="muted">Project key wrapped by the HSM{% if my_role not in ('team-owner', 'team-admin') %} (owners/admins only){% endif %}</span>
+          <span class="muted">Project key wrapped by the HSM (KEK: {{ hsm_kek_label }}){% if my_role not in ('team-owner', 'team-admin') %} (owners/admins only){% endif %}</span>
         </span>
       </label>
       {% endif %}
     </fieldset>
+    {% if hsm_available %}
+    <p class="field-hint">
+      <span class="badge" data-variant="success">HSM connected</span>
+      KEK label: <code>{{ hsm_kek_label }}</code>
+    </p>
+    {% endif %}
+    <p class="field-hint">
+      <strong>Managed</strong> — fastest setup; the server key encrypts all secrets.<br>
+      <strong>Project key</strong> — per-project key wrapped by the server master key.<br>
+      <strong>External HSM</strong> — per-project key wrapped by a hardware security module;
+      the server master key is not in the trust path.
+    </p>
   </section>
 
   <p class="create-actions">

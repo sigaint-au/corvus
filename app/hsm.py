@@ -18,8 +18,13 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import time
 
 log = logging.getLogger(__name__)
+
+# Cached availability check (avoid opening a PKCS#11 session on every render).
+_avail_cache: tuple[bool, float] | None = None
+_AVAIL_TTL = 30.0
 
 # Raw AES key material inside a Fernet key (before urlsafe-b64 encoding).
 _RAW_DEK_LEN = 32
@@ -42,15 +47,25 @@ def available() -> bool:
 
     Requires ``HSM_PIN``, a present PKCS#11 module, and a successful session
     open (so a missing/uninit token does not show HSM options in the UI).
+
+    Result is cached for 30 seconds to avoid opening a PKCS#11 session on
+    every page load.
     """
+    global _avail_cache
+    if _avail_cache and time.time() - _avail_cache[1] < _AVAIL_TTL:
+        return _avail_cache[0]
     module, _token, pin, _kek = _cfg()
     if not pin or not os.path.exists(module):
+        _avail_cache = (False, time.time())
         return False
     try:
         with _session():
-            return True
-    except Exception:
-        return False
+            result = True
+    except Exception as e:
+        log.warning("HSM available() check failed: %s", e)
+        result = False
+    _avail_cache = (result, time.time())
+    return result
 
 
 def _pkcs11():
@@ -61,15 +76,14 @@ def _pkcs11():
     return pkcs11
 
 
-def _session():
+def _session(rw: bool = True):
     """Open a PKCS#11 session on the configured token (logged in)."""
     pkcs11 = _pkcs11()
     module, token_label, pin, _kek = _cfg()
     try:
         lib = pkcs11.lib(module)
         token = lib.get_token(token_label=token_label)
-        # rw=True is required to generate/store the KEK
-        return token.open(user_pin=pin, rw=True)
+        return token.open(user_pin=pin, rw=rw)
     except Exception as e:
         raise RuntimeError(f"HSM open failed: {e}") from e
 
@@ -188,7 +202,7 @@ def wrap_dek(dek: bytes) -> str:
     """
     raw = fernet_key_to_raw(dek)
     pkcs11 = _pkcs11()
-    with _session() as session:
+    with _session(rw=False) as session:
         key = _find_kek(session, pkcs11, kek_label())
         if key is None:
             raise RuntimeError("HSM KEK not found; call ensure_kek() first")
@@ -232,7 +246,7 @@ def unwrap_dek(wrapped: str) -> bytes:
     else:
         fmt, rest = blob[:1], blob[1:]
     pkcs11 = _pkcs11()
-    with _session() as session:
+    with _session(rw=False) as session:
         key = _find_kek(session, pkcs11, kek_label())
         if key is None:
             raise RuntimeError("HSM KEK not found; call ensure_kek() first")

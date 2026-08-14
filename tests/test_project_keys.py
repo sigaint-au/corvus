@@ -117,3 +117,49 @@ class TestProjectKeys:
                    if "UPDATE private.project_crypto_keys" in str(c.args[0])]
         assert n == 0
         assert not any("hsm-blob" in str(u[1]) for u in updates)
+    def test_migrate_project_key_to_hsm(self):
+        import hsm
+        from cryptography.fernet import Fernet
+
+        pid = str(uuid4())
+        old_dek = Fernet.generate_key()
+        new_dek = Fernet.generate_key()
+        admin_conn, admin_cur = _conn(fetchone={"key_provider": "local"}, fetchall=[])
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "project_dek", return_value=old_dek), \
+             patch.object(project_keys.crypto, "generate_project_key", return_value=new_dek), \
+             patch.object(hsm, "ensure_kek"), \
+             patch.object(hsm, "wrap_dek", return_value="hsm-wrapped") as wrap_hsm, \
+             patch.object(hsm, "kek_label", return_value="byok-kek"):
+            n = project_keys.migrate_project_key(pid, "hsm")
+        assert n == 0
+        wrap_hsm.assert_called_once_with(new_dek)
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert len(updates) == 1
+        params = updates[0][1]
+        assert params[0] == "hsm-wrapped"
+        assert params[1] == "hsm"
+        assert params[2] == "byok-kek"
+
+    def test_migrate_project_key_to_local(self):
+        from cryptography.fernet import Fernet
+
+        pid = str(uuid4())
+        old_dek = Fernet.generate_key()
+        new_dek = Fernet.generate_key()
+        admin_conn, admin_cur = _conn(fetchone={"key_provider": "hsm"}, fetchall=[])
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "project_dek", return_value=old_dek), \
+             patch.object(project_keys.crypto, "generate_project_key", return_value=new_dek), \
+             patch.object(project_keys.crypto, "wrap_project_key", return_value="local-wrapped") as wrap_local:
+            n = project_keys.migrate_project_key(pid, "local")
+        assert n == 0
+        wrap_local.assert_called_once_with(new_dek)
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert len(updates) == 1
+        params = updates[0][1]
+        assert params[0] == "local-wrapped"
+        assert params[1] == "local"
+        assert params[2] is None

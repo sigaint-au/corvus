@@ -5,10 +5,10 @@ single server-wide key (`MASTER_KEY`) is used. Projects can opt in to a
 **dedicated data-encryption key (DEK)** — "bring your own key" per project.
 
 The first supported tier generates and stores the project key **locally**
-(server-side, wrapped by `MASTER_KEY`). An **external HSM** tier (SoftHSM2 in
-development) wraps the project key with an HSM key-encryption key so
-`MASTER_KEY` is out of the DEK's trust path; see
-[../dev/hsm.md](../dev/hsm.md) for setup.
+(server-side, wrapped by `MASTER_KEY`). An **external HSM** tier wraps the
+project key with an HSM key-encryption key so `MASTER_KEY` is out of the DEK's
+trust path; see [../dev/hsm.md](../dev/hsm.md) for setup (the guide uses a
+PKCS#11 software HSM for development, but any PKCS#11 HSM works).
 
 ---
 
@@ -55,6 +55,56 @@ Creating a project with BYOK records an `org_audit` event
   encrypted with `MASTER_KEY` is re-encrypted under the project DEK. The
   operation is additive (rows that fail stay `crypto_provider='master'` and
   remain readable) and audited (`project_key_adopted`).
+- **Migrate to HSM** — when an HSM is configured, a `local` project can be
+  migrated to an HSM-wrapped key (all secrets re-encrypted, audited as
+  `project_key_migrated`).
+
+---
+
+## External HSM deployment for administrators
+
+### Prerequisites
+
+- A PKCS#11-compatible HSM (hardware, or SoftHSM2 for testing).
+- The PKCS#11 module `.so` accessible from the app container.
+- A token initialised with a known label and PIN.
+
+### Configuration
+
+```bash
+export HSM_PKCS11_MODULE=/path/to/module.so
+export HSM_TOKEN_LABEL=secretserver
+export HSM_PIN=<your-pin>
+export HSM_KEK_LABEL=byok-kek
+```
+
+`HSM_PIN` is the switch — if unset, the HSM option is hidden in the UI.
+
+### Verification
+
+1. Create a test project and select **External HSM**.
+2. Check Project Settings → Encryption shows "External HSM · byok-kek".
+3. Create a secret and reveal it — confirms the full encrypt/decrypt path.
+
+### Backup
+
+Back up the HSM token directory (SoftHSM2) or follow your HSM vendor's backup
+procedure. Loss of the token or PIN makes HSM-backed secrets unrecoverable.
+
+### Disaster recovery
+
+If the HSM is lost:
+
+- HSM-backed secrets cannot be decrypted.
+- Restore the token from backup, or
+- Migrate affected projects back to local BYOK (if the old DEK can be
+  recovered) or to managed (server-wide key).
+
+### What to tell users
+
+- HSM-backed projects require the HSM to be online for all secret access.
+- If the HSM is unavailable, secrets in HSM-backed projects cannot be revealed
+  until it is restored.
 
 ---
 

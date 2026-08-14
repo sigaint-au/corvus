@@ -782,6 +782,21 @@
     </div>
   </div>
 
+  {% if project_crypto and not project_master_rows %}
+  <p class="field-hint">All secrets are encrypted with the project key. No action needed.</p>
+  {% endif %}
+
+  {% if can_manage_keys and hsm_available and project_crypto and project_crypto.key_provider == 'local' %}
+  <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
+        class="inline"
+        onsubmit="return confirm('Migrate this project to an HSM-wrapped key? All secrets will be re-encrypted. The HSM must remain available for all future access.');">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="migrate">
+    <input type="hidden" name="provider" value="hsm">
+    <button type="submit" class="button outline small">Migrate to HSM</button>
+  </form>
+  {% endif %}
+
   {% if can_manage_keys and not project_crypto %}
   <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
         class="crypto-adopt"
@@ -789,6 +804,7 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="adopt">
     <fieldset class="crypto-choice">
+      <legend class="sr-only">Key provider</legend>
       <label class="radio-card">
         <input type="radio" name="provider" value="local" checked>
         <span class="radio-card-body">

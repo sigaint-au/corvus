@@ -45,6 +45,7 @@ def new_project_wizard(team_id):
         my_role=my_role,
         encryption="managed",
         hsm_available=hsm.available(),
+        hsm_kek_label=hsm.kek_label() if hsm.available() else None,
     )
 
 
@@ -103,7 +104,7 @@ def create_project(team_id):
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
         try:
             project_keys.ensure_project_key(pid, provider=provider)
-        except Exception:
+        except Exception as e:
             # Roll back the creation: remove the project so we never leave a
             # project that advertised BYOK but has no key. CASCADE clears any
             # partially-created key row.
@@ -112,7 +113,10 @@ def create_project(team_id):
                     acur.execute("DELETE FROM api.projects WHERE id = %s", (str(pid),))
             except Exception:
                 pass
-            flash("Could not create the project key; project creation was rolled back", "error")
+            flash(
+                f"Could not create the project key ({e}); project creation was rolled back",
+                "error",
+            )
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             audit.log_org(

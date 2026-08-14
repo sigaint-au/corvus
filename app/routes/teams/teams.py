@@ -146,6 +146,15 @@ def team_detail(team_id):
                     (str(team_id),),
                 )
             projects = cur.fetchall()
+            for p in projects:
+                try:
+                    cur.execute(
+                        "SELECT api.project_key_provider(%s) AS kp",
+                        (str(p["id"]),),
+                    )
+                    p["key_provider"] = (cur.fetchone() or {}).get("kp")
+                except Exception:
+                    p["key_provider"] = None
         elif tab == "members":
             # User subjects only (people + invites)
 

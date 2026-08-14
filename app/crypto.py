@@ -157,6 +157,12 @@ def _dek_for(row: dict) -> bytes:
     return unwrap_project_key(row["key_enc"])
 
 
+def project_dek(project_id) -> bytes | None:
+    """Return the project's current DEK (Fernet key material), or None."""
+    row = _project_key(str(project_id))
+    return _dek_for(row) if row else None
+
+
 def project_has_key(project_id) -> bool:
     """Return True when the project has a dedicated data-encryption key."""
     return _project_key(str(project_id)) is not None

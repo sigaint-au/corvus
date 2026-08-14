@@ -103,20 +103,23 @@ def count_master_rows(project_id) -> int:
         return 0
 
 
-def adopt_project_key(project_id) -> int:
+def adopt_project_key(project_id, provider: str = "local") -> int:
     """Re-encrypt all master-keyed secrets/versions into the project DEK.
 
-    Creates the project key on demand. Runs in a single admin connection with a
-    per-row ``try/except`` so one corrupt row cannot abort the whole batch;
-    failed rows keep ``crypto_provider='master'`` and stay decryptable, so the
-    run can be retried. Returns the number of rows re-encrypted.
+    Creates the project key on demand. ``provider`` is passed to
+    :func:`ensure_project_key` so the correct key-encryption key (MASTER_KEY or
+    HSM KEK) is used when the project key must be created on demand. Runs in a
+    single admin connection with a per-row ``try/except`` so one corrupt row
+    cannot abort the whole batch; failed rows keep ``crypto_provider='master'``
+    and stay decryptable, so the run can be retried. Returns the number of rows
+    re-encrypted.
 
     Example:
         >>> n = adopt_project_key(pid)
         >>> n >= 0
         True
     """
-    ensure_project_key(project_id)
+    ensure_project_key(project_id, provider=provider)
     re_encrypted = 0
     with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
         cur.execute(
@@ -163,6 +166,106 @@ def adopt_project_key(project_id) -> int:
         conn.commit()
     crypto.clear_project_key_cache()
     log.info("project key adopted: %s row(s) re-encrypted", re_encrypted)
+    return re_encrypted
+
+
+def migrate_project_key(project_id, new_provider: str = "hsm") -> int:
+    """Re-wrap the project DEK under a new key provider.
+
+    Generates a fresh DEK, wraps it with the new provider (``'hsm'`` or
+    ``'local'``), re-encrypts all project-keyed secrets and versions from the
+    old DEK to the new one, and updates ``private.project_crypto_keys``.
+    Returns the number of rows re-encrypted.
+
+    Example:
+        >>> n = migrate_project_key(pid, "hsm")
+        >>> n >= 0
+        True
+    """
+    from cryptography.fernet import Fernet
+
+    with db.connect_admin() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT key_provider FROM private.project_crypto_keys WHERE project_id = %s",
+            (str(project_id),),
+        )
+        existing = cur.fetchone()
+    if existing is None:
+        # No project key yet — just create one under the requested provider.
+        ensure_project_key(project_id, provider=new_provider)
+        return adopt_project_key(project_id, provider=new_provider)
+
+    old_dek = crypto.project_dek(project_id)
+    if old_dek is None:
+        raise RuntimeError("project key exists but its DEK could not be resolved")
+    old_fernet = Fernet(old_dek)
+
+    new_raw = crypto.generate_project_key()
+    if new_provider == "hsm":
+        import hsm
+
+        hsm.ensure_kek()
+        new_enc = hsm.wrap_dek(new_raw)
+        new_ref = hsm.kek_label()
+    else:
+        new_enc = crypto.wrap_project_key(new_raw)
+        new_ref = None
+    new_fernet = Fernet(new_raw)
+
+    re_encrypted = 0
+    with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, value_enc FROM api.secrets
+            WHERE project_id = %s AND crypto_provider = 'project' AND deleted_at IS NULL
+            """,
+            (str(project_id),),
+        )
+        secret_rows = cur.fetchall() or []
+        cur.execute(
+            """
+            SELECT v.id, v.value_enc FROM api.secret_versions v
+            JOIN api.secrets s ON s.id = v.secret_id
+            WHERE s.project_id = %s AND v.crypto_provider = 'project'
+            """,
+            (str(project_id),),
+        )
+        version_rows = cur.fetchall() or []
+        for row in secret_rows:
+            try:
+                plaintext = old_fernet.decrypt(row["value_enc"].encode()).decode()
+                new_enc_value = new_fernet.encrypt(plaintext.encode()).decode()
+            except Exception:
+                continue
+            cur.execute(
+                "UPDATE api.secrets SET value_enc = %s WHERE id = %s",
+                (new_enc_value, str(row["id"])),
+            )
+            re_encrypted += 1
+        for row in version_rows:
+            try:
+                plaintext = old_fernet.decrypt(row["value_enc"].encode()).decode()
+                new_enc_value = new_fernet.encrypt(plaintext.encode()).decode()
+            except Exception:
+                continue
+            cur.execute(
+                "UPDATE api.secret_versions SET value_enc = %s WHERE id = %s",
+                (new_enc_value, str(row["id"])),
+            )
+            re_encrypted += 1
+        cur.execute(
+            """
+            UPDATE private.project_crypto_keys
+            SET key_enc = %s, key_provider = %s, kms_key_ref = %s, updated_at = now()
+            WHERE project_id = %s
+            """,
+            (new_enc, new_provider, new_ref, str(project_id)),
+        )
+        conn.commit()
+    crypto.clear_project_key_cache()
+    log.info(
+        "project key migrated to %s: %s row(s) re-encrypted", new_provider, re_encrypted
+    )
     return re_encrypted
 
 

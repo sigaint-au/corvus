@@ -69,6 +69,15 @@ def projects_list():
                     (*params, projects_pager["limit"], projects_pager["offset"]),
                 )
                 projects = cur.fetchall() or []
+                for p in projects:
+                    try:
+                        cur.execute(
+                            "SELECT api.project_key_provider(%s) AS kp",
+                            (str(p["id"]),),
+                        )
+                        p["key_provider"] = (cur.fetchone() or {}).get("kp")
+                    except Exception:
+                        p["key_provider"] = None
     return render_template(
         "projects.html",
         team=team,
@@ -545,8 +554,14 @@ def project_crypto_action(project_id):
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")
             )
-        created = project_keys.ensure_project_key(project_id, provider=provider)
-        n = project_keys.adopt_project_key(project_id)
+        try:
+            created = project_keys.ensure_project_key(project_id, provider=provider)
+            n = project_keys.adopt_project_key(project_id, provider=provider)
+        except Exception as e:
+            flash(f"Key adoption failed: {e}", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="settings")
+            )
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             audit.log_org(
                 cur,
@@ -558,6 +573,34 @@ def project_crypto_action(project_id):
             )
             conn.commit()
         flash(f"Project key adopted — re-encrypted {n} secret row(s)", "ok")
+    elif action == "migrate":
+        import project_keys
+
+        new_provider = (request.form.get("provider") or "hsm").strip().lower()
+        if new_provider not in ("local", "hsm"):
+            new_provider = "hsm"
+        if new_provider == "hsm" and not hsm.available():
+            flash("External HSM is not configured", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="settings")
+            )
+        try:
+            n = project_keys.migrate_project_key(project_id, new_provider)
+        except Exception as e:
+            flash(f"Key migration failed: {e}", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="settings")
+            )
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            audit.log_org(
+                cur,
+                team_id=team_id,
+                project_id=project_id,
+                action="project_key_migrated",
+                detail=f"to={new_provider} re-encrypted={n}",
+            )
+            conn.commit()
+        flash(f"Project key migrated to {new_provider} — re-encrypted {n} row(s)", "ok")
     else:
         flash("Unknown encryption action", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
