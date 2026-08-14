@@ -10,9 +10,8 @@ import pytest
 import app as store
 import audit
 import config
-import schema as schema_mod
 
-from tests.helpers import REPO_ROOT
+from tests.helpers import REPO_ROOT, migrations_src
 
 store.app.config["TESTING"] = True
 
@@ -70,11 +69,11 @@ class TestAudit:
 
     def test_schema_revokes_secret_audit_insert(self):
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'REVOKE INSERT ON api.secret_audit FROM authenticated' in init
         assert 'CREATE OR REPLACE FUNCTION private.audit_secret' in init
         assert 'Never trust caller-supplied p_user_id' in init
-        src = Path(schema_mod.__file__).read_text()
+        src = migrations_src()
         assert 'REVOKE INSERT ON api.secret_audit FROM authenticated' in src
         assert 'private.audit_secret' in src
         assert 'Never trust caller-supplied p_user_id' in src

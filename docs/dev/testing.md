@@ -81,9 +81,9 @@ pylint --rcfile=../.pylintrc \
 - The app is imported with `TESTING=True`, so `ensure_schema()` is skipped.
 - Tests cover auth, CSRF, sessions, secrets, ESO, PATs, teams, groups, RLS
   schema, pagination, machine token scopes, audit, TOTP, LDAP, mailer, lockout.
-- Schema assertion tests check `db/rbac.sql` (not `db/init.sql`) for RBAC
-  functions and RLS policies, since these were moved from `init.sql` to
-  `rbac.sql`.
+- Schema assertion tests check `db/migrations/0002_rbac.sql` (not
+  `0001_init.sql`) for RBAC functions and RLS policies, since these were moved
+  from the baseline init migration to the rbac migration.
 - Role names in tests use RBAC names: `team-owner`, `team-admin`,
   `team-member`, `team-viewer`, `project-admin`, `project-write`,
   `project-read`, `service-read`, `service-reveal`, `service-write`.

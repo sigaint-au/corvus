@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Auditing — {{ app_name }}{% endblock %}
+{% block title %}Auditing - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head"><h1>Auditing</h1></div>
 <p class="page-desc muted">Global admin only. Access reviews, role-change history, and audit export / retention.</p>
@@ -54,10 +54,10 @@
           {% if r.disabled %}<span class="badge" data-variant="danger">disabled</span>{% endif %}
         </td>
         <td><span class="badge" data-variant="secondary">{{ r.scope }}</span></td>
-        <td>{{ r.team or '—' }}</td>
-        <td>{% if r.team_role %}<span class="badge" data-variant="secondary">{{ r.team_role }}</span>{% else %}—{% endif %}</td>
-        <td>{{ r.project or '—' }}</td>
-        <td>{% if r.project_role %}<span class="badge" data-variant="secondary">{{ r.project_role }}</span>{% else %}—{% endif %}</td>
+        <td>{{ r.team or '-' }}</td>
+        <td>{% if r.team_role %}<span class="badge" data-variant="secondary">{{ r.team_role }}</span>{% else %}-{% endif %}</td>
+        <td>{{ r.project or '-' }}</td>
+        <td>{% if r.project_role %}<span class="badge" data-variant="secondary">{{ r.project_role }}</span>{% else %}-{% endif %}</td>
         <td class="muted"><code class="k">{{ r.access_via }}</code></td>
         <td></td>
       </tr>
@@ -77,12 +77,13 @@
   <p class="muted">
     Membership and role changes from org audit (team roles, project roles, ownership, invites, LDAP maps).
   </p>
-  <form method="get" action="{{ url_for('admin_audit') }}" class="audit-filters">
+  <form method="get" action="{{ url_for('admin_audit') }}" class="audit-filters" role="search">
     <input type="hidden" name="tab" value="roles">
-    <label>Search
+    <fieldset class="group search-input">
+      {% include "partials/search_icon.html" %}
       <input type="search" name="q" value="{{ search_q or '' }}"
-             placeholder="Action, detail, team…" autocomplete="off">
-    </label>
+             placeholder="Search" autocomplete="off" aria-label="Search role-change audit">
+    </fieldset>
     <label>Actor email
       <input type="search" name="actor" value="{{ audit_actor or '' }}"
              placeholder="e.g. alice@example.com" autocomplete="off">
@@ -93,12 +94,11 @@
     <label>To
       <input type="date" name="until" value="{{ audit_until or '' }}">
     </label>
+    {% if search_q or audit_actor or audit_since or audit_until %}
     <div class="audit-filter-actions">
-      <button type="submit">Apply</button>
-      {% if search_q or audit_actor or audit_since or audit_until %}
       <a class="button ghost small" href="{{ url_for('admin_audit', tab='roles') }}">Clear</a>
-      {% endif %}
     </div>
+    {% endif %}
   </form>
   {% if role_rows %}
   <p class="muted">Showing {{ role_rows|length }} of {{ role_total }} event(s).</p>
@@ -118,10 +118,10 @@
       <tr>
         <td class="muted" title="{{ e.created_at }}">{{ e.when_display }}</td>
         <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
-        <td>{{ e.detail or '—' }}</td>
-        <td class="muted">{{ e.actor_email or '—' }}</td>
-        <td>{{ e.team_name or '—' }}</td>
-        <td>{{ e.project_name or '—' }}</td>
+        <td>{{ e.detail or '-' }}</td>
+        <td class="muted">{{ e.actor_email or '-' }}</td>
+        <td>{{ e.team_name or '-' }}</td>
+        <td>{{ e.project_name or '-' }}</td>
       </tr>
     {% endfor %}
     </tbody>

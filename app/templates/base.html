@@ -66,7 +66,7 @@
       --input:               light-dark(#d4d4d8, #2a2f34);
       --ring:                light-dark(#000000, #f5f5f5);   /* pure black/white focus */
 
-      /* App shell — dark slate, brand teal accent */
+      /* App shell - dark slate, brand teal accent */
       --side-bg:             #0c0e10;
       --side-ink:            #e8eaed;
       --side-muted:          #9aa1a9;
@@ -331,7 +331,6 @@
     .side-search {
       padding: 0 .25rem .5rem;
     }
-    .side-search input,
     .side-team select {
       width: 100%;
       box-sizing: border-box;
@@ -343,12 +342,9 @@
       font-size: .8rem;
       transition: background .12s ease, box-shadow .12s ease;
     }
-    .side-search input::placeholder { color: var(--side-faint); }
-    .side-search input:hover,
     .side-team select:hover {
       background: var(--side-hover);
     }
-    .side-search input:focus,
     .side-team select:focus {
       outline: none;
       background: var(--side-hover);
@@ -409,7 +405,7 @@
     .side-team {
       padding: 0 .25rem .65rem;
     }
-    /* Toasts: oat.ink ot.toast() — no custom host */
+    /* Toasts: oat.ink ot.toast() - no custom host */
     .reveal-wrap {
       display: flex;
       flex-direction: column;
@@ -949,17 +945,26 @@
     }
     .page-head h1 { margin: 0; }
     .page-desc { margin: 0 0 1rem; }
+    .page-edit-link {
+      display: inline-flex;
+      align-items: center;
+      vertical-align: middle;
+      margin-left: .35rem;
+      color: var(--muted-foreground);
+      text-decoration: none;
+      opacity: .75;
+    }
+    .page-edit-link:hover {
+      color: var(--foreground);
+      opacity: 1;
+    }
+    .page-edit-link svg { display: block; }
     .page-search {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: .5rem;
       margin: 0 0 1.25rem;
-    }
-    .page-search .search-field { margin: 0; }
-    .page-search .search-field input {
-      width: 18rem;
-      max-width: 70vw;
     }
     .breadcrumb {
       margin: 0 0 .65rem;
@@ -1071,7 +1076,7 @@
       display: inline-block;
     }
     /* Server-side section tabs (full-page ?tab= navigation).
-       oat <ot-tabs> is for client-side tabpanels only — not a fit here. */
+       oat <ot-tabs> is for client-side tabpanels only - not a fit here. */
     .tabs {
       display: flex;
       flex-wrap: wrap;
@@ -1329,6 +1334,25 @@
       margin-left: auto;
     }
     .section-tools .toolbar { margin: 0; }
+    /* Toolbar action buttons (History, Delete, Add…): match search-input height.
+       Include buttons nested in form.inline (e.g. Delete next to History). */
+    .section-tools > :is(a, button).button.small,
+    .section-tools form.inline > :is(a, button).button.small,
+    .section-head > :is(a, button).button.small,
+    .section-head form.inline > :is(a, button).button.small,
+    .page-head > :is(a, button).button.small,
+    .page-head form.inline > :is(a, button).button.small {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      /* Same metrics as .search-input field (pad .5rem, text .875rem, lh 1.5, 1px border) */
+      padding: .5rem .75rem;
+      font-size: .875rem;
+      line-height: 1.5;
+      min-height: calc(1.5em + 1rem + 2px);
+      white-space: nowrap;
+    }
     .section-head-main {
       display: flex;
       flex-wrap: wrap;
@@ -1354,8 +1378,11 @@
       color: var(--foreground);
       text-decoration: underline;
     }
-    .section-tools form.inline {
-      display: inline;
+    .section-tools form.inline,
+    .section-head form.inline,
+    .page-head form.inline {
+      display: inline-flex;
+      align-items: center;
       margin: 0;
     }
     .kind-fields { margin-top: .75rem; }
@@ -1497,7 +1524,7 @@
       gap: .5rem .75rem;
       margin-left: auto;
     }
-    /* Database URL fields — aligned grid */
+    /* Database URL fields - aligned grid */
     .db-hint { margin: 0 0 .75rem; }
     .db-fields {
       display: grid;
@@ -1704,7 +1731,7 @@
       color: var(--muted-foreground);
       padding: .3rem .45rem;
     }
-    /* Compact access-request dialog — fit without internal scroll */
+    /* Compact access-request dialog - fit without internal scroll */
     dialog.access-dlg {
       max-width: min(24rem, calc(100vw - 2rem));
       width: 100%;
@@ -1746,7 +1773,10 @@
     }
     dialog.access-dlg label {
       display: block;
-      margin: 0;
+      margin: 0 0 .65rem;
+    }
+    dialog.access-dlg label:last-child {
+      margin-bottom: 0;
     }
     /* Acts column: oat dropdown kebab */
     td.acts-menu ot-dropdown {
@@ -1791,11 +1821,11 @@
       margin-bottom: .75rem;
     }
     .secrets-toolbar .toolbar {
-      margin: 0;
+      margin: 0 0 0 auto;
       flex: 0 1 auto;
     }
     .secrets-toolbar .bulk-toolbar {
-      margin-left: auto;
+      margin-left: 0;
     }
     .value-label { min-width: 12rem; }
     .input-with-btn {
@@ -1861,7 +1891,7 @@
       margin-top: .85rem;
     }
     .muted { color: var(--muted-foreground); font-size: .9em; }
-    /* Flashes: oat role="alert" — slight spacing under shell header */
+    /* Flashes: oat role="alert" - slight spacing under shell header */
     [role="alert"] { margin-bottom: 1rem; }
     .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: end; }
     .row > * { flex: 1; min-width: 8rem; }
@@ -1919,23 +1949,154 @@
     .section-head .toolbar {
       margin: 0;
     }
-    .toolbar .search-field {
-      flex: 0 1 auto;
+    /* Search input group: icon submit + field (same metrics as oat inputs) */
+    fieldset.group.search-input {
+      display: inline-flex;
+      align-items: stretch;
+      gap: 0;
       margin: 0;
-      font-size: .8rem;
-      color: var(--muted-foreground);
+      min-inline-size: 0;
+      padding: 0;
+      border: none;
+      background: transparent;
+      overflow: visible;
+      vertical-align: middle;
     }
-    .toolbar .search-field input {
+    fieldset.group.search-input:focus-within {
+      outline: none;
+    }
+    /* Reset oat button chrome; icon stays square and unstretched */
+    fieldset.group.search-input button.search-icon {
+      all: unset;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      align-self: stretch;
+      width: 2.5rem;
+      min-width: 2.5rem;
+      max-width: 2.5rem;
+      padding: 0;
+      margin: 0;
+      color: var(--muted-foreground);
+      background: var(--background);
+      border: 1px solid var(--input);
+      border-inline-end: none;
+      border-radius: var(--radius-medium, .375rem) 0 0 var(--radius-medium, .375rem);
+      cursor: pointer;
+      line-height: 0;
+    }
+    fieldset.group.search-input button.search-icon:hover {
+      color: var(--foreground);
+      background: var(--accent, var(--muted));
+    }
+    fieldset.group.search-input button.search-icon:focus-visible {
+      color: var(--foreground);
+      outline: 2px solid var(--ring);
+      outline-offset: -2px;
+      z-index: 1;
+    }
+    fieldset.group.search-input button.search-icon svg {
+      display: block;
+      width: 1rem;
+      height: 1rem;
+      min-width: 1rem;
+      min-height: 1rem;
+      max-width: 1rem;
+      max-height: 1rem;
+      flex-shrink: 0;
+      aspect-ratio: 1 / 1;
+      overflow: visible;
+    }
+    fieldset.group.search-input input[type="search"],
+    fieldset.group.search-input input[type="text"] {
+      flex: 1 1 auto;
+      min-width: 0;
+      width: auto;
+      margin: 0 !important;
+      margin-block-start: 0 !important;
+      /* Match oat defaults: padding space-2/space-3, text-7, leading-normal */
+      padding: .5rem .75rem .5rem .35rem !important;
+      font-size: .875rem !important;
+      line-height: 1.5 !important;
+      background: var(--background) !important;
+      color: var(--foreground);
+      border: 1px solid var(--input) !important;
+      border-radius: 0 var(--radius-medium, .375rem) var(--radius-medium, .375rem) 0 !important;
+      box-shadow: none !important;
+      outline: none !important;
+      box-sizing: border-box;
+    }
+    fieldset.group.search-input:focus-within button.search-icon,
+    fieldset.group.search-input:focus-within input[type="search"],
+    fieldset.group.search-input:focus-within input[type="text"] {
+      border-color: var(--ring);
+    }
+    fieldset.group.search-input:focus-within input[type="search"],
+    fieldset.group.search-input:focus-within input[type="text"] {
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 20%, transparent) !important;
+    }
+    .toolbar fieldset.group.search-input {
+      flex: 0 1 auto;
+    }
+    .toolbar fieldset.group.search-input input[type="search"],
+    .toolbar fieldset.group.search-input input[type="text"] {
       width: 11rem;
       max-width: 40vw;
-      padding: .28rem .5rem;
-      font-size: .8rem;
-      border-radius: 4px;
     }
-    .toolbar button {
-      font-size: .75rem;
-      padding: .28rem .55rem;
-      line-height: 1.2;
+    .audit-filters fieldset.group.search-input {
+      align-self: end;
+    }
+    .audit-filters fieldset.group.search-input input[type="search"],
+    .audit-filters fieldset.group.search-input input[type="text"] {
+      min-width: 12rem;
+    }
+    /* Sidebar search: match team select density on dark shell */
+    .side-search fieldset.group.search-input {
+      width: 100%;
+      display: flex;
+    }
+    .side-search fieldset.group.search-input button.search-icon {
+      width: 2.25rem;
+      min-width: 2.25rem;
+      max-width: 2.25rem;
+      background: var(--side-input);
+      border-color: transparent;
+      color: var(--side-faint);
+    }
+    .side-search fieldset.group.search-input button.search-icon:hover {
+      color: var(--side-ink);
+      background: var(--side-hover);
+    }
+    .side-search fieldset.group.search-input button.search-icon:focus-visible {
+      outline-color: var(--side-muted);
+    }
+    .side-search fieldset.group.search-input input[type="search"] {
+      color: var(--side-ink);
+      background: var(--side-input) !important;
+      border-color: transparent !important;
+      font-size: .8rem !important;
+      line-height: 1.25 !important;
+      padding: .42rem .55rem .42rem .35rem !important;
+    }
+    .side-search fieldset.group.search-input:hover button.search-icon,
+    .side-search fieldset.group.search-input:hover input[type="search"],
+    .side-search fieldset.group.search-input:focus-within button.search-icon,
+    .side-search fieldset.group.search-input:focus-within input[type="search"] {
+      background: var(--side-hover) !important;
+    }
+    .side-search fieldset.group.search-input:focus-within button.search-icon,
+    .side-search fieldset.group.search-input:focus-within input[type="search"] {
+      box-shadow: none !important;
+      border-color: transparent !important;
+    }
+    .side-search fieldset.group.search-input:focus-within {
+      box-shadow: 0 0 0 1px var(--side-border);
+      border-radius: 6px;
+    }
+    .side-search fieldset.group.search-input input::placeholder {
+      color: var(--side-faint);
     }
     a.btn-clear,
     .toolbar a.btn-clear,
@@ -2383,10 +2544,12 @@
       </button>
     </div>
     <form class="side-search" method="get" action="{{ url_for('global_search') }}" role="search">
-      <label for="side-search-q" class="visually-hidden">Search</label>
-      <input type="search" id="side-search-q" name="q"
-             placeholder="Search…" autocomplete="off"
-             value="{{ request.args.get('q','') if request.endpoint == 'global_search' else '' }}">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" id="side-search-q" name="q"
+               placeholder="Search" autocomplete="off" aria-label="Search"
+               value="{{ request.args.get('q','') if request.endpoint == 'global_search' else '' }}">
+      </fieldset>
     </form>
     <form class="side-team" method="post" action="{{ url_for('select_team') }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -2408,7 +2571,7 @@
     {% set workspace_eps = (
       'projects_list', 'project_detail', 'create_secret', 'delete_secret',
       'reveal_secret', 'create_token', 'delete_token', 'create_project',
-      'secrets_list', 'machines_list', 'global_search'
+      'secrets_list', 'shared_secrets_list', 'machines_list', 'global_search'
     ) %}
     {% set account_eps = (
       'teams', 'create_team', 'team_detail', 'add_team_binding',
@@ -2442,6 +2605,8 @@
              href="{{ url_for('projects_list') }}">Projects</a>
           <a class="side-nav-link {% if ep == 'secrets_list' %}active{% endif %}"
              href="{{ url_for('secrets_list') }}">Secrets</a>
+          <a class="side-nav-link {% if ep == 'shared_secrets_list' %}active{% endif %}"
+             href="{{ url_for('shared_secrets_list') }}">Shared secrets</a>
           <a class="side-nav-link {% if ep == 'machines_list' %}active{% endif %}"
              href="{{ url_for('machines_list') }}">Machine accounts</a>
         </div>
@@ -2498,7 +2663,7 @@
     {% endif %}
     <div class="sidebar-foot">
       <div class="who">
-        <a class="who-email" href="{{ url_for('profile') }}" title="{{ session.email }} — My profile">{{ session.email }}</a>
+        <a class="who-email" href="{{ url_for('profile') }}" title="{{ session.email }} - My profile">{{ session.email }}</a>
         {% if is_global_admin %}<span class="badge" data-variant="secondary">Global admin</span>{% endif %}
       </div>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
@@ -2697,7 +2862,7 @@
       form.addEventListener('submit', function () {
         if (hidden) {
           var list = (toggle && toggle.checked) ? tagsOf(tags) : [];
-          /* '*' alone means full project — treat as unrestricted */
+          /* '*' alone means full project - treat as unrestricted */
           if (list.length === 1 && list[0] === '*') list = [];
           hidden.value = list.join('\n');
         }

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Role bindings — {{ app_name }}{% endblock %}
+{% block title %}Role bindings - {{ app_name }}{% endblock %}
 {% block body %}
 {# Scope-aware breadcrumb: show the team (and project/secret) you are binding
    within whenever a scope is selected, even without an explicit back link. #}
@@ -100,7 +100,7 @@
             {% else %}<code>{{ b.subject_id }}</code>{% endif %}
           </td>
           <td><span class="badge" data-variant="secondary">{{ b.role_name }}</span></td>
-          <td class="muted">{{ b.created_at|time_ago if b.created_at else '—' }}</td>
+          <td class="muted">{{ b.created_at|time_ago if b.created_at else '-' }}</td>
           <td class="acts">
             {% if can_edit %}
             <form method="post" action="{{ url_for('rbac_bindings_delete', binding_id=b.id) }}" class="inline"

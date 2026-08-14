@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Access review — {{ app_name }}{% endblock %}
+{% block title %}Access review - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head">
   <h1>Access review</h1>
@@ -31,7 +31,7 @@
     </label>
     <label id="rev-team-wrap">Team
       <select name="scope_id" id="rev-team">
-        <option value="">—</option>
+        <option value="">-</option>
         {% for t in teams %}
         <option value="{{ t.id }}" {% if scope_id and scope_id|string == t.id|string and scope_kind == 'team' %}selected{% endif %}>{{ t.name }}</option>
         {% endfor %}
@@ -39,7 +39,7 @@
     </label>
     <label id="rev-project-wrap">Project
       <select name="scope_id" id="rev-project">
-        <option value="">—</option>
+        <option value="">-</option>
         {% for p in projects %}
         <option value="{{ p.id }}" {% if scope_id and scope_id|string == p.id|string and scope_kind == 'project' %}selected{% endif %}>{{ p.name }}</option>
         {% endfor %}
@@ -47,7 +47,7 @@
     </label>
     <label id="rev-secret-wrap">Secret
       <select name="scope_id" id="rev-secret">
-        <option value="">—</option>
+        <option value="">-</option>
         {% for s in secrets %}
         <option value="{{ s.id }}" {% if scope_id and scope_id|string == s.id|string and scope_kind == 'secret' %}selected{% endif %}>{{ s.project_name }} / {{ s.name }}</option>
         {% endfor %}
@@ -76,7 +76,7 @@
         {% for u in results %}
         <tr>
           <td>{{ u.email }}</td>
-          <td>{{ u.name or '—' }}</td>
+          <td>{{ u.name or '-' }}</td>
           <td>{% if u.is_global_admin %}<span class="badge">global admin</span>{% endif %}</td>
         </tr>
         {% endfor %}

@@ -1,0 +1,41 @@
+"""Project routes package (search, detail, access)."""
+
+from __future__ import annotations
+
+from secret_kinds import expires_status, parse_secret_pairs, secret_due_status
+
+from .search import (
+    global_search,
+    access_requests_inbox,
+)
+from .detail import (
+    projects_list,
+    project_detail,
+    delete_project,
+    update_project_settings,
+)
+from .access import (
+    add_project_binding,
+    remove_project_binding,
+    add_project_group_role,
+    remove_project_group_role,
+    project_access_binding_create,
+    project_access_binding_delete,
+)
+
+__all__ = ["register", "expires_status", "parse_secret_pairs", "secret_due_status"]
+
+
+def register(app):
+    app.get("/search")(global_search)
+    app.get("/access-requests")(access_requests_inbox)
+    app.get("/projects")(projects_list)
+    app.get("/projects/<uuid:project_id>")(project_detail)
+    app.post("/projects/<uuid:project_id>/delete")(delete_project)
+    app.post("/projects/<uuid:project_id>/members")(add_project_binding)
+    app.post("/projects/<uuid:project_id>/members/<uuid:user_id>/remove")(remove_project_binding)
+    app.post("/projects/<uuid:project_id>/group-roles")(add_project_group_role)
+    app.post("/projects/<uuid:project_id>/group-roles/<uuid:group_id>/remove")(remove_project_group_role)
+    app.post("/projects/<uuid:project_id>/access/bindings")(project_access_binding_create)
+    app.post("/projects/<uuid:project_id>/access/bindings/<uuid:binding_id>/delete")(project_access_binding_delete)
+    app.post("/projects/<uuid:project_id>/settings")(update_project_settings)

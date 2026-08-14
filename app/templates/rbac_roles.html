@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Roles — {{ app_name }}{% endblock %}
+{% block title %}Roles - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head">
   <h1>Roles</h1>
@@ -45,7 +45,7 @@
         {% for r in builtin_roles %}
         <tr>
           <td><code>{{ r.name }}</code></td>
-          <td class="col-note">{{ r.description or "—" }}</td>
+          <td class="col-note">{{ r.description or "-" }}</td>
           <td class="col-note">{% include "partials/role_rules.html" %}</td>
         </tr>
         {% endfor %}
@@ -84,7 +84,7 @@
         {% for r in custom_roles %}
         <tr>
           <td><code>{{ r.name }}</code></td>
-          <td class="col-note">{{ r.description or "—" }}</td>
+          <td class="col-note">{{ r.description or "-" }}</td>
           <td class="col-note">{% include "partials/role_rules.html" %}</td>
           {% if can_edit %}
           <td class="acts">

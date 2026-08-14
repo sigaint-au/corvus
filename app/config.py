@@ -147,7 +147,7 @@ RBAC_RESOURCES = (
     "users",
     "*",
 )
-# Built-in role names (seeded in db/rbac.sql) — keep in sync with rbac.ensure_builtin_roles
+# Built-in role names (seeded in db/migrations/0002_rbac.sql) — keep in sync with rbac.ensure_builtin_roles
 RBAC_BUILTIN_ROLES = (
     "global-admin",
     "audit-viewer",
@@ -194,6 +194,15 @@ RBAC_SERVICE_ROLE_DROPDOWN = (
     ("service-reveal", "Reveal (plaintext)"),
     ("service-write", "Write"),
 )
+
+# role-name lists (validated against in routes); derive from the dropdowns so
+# the two stay in sync. Prefer these over inline `[n for n, _ in ...]`.
+RBAC_TEAM_ROLE_NAMES = tuple(n for n, _ in RBAC_TEAM_ROLE_DROPDOWN)
+RBAC_PROJECT_ROLE_NAMES = tuple(n for n, _ in RBAC_PROJECT_ROLE_DROPDOWN)
+RBAC_SECRET_ROLE_NAMES = tuple(n for n, _ in RBAC_SECRET_ROLE_DROPDOWN)
+RBAC_CLUSTER_ROLE_NAMES = tuple(n for n, _ in RBAC_CLUSTER_ROLE_DROPDOWN)
+RBAC_SERVICE_ROLE_NAMES = tuple(n for n, _ in RBAC_SERVICE_ROLE_DROPDOWN)
+
 # Clipboard auto-clear after copy (seconds); 0 disables
 CLIPBOARD_CLEAR_SECONDS = max(
     0, int(os.environ.get("CLIPBOARD_CLEAR_SECONDS", "30") or "30")

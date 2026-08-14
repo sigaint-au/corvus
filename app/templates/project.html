@@ -1,13 +1,20 @@
 {% extends "base.html" %}
-{% block title %}{{ project.name }} — {{ app_name }}{% endblock %}
+{% block title %}{{ project.name }} - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head"><h1>{{ project.name }}</h1></div>
 {% if project.description %}
 <p class="page-desc">{{ project.description }}</p>
 {% elif can_admin or can_settings %}
 <p class="page-desc muted">
-  No description yet —
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}">add a purpose in Settings</a>.
+  No description yet -
+  <a class="page-edit-link" href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
+     title="Add description in Settings" aria-label="Add description in Settings">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 20h9"/>
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+    </svg>
+  </a>
 </p>
 {% endif %}
 <p class="page-desc muted">Project ID: <code class="k">{{ project.id }}</code></p>
@@ -15,7 +22,7 @@
 {% if new_token %}
 <div class="token-once">
   <div class="section-head tight">
-    <strong>Machine token (copy now — shown once)</strong>
+    <strong>Machine token (copy now - shown once)</strong>
     <button type="button" class="link copy-btn" data-copy-target="new-token-pre" data-clear-seconds="60">Copy token</button>
   </div>
   <pre id="new-token-pre">{{ new_token }}</pre>
@@ -79,7 +86,7 @@
         <td><code class="k">{{ s.key }}</code> <span class="badge" data-variant="danger">overdue</span></td>
         <td class="muted">Past expiry</td>
         <td class="muted"{% if s.expires_at %} title="{{ s.expires_at|time_when }}"{% endif %}>
-          {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}—{% endif %}
+          {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}-{% endif %}
         </td>
         <td class="acts">
           <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
@@ -91,7 +98,7 @@
         <td><code class="k">{{ s.key }}</code> <span class="badge" data-variant="warning">soon</span></td>
         <td class="muted">Within {{ soon_days|default(14) }} days</td>
         <td class="muted"{% if s.expires_at %} title="{{ s.expires_at|time_when }}"{% endif %}>
-          {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}—{% endif %}
+          {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}-{% endif %}
         </td>
         <td class="acts">
           <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
@@ -105,25 +112,27 @@
 <section>
   <div class="section-head">
     <h2>Secrets</h2>
-    {% if can_write %}
-    <a class="button outline small" href="{{ url_for('secret_new', project_id=project.id) }}">Create secret</a>
-    {% endif %}
-  </div>
-  {% if secrets or search_q %}
-  <div class="secrets-toolbar">
-    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
-      <input type="hidden" name="tab" value="secrets">
-      <label class="search-field">
-        <span class="visually-hidden">Search secrets</span>
-        <input type="search" name="q" value="{{ search_q or '' }}"
-               placeholder="Search…" autocomplete="off" aria-label="Search secrets">
-      </label>
-      <button type="submit">Search</button>
-      {% if search_q %}
-      <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+    <div class="section-tools">
+      {% if secrets or search_q %}
+      <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+        <input type="hidden" name="tab" value="secrets">
+        <fieldset class="group search-input">
+          {% include "partials/search_icon.html" %}
+          <input type="search" name="q" value="{{ search_q or '' }}"
+                 placeholder="Search" autocomplete="off" aria-label="Search secrets">
+        </fieldset>
+        {% if search_q %}
+        <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}">Clear</a>
+        {% endif %}
+      </form>
       {% endif %}
-    </form>
-    {% if secrets %}
+      {% if can_write %}
+      <a class="button outline small" href="{{ url_for('secret_new', project_id=project.id) }}">+ Add secret</a>
+      {% endif %}
+    </div>
+  </div>
+  {% if secrets %}
+  <div class="secrets-toolbar">
     <div class="bulk-toolbar" id="bulk-toolbar" hidden>
       <label class="bulk-select" title="Select all on this page">
         <input type="checkbox" id="bulk-select-all" aria-label="Select all secrets">
@@ -146,7 +155,6 @@
       </select>
       <button type="button" id="bulk-apply" class="bulk-apply" disabled>Apply</button>
     </div>
-    {% endif %}
   </div>
   {% endif %}
   <div id="secrets-list" class="secrets-list">
@@ -242,7 +250,7 @@
         {% for a in effective_access %}
         <tr>
           <td>
-            {{ a.subject_email or a.subject_name or '—' }}
+            {{ a.subject_email or a.subject_name or '-' }}
             {% if a.subject_name and a.subject_email %}
             <span class="muted">{{ a.subject_email }}</span>
             {% endif %}
@@ -290,7 +298,7 @@
             <code class="k">{{ r.secret_key }}</code>
           </a>
           {% else %}
-          <span class="muted">—</span>
+          <span class="muted">-</span>
           {% endif %}
         </td>
         <td>
@@ -305,7 +313,7 @@
           <span class="muted">by {{ r.resolver_email }}</span>
           {% endif %}
         </td>
-        <td class="muted col-note">{{ r.reason or '—' }}</td>
+        <td class="muted col-note">{{ r.reason or '-' }}</td>
         <td class="muted">{{ r.created_at }}</td>
         {% if can_admin %}
         <td class="acts access-acts">
@@ -360,12 +368,13 @@
     <h2>Audit log</h2>
   </div>
   <p class="muted">Who did what to secrets in this project, and when.</p>
-  <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="audit-filters">
+  <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="audit-filters" role="search">
     <input type="hidden" name="tab" value="audit">
-    <label>Search
+    <fieldset class="group search-input">
+      {% include "partials/search_icon.html" %}
       <input type="search" name="q" value="{{ search_q or '' }}"
-             placeholder="Key, action, or detail…" autocomplete="off">
-    </label>
+             placeholder="Search" autocomplete="off" aria-label="Search audit log">
+    </fieldset>
     <label>Actor email
       <input type="search" name="actor" value="{{ audit_actor or '' }}"
              placeholder="e.g. alice@example.com" autocomplete="off">
@@ -384,12 +393,11 @@
     <label>To
       <input type="date" name="until" value="{{ audit_until or '' }}">
     </label>
+    {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
     <div class="audit-filter-actions">
-      <button type="submit">Apply</button>
-      {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
       <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}">Clear</a>
-      {% endif %}
     </div>
+    {% endif %}
   </form>
   {% if audit_log %}
   <div class="table"><table class="audit-table">
@@ -622,7 +630,7 @@
     var url = base + '/eso/v1/projects/' + projectId + '/secrets/{{ "{{ .remoteRef.key }}" }}';
     var lines = [];
     lines.push('# Generated for project ' + projectId);
-    lines.push('# External Secrets Operator — webhook provider (Secret + SecretStore only)');
+    lines.push('# External Secrets Operator - webhook provider (Secret + SecretStore only)');
     lines.push('apiVersion: v1');
     lines.push('kind: Secret');
     lines.push('metadata:');

@@ -244,6 +244,47 @@ def _load_team_secrets_page(
     return rows, pager, projects
 
 
+def _load_shared_secrets_page(cur, page, q=""):
+    """Page secrets shared with the current user outside their team membership.
+
+    Uses ``private.shared_with_me_secret_rows`` (secret-scope bindings only,
+    excludes team members and secrets that require reveal approval).
+
+    Args:
+        cur: Open DB cursor (user JWT; function is SECURITY DEFINER).
+        page: 1-based page number.
+        q: Optional search on key, note, project name, or team name.
+
+    Returns:
+        ``(rows, pager)`` with due annotations on each row.
+    """
+    cur.execute("SELECT * FROM private.shared_with_me_secret_rows()")
+    all_rows = list(cur.fetchall() or [])
+    qn = (q or "").strip().lower()
+    if qn:
+        filtered = []
+        for r in all_rows:
+            blob = " ".join(
+                str(r.get(k) or "")
+                for k in ("key", "note", "project_name", "team_name", "role_name")
+            ).lower()
+            if qn in blob:
+                filtered.append(r)
+        all_rows = filtered
+    total = len(all_rows)
+    pager = paging.page_window(total, page)
+    pager.update(endpoint="shared_secrets_list", q=q or None)
+    start = pager["offset"]
+    end = start + pager["limit"]
+    rows = all_rows[start:end]
+    for r in rows:
+        r["due"] = secret_due_status(r)
+        mode = (r.get("access_mode") or "inherit").strip() or "inherit"
+        r["access_mode"] = mode
+        r["access_restricted"] = mode != "inherit"
+    return rows, pager
+
+
 def _parse_expires_at(form, *, allow_clear: bool = True):
     """Return expires_at datetime or None from form (capped at MAX_EXPIRY_DAYS).
 

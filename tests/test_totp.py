@@ -122,7 +122,7 @@ class TestTotp:
 
     def test_schema_has_totp(self):
         from pathlib import Path
-        init = (REPO_ROOT / 'db' / 'init.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'totp_secret_enc' in init
         assert 'totp_recovery_codes' in init
         assert 'totp_enforce_global_admins' in init

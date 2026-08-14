@@ -217,7 +217,7 @@ def test_machine_key_allowed_empty_scope_is_full_access():
     """Schema: no scope rows ⇒ machine_key_allowed allows any key (when auth ok)."""
     from tests.helpers import REPO_ROOT
 
-    init = (REPO_ROOT / "db" / "init.sql").read_text()
+    init = (REPO_ROOT / "db" / "migrations" / "0001_init.sql").read_text()
     start = init.index("CREATE OR REPLACE FUNCTION private.machine_key_allowed")
     end = init.index("$$;", start) + 3
     body = init[start:end]
@@ -231,7 +231,7 @@ def test_machine_key_allowed_empty_scope_is_full_access():
 def test_force_rls_on_core_tables():
     from tests.helpers import REPO_ROOT
 
-    init = (REPO_ROOT / "db" / "init.sql").read_text()
+    init = (REPO_ROOT / "db" / "migrations" / "0001_init.sql").read_text()
     for table in (
         "api.teams",
         "api.projects",

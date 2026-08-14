@@ -33,7 +33,8 @@ app/
   app.py            # WSGI entry, security headers, schema bootstrap, CLI cmds
   config.py         # env vars + RBAC constants
   db.py             # connections + JWT/RLS helpers (connect, as_user, make_jwt)
-  schema.py         # idempotent schema migrations (ensure_schema, _apply_rbac_sql)
+  schema.py         # schema bootstrap: apply pending migrations + promote admin
+  migrations.py     # versioned migration runner (db/migrations/*.sql)
   authz.py          # auth decorators, CSRF, safe redirect
   crypto.py         # Fernet encrypt/decrypt (MASTER_KEY)
   audit.py          # audit helpers + formatting
@@ -52,18 +53,17 @@ app/
   mailer.py         # SMTP
   lockout.py        # login lockout
   user_sessions.py  # server-side sessions
-  rbac.sql          # RBAC schema applied by _apply_rbac_sql()
   routes/
-    auth.py         # login, register, 2FA, reset
-    teams.py        # teams, members, groups, invites
-    projects.py     # projects, members, group roles, settings
-    secrets.py      # secret CRUD, reveal, history, access requests, access mode
-    project_io.py   # import/export
+    auth/            # login, register, 2FA, reset
+    teams/           # teams, members, groups, invites
+    projects/        # projects, members, group roles, settings
+    secrets/         # secret CRUD, reveal, history, access requests, access mode
+    project_io.py    # import/export
     project_tokens.py # machine token scopes
-    admin.py        # server settings, users, audit
-    api.py          # /api/token, /api/users/suggest, /health
-    eso.py          # /eso/v1 machine + PAT secret API
-    mgmt_api.py     # management API (teams, members via PAT)
+    admin/           # server settings, users, audit
+    api.py           # /api/token, /api/users/suggest, /health
+    eso/             # /eso/v1 machine + PAT secret API
+    mgmt_api/        # management API (teams, members via PAT)
 ```
 
 ---
@@ -71,21 +71,16 @@ app/
 ## Database files
 
 ```
-db/
-  init.sql          # Tables + ENABLE/FORCE RLS + non-RBAC functions (01-init.sql)
-  rbac.sql          # RBAC schema + auth functions + all RLS policies (02-rbac.sql)
-app/
-  rbac.sql          # Same as db/rbac.sql but without legacy data migration block
-  schema.py         # Migration stmts + _apply_rbac_sql() for existing databases
+db/migrations/
+  0001_init.sql     # Tables + ENABLE/FORCE RLS + non-RBAC functions (01-init.sql)
+  0002_rbac.sql     # RBAC schema + auth functions + all RLS policies (02-rbac.sql)
+  0003_….sql …      # additive, idempotent migrations (applied by migrations.py)
 ```
 
-On fresh databases:
-1. `01-init.sql` creates tables + `ENABLE/FORCE RLS` (no policies yet).
-2. `02-rbac.sql` creates RBAC functions + all RLS policies.
-
-On existing databases:
-1. `schema.py` runs migration statements (filtered by `legacy_markers`).
-2. `_apply_rbac_sql()` applies `app/rbac.sql` (creates/replaces functions + policies).
+On fresh databases, `docker-entrypoint-initdb.d` runs the two baseline
+migrations (`0001_init.sql`, `0002_rbac.sql`). On every startup the app applies
+any remaining migrations via `migrations.apply_pending()`, recording each
+version + checksum in `private.schema_migrations`.
 
 ---
 

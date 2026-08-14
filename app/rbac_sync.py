@@ -12,15 +12,17 @@ import logging
 from config import (
     RBAC_CLUSTER_ROLE_DROPDOWN,
     RBAC_PROJECT_ROLE_DROPDOWN,
+    RBAC_PROJECT_ROLE_NAMES,
     RBAC_SECRET_ROLE_DROPDOWN,
     RBAC_SERVICE_ROLE_DROPDOWN,
     RBAC_TEAM_ROLE_DROPDOWN,
+    RBAC_TEAM_ROLE_NAMES,
 )
 
 log = logging.getLogger(__name__)
 
-TEAM_ROLE_NAMES = tuple(name for name, _ in RBAC_TEAM_ROLE_DROPDOWN)
-PROJECT_ROLE_NAMES = tuple(name for name, _ in RBAC_PROJECT_ROLE_DROPDOWN)
+TEAM_ROLE_NAMES = RBAC_TEAM_ROLE_NAMES
+PROJECT_ROLE_NAMES = RBAC_PROJECT_ROLE_NAMES
 
 
 # steep dropdowns → friendly label for list badges / tooltips

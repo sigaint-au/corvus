@@ -7,29 +7,47 @@ enforce access control.
 
 ## Schema management
 
-- **Fresh installs** use two SQL scripts applied in order:
-  1. `db/init.sql` (as `01-init.sql`) — creates roles, schemas, tables, non-RBAC
-     functions, `ENABLE/FORCE ROW LEVEL SECURITY`, grants.
-  2. `db/rbac.sql` (as `02-rbac.sql`) — creates RBAC tables, functions, all
-     RLS policies, and legacy data migration.
-- **Existing databases** are upgraded by `ensure_schema()` in `app/schema.py`
-  at app startup (requires `DATABASE_ADMIN_URL`). It runs migration statements,
-  then applies `app/rbac.sql` via `_apply_rbac_sql()`.
+Schema DDL is versioned in `db/migrations/*.sql` and applied once, in order, by
+the migration runner (`app/migrations.py`).
 
-> Do **not** re-run `init.sql` over an existing database — use `schema.py`.
+- **Fresh installs** run the two baseline migrations via
+  `docker-entrypoint-initdb.d` (mounted by `compose.yml`):
+  1. `db/migrations/0001_init.sql` (as `01-init.sql`) — roles, schemas, tables,
+     non-RBAC functions, `ENABLE/FORCE ROW LEVEL SECURITY`, grants.
+  2. `db/migrations/0002_rbac.sql` (as `02-rbac.sql`) — RBAC tables, functions,
+     and all RLS policies.
+- **Every startup** the app applies any remaining migrations via
+  `migrations.apply_pending()` (requires `DATABASE_ADMIN_URL`), serialized by a
+  `pg_advisory_lock`. Each migration's version and sha256 checksum is recorded
+  in `private.schema_migrations`; on the next boot it is skipped.
+- **Existing databases** whose `private.schema_migrations` is empty have the
+  baseline (`0001`, `0002`) seeded as applied (the core schema already exists),
+  so only additive migrations run.
+
+> Do **not** edit an already-released migration file — its checksum is recorded
+> and drift is detected on startup. Add a new numbered migration instead.
 
 ### init.sql vs rbac.sql split
 
 | File | Contains | Does NOT contain |
 |------|----------|------------------|
-| `db/init.sql` | Tables, non-RBAC functions, `ENABLE/FORCE RLS`, grants | RLS policies, RBAC auth functions |
-| `db/rbac.sql` | RBAC schema, auth functions, RLS policies, legacy migration | Table creation |
+| `0001_init.sql` | Tables, non-RBAC functions, `ENABLE/FORCE RLS`, grants | RLS policies, RBAC auth functions |
+| `0002_rbac.sql` | RBAC schema, auth functions, RLS policies | Table creation |
 
-Functions in `init.sql` that call RBAC auth functions (e.g.
+Functions in `0001_init.sql` that call RBAC auth functions (e.g.
 `private.team_group_rows` calls `api.is_team_member()`) are `LANGUAGE plpgsql`
 so PostgreSQL defers body validation to execution time. `LANGUAGE sql`
 functions are validated at creation time and must only reference objects that
 already exist.
+
+### Adding a migration
+
+1. Create `db/migrations/NNNN_slug.sql` (zero-padded next number).
+2. Write idempotent SQL where possible (`IF NOT EXISTS`, `DROP ... IF EXISTS`,
+   `CREATE OR REPLACE`, `ON CONFLICT DO NOTHING`).
+3. Run `pytest` and `tox -e lint`.
+4. Never edit `0001_init.sql` / `0002_rbac.sql` (baseline) — their checksums are
+   recorded on every volume.
 
 ---
 

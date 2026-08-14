@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Search — {{ app_name }}{% endblock %}
+{% block title %}Search - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head">
   <h1>Search{% if scope %} · {{ scope|capitalize }}{% endif %}</h1>
 </div>
 <form method="get" action="{{ url_for('global_search') }}" class="audit-filters" role="search">
   {% if scope %}<input type="hidden" name="scope" value="{{ scope }}">{% endif %}
-  <label class="search-field flex-2">
-    <span class="visually-hidden">Search everything</span>
+  <fieldset class="group search-input">
+    {% include "partials/search_icon.html" %}
     <input type="search" name="q" value="{{ search_q or '' }}"
-           placeholder="Teams, projects, secrets…" autocomplete="off"
+           placeholder="Search" autocomplete="off"
            autofocus aria-label="Global search">
-  </label>
+  </fieldset>
   {% if scope == 'secrets' or not scope %}
   {% if scope == 'secrets' %}
   <label>
@@ -34,12 +34,11 @@
   </label>
   {% endif %}
   {% endif %}
+  {% if search_q or scope %}
   <div class="audit-filter-actions">
-    <button type="submit">Search</button>
-    {% if search_q or scope %}
     <a class="button ghost small" href="{{ url_for('global_search') }}">Clear</a>
-    {% endif %}
   </div>
+  {% endif %}
 </form>
 
 {% if not search_q %}
@@ -74,7 +73,7 @@
         <tr>
           <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
           <td class="muted"><a href="{{ url_for('team_detail', team_id=p.team_id) }}">{{ p.team_name }}</a></td>
-          <td class="muted col-note">{{ p.description or '—' }}</td>
+          <td class="muted col-note">{{ p.description or '-' }}</td>
         </tr>
       {% endfor %}
       </tbody>
