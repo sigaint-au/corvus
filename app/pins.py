@@ -20,14 +20,22 @@ def touch_recent(cur, user_id, secret_id):
         >>> with db.as_user(uid) as conn, conn.cursor() as cur:
         ...     touch_recent(cur, uid, secret_id)
     """
-    cur.execute(
-        """
-        INSERT INTO api.secret_recent (user_id, secret_id, accessed_at)
-        VALUES (%s, %s, now())
-        ON CONFLICT (user_id, secret_id) DO UPDATE SET accessed_at = now()
-        """,
-        (str(user_id), str(secret_id)),
-    )
+    # Isolate RLS failures so they cannot abort the caller's transaction
+    # (view/reveal still need to audit after this upsert).
+    cur.execute("SAVEPOINT touch_recent")
+    try:
+        cur.execute(
+            """
+            INSERT INTO api.secret_recent (user_id, secret_id, accessed_at)
+            VALUES (%s, %s, now())
+            ON CONFLICT (user_id, secret_id) DO UPDATE SET accessed_at = now()
+            """,
+            (str(user_id), str(secret_id)),
+        )
+        cur.execute("RELEASE SAVEPOINT touch_recent")
+    except Exception:
+        cur.execute("ROLLBACK TO SAVEPOINT touch_recent")
+        raise
 
 
 def is_pinned(cur, user_id, secret_id) -> bool:

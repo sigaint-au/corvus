@@ -200,6 +200,18 @@ class TestOrgAccess:
         teams = teams[:teams.index(';')]
         assert 'can_access_secret_row' in teams
 
+    def test_shared_grantee_can_write_recent_and_pins(self):
+        """secret_recent / secret_pins INSERT must not require project membership."""
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0023_shared_recent_pins.sql').read_text()
+        recent = sql[sql.index('CREATE POLICY secret_recent_insert ON api.secret_recent'):]
+        recent = recent[:recent.index(';')]
+        assert 'can_access_secret_row' in recent
+        assert 'can_read_project' not in recent
+        pins = sql[sql.index('CREATE POLICY secret_pins_insert ON api.secret_pins'):]
+        pins = pins[:pins.index(';')]
+        assert 'can_access_secret_row' in pins
+        assert 'can_read_project' not in pins
+
     def test_export_filters_reveal_permission(self):
         """Plain export SQL must filter by can_access_secret reveal + can_reveal."""
 
