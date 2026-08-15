@@ -44,6 +44,7 @@ def ensure_project_key(project_id, provider: str = "local", hsm_slot_id=None) ->
                 slot_url = crypto.slot_url(hsm_slot_id)
                 if not slot_url:
                     raise RuntimeError("named HSM slot not found")
+                hsm.ensure_kek_for_slot(slot_url)
                 key_enc, kms_ref = hsm.wrap_dek_for_slot(slot_url, raw)
             else:
                 key_enc = crypto.wrap_project_key(raw)

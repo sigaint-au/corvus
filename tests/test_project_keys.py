@@ -229,6 +229,7 @@ class TestProjectKeys:
         slot_url = "pkcs11:token=t;object=byok-kek?module-path=/m.so&pin-value=x"
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
              patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "ensure_kek_for_slot") as ensure_kek, \
              patch.object(hsm, "wrap_dek_for_slot", return_value=("wrapped", "byok-kek")):
             created = project_keys.ensure_project_key(pid, provider="hsm", hsm_slot_id=slot_id)
         assert created is True
@@ -239,7 +240,7 @@ class TestProjectKeys:
         assert params[1] == "wrapped"
         assert params[2] == "hsm"
         assert params[3] == "byok-kek"
-        assert str(params[4]) == slot_id
+        ensure_kek.assert_called_once_with(slot_url)
 
     def test_migrate_between_slots_rewraps_only(self):
         from crypto import hsm
