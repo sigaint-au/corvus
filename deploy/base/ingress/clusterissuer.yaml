@@ -1,0 +1,31 @@
+# ClusterIssuer — production Let's Encrypt issuer. Staging uses a
+# self-signed issuer; both ship from the base and the prod overlay
+# enables the prod one (and disables staging).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    app.kubernetes.io/part-of: secretserver
+    cert-manager.io/issuer-type: acme
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ops@example.internal
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+---
+# Local-cluster issuer for QA / airgapped deployments.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: ca-self-signed
+  labels:
+    app.kubernetes.io/part-of: secretserver
+    cert-manager.io/issuer-type: ca
+spec:
+  selfSigned: {}

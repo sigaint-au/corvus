@@ -1,0 +1,112 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secretserver-app
+  labels:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/part-of: secretserver
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: app
+      app.kubernetes.io/part-of: secretserver
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # From ingress controller / cluster gateway.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gateway-system
+      ports:
+        - port: 8080
+          protocol: TCP
+    # From PostgREST (in-cluster call to POSTGREST_URL).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgrest
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Probe traffic from kubelet on the health ports.
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+            except:
+              - 10.0.0.0/29
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    # DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Postgres (CloudNativePG) — auth + admin DSN.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 5432
+          protocol: TCP
+    # Redis sentinel + master.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 26379
+          protocol: TCP
+    # PostgREST (egress to its own service from this pod is unused — the
+    # ingress direction handles it. Leaving here only if app needs to call
+    # postgrest from a sidecar.)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgrest
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 3000
+          protocol: TCP
+    # Kubernetes API (only for the redis failover controller in this SA —
+    # the app SA has automountServiceAccountToken: false, so no traffic).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              component: kube-apiserver
+      ports:
+        - port: 443
+          protocol: TCP
+    # External HSM (when using a network-attached PKCS#11 module).
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8   # operators override via overlay patch
+      ports:
+        - port: 1798
+          protocol: TCP

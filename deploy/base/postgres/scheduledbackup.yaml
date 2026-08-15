@@ -1,0 +1,23 @@
+# Scheduled base backup — CloudNativePG writes WAL archives to S3 via
+# barman-cloud. Overlays tune the schedule / retention; the bucket and
+# credentials are injected by ESO.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: secretserver-postgres-daily
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: secretserver
+spec:
+  cluster:
+    name: secretserver-postgres
+  # Daily full at 03:30 UTC (low-traffic window). WAL streaming is
+  # continuous regardless of this schedule.
+  schedule: "30 3 * * *"
+  backupOwnerReference: self
+  method: barmanObjectStore
+  online: true
+  # Compression is enabled by default in barman-cloud-plugin.
+  immediate: false
+  # 30-day retention for daily snapshots. WAL retention is independent.
+  retentionPolicy: "30d"

@@ -1,0 +1,170 @@
+# CloudNativePG (cnpg) Cluster — the canonical HA Postgres controller for K8s.
+# Requires the CloudNativePG operator to be installed cluster-wide
+# (see deploy/README.md for the install command).
+#
+# Why CloudNativePG:
+#  * Self-healing streaming replication (primary + replicas).
+#  * Automated point-in-time-recovery via barman-cloud (S3 / GCS / Azure).
+#  * Built-in Prometheus metrics, connection-pooling (PgBouncer), fencing.
+#  * Automated failover with switchover grace periods.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: secretserver-postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: secretserver
+spec:
+  # 3 instances — primary + 2 replicas. Survives loss of one node.
+  instances: 3
+  # Sync replication quorum: writes return only when at least one replica
+  # confirms receipt, guaranteeing no committed tx is lost on primary crash.
+  synchronous:
+    mode: quorum
+  # Fencing prevents split-brain on a network partition by using the K8s API
+  # to disable pod scheduling before initiating failover.
+  fencing:
+    enabled: true
+    # Give a stuck primary up to 30s to recover before failover.
+    timeout: 30
+  # The app uses bootstrap migrations during the first request — keep CNPG
+  # out of the way. The schema bootstrap lives in app/core/schema.py and
+  # runs SQL from /db/migrations on startup.
+  bootstrap:
+    initdb:
+      # Use the application's authenticator role naming convention.
+      dataChecksums: true
+      encoding: UTF8
+      locale: en_US.UTF-8
+  # The app's post-migration SQL is executed by ensure_schema() in app/core.
+  # CNPG just owns the cluster lifecycle.
+  storage:
+    size: 50Gi
+    # Default StorageClass — overlay with a fast SSD class for production.
+    storageClass: ""
+    # Spread across nodes (not zones by default; overlay for regional HA).
+    resizeInUseVolumes: true
+  walStorage:
+    size: 16Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "4"
+      memory: "4Gi"
+  # Pod-level hardening matches the namespace PSS restricted profile.
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: secretserver
+    spec:
+      priorityClassName: secretserver-ha
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # Operator sets restartPolicy; we just enforce security context.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26   # postgres UID inside the cnpg image
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 26
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+  # Spread instances across zones for HA.
+  affinity:
+    topologyKey: topology.kubernetes.io/zone
+    podAntiAffinityType: preferred
+  # Operator-managed rolling restart on image change.
+  imageCatalog: null
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  # The app uses `authenticator` role; CNPG creates the superuser + app
+  # roles automatically on cluster bootstrap.
+  postgresql:
+    parameters:
+      # Sensible production defaults for a workload that runs
+      # crypto-heavy queries and frequent small writes.
+      shared_buffers: "256MB"
+      effective_cache_size: "1GB"
+      work_mem: "16MB"
+      maintenance_work_mem: "256MB"
+      max_connections: "200"
+      wal_level: "logical"
+      max_wal_senders: "10"
+      max_replication_slots: "10"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      # CNPG adds hot_standby = on by default; keep it on for read replicas.
+      hot_standby: "on"
+      log_min_duration_statement: "1s"
+      log_checkpoints: "on"
+      log_connections: "on"
+      log_disconnections: "on"
+      log_lock_waits: "on"
+      # Statement timeout protects the cluster from runaway queries.
+      statement_timeout: "60s"
+      # Row-level security is critical for this app — never disable.
+      row_security: "on"
+  # Application DB users (CNPG manages role DDL automatically on bootstrap).
+  managed:
+    roles:
+      # The application's authenticator role — used for app connections.
+      - name: secretserver-app
+        ensure: present
+        login: true
+        passwordSecret:
+          name: secretserver-postgres-authenticator
+          key: password
+        # Permissions the app relies on for RLS-by-user.
+        roleSettings:
+          - 'SET ROLE "secretserver"'
+        inRoles:
+          - authenticator
+          - secretserver
+      - name: secretserver
+        ensure: present
+        login: false
+        # Owner of the public and api schemas.
+        inRoles:
+          - pg_read_all_data
+      - name: authenticator
+        ensure: present
+        login: false
+        inRoles:
+          - secretserver
+      - name: anon
+        ensure: present
+        login: false
+        # The anonymous role PostgREST publishes — no privileges on tables.
+  # Read-only replicas for read-scaling the API. Reuses base instance config.
+  # `replicaCluster` enables DR clusters in another region (overlay territory).
+  # Use service account to integrate with barman-cloud-plugin if enabled.
+  serviceAccountTemplate:
+    metadata:
+      name: secretserver-postgres
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/part-of: secretserver
+    # CNPG needs API access for backups (s3 secret refs) and fencing.
+    automountServiceAccountToken: true
+  # External Secrets Operator supplies DB passwords; CNPG reads them from
+  # these secrets. Both are written by the ESO `ExternalSecret` in
+  # external-secrets/.
+  # The superuser password CNPG uses for bootstrap is taken from
+  # `secretserver-postgres-superuser` — operators MUST seed this Secret
+  # (or wire ESO to write it) BEFORE creating the Cluster.

@@ -1,0 +1,19 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: secretserver-postgres
+spec:
+  instances: 1
+  synchronous:
+    mode: off
+  storage:
+    size: 20Gi
+  walStorage:
+    size: 4Gi
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"

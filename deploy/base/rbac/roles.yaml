@@ -1,0 +1,75 @@
+# Minimal in-cluster RBAC for the redis failover controller and
+# external-secrets-reader. CloudNativePG and the app/postgrest SAs run with
+# automountServiceAccountToken: false and need no API access.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: redis-failover-controller
+  namespace: secretserver
+  labels:
+    app.kubernetes.io/name: redis-failover-controller
+    app.kubernetes.io/part-of: secretserver
+rules:
+  # Watch Redis pods to detect role labels (master/replica) updated by sentinel.
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  # Patch the redis-master Service selector on failover.
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "patch"]
+  # Surface pod events when the controller promotes / demotes a node.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: redis-failover-controller
+  namespace: secretserver
+  labels:
+    app.kubernetes.io/part-of: secretserver
+subjects:
+  - kind: ServiceAccount
+    name: redis-failover-controller
+    namespace: secretserver
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: redis-failover-controller
+---
+# ESO reader: pull secrets from Vault/AWS SM/GCP SM and create Kubernetes
+# Secrets. The ClusterSecretStore lives cluster-wide; this Role only grants
+# the per-namespace namespace-scoped Secret write.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: external-secrets-reader
+  namespace: secretserver
+  labels:
+    app.kubernetes.io/name: external-secrets
+    app.kubernetes.io/part-of: secretserver
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: external-secrets-reader
+  namespace: secretserver
+  labels:
+    app.kubernetes.io/part-of: secretserver
+subjects:
+  - kind: ServiceAccount
+    name: external-secrets-reader
+    namespace: secretserver
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: external-secrets-reader

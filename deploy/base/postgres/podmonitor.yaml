@@ -1,0 +1,22 @@
+# Prometheus PodMonitor — CNPG exposes /metrics on every instance on
+# port 9187 by default. This scrapes each Postgres pod individually.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: secretserver-postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: secretserver
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/part-of: secretserver
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - secretserver

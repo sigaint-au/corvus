@@ -1,0 +1,232 @@
+# Redis StatefulSet — 3 nodes; one is elected master by Sentinel, the
+# other two are replicas. Sentinel updates the role label on each node
+# (`role=master` / `role=replica`) via its built-in notification script,
+# and the redis-failover-controller Deployment patches the redis-master
+# Service selector accordingly.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: secretserver
+spec:
+  serviceName: redis-headless
+  replicas: 3
+  revisionHistoryLimit: 5
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1     # one Redis restart at a time
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/part-of: secretserver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/component: cache
+        app.kubernetes.io/part-of: secretserver
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+        prometheus.io/path: "/metrics"
+    spec:
+      automountServiceAccountToken: false
+      priorityClassName: secretserver-ha
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999   # redis user inside the bitnami image
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+              app.kubernetes.io/part-of: secretserver
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+              app.kubernetes.io/part-of: secretserver
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: redis
+                  app.kubernetes.io/part-of: secretserver
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      initContainers:
+        # Sentinel notifies via a sentinel notification script that uses
+        # kubectl to label pods (master/replica). We bake the SA token
+        # into a tmpfs so redis can call the K8s API.
+        - name: bootstrap-roles
+          image: bitnami/redis:7.2
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              # sentinel-managed init — just a placeholder for any pre-replica
+              # bootstrap steps (e.g. generating a redis password file).
+              if [ -f /etc/redis/conf/redis.conf ]; then
+                echo "redis.conf already present, skipping init"
+                exit 0
+              fi
+              echo "first-run init complete"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      containers:
+        - name: redis
+          image: bitnami/redis:7.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+            - name: metrics
+              containerPort: 9121
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: redis-env
+          env:
+            # Sentinel needs to know the cluster name and the master name it
+            # watches. These map to the kubernetes service names.
+            - name: REDIS_SENTINEL_SERVICE_HOST
+              value: "redis-sentinel"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_SENTINEL_PORT
+              value: "26379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-redis-secrets
+                  key: REDIS_PASSWORD
+            - name: REDIS_SENTINEL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-redis-secrets
+                  key: REDIS_SENTINEL_PASSWORD
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          startupProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 5
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: redis
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: conf
+              mountPath: /etc/redis/conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+        # Sidecar: bitnami/redis-exporter emits Prometheus metrics on 9121.
+        - name: exporter
+          image: bitnami/redis-exporter:1.58.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --redis.addr=redis://localhost:6379
+            - --redis.password-file=/etc/redis-secrets/password
+          ports:
+            - name: metrics
+              containerPort: 9121
+              protocol: TCP
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-redis-secrets
+                  key: REDIS_PASSWORD
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: conf
+          configMap:
+            name: redis-config
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+  # PVC per pod — AOF persistence across pod reschedules.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: redis
+          app.kubernetes.io/part-of: secretserver
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: ""

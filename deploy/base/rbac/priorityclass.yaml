@@ -1,0 +1,13 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: secretserver-ha
+  labels:
+    app.kubernetes.io/part-of: secretserver
+value: 1000000
+globalDefault: false
+description: |
+  Scheduling priority for Secret Server HA workloads (app, postgrest,
+  postgres, redis). High enough to survive node pressure but below the
+  cluster's system priority classes so platform pods still preempt.
+preemptionPolicy: PreemptLowerPriority

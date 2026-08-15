@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# High-availability base composition for Secret Server.
+# Secrets (MASTER_KEY / JWT_SECRET / SECRET_KEY / DB passwords) are sourced
+# from External Secrets Operator (see external-secrets/) — never commit real
+# secrets to this tree. Overlay (e.g. overlays/prod) is where replicas, ingress
+# hostnames, resource quotas, and replica-count tuning belong.
+namespace: secretserver
+
+# Labels propagated to every resource. `includeSelectors: false` keeps
+# matchLabels/clusterIP selectors unchanged so we don't accidentally broaden
+# selectors beyond their declared scope.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/managed-by: kustomize
+
+resources:
+  - namespace.yaml
+  - rbac
+  - app
+  - postgrest
+  - postgres
+  - redis
+  - external-secrets
+  - ingress
+  - networkpolicies

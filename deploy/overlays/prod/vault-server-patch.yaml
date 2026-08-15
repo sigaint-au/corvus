@@ -1,0 +1,19 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: secretserver-vault
+spec:
+  provider:
+    vault:
+      server: "https://vault.prod.internal:8200"
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: secretserver-prod
+          serviceAccountRef:
+            name: external-secrets-reader
+            namespace: secretserver
+          audiences:
+            - vault
+      path: secret
+      version: v2

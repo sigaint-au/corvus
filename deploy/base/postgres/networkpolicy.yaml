@@ -1,0 +1,99 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secretserver-postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: secretserver
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/part-of: secretserver
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # From the app (authenticator role).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: app
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 5432
+          protocol: TCP
+    # From PostgREST.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgrest
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 5432
+          protocol: TCP
+    # From the CNPG operator (replication, monitoring).
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 8000   # operator metrics endpoint
+          protocol: TCP
+    # Probe traffic from kubelet.
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+            except:
+              - 10.0.0.0/29
+      ports:
+        - port: 5432
+          protocol: TCP
+  egress:
+    # DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Cluster-internal replication between Postgres pods (port 5432) is
+    # handled by the operator; K8s network policies don't block same-namespace
+    # pod-to-pod by default unless we add an explicit deny. We allow it:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 5432
+          protocol: TCP
+    # Kubernetes API for CNPG operator (fencing, backups).
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              component: kube-apiserver
+      ports:
+        - port: 443
+          protocol: TCP
+    # Backup destination (S3 / GCS / Azure) — overlay restricts to the
+    # right CIDR for the chosen provider. The default 0.0.0.0/0 covers
+    # everything; tighten via patch.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP

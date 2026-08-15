@@ -1,0 +1,180 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secretserver-redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: secretserver
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/part-of: secretserver
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # From the app (Redis client).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: app
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 6379
+          protocol: TCP
+    # From sentinel pods (replication + sentinel gossip).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-sentinel
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 26379
+          protocol: TCP
+    # From the failover controller (kubectl exec probes).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-failover-controller
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 26379
+          protocol: TCP
+    # Probe traffic.
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+            except:
+              - 10.0.0.0/29
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 9121
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # To other Redis pods (replication).
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 6379
+          protocol: TCP
+    # To sentinels.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-sentinel
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 26379
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secretserver-redis-sentinel
+  labels:
+    app.kubernetes.io/name: redis-sentinel
+    app.kubernetes.io/part-of: secretserver
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis-sentinel
+      app.kubernetes.io/part-of: secretserver
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # From app (sentinel-aware clients).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: app
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 26379
+          protocol: TCP
+    # Inter-sentinel gossip.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-sentinel
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 26379
+          protocol: TCP
+    # From Redis pods (replication check / sentinel info).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 26379
+          protocol: TCP
+    # From failover controller.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-failover-controller
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 26379
+          protocol: TCP
+    # Probe traffic.
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+            except:
+              - 10.0.0.0/29
+      ports:
+        - port: 26379
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 6379
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-sentinel
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 26379
+          protocol: TCP

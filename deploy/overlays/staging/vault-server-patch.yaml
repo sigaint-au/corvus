@@ -1,0 +1,19 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: secretserver-vault
+spec:
+  provider:
+    vault:
+      server: "http://vault.staging.svc:8200"
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: secretserver-staging
+          serviceAccountRef:
+            name: external-secrets-reader
+            namespace: secretserver-staging
+          audiences:
+            - vault
+      path: secret
+      version: v2

@@ -1,0 +1,17 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: secretserver-postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: secretserver
+spec:
+  # With 3 instances and synchronous replication quorum, maxUnavailable=1
+  # allows rolling node drains while always leaving 2/3 of the cluster
+  # writable (or readable when primary is unavailable).
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/part-of: secretserver
+      cnpg.io/cluster: secretserver-postgres

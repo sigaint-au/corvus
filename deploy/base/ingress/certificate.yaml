@@ -1,0 +1,29 @@
+# cert-manager Certificate — issues the TLS cert for the ingress. Uses
+# the prod overlay's ClusterIssuer; staging uses a self-signed issuer.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: secretserver-tls
+  labels:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/part-of: secretserver
+spec:
+  secretName: secretserver-tls
+  # Issuer name varies by overlay (prod → letsencrypt-prod, staging → ca-self-signed).
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+    group: cert-manager.io
+  dnsNames:
+    - secretserver.example.internal
+  # Renewal threshold — reissue 30 days before expiry.
+  duration: 2160h   # 90 days
+  renewBefore: 720h # 30 days
+  isCA: false
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth

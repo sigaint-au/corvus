@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: secretserver-app
+  labels:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/part-of: secretserver
+spec:
+  type: ClusterIP
+  clusterIP: None   # headless — Ingress uses endpoints directly, no kube-proxy hop
+  selector:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/part-of: secretserver
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+      appProtocol: http
+  publishNotReadyAddresses: false
