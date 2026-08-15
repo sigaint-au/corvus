@@ -31,6 +31,14 @@ class TestHealth:
         assert not data['ok']
         assert 'error' not in data
 
+    def test_readyz_rejects_failed_schema_initialization(self):
+        app = store.create_app()
+        app.config["TESTING"] = False
+        with patch("app.ensure_schema", side_effect=RuntimeError("schema down")):
+            response = app.test_client().get("/readyz")
+        assert response.status_code == 503
+        assert response.get_json()["status"] == "not ready"
+
     def test_security_headers(self):
         conn, _ = _conn()
         with patch.object(db, 'connect', return_value=conn):

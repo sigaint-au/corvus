@@ -15,7 +15,9 @@
       <a class="button ghost small" href="{{ url_for('projects_list') }}">Clear</a>
       {% endif %}
     </form>
+    {% if can_create_project %}
     <a class="button outline small" href="{{ url_for('new_project_wizard', team_id=team.id) }}">+ Add project</a>
+    {% endif %}
   </div>
   {% endif %}
 </div>

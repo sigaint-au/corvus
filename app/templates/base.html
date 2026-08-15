@@ -119,6 +119,7 @@
       flex: 1;
       min-height: 0;
     }
+    .side-backdrop { display: none; }
     .side-toggle {
       display: none;
       align-items: center;
@@ -2390,8 +2391,18 @@
 
     @media (max-width: 720px) {
       body.app .shell { grid-template-columns: 1fr; }
-      .side-toggle { display: inline-flex; }
-      .side-head {
+       .side-toggle { display: inline-flex; }
+       body.side-open { overflow: hidden; }
+       .side-backdrop {
+         display: block;
+         position: fixed;
+         inset: 0;
+         z-index: 35;
+         border: 0;
+         background: rgb(0 0 0 / .45);
+       }
+       body:not(.side-open) .side-backdrop { display: none; }
+       .side-head {
         align-items: center;
         gap: .5rem;
       }
@@ -2752,12 +2763,14 @@
         {% if is_global_admin %}<span class="badge" data-variant="secondary">Global admin</span>{% endif %}
       </div>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button type="submit" class="logout-link">Log out</button>
       </form>
     </div>
   </aside>
+  <button type="button" class="side-backdrop" id="side-backdrop" aria-label="Close navigation menu"></button>
   <script>
+
   /* Persist sidebar <details> open/closed across full page navigations. */
   (function () {
     var KEY = 'secretstore.sidebar.groups';
@@ -2803,20 +2816,31 @@
   /* Mobile sidebar toggle */
   (function () {
     var btn = document.getElementById('side-toggle');
-    if (!btn) return;
+    var backdrop = document.getElementById('side-backdrop');
+    var sidebar = document.getElementById('app-sidebar');
+    if (!btn || !sidebar) return;
+    var close = function () {
+      document.body.classList.remove('side-open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-label', 'Open navigation menu');
+      btn.focus();
+    };
     btn.addEventListener('click', function () {
       var open = document.body.classList.toggle('side-open');
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
       btn.setAttribute('aria-label', open ? 'Close navigation menu' : 'Open navigation menu');
+      if (open) {
+        var first = sidebar.querySelector('a, button, input, select, summary');
+        if (first) first.focus();
+      }
     });
-    // Close after nav link click on narrow screens
+    if (backdrop) backdrop.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && document.body.classList.contains('side-open')) close();
+    });
     document.querySelectorAll('.sidebar a.side-nav-link').forEach(function (a) {
       a.addEventListener('click', function () {
-        if (window.matchMedia('(max-width: 720px)').matches) {
-          document.body.classList.remove('side-open');
-          btn.setAttribute('aria-expanded', 'false');
-          btn.setAttribute('aria-label', 'Open navigation menu');
-        }
+        if (window.matchMedia('(max-width: 720px)').matches) close();
       });
     });
   })();
@@ -2981,6 +3005,19 @@
       if (window.console) console.info(msg);
     }
     window.ssToast = toast;
+    document.body.addEventListener('htmx:responseError', function () {
+      toast('The action failed. Please try again.', 'Error', { duration: 5000 });
+    });
+    document.body.addEventListener('htmx:sendError', function () {
+      toast('The server could not be reached. Please try again.', 'Error', { duration: 5000 });
+    });
+    document.body.addEventListener('htmx:afterRequest', function (e) {
+      var detail = e.detail || {};
+      var request = detail.requestConfig || {};
+      if (request.verb === 'POST' && detail.successful && detail.elt && detail.elt.dataset.toastSuccess) {
+        toast(detail.elt.dataset.toastSuccess, 'Done');
+      }
+    });
     function readCopyText(el, attrText) {
       if (attrText) return attrText;
       if (!el) return '';
@@ -3192,6 +3229,20 @@
         var cid = closeBtn.getAttribute('data-close-dialog');
         var cdlg = cid ? document.getElementById(cid) : closeBtn.closest('dialog');
         if (cdlg) oatCloseDialog(cdlg);
+        return;
+      }
+      var submitBtn = e.target.closest && e.target.closest('[data-submit-form]');
+      if (submitBtn) {
+        e.preventDefault();
+        var form = document.getElementById(submitBtn.getAttribute('data-submit-form'));
+        if (!form) return;
+        var action = form.querySelector('[data-dialog-action]');
+        if (action) {
+          action.name = 'action';
+          action.value = submitBtn.getAttribute('data-submit-action') || '';
+        }
+        if (form.requestSubmit) form.requestSubmit();
+        else form.submit();
         return;
       }
       /* commandfor polyfill (oat docs) for browsers without Invoker Commands */

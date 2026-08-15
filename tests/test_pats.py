@@ -76,6 +76,16 @@ class TestPatsUnit:
             with pytest.raises(ValueError):
                 pats.create(str(uuid4()), 'x', expires_days=99999)
 
+    def test_create_requires_expiry_when_policy_enabled(self):
+        with patch.object(pats, 'count_for_user', return_value=0), patch.object(pats.settings_svc, 'token_expiry_policy', return_value=(True, 3650)):
+            with pytest.raises(ValueError, match='Expires days is required'):
+                pats.create(str(uuid4()), 'x')
+
+    def test_create_uses_policy_max(self):
+        with patch.object(pats, 'count_for_user', return_value=0), patch.object(pats.settings_svc, 'token_expiry_policy', return_value=(False, 30)):
+            with pytest.raises(ValueError, match='between 1 and 30'):
+                pats.create(str(uuid4()), 'x', expires_days=31)
+
 
 class TestPersonalTokenRoutes:
 

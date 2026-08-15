@@ -17,7 +17,9 @@ from core import db
 from ui import nav
 from ui import paging
 from secret_svc.secret_kinds import (
+    SOON_DAYS,
     annotate_token_expiry,
+    expires_status,
     secret_due_status,
 )
 from secret_svc.secret_ops import _load_secrets_page
@@ -35,10 +37,16 @@ def projects_list():
     page = paging.page_arg()
     team, projects = None, []
     projects_pager = None
+    can_create_project = False
     if tid:
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
             team = cur.fetchone()
+            if team:
+                cur.execute("SELECT api.team_role(%s::uuid) AS role", (tid,))
+                can_create_project = (cur.fetchone() or {}).get("role") in (
+                    "team-owner", "team-admin", "team-member"
+                )
             if team:
                 where = "p.team_id = %s"
                 params: list = [tid]
@@ -90,6 +98,7 @@ def projects_list():
         projects=projects,
         search_q=q,
         projects_pager=projects_pager,
+        can_create_project=can_create_project,
     )
 
 
@@ -185,7 +194,7 @@ def project_detail(project_id):
         if tab == "access" and not can_admin:
             # Old Access tab was reveal requests; non-admins land on Requests
             tab = "requests"
-        due_overdue, due_soon = [], []
+        due_overdue, due_soon, rotation_overdue, rotation_soon = [], [], [], []
         if tab == "secrets":
             secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             # Expiry dashboard: scan live secrets for this project (capped)
@@ -205,6 +214,23 @@ def project_detail(project_id):
                     due_overdue.append(r)
                 elif st == "soon":
                     due_soon.append(r)
+            cur.execute(
+                """
+                SELECT id, key, rotation_next_at, rotation_owner
+                FROM api.secrets
+                WHERE project_id = %s AND deleted_at IS NULL
+                  AND rotation_next_at IS NOT NULL
+                ORDER BY rotation_next_at
+                LIMIT 200
+                """,
+                (str(project_id),),
+            )
+            for r in cur.fetchall() or []:
+                st = expires_status(r.get("rotation_next_at"))
+                if st == "overdue":
+                    rotation_overdue.append(r)
+                elif st == "soon":
+                    rotation_soon.append(r)
         elif tab == "audit":
             total = audit.count_for_project(
                 cur,
@@ -405,8 +431,10 @@ def project_detail(project_id):
         audit_actions=audit.ACTIONS,
         new_token=session.pop("new_token", None),
         due_overdue=due_overdue if tab == "secrets" else [],
+        soon_days=SOON_DAYS,
         due_soon=due_soon if tab == "secrets" else [],
-        soon_days=14,
+        rotation_overdue=rotation_overdue if tab == "secrets" else [],
+        rotation_soon=rotation_soon if tab == "secrets" else [],
         public_base_url=public_base,
         max_expiry_days=config.MAX_EXPIRY_DAYS,
         grant_minutes=config.REVEAL_ACCESS_GRANT_MINUTES,

@@ -5,19 +5,14 @@
 {% if setup_notice %}
 <p role="alert" data-variant="error">{{ setup_notice }}</p>
 {% endif %}
-{% if ldap_enabled or oidc_enabled %}
-<p class="muted">
-  {% if oidc_enabled and ldap_enabled %}Local, LDAP, and SSO logins are accepted.
-  {% elif oidc_enabled %}Local and SSO logins are accepted.
-  {% else %}Local accounts and LDAP directory logins are accepted.{% endif %}
-</p>
-{% endif %}
 {% if oidc_enabled %}
 <p>
-  <a class="button outline auth-sso"
+  <a class="button auth-sso"
      href="{{ url_for('login_oidc') }}">{{ oidc_button_label or 'Sign in with SSO' }}</a>
 </p>
-<p class="muted auth-divider">or</p>
+<p class="muted auth-divider">or sign in with an account</p>
+{% elif ldap_enabled %}
+<p class="muted">Use your account email or directory username.</p>
 {% endif %}
 <form method="post">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">

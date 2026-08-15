@@ -110,6 +110,23 @@ class TestSettings:
         assert 'tab=banner' in r.location
         assert dict(sets) == {'classification_enabled': 'true', 'classification_text': 'OFFICIAL', 'classification_color': '#677381', 'classification_fg': '#ffffff'}
 
+    def test_save_token_policy(self):
+        with self.client.session_transaction() as s:
+            s['user_id'] = self.uid
+            s['email'] = 'admin@ex.com'
+            s['is_global_admin'] = True
+        sets = []
+        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(settings_svc, 'set_setting', side_effect=lambda k, v: sets.append((k, v))), patch.object(db, 'as_user', return_value=_conn(fetchall=[])[0]):
+            r = self.client.post('/settings', data={'action': 'token_policy', 'require_pat_expiry': '1', 'max_pat_lifetime_days': '90', 'require_machine_token_expiry': '1', 'max_machine_token_lifetime_days': '180'}, follow_redirects=False)
+        assert r.status_code == 302
+        assert 'tab=general' in r.location
+        assert dict(sets) == {
+            'require_pat_expiry': 'true',
+            'max_pat_lifetime_days': '90',
+            'require_machine_token_expiry': 'true',
+            'max_machine_token_lifetime_days': '180',
+        }
+
     def test_settings_email_tab(self):
         with self.client.session_transaction() as s:
             s['user_id'] = self.uid

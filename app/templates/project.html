@@ -61,9 +61,9 @@
 </nav>
 
 {% if active_tab == 'secrets' %}
-{% if due_overdue or due_soon %}
+{% if due_overdue or due_soon or rotation_overdue or rotation_soon %}
 <section class="due-dashboard">
-  <h2>Expiry reminders</h2>
+  <h2>Maintenance reminders</h2>
   <div class="profile-stats">
     {% if due_overdue %}
     <div class="profile-stat">
@@ -77,9 +77,21 @@
       <span class="profile-stat-l">Expiring soon</span>
     </div>
     {% endif %}
+    {% if rotation_overdue %}
+    <div class="profile-stat">
+      <span class="profile-stat-n is-danger">{{ rotation_overdue|length }}</span>
+      <span class="profile-stat-l">Rotation overdue</span>
+    </div>
+    {% endif %}
+    {% if rotation_soon %}
+    <div class="profile-stat">
+      <span class="profile-stat-n is-warning">{{ rotation_soon|length }}</span>
+      <span class="profile-stat-l">Rotation soon</span>
+    </div>
+    {% endif %}
   </div>
   <div class="table"><table>
-    <thead><tr><th>Key</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+    <thead><tr><th>Key</th><th>Status</th><th>Due</th><th></th></tr></thead>
     <tbody>
     {% for s in due_overdue %}
       <tr>
@@ -96,10 +108,30 @@
     {% for s in due_soon %}
       <tr>
         <td><code class="k">{{ s.key }}</code> <span class="badge" data-variant="warning">soon</span></td>
-        <td class="muted">Within {{ soon_days|default(14) }} days</td>
+        <td class="muted">Within {{ soon_days }} days</td>
         <td class="muted"{% if s.expires_at %} title="{{ s.expires_at|time_when }}"{% endif %}>
           {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}-{% endif %}
         </td>
+        <td class="acts">
+          <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
+        </td>
+      </tr>
+    {% endfor %}
+    {% for s in rotation_overdue %}
+      <tr>
+        <td><code class="k">{{ s.key }}</code> <span class="badge" data-variant="danger">rotation overdue</span></td>
+        <td class="muted">Past rotation target{% if s.rotation_owner %} · {{ s.rotation_owner }}{% endif %}</td>
+        <td class="muted" title="{{ s.rotation_next_at|time_when }}">{{ s.rotation_next_at|expires }}</td>
+        <td class="acts">
+          <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
+        </td>
+      </tr>
+    {% endfor %}
+    {% for s in rotation_soon %}
+      <tr>
+        <td><code class="k">{{ s.key }}</code> <span class="badge" data-variant="warning">rotation soon</span></td>
+        <td class="muted">Within {{ soon_days }} days{% if s.rotation_owner %} · {{ s.rotation_owner }}{% endif %}</td>
+        <td class="muted" title="{{ s.rotation_next_at|time_when }}">{{ s.rotation_next_at|expires }}</td>
         <td class="acts">
           <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets', q=s.key) }}">Open</a>
         </td>
@@ -143,10 +175,10 @@
         <option value="">Action…</option>
          <option value="export_env"
                  data-url="{{ url_for('bulk_export', project_id=project.id, format='env') }}"
-                 data-confirm="Download {n} plaintext secret(s) for this project?">Export .env</option>
+                 data-confirm="Download {n} plaintext secret(s) to this device? The downloaded file will contain secret values. Continue?">Export .env</option>
          <option value="export_json"
                  data-url="{{ url_for('bulk_export', project_id=project.id, format='json') }}"
-                 data-confirm="Download {n} plaintext secret(s) for this project?">Export JSON</option>
+                 data-confirm="Download {n} plaintext secret(s) to this device? The downloaded file will contain secret values. Continue?">Export JSON</option>
         {% if can_write %}
         <option value="delete"
                 data-url="{{ url_for('bulk_secrets', project_id=project.id) }}"

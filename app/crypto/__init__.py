@@ -8,6 +8,7 @@ continue to work as before.
 from base64 import urlsafe_b64encode
 import json
 import logging
+from functools import lru_cache
 from hashlib import sha256
 
 from cryptography.fernet import Fernet
@@ -53,6 +54,7 @@ def fernet_for(master_key: str) -> Fernet:
     return Fernet(key)
 
 
+@lru_cache(maxsize=1)
 def _fernet() -> Fernet:
     """Build and cache the Fernet instance derived from ``MASTER_KEY``.
 
@@ -183,7 +185,10 @@ def _slot_url(slot_id: str) -> str | None:
     """Return a named HSM slot's PKCS#11 URL, or None when it cannot be read."""
     client = cache.redis_client()
     try:
-        epoch = client.get(_SLOT_EPOCH_KEY) or "0" if client is not None else "0"
+        if client is not None:
+            epoch = client.get(_SLOT_EPOCH_KEY) or "0"
+        else:
+            epoch = "0"
         key = f"secretserver:crypto:hsm-slot:{epoch}:{slot_id}"
         if client is not None:
             try:

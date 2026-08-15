@@ -7,9 +7,8 @@ from uuid import uuid4
 import pytest
 
 import app as store
-from core import config
+from core import config, db, settings_svc
 import crypto
-from core import db
 from auth import pats
 from routes import eso as eso_routes
 
@@ -208,6 +207,14 @@ class TestESO:
         assert r.status_code == 400
         assert 'kind' in r.get_json()['error']
 
+    def test_management_routes_moved_off_eso_prefix(self):
+        rules = {rule.rule for rule in store.app.url_map.iter_rules()}
+        assert '/api/v1/manage/teams' in rules
+        assert '/api/v1/manage/projects/<project_ref>/members' in rules
+        assert '/eso/v1/projects/<project_ref>/secrets/<path:key>' in rules
+        assert '/eso/v1/teams' not in rules
+        assert '/eso/v1/projects/<project_ref>/members' not in rules
+
     def test_create_token_with_expiry(self):
         c = store.app.test_client()
         with c.session_transaction() as s:
@@ -215,7 +222,7 @@ class TestESO:
             s['email'] = 'u@ex.com'
         conn, cur = _conn(fetchone={'w': True})
         cur.rowcount = 1
-        with patch.object(db, 'as_user', return_value=conn):
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = c.post(f'/projects/{self.pid}/tokens', data={'name': 'eso', 'role': 'reveal', 'expires_days': '30'}, follow_redirects=False)
         assert r.status_code == 302
         insert = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])][0]
@@ -233,7 +240,7 @@ class TestESO:
         ]
         with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(
-                f'/eso/v1/teams/{tid}/members',
+                f'/api/v1/manage/teams/{tid}/members',
                 json={'email': 'u@x.com', 'role': 'team-owner'},
                 headers={'Authorization': 'Bearer pat_owner_guard'},
             )
@@ -294,11 +301,21 @@ class TestESO:
             s['user_id'] = str(uuid4())
             s['email'] = 'u@ex.com'
         conn, cur = _conn(fetchone={'w': True})
-        with patch.object(db, 'as_user', return_value=conn):
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = c.post(f'/projects/{self.pid}/tokens', data={'name': 'eso', 'role': 'reveal', 'expires_days': str(config.MAX_EXPIRY_DAYS + 1)}, follow_redirects=False)
         assert r.status_code == 302
         inserts = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
         assert inserts == []
+
+    def test_mgmt_create_token_requires_expiry_when_policy_enabled(self):
+        from routes.mgmt_api import tokens as mgmt_tokens
+
+        with store.app.test_request_context('/x', method='POST', json={}):
+            with patch.object(mgmt_tokens, '_require_pat', return_value=(str(uuid4()), None)), patch.object(mgmt_tokens.settings_svc, 'token_expiry_policy', return_value=(True, 3650)):
+                r = mgmt_tokens.mgmt_create_token(str(self.pid))
+        resp, status = r
+        assert status == 400
+        assert resp.get_json()['error'] == 'expires_days is required'
 
     def test_machine_token_roles_config(self):
         assert 'service-reveal' in config.MACHINE_TOKEN_ROLES

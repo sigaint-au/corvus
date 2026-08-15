@@ -273,6 +273,20 @@ def _render_secret_view(
             exp_date = as_utc(exp).date().isoformat()
         except Exception:
             exp_date = str(exp)[:10]
+    rotation_next = row.get("rotation_next_at")
+    rotation_next_date = ""
+    if rotation_next is not None:
+        try:
+            rotation_next_date = as_utc(rotation_next).date().isoformat()
+        except Exception:
+            rotation_next_date = str(rotation_next)[:10]
+    rotated = row.get("rotated_at")
+    rotated_date = ""
+    if rotated is not None:
+        try:
+            rotated_date = as_utc(rotated).date().isoformat()
+        except Exception:
+            rotated_date = str(rotated)[:10]
     cert_pem, cert_key = ("", "")
     if kind == "certificate":
         cert_pem, cert_key = split_cert_and_key(plaintext)
@@ -303,6 +317,10 @@ def _render_secret_view(
             cert_key=cert_key,
             db_parts=parse_database_url(plaintext) if kind == "database" else {},
             expires_at=exp_date,
+            rotation_interval_days=row.get("rotation_interval_days"),
+            rotation_owner=row.get("rotation_owner") or "",
+            rotation_next_at=rotation_next_date,
+            rotated_at=rotated_date,
             can_write=can_write and not is_version,
             can_admin=can_admin,
             can_reveal=can_reveal,

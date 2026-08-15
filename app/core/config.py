@@ -120,6 +120,10 @@ DEFAULT_SETTINGS = {
     "smtp_from_name": APP_NAME,
     "smtp_login_alerts": "false",
     "totp_enforce_global_admins": "false",
+    "require_pat_expiry": "false",
+    "max_pat_lifetime_days": "3650",
+    "require_machine_token_expiry": "false",
+    "max_machine_token_lifetime_days": "3650",
     # Audit log retention (days). 0 = keep forever. Applied by global-admin purge.
     "audit_retention_days": "365",
     # OIDC SSO (Keycloak, etc.) — authorization code + ID token

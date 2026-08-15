@@ -12,8 +12,9 @@
 </div>
 <p class="page-desc muted">{{ 'Update' if slot_id else 'Add a' }} named PKCS#11 slot. The app will open a session against this module/token and store the key-encryption key.</p>
 
-<form method="post" action="{{ url_for('hsm_slot_new_wizard') }}" class="settings-form">
+<form method="post" action="{{ url_for('hsm_slot_new_wizard') }}" class="settings-form" id="hsm-slot-form">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <input type="hidden" id="hsm-slot-action" data-dialog-action value="">
   {% if slot_id %}<input type="hidden" name="slot_id" value="{{ slot_id }}">{% endif %}
 
   <section>
@@ -57,12 +58,25 @@
       <button type="submit" name="action" value="test" class="button outline">Test connection</button>
       <button type="submit" name="action" value="create" class="button">{{ 'Save changes' if slot_id else 'Create slot' }}</button>
       {% if test_result is sameas false %}
-      <button type="submit" name="action" value="force_create" class="button outline"
-              onclick="return confirm('Save this slot without a successful connection test? The slot will be created but may not work until the HSM is reachable.')">
+      <button type="button" class="button outline" data-open-dialog="hsm-save-dialog">
         Save without testing
       </button>
       {% endif %}
     </p>
   </section>
 </form>
+{% if test_result is sameas false %}
+<dialog id="hsm-save-dialog" class="access-dlg" closedby="any">
+  <form method="dialog">
+    <header>
+      <h3>Save without testing?</h3>
+      <p>The slot will be saved even though the HSM connection test failed. It may not work until the HSM is reachable.</p>
+    </header>
+    <footer>
+      <button type="button" class="outline" data-close-dialog="hsm-save-dialog">Cancel</button>
+      <button type="button" data-submit-form="hsm-slot-form" data-submit-action="force_create">Save slot</button>
+    </footer>
+  </form>
+</dialog>
+{% endif %}
 {% endblock %}

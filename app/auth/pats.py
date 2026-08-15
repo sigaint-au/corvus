@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from core import db
+from core import db, settings_svc
 from crypto import sha256_hex
 
 PREFIX = "pat_"
@@ -114,11 +114,19 @@ def create(user_id: str, name: str, expires_days: int | None = None) -> str:
         raise ValueError("Name is required")
     if count_for_user(user_id) >= MAX_TOKENS_PER_USER:
         raise ValueError(f"Limit of {MAX_TOKENS_PER_USER} tokens reached; revoke one first")
-    expires_at = None
-    if expires_days is not None:
-        if expires_days < 1 or expires_days > 3650:
-            raise ValueError("Expires days must be between 1 and 3650")
-        expires_at = datetime.now(timezone.utc) + timedelta(days=int(expires_days))
+    require_expiry, max_days = settings_svc.token_expiry_policy("pat")
+    if expires_days is None:
+        if require_expiry:
+            raise ValueError("Expires days is required")
+        expires_at = None
+    else:
+        try:
+            days = int(expires_days)
+        except (TypeError, ValueError):
+            raise ValueError("Expires days must be a positive integer")
+        if days < 1 or days > max_days:
+            raise ValueError(f"Expires days must be between 1 and {max_days}")
+        expires_at = datetime.now(timezone.utc) + timedelta(days=days)
     raw, thash, prefix = mint_raw()
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(

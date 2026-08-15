@@ -80,9 +80,12 @@ def page_window(total: int, page: int, per_page: int = DEFAULT_PAGE_SIZE) -> dic
     offset = (page - 1) * per_page
     start = 0 if total == 0 else offset + 1
     end = min(offset + per_page, total)
+    visible = {1, pages, page}
+    visible.update(range(max(1, page - 2), min(pages, page + 2) + 1))
     return {
         "page": page,
         "per_page": per_page,
+        "page_numbers": sorted(visible),
         "total": total,
         "pages": pages,
         "offset": offset,

@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 import app as store
-from core import config
-from core import db
+from core import config, db, settings_svc
 
 from tests.helpers import REPO_ROOT, migrations_src, mock_conn as _conn, routes_module_src
 
@@ -28,7 +27,7 @@ class TestTokens:
     def test_create_token(self):
         conn, cur = _conn(fetchone={'w': True})
         cur.rowcount = 1
-        with patch.object(db, 'as_user', return_value=conn):
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'openshift'}, follow_redirects=False)
         assert r.status_code == 302
         with self.client.session_transaction() as s:
@@ -39,7 +38,7 @@ class TestTokens:
     def test_create_token_write_role(self):
         conn, cur = _conn(fetchone={'w': True})
         cur.rowcount = 1
-        with patch.object(db, 'as_user', return_value=conn):
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'ci-writer', 'role': 'service-write'}, follow_redirects=False)
         assert r.status_code == 302
         insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
@@ -49,7 +48,7 @@ class TestTokens:
     def test_create_token_invalid_role_defaults_reveal(self):
         conn, cur = _conn(fetchone={'w': True})
         cur.rowcount = 1
-        with patch.object(db, 'as_user', return_value=conn):
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'x', 'role': 'owner'}, follow_redirects=False)
         assert r.status_code == 302
         insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
@@ -57,7 +56,7 @@ class TestTokens:
 
     def test_create_token_reveal_denied(self):
         conn, _ = _conn(fetchone={'w': False})
-        with patch.object(db, 'as_user', return_value=conn):
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'openshift'}, follow_redirects=False)
         assert r.status_code == 302
         conn.commit.assert_not_called()
@@ -65,6 +64,26 @@ class TestTokens:
             assert 'new_token' not in s
             flashes = s.get('_flashes') or []
         assert any(('permission' in msg.lower() for _cat, msg in flashes))
+
+    def test_create_token_requires_expiry_when_policy_enabled(self):
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'w': True}, {}]
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(True, 3650)):
+            r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'openshift'}, follow_redirects=False)
+        assert r.status_code == 302
+        inserts = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
+        assert inserts == []
+        with self.client.session_transaction() as s:
+            flashes = s.get('_flashes') or []
+        assert any(('Expires days is required' in msg for _cat, msg in flashes))
+
+    def test_create_token_uses_policy_max(self):
+        conn, cur = _conn(fetchone={'w': True})
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 30)):
+            r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'openshift', 'expires_days': '31'}, follow_redirects=False)
+        assert r.status_code == 302
+        inserts = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
+        assert inserts == []
 
     def test_delete_token(self):
         conn, cur = _conn(fetchone={'w': True})

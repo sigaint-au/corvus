@@ -549,7 +549,7 @@ Failed auth (401/403) and not-found (404) do **not** write audit rows.
 
 ## Management API (PAT)
 
-PAT-only routes under `/eso/v1` for org automation. **Machine tokens
+PAT-only routes under `/api/v1/manage` for org automation. **Machine tokens
 (`ss_…`) cannot call these.** Server settings (SMTP, LDAP, OIDC, banners) are
 **not** exposed. Used by **secretserver-cli** on `main`.
 
@@ -557,31 +557,30 @@ Auth: `Authorization: Bearer pat_…`. Team/project refs: UUID or unique name.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/eso/v1/teams` | List teams (`?q=` filter) |
-| `POST` | `/eso/v1/teams` | Create team `{"name":"…"}` |
-| `GET` | `/eso/v1/teams/{ref}` | Team detail + members/projects |
-| `DELETE` | `/eso/v1/teams/{ref}` | Delete team |
-| `GET` | `/eso/v1/teams/{ref}/members` | Team members |
-| `POST` | `/eso/v1/teams/{ref}/members` | Add member `{"email","role"}` |
-| `DELETE` | `/eso/v1/teams/{ref}/members/{member}` | Remove member |
-| `POST` | `/eso/v1/teams/{ref}/transfer` | Transfer ownership `{"email"}` |
-| `POST` | `/eso/v1/teams/{ref}/projects` | Create project `{"name",…}` |
-| `GET` | `/eso/v1/projects` | List projects |
-| `GET` | `/eso/v1/projects/{ref}` | Project detail |
-| `DELETE` | `/eso/v1/projects/{ref}` | Delete project |
-| `GET` | `/eso/v1/projects/{ref}/members` | Project members |
-| `POST` | `/eso/v1/projects/{ref}/members` | Add project member |
-| `DELETE` | `/eso/v1/projects/{ref}/members/{member}` | Remove project member |
-| `GET` | `/eso/v1/projects/{ref}/tokens` | Machine token metadata |
-| `POST` | `/eso/v1/projects/{ref}/tokens` | Create token (raw `ss_…` once) |
-| `DELETE` | `/eso/v1/projects/{ref}/tokens/{id}` | Revoke token |
-| `GET` | `/eso/v1/projects/{ref}/trash` | Soft-deleted secrets |
-| `POST` | `/eso/v1/projects/{ref}/trash/{id}/restore` | Restore |
-| `DELETE` | `/eso/v1/projects/{ref}/trash/{id}` | Purge permanently |
-| `GET` | `/eso/v1/projects/{ref}/secrets/{key}/history` | Version history (no plaintext) |
-| `GET` | `/eso/v1/projects/{ref}/audit` | Project secret audit |
-| `GET` | `/eso/v1/admin/users` | Global admin: user list (`?q=`) |
-| `GET` | `/eso/v1/admin/audit` | Global admin: org / secret / access audit |
+| `GET` | `/api/v1/manage/teams` | List teams (`?q=` filter) |
+| `POST` | `/api/v1/manage/teams` | Create team `{"name":"…"}` |
+| `GET` | `/api/v1/manage/teams/{ref}` | Team detail + members/projects |
+| `DELETE` | `/api/v1/manage/teams/{ref}` | Delete team |
+| `GET` | `/api/v1/manage/teams/{ref}/members` | Team members |
+| `POST` | `/api/v1/manage/teams/{ref}/members` | Add member `{"email","role"}` |
+| `DELETE` | `/api/v1/manage/teams/{ref}/members/{member}` | Remove member |
+| `POST` | `/api/v1/manage/teams/{ref}/transfer` | Transfer ownership `{"email"}` |
+| `POST` | `/api/v1/manage/teams/{ref}/projects` | Create project `{"name",…}` |
+| `GET` | `/api/v1/manage/projects/{ref}` | Project detail |
+| `DELETE` | `/api/v1/manage/projects/{ref}` | Delete project |
+| `GET` | `/api/v1/manage/projects/{ref}/members` | Project members |
+| `POST` | `/api/v1/manage/projects/{ref}/members` | Add project member |
+| `DELETE` | `/api/v1/manage/projects/{ref}/members/{member}` | Remove project member |
+| `GET` | `/api/v1/manage/projects/{ref}/tokens` | Machine token metadata |
+| `POST` | `/api/v1/manage/projects/{ref}/tokens` | Create token (raw `ss_…` once) |
+| `DELETE` | `/api/v1/manage/projects/{ref}/tokens/{id}` | Revoke token |
+| `GET` | `/api/v1/manage/projects/{ref}/trash` | Soft-deleted secrets |
+| `POST` | `/api/v1/manage/projects/{ref}/trash/{id}/restore` | Restore |
+| `DELETE` | `/api/v1/manage/projects/{ref}/trash/{id}` | Purge permanently |
+| `GET` | `/api/v1/manage/projects/{ref}/secrets/{key}/history` | Version history (no plaintext) |
+| `GET` | `/api/v1/manage/projects/{ref}/audit` | Project secret audit |
+| `GET` | `/api/v1/manage/admin/users` | Global admin: user list (`?q=`) |
+| `GET` | `/api/v1/manage/admin/audit` | Global admin: org / secret / access audit |
 
 **Groups, secret role bindings, and custom metadata** are managed in the **browser UI**
 today (Team → Groups, Secret → Permissions / Metadata).
