@@ -183,10 +183,13 @@ pkcs11:token=<label>;object=<KEK label>?module-path=/path/to/module.so&pin-sourc
 - **Add a slot** with a name and PKCS#11 URL (the PIN is either inline as
   `pin-value=` or read from a file via `pin-source=`; the UI redacts inline
   PINs and warns when an inline PIN is stored in the database).
-- **Edit a slot** via the slot menu → Edit (pre-fills the wizard form).
+- **Edit a slot** via the slot menu → Edit. The existing URL is shown redacted;
+  leave it blank to keep it unchanged. A slot URL cannot be changed while
+  project keys reference it—create a new slot and migrate those projects instead.
 - **Default slot**: new HSM projects auto-select it in the wizard.
 - **Status badge**: each slot shows a Connected/Offline badge (checked on page
-  load).
+  load). Connection tests are bounded by `HSM_TEST_TIMEOUT_SECONDS` (10 seconds
+  by default), and PKCS#11 modules must be under `HSM_ALLOWED_MODULE_DIRS`.
 - **Test** verifies the slot's token opens and the KEK exists (non-destructive).
   Returns success even when the KEK is missing (created on first use).
 - **Save without testing**: when the connection test fails, a "Save without

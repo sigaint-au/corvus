@@ -33,6 +33,7 @@ tests/
   test_crypto.py       # Fernet encrypt/decrypt
   test_eso.py          # /eso/v1 machine + PAT API
   test_health.py       # /health endpoint
+  test_live_api.py     # opt-in live app/PostgREST/ESO smoke tests
   test_helpers.py      # test utility helpers
   test_jwt.py          # JWT generation/validation
   test_ldap.py         # LDAP bind + group sync
@@ -54,7 +55,8 @@ tests/
 ```
 
 `pytest.ini` sets `testpaths = tests`, `pythonpath = . app`, and strict
-markers.
+markers. The `live` marker is opt-in and skips unless its required environment
+variables are configured.
 
 ---
 
@@ -67,13 +69,35 @@ tox -e lint
 # Or directly (from app/)
 cd app
 pylint --rcfile=../.pylintrc \
-  app.py audit.py authz.py config.py crypto.py db.py dir_sync.py \
-  ldap_auth.py lockout.py mailer.py nav.py oidc_auth.py paging.py \
-  passwords.py pats.py pins.py rbac_sync.py schema.py secret_kinds.py secret_ops.py \
-  settings_svc.py totp_svc.py user_sessions.py routes
+  app.py audit.py authz.py config.py crypto.py db.py dir_sync.py hsm.py \
+  ldap_auth.py lockout.py mailer.py migrations.py nav.py oidc_auth.py paging.py \
+  passwords.py pats.py pins.py project_keys.py rbac_sync.py schema.py secret_kinds.py \
+  secret_ops.py settings_svc.py totp_svc.py user_sessions.py routes
 ```
 
 ---
+
+## Live API smoke tests
+
+The default suite uses mocked database connections. To exercise a running
+Compose deployment, configure the endpoints and credentials, then run:
+
+```bash
+LIVE_APP_URL=http://127.0.0.1:8080 \
+LIVE_POSTGREST_URL=http://127.0.0.1:3000 \
+LIVE_API_JWT="$JWT" \
+LIVE_MACHINE_TOKEN="$MACHINE_TOKEN" \
+LIVE_PROJECT_REF="$PROJECT_UUID" \
+pytest -m live tests/test_live_api.py
+```
+
+`LIVE_API_JWT` must be a user JWT from `/api/token`; use a non-global-admin JWT
+for the URL-redaction assertion. Set `LIVE_API_JWT_IS_GLOBAL_ADMIN=1` only when
+the JWT belongs to a global admin. The live tests verify the health endpoint,
+anonymous denial of the sensitive HSM RPC, authenticated PostgREST access
+without HSM URLs, and optional machine-token project access.
+Run `scripts/seed_mock.py` in the app container first; it prints the machine
+API token and project reference for the optional test.
 
 ## Test conventions
 

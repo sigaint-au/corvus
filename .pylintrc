@@ -7,9 +7,6 @@ ignore-paths =
 [MESSAGES CONTROL]
 # Pragmatic for a small Flask app: silence noise, keep real bugs.
 disable =
-    C0114,  # missing-module-docstring
-    C0115,  # missing-class-docstring
-    C0116,  # missing-function-docstring
     C0103,  # invalid-name (cur, uid, bp, etc.)
     R0903,  # too-few-public-methods
     R0913,  # too-many-arguments

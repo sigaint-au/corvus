@@ -13,7 +13,7 @@ HSM in production by configuring a named slot's PKCS#11 URL.
   segment). The KEK never leaves the HSM.
 - Each BYOK project still has a 32-byte Fernet **data-encryption key (DEK)**
   for its secrets. For HSM-backed projects the DEK is wrapped with the HSM KEK
-  (AES-CBC) instead of `MASTER_KEY`.
+  (AES key-wrap when supported, otherwise AES-CBC) instead of `MASTER_KEY`.
 - `private.project_crypto_keys.key_enc` holds the wrapped DEK,
   `key_provider='hsm'`, and `kms_key_ref` = the KEK label. `api.secrets`/
   `api.secret_versions.crypto_provider` stays `'project'` for HSM-backed
@@ -48,10 +48,16 @@ HSM-backed projects.
 ## App configuration (env)
 
 The app holds **no global HSM configuration** — HSM access is configured per
-**named slot** (a PKCS#11 URL in `private.hsm_slots`). The only runtime env is
-`SOFTHSM2_CONF` (compose sets it to the shared token directory's `softhsm2.conf`
-so `libsofthsm2.so` can find the token); everything else lives in each slot's
-URL.
+**named slot** (a PKCS#11 URL in `private.hsm_slots`). Runtime configuration includes:
+
+- `SOFTHSM2_CONF`: SoftHSM2's shared configuration path.
+- `HSM_ALLOWED_MODULE_DIRS`: comma-separated real-path directories from which the
+  app may load PKCS#11 modules. The compose default is `/usr/lib,/usr/local/lib,/lib`.
+- `HSM_TEST_TIMEOUT_SECONDS`: maximum duration for a wizard/status connection test;
+  the default is 10 seconds.
+
+Everything else lives in each slot's URL. Production deployments should set an
+allow-list that contains only trusted PKCS#11 module directories.
 
 **DEK format:** project keys are Fernet keys (`Fernet.generate_key()`, 44-byte
 urlsafe base64). The HSM wraps the decoded 32 raw bytes (AES key-wrap when
@@ -62,11 +68,12 @@ supported, else AES-CBC). Unwrap returns a Fernet key again.
 | File | Role |
 |------|------|
 | `app/hsm.py` | PKCS#11 wrapper: `parse_pkcs11_url`/`redact_pkcs11_url`/`has_inline_pin`, `generate_kek`/`delete_kek`, and slot-aware `available_for_slot`/`status_for_slot`/`ensure_kek_for_slot`/`wrap_dek_for_slot`/`unwrap_dek_for_slot`/`wrap_dek_with_label`/`test_connection_for_slot` |
-| `app/config.py` | `master_key_is_default()` (no HSM env vars) |
+| `app/config.py` | General application configuration; HSM runtime variables are read by `app/hsm.py` |
 | `app/crypto.py` | `_dek_for()` dispatches unwrap by `key_provider` (local vs hsm) and `hsm_slot_id` via `_slot_url()`; `project_dek()`; `slot_url()`/`clear_slot_url_cache()`; `encrypt_for_project`/`decrypt_for_project` |
 | `app/project_keys.py` | `ensure_project_key(provider, hsm_slot_id)`, `adopt_project_key`, `migrate_project_key(target_slot_id)`, `rotate_hsm_kek(slot_id)`, `encryption_summary`, `migrate_all_local_to_hsm(target_slot_id)`, `link_legacy_to_slot`, `rewrap_project_keys` |
-| `db/migrations/0027_hsm_slots.sql` | `private.hsm_slots` table + `api.list_hsm_slots`/`hsm_slot_url`/`hsm_slot_upsert`/`hsm_slot_delete` |
-| `softhsm2/` | Dev token-initialiser container |
+| `db/migrations/0027_hsm_slots.sql` | `private.hsm_slots` table + base HSM slot functions |
+| `db/migrations/0028_hsm_rls_hardening.sql` | Restricts HSM RPC grants, masks URLs for non-admins, protects RBAC subject lookup, and blocks unsafe slot URL changes |
+| `softhsm2/` | Dev token-initialiser container and PIN-file setup |
 
 ## Manual SoftHSM2 setup (no compose)
 
@@ -83,7 +90,7 @@ Then create a slot in **Server Settings → Encryption → HSM slots** with a
 PKCS#11 URL (see below), e.g.:
 
 ```
-pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-value=1234
+pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-source=/hsm/tokens/hsm-pin
 ```
 
 ---
@@ -132,12 +139,20 @@ pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofths
   metadata-only `UPDATE` (no re-encryption). The slot must be reachable
   (`available_for_slot`) before linking; the KEK label is verified against the
   live token.
+- A slot URL cannot be changed while project keys reference that slot. Create a
+  new slot and migrate the projects instead; this prevents silently pointing
+  existing wrapped DEKs at a different token or KEK.
+- `api.list_hsm_slots()` is available to authenticated API callers for slot
+  metadata, but returns `pkcs11_url = null` unless the caller is a global admin.
+  `api.hsm_slot_url()` is not executable by PostgREST roles; internal crypto and
+  admin code read the private table through privileged application connections.
 
 ## `test_connection_for_slot` behavior
 
 Returns `(True, msg)` when the token is reachable, **even if the KEK is missing**
-— the KEK is created lazily on first use. Returns `(False, error)` only when the
-session cannot be opened (module not found, token missing, wrong PIN, etc.).
+— the KEK is created lazily on first use. Returns `(False, error)` when the
+session cannot be opened (module not found, token missing, wrong PIN, etc.) or
+the configured connection-test timeout is reached.
 
 ## `has_inline_pin`
 

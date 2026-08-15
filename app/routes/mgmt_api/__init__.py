@@ -48,6 +48,7 @@ from .admin import (
 
 
 def register(app):
+    """Register the authenticated management API routes."""
     app.get("/eso/v1/teams")(mgmt_list_teams)
     app.post("/eso/v1/teams")(mgmt_create_team)
     app.get("/eso/v1/teams/<team_ref>")(mgmt_get_team)

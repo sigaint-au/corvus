@@ -20,7 +20,6 @@ from jwt import PyJWKClient
 import crypto
 import db
 import settings_svc
-from ldap_auth import group_matches
 
 log = logging.getLogger(__name__)
 

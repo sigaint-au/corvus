@@ -37,11 +37,13 @@ _HSM_TEST_TIMEOUT = max(1, int(os.environ.get("HSM_TEST_TIMEOUT_SECONDS", "10"))
 
 
 def _raise_timeout(_signum, _frame):
+    """Raise the exception used to abort a timed-out HSM probe."""
     raise TimeoutError("HSM connection timed out")
 
 
 @contextmanager
 def _operation_timeout(seconds: int):
+    """Bound a synchronous HSM probe with a process alarm when supported."""
     try:
         previous_handler = signal.getsignal(signal.SIGALRM)
         signal.signal(signal.SIGALRM, _raise_timeout)
@@ -155,6 +157,7 @@ def has_inline_pin(url: str) -> bool:
 
 
 def _pkcs11():
+    """Import and return the optional python-pkcs11 dependency."""
     try:
         import pkcs11
     except ImportError as e:

@@ -72,6 +72,7 @@ def _items_from_import_form():
 
 
 def register(app):
+    """Register project import and export routes."""
     app.get("/projects/<uuid:project_id>/export")(export_secrets)
     app.post("/projects/<uuid:project_id>/import/preview")(import_preview)
     app.post("/projects/<uuid:project_id>/import")(import_secrets)

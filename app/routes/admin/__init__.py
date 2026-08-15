@@ -14,6 +14,7 @@ from .settings import (
 
 
 def register(app):
+    """Register administration, audit, and server-settings routes."""
     app.route("/admin/audit", methods=["GET", "POST"])(admin_audit)
     app.get("/admin/audit/access/export")(admin_audit_access_export)
     app.get("/admin/audit/export")(admin_audit_export)

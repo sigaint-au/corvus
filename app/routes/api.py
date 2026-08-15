@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 
 
 def register(app):
+    """Register browser-session and personal-token API routes."""
     app.get("/api/token")(api_token)
     app.get("/api/users/suggest")(users_suggest)
 

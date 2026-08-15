@@ -53,6 +53,7 @@ from .bindings import (
 
 
 def register(app):
+    """Register secret listing, lifecycle, access, and reveal routes."""
     app.get("/secrets")(secrets_list)
     app.get("/shared")(shared_secrets_list)
     app.get("/trash")(trash)

@@ -82,7 +82,7 @@ The app connects as `authenticator`, then `SET ROLE authenticated` and sets
 | `projects` | api | Projects and settings |
 | `groups` / `group_members` | api | Team-scoped groups + membership |
 | `secrets` | api | Secret rows (`value_enc` = Fernet ciphertext; `crypto_provider` records which key) |
-| `project_crypto_keys.hsm_slot_id` | uuid FK → `hsm_slots` | NULL = legacy env-var HSM config; non-NULL = named slot's KEK wraps the DEK |
+| `project_crypto_keys.hsm_slot_id` | uuid FK → `hsm_slots` | NULL = legacy pre-named-slot HSM row; non-NULL = named slot's KEK wraps the DEK |
 | `secret_versions` | api | Archived prior ciphertext on update (also carries `crypto_provider`) |
 | `secret_meta` | api | Custom searchable metadata |
 | `secret_access_requests` | api | Reveal-approval requests + grants |
@@ -155,11 +155,28 @@ Defined in `rbac.sql`.
 | `api.can_access_secret(sid,need)` | Loads row then applies `can_access_secret_row` |
 | `api.can_reveal_secret(sid)` | Can reveal now (RBAC + approval + grant) |
 | `api.secret_requires_approval(sid)` | Effective approval policy |
-| `api.can(verb, resource, scope_kind, scope_id)` | Core RBAC check via scope chain |
+| `api.can(verb, resource, scope_kind, scope_id)` | Core RBAC check via scope chain; subject overrides are limited to the current user or global admins |
 | `api.rbac_scope_chain(scope_kind, scope_id)` | Returns scope chain CTE |
-| `api.rbac_subjects(user_id)` | Returns subject rows for a user |
+| `api.rbac_subjects(user_id)` | Returns subject rows for the current user; another user requires global-admin authorization |
 | `api.my_access_rows()` | User's own bindings across scopes |
 | `api.effective_access_rows(scope_kind, scope_id)` | Who can access a resource and why |
+
+---
+
+## HSM slot RPC security
+
+`private.hsm_slots` is never exposed as a table to PostgREST. The migration
+`0028_hsm_rls_hardening.sql` applies these protections:
+
+- `api.list_hsm_slots()` is unavailable to `anon`; authenticated callers receive
+  slot metadata with `pkcs11_url = null`, while global-admin calls may receive the
+  URL for the admin UI.
+- `api.hsm_slot_url(uuid)` is revoked from PostgREST roles. Internal crypto and
+  admin code read the private table through privileged application connections.
+- `api.hsm_slot_upsert` and `api.hsm_slot_delete` require a global admin, and the
+  write RPCs are not executable by `anon`.
+- A slot URL cannot change while project keys reference that slot. Use a new slot
+  and migrate the projects instead.
 
 ---
 

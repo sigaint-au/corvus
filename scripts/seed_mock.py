@@ -507,6 +507,8 @@ def main() -> None:
 
         # Machine accounts (ServiceAccount subjects) + allow-list scopes
         token_ids: dict[tuple[str, str, str], str] = {}
+        live_machine_token = ""
+        live_machine_project_id = ""
         for team_name, proj_name, name, role, scope_keys in MACHINE_TOKENS:
             pid = project_ids[(team_name, proj_name)]
             raw = "ss_" + secrets.token_urlsafe(32)
@@ -527,6 +529,9 @@ def main() -> None:
             )
             token_id = str(cur.fetchone()["id"])
             token_ids[(team_name, proj_name, name)] = token_id
+            if not live_machine_token:
+                live_machine_token = raw
+                live_machine_project_id = pid
             if scope_keys:
                 cur.execute(
                     "DELETE FROM api.machine_token_scope WHERE token_id = %s::uuid", (token_id,)
@@ -603,6 +608,10 @@ def main() -> None:
     for team_name, proj_name, name, _role, _keys in MACHINE_TOKENS:
         print(f"  {team_name}/{proj_name}/{name}")
     print("CLI needs a project UUID (above) + a machine token ss_… from UI Integrations.")
+    if live_machine_token:
+        print("Live API smoke test variables:")
+        print(f"  LIVE_PROJECT_REF={live_machine_project_id}")
+        print(f"  LIVE_MACHINE_TOKEN={live_machine_token}")
     print("Groups: team Groups tab; project Access and secret Access for scoped bindings.")
     print("Access review: Administration > Access review (custom roles included).")
     seed_hsm_slot()

@@ -61,6 +61,7 @@ def insert_token_scopes(cur, token_id: str, scopes: list[tuple[str, str]]) -> No
 
 
 def register(app):
+    """Register machine-token and project-token routes on the Flask app."""
     app.get("/machines")(machines_list)
     app.post("/projects/<uuid:project_id>/tokens")(create_token)
     app.post("/projects/<uuid:project_id>/tokens/<uuid:token_id>/delete")(delete_token)
