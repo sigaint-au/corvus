@@ -1,4 +1,4 @@
-"""Unit tests for per-project crypto key lifecycle (app/project_keys.py)."""
+"""Unit tests for per-project crypto key lifecycle (app/crypto/project_keys.py)."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-import project_keys
+from crypto import project_keys
 
 
 def _conn(fetchone=None, fetchall=None):
@@ -85,7 +85,7 @@ class TestProjectKeys:
             assert project_keys.rewrap_project_keys("old-master-key") == 0
 
     def test_ensure_project_key_hsm_requires_slot(self):
-        import hsm
+        from crypto import hsm
 
         pid = str(uuid4())
         admin_conn, admin_cur = _conn(fetchone=None)
@@ -114,7 +114,7 @@ class TestProjectKeys:
         assert n == 0
         assert not any("hsm-blob" in str(u[1]) for u in updates)
     def test_migrate_project_key_to_hsm(self):
-        import hsm
+        from crypto import hsm
         from cryptography.fernet import Fernet
 
         pid = str(uuid4())
@@ -163,7 +163,7 @@ class TestProjectKeys:
         assert params[2] is None
 
     def test_rotate_hsm_kek(self):
-        import hsm
+        from crypto import hsm
 
         slot_id = str(uuid4())
         rows = [
@@ -222,7 +222,7 @@ class TestProjectKeys:
             project_keys.migrate_all_local_to_hsm(target_slot_id=None)
 
     def test_ensure_project_key_hsm_slot(self):
-        import hsm
+        from crypto import hsm
 
         pid, slot_id = str(uuid4()), str(uuid4())
         admin_conn, admin_cur = _conn(fetchone=None)
@@ -242,7 +242,7 @@ class TestProjectKeys:
         assert str(params[4]) == slot_id
 
     def test_migrate_between_slots_rewraps_only(self):
-        import hsm
+        from crypto import hsm
         from cryptography.fernet import Fernet
 
         pid, slot_a, slot_b = str(uuid4()), str(uuid4()), str(uuid4())
@@ -268,7 +268,7 @@ class TestProjectKeys:
         assert str(params[2]) == slot_b
 
     def test_link_legacy_to_slot(self):
-        import hsm
+        from crypto import hsm
 
         pid, slot_id = str(uuid4()), str(uuid4())
         admin_conn, admin_cur = _conn(fetchone=None, fetchall=[])
@@ -287,7 +287,7 @@ class TestProjectKeys:
 
     def test_link_legacy_to_slot_unreachable(self):
         """Raises when the HSM slot is not reachable."""
-        import hsm
+        from crypto import hsm
 
         slot_id = str(uuid4())
         admin_conn, _ = _conn(fetchone=None, fetchall=[])
@@ -299,7 +299,7 @@ class TestProjectKeys:
                 project_keys.link_legacy_to_slot(slot_id)
 
     def test_rotate_hsm_kek_for_slot(self):
-        import hsm
+        from crypto import hsm
 
         slot_id = str(uuid4())
         rows = [

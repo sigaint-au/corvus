@@ -16,10 +16,10 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
-import rbac_sync
+from auth import authz
+from core import config
+from core import db
+from auth import rbac_sync
 from crypto import sha256_hex
 
 

@@ -18,8 +18,8 @@ import jwt
 from jwt import PyJWKClient
 
 import crypto
-import db
-import settings_svc
+from core import db
+from core import settings_svc
 
 log = logging.getLogger(__name__)
 
@@ -544,7 +544,7 @@ def sync_oidc_user(email: str, name: str, groups: list | None = None) -> dict:
         >>> # user = sync_oidc_user("a@b.com", "Ada", ["admins"])
         >>> # user["email"] == "a@b.com"
     """
-    from dir_sync import (
+    from integrations.dir_sync import (
         apply_global_admin_maps,
         apply_group_membership_maps,
         apply_team_membership_maps,

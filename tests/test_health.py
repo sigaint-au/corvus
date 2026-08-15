@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import app as store
-import config
-import db
+from core import config
+from core import db
 
 from tests.helpers import mock_conn as _conn
 

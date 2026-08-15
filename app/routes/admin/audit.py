@@ -14,9 +14,9 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import db
-import settings_svc
+from auth import authz
+from core import db
+from core import settings_svc
 from .helpers import (
     _csv_response,
     _json_response,

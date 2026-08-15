@@ -7,11 +7,11 @@ from flask import (
     request,
 )
 import audit
-import authz
-import config
-import db
-import rbac_sync
-import settings_svc
+from auth import authz
+from core import config
+from core import db
+from auth import rbac_sync
+from core import settings_svc
 from lib.users import lookup_user_id
 from .helpers import (
     _require_pat,

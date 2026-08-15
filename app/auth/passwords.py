@@ -6,7 +6,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-import db
+from core import db
 from crypto import sha256_hex
 
 log = logging.getLogger(__name__)

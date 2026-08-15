@@ -8,10 +8,10 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import authz
-import config
-import db
-import paging
+from auth import authz
+from core import config
+from core import db
+from ui import paging
 
 from tests.helpers import mock_conn as _conn
 

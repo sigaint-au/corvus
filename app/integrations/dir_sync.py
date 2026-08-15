@@ -34,7 +34,7 @@ def apply_global_admin_maps(cur, uid, groups, role_maps, group_key: str) -> None
         ...     cur, uid, ["cn=admins,ou=groups"], role_maps, "ldap_group"
         ... )
     """
-    from ldap_auth import group_matches
+    from integrations.ldap_auth import group_matches
 
     if not role_maps:
         return
@@ -78,7 +78,7 @@ def apply_team_membership_maps(
         ...     cur, uid, groups, tmaps, group_key="oidc_group", source="oidc"
         ... )
     """
-    from ldap_auth import group_matches
+    from integrations.ldap_auth import group_matches
 
     desired: dict[str, str] = {}
     for m in tmaps:
@@ -94,7 +94,7 @@ def apply_team_membership_maps(
         ):
             desired[tid] = rname
 
-    import rbac_sync
+    from auth import rbac_sync
 
     cur.execute(
         """
@@ -156,7 +156,7 @@ def apply_group_membership_maps(
     Returns:
         None.
     """
-    from ldap_auth import group_matches
+    from integrations.ldap_auth import group_matches
 
     cur.execute(
         """

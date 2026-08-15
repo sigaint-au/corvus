@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pats
+from auth import pats
 from crypto import sha256_hex
 
 

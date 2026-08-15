@@ -6,12 +6,12 @@ from datetime import datetime, timedelta, timezone
 
 from flask import flash, redirect, render_template, request, session, url_for
 
-import authz
-import config
-import db
-import nav
+from auth import authz
+from core import config
+from core import db
+from ui import nav
 from crypto import sha256_hex
-from secret_kinds import annotate_token_expiry
+from secret_svc.secret_kinds import annotate_token_expiry
 
 log = logging.getLogger(__name__)
 

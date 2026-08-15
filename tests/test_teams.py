@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 import app as store
-import config
-import db
-import ldap_auth
-import schema as schema_mod
-import settings_svc
+from core import config
+from core import db
+from integrations import ldap_auth
+from core import schema as schema_mod
+from core import settings_svc
 
 from tests.helpers import REPO_ROOT, mock_conn as _conn
 
@@ -238,7 +238,7 @@ class TestTeams:
     def test_create_project_byok_creates_key(self):
         tid, pid = (uuid4(), uuid4())
         conn, _ = _conn(fetchone={'id': pid})
-        import project_keys
+        from crypto import project_keys
         with patch.object(db, 'as_user', return_value=conn), \
              patch.object(project_keys, 'ensure_project_key', return_value=True) as ensure:
             r = self.client.post(

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from config import (
+from core.config import (
     RBAC_CLUSTER_ROLE_DROPDOWN,
     RBAC_PROJECT_ROLE_DROPDOWN,
     RBAC_PROJECT_ROLE_NAMES,
@@ -333,7 +333,7 @@ def enrich_binding_emails(bindings: list) -> list:
     email_map: dict[str, str] = {}
     if user_ids:
         try:
-            import db
+            from core import db
 
             with db.connect_admin() as aconn, aconn.cursor() as acur:
                 acur.execute(

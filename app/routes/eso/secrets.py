@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask import jsonify
 import crypto
-import db
+from core import db
 from lib.validate import is_uuid
 from .helpers import (
     _audit,

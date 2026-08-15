@@ -8,9 +8,9 @@ import re
 from flask import flash, redirect, render_template, request, session, url_for
 
 import audit
-import authz
-import config
-import db
+from auth import authz
+from core import config
+from core import db
 from lib.users import lookup_user_id
 from lib.validate import is_uuid
 

@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from flask import abort, current_app, flash, redirect, request, session, url_for
 
-import db
+from core import db
 
 
 # Endpoints allowed while pending 2FA challenge or forced TOTP enrollment
@@ -140,7 +140,7 @@ def validate_registered_session():
         session.clear()
         flash("Please sign in again.", "error")
         return redirect(url_for("login"))
-    import user_sessions
+    from auth import user_sessions
 
     if not user_sessions.touch_session(sid, uid):
         session.clear()

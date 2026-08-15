@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import app as store
-import config
-import db
-import migrations as migrations_mod
-import schema as schema_mod
+from core import config
+from core import db
+from core import migrations as migrations_mod
+from core import schema as schema_mod
 
 from tests.helpers import mock_conn as _conn
 

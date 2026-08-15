@@ -7,10 +7,10 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import config
+from core import config
 import crypto
-import db
-import ldap_auth
+from core import db
+from integrations import ldap_auth
 
 from tests.helpers import mock_conn as _conn
 

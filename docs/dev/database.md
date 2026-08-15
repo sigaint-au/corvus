@@ -8,7 +8,7 @@ enforce access control.
 ## Schema management
 
 Schema DDL is versioned in `db/migrations/*.sql` and applied once, in order, by
-the migration runner (`app/migrations.py`).
+the migration runner (`app/core/migrations.py`).
 
 - **Fresh installs** run the two baseline migrations via
   `docker-entrypoint-initdb.d` (mounted by `compose.yml`):

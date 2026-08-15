@@ -7,11 +7,11 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import authz
-import config
-import db
-import ldap_auth
-import settings_svc
+from auth import authz
+from core import config
+from core import db
+from integrations import ldap_auth
+from core import settings_svc
 
 from tests.helpers import REPO_ROOT, mock_conn as _conn
 

@@ -4,15 +4,15 @@ from urllib.parse import parse_qs, urlsplit
 
 from flask import session, url_for
 
-import authz
-from config import (
+from auth import authz
+from core.config import (
     CLIPBOARD_CLEAR_SECONDS,
     MAX_EXPIRY_DAYS,
     REVEAL_AUTO_HIDE_SECONDS,
 )
-import db
-import pins
-from settings_svc import branding, classification, team_classification
+from core import db
+from ui import pins
+from core.settings_svc import branding, classification, team_classification
 
 
 def nav_teams(user_id: str):

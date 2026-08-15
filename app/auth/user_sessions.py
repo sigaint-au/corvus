@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import request
 
-import db
+from core import db
 
 log = logging.getLogger(__name__)
 

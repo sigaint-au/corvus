@@ -25,7 +25,7 @@ sys.path.insert(0, "/app")
 os.chdir("/app")
 
 import crypto  # noqa: E402
-import db  # noqa: E402
+from core import db  # noqa: E402
 
 PASSWORD = "password"
 

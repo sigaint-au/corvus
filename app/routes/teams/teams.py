@@ -13,12 +13,12 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
-import ldap_auth
-import rbac_sync
-import settings_svc
+from auth import authz
+from core import config
+from core import db
+from integrations import ldap_auth
+from auth import rbac_sync
+from core import settings_svc
 
 log = logging.getLogger(__name__)
 

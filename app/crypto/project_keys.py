@@ -12,7 +12,7 @@ import logging
 import secrets
 
 import crypto
-import db
+from core import db
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def ensure_project_key(project_id, provider: str = "local", hsm_slot_id=None) ->
         if not cur.fetchone():
             raw = crypto.generate_project_key()
             if provider == "hsm":
-                import hsm
+                from crypto import hsm
 
                 if hsm_slot_id is None:
                     raise RuntimeError("HSM provider requires a named slot")
@@ -230,7 +230,7 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
         old_dek = crypto.project_dek(project_id)
         if old_dek is None:
             raise RuntimeError("project key exists but its DEK could not be resolved")
-        import hsm
+        from crypto import hsm
 
         new_enc, new_ref = hsm.wrap_dek_for_slot(slot_url, old_dek)
         with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
@@ -254,7 +254,7 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
 
     new_raw = crypto.generate_project_key()
     if new_provider == "hsm":
-        import hsm
+        from crypto import hsm
 
         if target_slot_id is None:
             raise RuntimeError("HSM provider requires a named slot")
@@ -375,7 +375,7 @@ def rotate_hsm_kek(slot_id) -> int:
         >>> n >= 0
         True
     """
-    import hsm
+    from crypto import hsm
 
     slot_url = crypto.slot_url(slot_id)
     if not slot_url:
@@ -501,7 +501,7 @@ def link_legacy_to_slot(slot_id) -> int:
     remain decryptable. Metadata-only (no re-encryption). Returns the number of
     projects linked.
     """
-    import hsm
+    from crypto import hsm
 
     slot_url = crypto.slot_url(slot_id)
     if not slot_url:

@@ -7,10 +7,10 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import authz
-import config
+from auth import authz
+from core import config
 import crypto
-import db
+from core import db
 
 from tests.helpers import mock_conn as _conn
 

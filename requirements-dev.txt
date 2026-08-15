@@ -1,6 +1,0 @@
-# Dev / CI tooling (not needed at runtime).
-# App runtime deps: install from app/requirements.txt separately (or via tox).
-pytest==8.3.5
-pytest-cov==6.0.0
-pylint==3.3.6
-tox==4.25.0

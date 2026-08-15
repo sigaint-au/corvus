@@ -10,8 +10,8 @@ from flask import (
     session,
     url_for,
 )
-import authz
-import db
+from auth import authz
+from core import db
 import audit
 
 
@@ -94,7 +94,7 @@ def create_project(team_id):
             flash(str(e), "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
     if encryption in ("byok", "project", "hsm"):
-        import project_keys
+        from crypto import project_keys
 
         provider = "hsm" if encryption == "hsm" else "local"
         if provider == "hsm" and not hsm_slot:

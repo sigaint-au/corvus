@@ -1,12 +1,18 @@
-"""Fernet encryption for secret values and sensitive settings."""
+"""Fernet encryption for secret values and sensitive settings.
+
+This package also hosts per-project BYOK key management (``project_keys``)
+and external HSM integration (``hsm``). The public API of this module is
+re-exported here so ``import crypto`` and ``from crypto import encrypt``
+continue to work as before.
+"""
 from base64 import urlsafe_b64encode
 from functools import lru_cache
 from hashlib import sha256
 
 from cryptography.fernet import Fernet
 
-from config import MASTER_KEY
-import db
+from core.config import MASTER_KEY
+from core import db
 
 
 def sha256_hex(val: str) -> str:
@@ -176,7 +182,7 @@ def clear_slot_url_cache() -> None:
 def _dek_for(row: dict) -> bytes:
     """Unwrap the project DEK using its key_provider (master or HSM)."""
     if (row.get("key_provider") or "local") == "hsm":
-        from hsm import unwrap_dek_for_slot
+        from crypto.hsm import unwrap_dek_for_slot
 
         slot_id = row.get("hsm_slot_id")
         if slot_id is None:

@@ -7,7 +7,7 @@ Unit tests use **pytest** with a mocked DB — Postgres is not required.
 ## Prerequisites
 
 ```bash
-pip install -r app/requirements.txt -r requirements-dev.txt
+pip install -e ".[dev]"
 ```
 
 ---
@@ -54,9 +54,9 @@ tests/
   test_ui.py           # template rendering, role tooltips
 ```
 
-`pytest.ini` sets `testpaths = tests`, `pythonpath = . app`, and strict
-markers. The `live` marker is opt-in and skips unless its required environment
-variables are configured.
+`pyproject.toml` `[tool.pytest.ini_options]` sets `testpaths = tests`,
+`pythonpath = . app`, and strict markers. The `live` marker is opt-in and
+skips unless its required environment variables are configured.
 
 ---
 
@@ -69,10 +69,9 @@ tox -e lint
 # Or directly (from app/)
 cd app
 pylint --rcfile=../.pylintrc \
-  app.py audit.py authz.py config.py crypto.py db.py dir_sync.py hsm.py \
-  ldap_auth.py lockout.py mailer.py migrations.py nav.py oidc_auth.py paging.py \
-  passwords.py pats.py pins.py project_keys.py rbac_sync.py schema.py secret_kinds.py \
-  secret_ops.py settings_svc.py totp_svc.py user_sessions.py routes
+  app.py \
+  core auth crypto integrations secret_svc ui \
+  audit lib routes
 ```
 
 ---

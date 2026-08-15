@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import app as store
-import config
-import db
-import lockout
+from core import config
+from core import db
+from auth import lockout
 
 from tests.helpers import mock_conn as _conn
 

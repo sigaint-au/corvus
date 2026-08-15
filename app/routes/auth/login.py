@@ -16,16 +16,16 @@ from flask import (
     session,
     url_for,
 )
-import authz
-import db
-import ldap_auth
-import lockout
-import mailer
-import oidc_auth
-import passwords
-import settings_svc
-import totp_svc
-import user_sessions
+from auth import authz
+from core import db
+from integrations import ldap_auth
+from auth import lockout
+from integrations import mailer
+from integrations import oidc_auth
+from auth import passwords
+from core import settings_svc
+from auth import totp_svc
+from auth import user_sessions
 from .helpers import (
     _establish_session,
     _finish_login_redirect,

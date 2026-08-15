@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from secret_kinds import expires_status, parse_secret_pairs, secret_due_status
+from secret_svc.secret_kinds import expires_status, parse_secret_pairs, secret_due_status
 
 from .search import (
     global_search,

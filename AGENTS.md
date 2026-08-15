@@ -4,9 +4,10 @@ Secret server: self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.i
 
 ## Run / verify
 
-- Tests: `pytest` from repo root (pythonpath = `.` `app` is in `tests/helpers.py`). **Tests mock the DB — no Postgres needed.** `str | None` syntax requires Python 3.10+; the system `python3` on macOS (3.9) will NOT work.
+- Tests: `pytest` from repo root (pythonpath = `.` `app` is in `pyproject.toml`). **Tests mock the DB — no Postgres needed.** `str | None` syntax requires Python 3.10+; the system `python3` on macOS (3.9) will NOT work.
+- Install dev deps: `pip install -e ".[dev]"` (uses `pyproject.toml` `[project.optional-dependencies] dev`).
 - Single test: `pytest tests/test_x.py::Class::test_y` (or `tests/...`).
-- Lint: from `app/` run `pylint --rcfile=../.pylintrc <modules...>` with `PYTHONPATH=app` (repo tox `-e lint` does this). Full-list of lint modules: app.py, audit, authz.py, config.py, crypto.py, db.py, dir_sync.py, ldap_auth.py, lockout.py, mailer.py, migrations.py, nav.py, oidc_auth.py, paging.py, passwords.py, pats.py, pins.py, schema.py, secret_kinds.py, secret_ops.py, settings_svc.py, totp_svc.py, user_sessions.py, `lib`, and `routes`.
+- Lint: `tox -e lint` or `make lint`. Format: `make format` (ruff). Type-check: `make typecheck` (mypy).
 
 ## Run the app / dev containers
 
@@ -15,7 +16,7 @@ Secret server: self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.i
 
 ## DB / RLS / RBAC / migrations (hard-earned)
 
-- **Migrations are the sole source of truth for DDL.** Versioned SQL lives in `db/migrations/*.sql`, applied once, in order, by `app/migrations.py` (records version + sha256 checksum in `private.schema_migrations`). `0001_init.sql` and `0002_rbac.sql` are the non-idempotent baseline (run by docker-entrypoint on a fresh volume); everything after is additive/idempotent.
+- **Migrations are the sole source of truth for DDL.** Versioned SQL lives in `db/migrations/*.sql`, applied once, in order, by `app/core/migrations.py` (records version + sha256 checksum in `private.schema_migrations`). `0001_init.sql` and `0002_rbac.sql` are the non-idempotent baseline (run by docker-entrypoint on a fresh volume); everything after is additive/idempotent.
 - **Do not add a second RBAC function/table definition** — put it in `db/migrations/0002_rbac.sql` (and add a new numbered migration for any later change).
 - **Adding a migration:** create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it idempotent where possible, and run `pytest` + `tox -e lint`. Never edit an already-released migration file — its checksum is recorded.
 - Machine-token `role` column uses `read/reveal/write` (`service-*` is the RBAC name).
@@ -25,13 +26,16 @@ Roles in the UI are **RBAC names** (`team-owner/team-admin/...` and project-role
 ## Secrets / templates
 
 - `app/templates/` = server-rendered, oat.ink + HTMX. Tabs on server pages are `<nav class="tabs">` links (not `role=tablist`); responsive tables by wrap `<div class="table">` (oat does horizontal scroll).
+- Health checks: `/healthz` (liveness, always 200) and `/readyz` (readiness, checks DB). No auth required.
+- Config: `pyproject.toml` consolidates ruff, pytest, pyright, mypy, pylint settings. `.pylintrc` and `tox.ini` remain for their respective tools.
+- Connection pool: `db.py` uses `psycopg_pool` for admin connections (reduces overhead). User connections (`as_user`) stay direct (need `SET ROLE` per checkout).
 - Binding forms re-use `partials/access_bindings_panel.html` (POST rbac role names + subject_kind).
 - Keep user-facing copy plain; use RBAC role names everywhere.
 
 ## Gotchas
 
-- `MASTER_KEY` encrypts secret values; `crypto.py`. Schema changes are a **migration story** — add a new `db/migrations/NNNN_slug.sql` file, never edit the baseline.
-- Per-project BYOK: a project may have its own data-encryption key (`private.project_crypto_keys`, DEK wrapped by `MASTER_KEY`). Secret rows record `crypto_provider` (`master`/`project`); server settings always use `MASTER_KEY`. Management lives in `app/project_keys.py`; onboarding is the new-project wizard page (`routes/teams/projects.py`).
+- `MASTER_KEY` encrypts secret values; `crypto/__init__.py`. Schema changes are a **migration story** — add a new `db/migrations/NNNN_slug.sql` file, never edit the baseline.
+- Per-project BYOK: a project may have its own data-encryption key (`private.project_crypto_keys`, DEK wrapped by `MASTER_KEY`). Secret rows record `crypto_provider` (`master`/`project`); server settings always use `MASTER_KEY`. Management lives in `app/crypto/project_keys.py`; onboarding is the new-project wizard page (`routes/teams/projects.py`).
 - `ALLOW_INSECURE_DEFAULTS=1` only for local dev; `refuse_insecure_defaults()` otherwise errors.
 - Don't add `pyotp`/TOTP libs — the stdlib TOTP (hmac/hashlib/struct/time) is the chosen one.
 

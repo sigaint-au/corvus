@@ -4,10 +4,10 @@ import logging
 
 from flask import jsonify, redirect, request, session, url_for
 
-import authz
-import config
-import db
-import pats
+from auth import authz
+from core import config
+from core import db
+from auth import pats
 
 log = logging.getLogger(__name__)
 

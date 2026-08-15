@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from flask import jsonify
-import db
+from core import db
 log = logging.getLogger(__name__)
 
 

@@ -6,8 +6,8 @@ from flask import (
     jsonify,
     request,
 )
-import config
-import db
+from core import config
+from core import db
 from .helpers import (
     _audit,
     _parse_auth,

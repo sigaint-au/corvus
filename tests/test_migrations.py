@@ -1,4 +1,4 @@
-"""Unit tests for the versioned SQL migration runner (app/migrations.py)."""
+"""Unit tests for the versioned SQL migration runner (app/core/migrations.py)."""
 from __future__ import annotations
 
 import hashlib
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import migrations
+from core import migrations
 
 
 def _cur(fetchone=None, fetchall=None):

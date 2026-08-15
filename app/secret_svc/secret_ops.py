@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import config
+from core import config
 import crypto
-import paging
-from secret_kinds import secret_due_status
+from ui import paging
+from secret_svc.secret_kinds import secret_due_status
 
 
 def _load_secrets_page(cur, project_id, page, q):
@@ -415,7 +415,7 @@ def _upsert_secret(
         >>> # sid, created = _upsert_secret(cur, pid, "API_KEY", "secret")
         >>> # created in (True, False)
     """
-    from secret_kinds import normalize_kind
+    from secret_svc.secret_kinds import normalize_kind
 
     kind = normalize_kind(kind)
     mode = _parse_access_mode(access_mode)
@@ -500,7 +500,7 @@ def compose_secret_value(kind: str, form) -> str:
         >>> compose_secret_value("plain", {"plain_value": "hello"})
         'hello'
     """
-    from secret_kinds import normalize_kind
+    from secret_svc.secret_kinds import normalize_kind
 
     kind = normalize_kind(kind)
     if kind == "database":

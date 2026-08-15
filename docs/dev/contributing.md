@@ -12,7 +12,7 @@ git clone <repo-url> secretserver
 cd secretserver
 
 # Install deps
-pip install -r app/requirements.txt -r requirements-dev.txt
+pip install -e ".[dev]"
 
 # Run tests
 pytest

@@ -11,16 +11,16 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
+from auth import authz
+from core import config
 import crypto
-import db
-import paging
-from secret_kinds import (
+from core import db
+from ui import paging
+from secret_svc.secret_kinds import (
     normalize_kind,
     parse_kv_lines,
 )
-from secret_ops import (
+from secret_svc.secret_ops import (
     _parse_access_mode,
     _parse_expires_at,
     _parse_requires_approval,

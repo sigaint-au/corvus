@@ -11,18 +11,18 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
+from auth import authz
+from core import config
 import crypto
-import db
-import pins
+from core import db
+from ui import pins
 from lib.users import user_email
-from secret_kinds import (
+from secret_svc.secret_kinds import (
     STRUCTURED_VIEW_KINDS,
     as_utc,
     normalize_kind,
 )
-from secret_ops import (
+from secret_svc.secret_ops import (
     _parse_expires_at,
     compose_secret_value,
 )
@@ -274,7 +274,7 @@ def secret_view(project_id, secret_id):
                 secret_bindings = list(cur.fetchall() or [])
             except Exception:
                 secret_bindings = []
-            import rbac_sync
+            from auth import rbac_sync
 
             rbac_sync.enrich_binding_emails(secret_bindings)
             try:

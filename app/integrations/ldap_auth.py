@@ -1,10 +1,10 @@
 """LDAP authentication and group membership sync."""
 import logging
 
-from config import DEFAULT_SETTINGS, LDAP_SETTING_KEYS
+from core.config import DEFAULT_SETTINGS, LDAP_SETTING_KEYS
 from crypto import decrypt
-import db
-from settings_svc import get_settings, truthy
+from core import db
+from core.settings_svc import get_settings, truthy
 
 log = logging.getLogger(__name__)
 
@@ -362,7 +362,7 @@ def sync_ldap_user(email: str, name: str, groups: list) -> dict:
         >>> # user = sync_ldap_user("a@b.com", "Ada", ["CN=Admins,DC=ex"])
         >>> # user["email"] == "a@b.com"
     """
-    from dir_sync import (
+    from integrations.dir_sync import (
         apply_global_admin_maps,
         apply_group_membership_maps,
         apply_team_membership_maps,

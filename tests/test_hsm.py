@@ -6,11 +6,11 @@ from uuid import UUID, uuid4
 
 import app as store
 import audit
-import authz
+from auth import authz
 import crypto
-import db
-import hsm
-import project_keys
+from core import db
+from crypto import hsm
+from crypto import project_keys
 
 store.app.config["TESTING"] = True
 

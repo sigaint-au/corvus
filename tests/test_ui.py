@@ -7,9 +7,9 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import authz
-import config
-import db
+from auth import authz
+from core import config
+from core import db
 
 from tests.helpers import mock_conn as _conn
 

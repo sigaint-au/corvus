@@ -11,14 +11,14 @@ from flask import (
     session,
     url_for,
 )
-import authz
-import config
-import db
-import passwords
-import pats
-import pins
-import totp_svc
-import user_sessions
+from auth import authz
+from core import config
+from core import db
+from auth import passwords
+from auth import pats
+from ui import pins
+from auth import totp_svc
+from auth import user_sessions
 log = logging.getLogger(__name__)
 
 PROFILE_TABS = ("account", "security", "myaccess", "teams", "projects", "activity")

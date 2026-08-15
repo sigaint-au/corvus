@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-import config
+from core import config
 
 
 def test_builtin_role_names_match_docs():
@@ -56,7 +56,7 @@ def test_rbac_sql_ships_can_and_tables():
 
 def test_schema_applies_migrations():
     from pathlib import Path
-    import migrations as migrations_mod
+    from core import migrations as migrations_mod
 
     src = Path(migrations_mod.__file__).read_text()
     assert "_split_sql_statements" in src
@@ -134,7 +134,7 @@ def test_parse_rules_yaml_rejects_empty():
 
 
 def test_parse_access_mode_accepts_rbac_modes():
-    from secret_ops import _parse_access_mode
+    from secret_svc.secret_ops import _parse_access_mode
 
     assert _parse_access_mode("restricted") == "restricted"
     assert _parse_access_mode("inherit") == "inherit"

@@ -11,16 +11,16 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
-import nav
-import paging
-from secret_kinds import (
+from auth import authz
+from core import config
+from core import db
+from ui import nav
+from ui import paging
+from secret_svc.secret_kinds import (
     annotate_token_expiry,
     secret_due_status,
 )
-from secret_ops import _load_secrets_page
+from secret_svc.secret_ops import _load_secrets_page
 
 
 @authz.login_required
@@ -282,7 +282,7 @@ def project_detail(project_id):
             except Exception:
                 project_secret_keys = []
         elif tab == "settings":
-            import project_keys
+            from crypto import project_keys
 
             project_crypto = project_keys.project_crypto_status(project_id)
             project_master_rows = project_keys.count_master_rows(project_id)
@@ -293,7 +293,7 @@ def project_detail(project_id):
             except Exception:
                 hsm_slots = []
         elif tab == "access" and can_admin:
-            import rbac_sync
+            from auth import rbac_sync
 
             cur.execute(
                 "SELECT api.can_manage_rbac('project', %s::uuid) AS ok",
@@ -363,10 +363,10 @@ def project_detail(project_id):
             access_pending_count = 0
         # import: no extra queries
     if access_bindings:
-        import rbac_sync
+        from auth import rbac_sync
 
         rbac_sync.enrich_binding_emails(access_bindings)
-    import settings_svc
+    from core import settings_svc
 
     public_base = settings_svc.public_base_url(request.url_root or "")
     return render_template(
@@ -558,7 +558,7 @@ def project_crypto_action(project_id):
             url_for("project_detail", project_id=project_id, tab="settings")
         )
     if action == "adopt":
-        import project_keys
+        from crypto import project_keys
 
         provider = (request.form.get("provider") or "local").strip().lower()
         if provider not in ("local", "hsm"):
@@ -593,7 +593,7 @@ def project_crypto_action(project_id):
             conn.commit()
         flash(f"Project key adopted — re-encrypted {n} secret row(s)", "ok")
     elif action == "migrate":
-        import project_keys
+        from crypto import project_keys
 
         new_provider = (request.form.get("provider") or "hsm").strip().lower()
         if new_provider not in ("local", "hsm"):

@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 
-import db
+from core import db
 from crypto import sha256_hex
 
 PREFIX = "pat_"

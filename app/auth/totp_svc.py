@@ -15,10 +15,10 @@ import time
 import qrcode
 import qrcode.image.svg
 
-from config import APP_NAME, SECRET_KEY
+from core.config import APP_NAME, SECRET_KEY
 from crypto import decrypt, encrypt
-import db
-from settings_svc import branding, get_settings, truthy
+from core import db
+from core.settings_svc import branding, get_settings, truthy
 
 log = logging.getLogger(__name__)
 

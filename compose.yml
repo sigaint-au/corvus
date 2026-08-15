@@ -81,6 +81,12 @@ services:
       - hsmdata:/hsm/tokens
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     # Hardened runtime: non-root image USER + drop caps + read-only root FS
     read_only: true
     cap_drop:

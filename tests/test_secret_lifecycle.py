@@ -7,9 +7,9 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import config
+from core import config
 import crypto
-import db
+from core import db
 
 from tests.helpers import mock_conn as _conn
 
@@ -61,7 +61,7 @@ class TestSecretLifecycle:
         assert expires_status(None) is None
 
     def test_secret_kind_helpers(self):
-        import secret_kinds as sk
+        from secret_svc import secret_kinds as sk
         assert sk.detect_secret_kind('secret', 'type:ssh') == 'plain'
         assert sk.detect_secret_kind('postgresql://u:p@h/db') == 'database'
         assert sk.normalize_kind('KV') == 'kv'

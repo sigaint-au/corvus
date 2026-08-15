@@ -10,7 +10,7 @@ import pytest
 
 import app as store
 import audit
-import config
+from core import config
 
 from tests.helpers import APP_ROOT, REPO_ROOT, migrations_src, routes_module_src
 
@@ -348,7 +348,7 @@ class TestOrgAccess:
     def test_dir_sync_group_membership_maps(self):
         """Directory sync upserts/removes group_members for external_key matches."""
         from unittest.mock import MagicMock
-        import dir_sync
+        from integrations import dir_sync
         uid = str(uuid4())
         gid_match = str(uuid4())
         gid_other = str(uuid4())

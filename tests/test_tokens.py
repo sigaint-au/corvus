@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 import app as store
-import config
-import db
+from core import config
+from core import db
 
 from tests.helpers import REPO_ROOT, migrations_src, mock_conn as _conn, routes_module_src
 

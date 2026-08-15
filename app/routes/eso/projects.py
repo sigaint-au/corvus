@@ -6,7 +6,7 @@ from flask import (
     jsonify,
     request,
 )
-import db
+from core import db
 from .helpers import _parse_auth
 
 

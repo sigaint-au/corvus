@@ -11,19 +11,19 @@ from flask import (
     session,
     url_for,
 )
-import authz
+from auth import authz
 import audit
-import config
+from core import config
 import crypto
-import db
-import hsm
-import ldap_auth
-import mailer
-import passwords
-import project_keys
-import settings_svc
-import totp_svc
-import user_sessions
+from core import db
+from crypto import hsm
+from integrations import ldap_auth
+from integrations import mailer
+from auth import passwords
+from crypto import project_keys
+from core import settings_svc
+from auth import totp_svc
+from auth import user_sessions
 from lib.users import user_email
 log = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ def server_settings():
                 "ok",
             )
         elif action == "oidc":
-            import oidc_auth
+            from integrations import oidc_auth
 
             enabled = "true" if request.form.get("oidc_enabled") else "false"
             issuer = (request.form.get("oidc_issuer") or "").strip().rstrip("/")
@@ -619,7 +619,7 @@ def server_settings():
                 or qn in (p.get("key_id") or "").lower()
                 or qn in (p.get("hsm_slot_name") or "").lower()
             ]
-        import paging
+        from ui import paging
         per_page = 25
         total = len(all_projects)
         projects_pager = paging.page_window(total, encryption_page, per_page)

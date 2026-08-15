@@ -1,6 +1,6 @@
 """Server settings and classification banner."""
-from config import DEFAULT_SETTINGS, HEX, bootstrap_admin_email
-import db
+from core.config import DEFAULT_SETTINGS, HEX, bootstrap_admin_email
+from core import db
 
 
 def truthy(val) -> bool:
@@ -199,7 +199,7 @@ def branding() -> dict:
         >>> "app_name" in b and "brand_name" in b
         True
     """
-    from config import APP_NAME
+    from core.config import APP_NAME
 
     s = get_settings()
     name = (s.get("brand_name") or DEFAULT_SETTINGS.get("brand_name") or "Sigaint").strip()

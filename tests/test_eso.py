@@ -7,10 +7,10 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import config
+from core import config
 import crypto
-import db
-import pats
+from core import db
+from auth import pats
 from routes import eso as eso_routes
 
 from tests.helpers import mock_conn as _conn
@@ -309,7 +309,7 @@ class TestESO:
         assert store.app.config.get('MAX_CONTENT_LENGTH') == config.MAX_CONTENT_LENGTH
 
     def test_parse_expires_at_capped(self):
-        from secret_ops import _parse_expires_at
+        from secret_svc.secret_ops import _parse_expires_at
         from datetime import datetime, timezone, timedelta
         from werkzeug.datastructures import MultiDict
         far = (datetime.now(timezone.utc) + timedelta(days=config.MAX_EXPIRY_DAYS + 30)).date().isoformat()

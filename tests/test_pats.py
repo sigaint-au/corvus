@@ -8,9 +8,9 @@ import pytest
 
 import jwt as pyjwt
 import app as store
-import config
-import db
-import pats
+from core import config
+from core import db
+from auth import pats
 
 from tests.helpers import mock_conn as _conn
 

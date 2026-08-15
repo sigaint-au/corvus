@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import config
+from core import config
 import crypto
 
 store.app.config["TESTING"] = True
@@ -86,7 +86,7 @@ class TestProjectCrypto:
                 crypto.decrypt_for_project(pid2, token, "project")
 
     def test_hsm_provider_roundtrip(self):
-        import hsm
+        from crypto import hsm
 
         pid = str(uuid4())
         raw = crypto.generate_project_key()
@@ -110,7 +110,7 @@ class TestProjectCrypto:
             assert crypto.decrypt_for_project(pid, token, "project") == "secret-value"
 
     def test_hsm_unwrap_used_for_hsm_provider(self):
-        import hsm
+        from crypto import hsm
 
         pid = str(uuid4())
         raw = crypto.generate_project_key()
@@ -134,7 +134,7 @@ class TestHsmDekContract:
     """Fernet.generate_key() is 44 bytes; HSM wraps the decoded 32 raw bytes."""
 
     def test_fernet_key_to_raw_accepts_generate_project_key(self):
-        import hsm
+        from crypto import hsm
 
         fkey = crypto.generate_project_key()
         assert len(fkey) == 44
@@ -143,22 +143,22 @@ class TestHsmDekContract:
         assert hsm.raw_to_fernet_key(raw) == fkey
 
     def test_fernet_key_to_raw_accepts_32_bytes(self):
-        import hsm
+        from crypto import hsm
         import os
 
         raw = os.urandom(32)
         assert hsm.fernet_key_to_raw(raw) == raw
 
     def test_fernet_key_to_raw_rejects_bad_length(self):
-        import hsm
+        from crypto import hsm
 
         with pytest.raises(ValueError, match="DEK must be"):
             hsm.fernet_key_to_raw(b"too-short")
 
     def test_ensure_project_key_hsm_passes_fernet_key_to_wrap(self):
         """Regression: wrap_dek_for_slot must receive Fernet key material."""
-        import hsm
-        import project_keys
+        from crypto import hsm
+        from crypto import project_keys
 
         pid = str(uuid4())
         slot_id = str(uuid4())
@@ -182,7 +182,7 @@ class TestHsmDekContract:
 
 class TestDekResolution:
     def test_dek_for_hsm_slot(self):
-        import hsm
+        from crypto import hsm
 
         raw = crypto.generate_project_key()
         slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"

@@ -1,7 +1,7 @@
 """DB-backed login failure lockout (shared across workers)."""
 import logging
 
-import db
+from core import db
 
 log = logging.getLogger(__name__)
 

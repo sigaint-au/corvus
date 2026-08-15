@@ -7,10 +7,10 @@ from flask import (
     jsonify,
     request,
 )
-import config
+from core import config
 import crypto
-import db
-from secret_ops import _upsert_secret
+from core import db
+from secret_svc.secret_ops import _upsert_secret
 from .helpers import (
     _audit,
     _machine_actor,

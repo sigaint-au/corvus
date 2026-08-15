@@ -7,8 +7,8 @@ import pytest
 
 import jwt as pyjwt
 import app as store
-import config
-import db
+from core import config
+from core import db
 
 store.app.config["TESTING"] = True
 

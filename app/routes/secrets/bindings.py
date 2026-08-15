@@ -10,11 +10,11 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
+from auth import authz
+from core import config
+from core import db
 from lib.users import lookup_user_id
-from secret_ops import (
+from secret_svc.secret_ops import (
     _parse_access_mode,
     _parse_requires_approval,
 )

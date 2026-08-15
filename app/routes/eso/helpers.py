@@ -13,13 +13,13 @@ from flask import (
     request,
 )
 import audit
-import config
+from core import config
 import crypto
-import db
+from core import db
 from lib.auth_tokens import classify_token
 from lib.datetime_utils import iso_utc
 from lib.validate import is_uuid
-from secret_ops import _upsert_secret
+from secret_svc.secret_ops import _upsert_secret
 from .http import bearer_raw
 log = logging.getLogger(__name__)
 

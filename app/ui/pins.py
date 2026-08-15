@@ -1,6 +1,6 @@
 """Per-user secret pins (favorites) and recently accessed."""
 
-from config import SIDEBAR_PINS_LIMIT, SIDEBAR_RECENT_LIMIT
+from core.config import SIDEBAR_PINS_LIMIT, SIDEBAR_RECENT_LIMIT
 
 
 def touch_recent(cur, user_id, secret_id):
