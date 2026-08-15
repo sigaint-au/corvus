@@ -160,6 +160,27 @@ kubectl -n secretserver wait --for=condition=Ready cluster/secretserver-postgres
 kubectl -n secretserver rollout status deploy/secretserver-app --timeout=180s
 ```
 
+### Scheduled operational jobs
+
+The base app kustomization creates two UTC CronJobs using the same image and
+bootstrap Secret as the web Deployment:
+
+- `secretserver-purge-audit` — daily at 03:45 UTC; uses the configured
+  `audit_retention_days` setting (`0` keeps audit rows forever).
+- `secretserver-notify-due` — daily at 08:00 UTC; emails global admins about
+  due secrets, token expiry, and pending access approvals through SMTP settings.
+
+Both jobs use `concurrencyPolicy: Forbid`, retain three successful and failed
+Jobs, and stop after 15 minutes. Inspect or run a job manually:
+
+```bash
+kubectl -n secretserver get cronjob secretserver-purge-audit secretserver-notify-due
+kubectl -n secretserver create job --from=cronjob/secretserver-purge-audit purge-audit-manual
+kubectl -n secretserver logs -f job/purge-audit-manual
+```
+
+The staging overlay inherits these schedules under its own namespace.
+
 ---
 
 ## Operations runbook

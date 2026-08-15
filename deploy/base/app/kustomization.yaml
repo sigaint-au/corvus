@@ -7,4 +7,6 @@ resources:
   - hpa.yaml
   - pdb.yaml
   - configmap.yaml
+  - cronjob-purge-audit.yaml
+  - cronjob-notify-due.yaml
   - networkpolicy.yaml
