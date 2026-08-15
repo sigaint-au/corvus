@@ -12,12 +12,12 @@ Secret server: self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.i
 ## Run the app / dev containers
 
 - `scripts/_lib.sh` picks `podman-compose` or `docker compose` (whichever exists), roots the repo, loads `.env`.
-- `scripts/up.sh` (build+start, `ALLOW_INSECURE_DEFAULTS=1` for local dev), `rebuild.sh`, `restart.sh`, `down.sh`, `logs.sh`, `status.sh`. Fresh DB is bootstrapped by `docker-entrypoint-initdb.d` running `db/migrations/0001_init.sql` then `0002_rbac.sql`; the app applies the remaining migrations via `migrations.apply_pending()` at startup.
+- `scripts/up.sh` (build+start, `ALLOW_INSECURE_DEFAULTS=1` for local dev), `rebuild.sh`, `restart.sh`, `down.sh`, `logs.sh`, `status.sh`. Fresh DB is bootstrapped by `docker-entrypoint-initdb.d` running the complete squashed `db/migrations/0001_init.sql` then the no-op `0002_rbac.sql` marker. This branch is fresh-install-only; recreate existing databases after baseline changes.
 
 ## DB / RLS / RBAC / migrations (hard-earned)
 
-- **Migrations are the sole source of truth for DDL.** Versioned SQL lives in `db/migrations/*.sql`, applied once, in order, by `app/core/migrations.py` (records version + sha256 checksum in `private.schema_migrations`). `0001_init.sql` and `0002_rbac.sql` are the non-idempotent baseline (run by docker-entrypoint on a fresh volume); everything after is additive/idempotent.
-- **Do not add a second RBAC function/table definition** — put it in `db/migrations/0002_rbac.sql` (and add a new numbered migration for any later change).
+- **Migrations are the sole source of truth for DDL.** The fresh-install baseline lives in `db/migrations/0001_init.sql`; `0002_rbac.sql` is a no-op bootstrap marker. Existing databases are not supported by this squashed baseline.
+- **Keep the squashed baseline ordered** — RBAC definitions live inside `db/migrations/0001_init.sql`; do not create a second baseline definition.
 - **Adding a migration:** create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it idempotent where possible, and run `pytest` + `tox -e lint`. Never edit an already-released migration file — its checksum is recorded.
 - Machine-token `role` column uses `read/reveal/write` (`service-*` is the RBAC name).
 

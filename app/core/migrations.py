@@ -128,9 +128,11 @@ def _applied_checksums(cur) -> dict[str, str]:
     return {str(r["version"]): str(r["checksum"]) for r in (cur.fetchall() or [])}
 
 
-def _schema_exists(cur) -> bool:
-    """Return True when the core baseline schema already exists."""
-    cur.execute("SELECT to_regclass('private.users') IS NOT NULL AS ok")
+def _squashed_baseline_exists(cur) -> bool:
+    """Return True when the current fresh-install baseline is present."""
+    cur.execute(
+        "SELECT to_regclass('private.squashed_baseline_marker') IS NOT NULL AS ok"
+    )
     return bool((cur.fetchone() or {}).get("ok"))
 
 
@@ -167,16 +169,21 @@ def pending_migrations(cur) -> list[tuple[str, str]]:
 def apply_pending(cur) -> None:
     """Apply all pending migrations, recording each version after it succeeds.
 
-    The baseline (``0001_init``, ``0002_rbac``) is seeded as applied when the
-    schema already exists but the migrations table is empty, so existing
-    volumes do not re-run baseline DDL. Every migration is applied via
+    The baseline (``0001_init``, ``0002_rbac``) is seeded as applied after the
+    Docker bootstrap leaves the tracking table empty. A pre-squash schema without
+    the baseline marker is rejected. Every migration is applied via
     :func:`_split_sql_statements` (dollar-quote aware) and its checksum is
     recorded only after all of its statements succeed, so a partial failure
     is retried on the next boot.
     """
     _ensure_table(cur)
     applied = _applied_checksums(cur)
-    seed_baseline = not applied and _schema_exists(cur)
+    if not applied and not _squashed_baseline_exists(cur):
+        raise RuntimeError(
+            "database is not initialized with the squashed baseline; "
+            "recreate the database for this fresh-install-only branch"
+        )
+    seed_baseline = not applied
 
     for version, sql, checksum in _migration_specs():
         if version in applied:

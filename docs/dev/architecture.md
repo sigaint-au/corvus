@@ -82,15 +82,14 @@ app/
 
 ```
 db/migrations/
-  0001_init.sql     # Tables + ENABLE/FORCE RLS + non-RBAC functions (01-init.sql)
-  0002_rbac.sql     # RBAC schema + auth functions + all RLS policies (02-rbac.sql)
-  0003_….sql …      # additive, idempotent migrations (applied by core/migrations.py)
+  0001_init.sql     # Complete squashed schema/security baseline (01-init.sql)
+  0002_rbac.sql     # No-op bootstrap/version marker (02-rbac.sql)
 ```
 
 On fresh databases, `docker-entrypoint-initdb.d` runs the two baseline
-migrations (`0001_init.sql`, `0002_rbac.sql`). On every startup the app applies
-any remaining migrations via `migrations.apply_pending()`, recording each
-version + checksum in `private.schema_migrations`.
+migrations (`0001_init.sql`, `0002_rbac.sql`). On every startup the app checks
+the two baseline versions via `migrations.apply_pending()`, recording their
+versions and checksums in `private.schema_migrations`.
 
 ---
 

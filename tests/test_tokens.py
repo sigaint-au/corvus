@@ -85,7 +85,7 @@ class TestTokens:
     def test_mt_select_policy_allows_readers(self):
         """Reveal-role may list tokens; only writers insert/delete."""
         from pathlib import Path
-        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         sel_start = rbac_sql.index('CREATE POLICY mt_select ON api.machine_tokens')
         sel_end = rbac_sql.index(';', sel_start)
         assert 'can_read_project' in rbac_sql[sel_start:sel_end]
@@ -97,7 +97,7 @@ class TestTokens:
         """RBAC bindings write policy requires can_manage_rbac, not mere write."""
         from pathlib import Path
         root = REPO_ROOT
-        rbac_sql = (root / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac_sql = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'rbac_bindings_write' in rbac_sql
         assert 'can_manage_rbac' in rbac_sql
         # Legacy project_members policies removed from init.sql
@@ -107,7 +107,7 @@ class TestTokens:
     def test_can_write_project_team_admin_floor(self):
         """can_write_project uses RBAC can() — defined in rbac.sql."""
         from pathlib import Path
-        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE OR REPLACE FUNCTION api.can_write_project' in rbac_sql
         start = rbac_sql.index('CREATE OR REPLACE FUNCTION api.can_write_project')
         end = rbac_sql.index('$$;', start) + 3
@@ -118,7 +118,7 @@ class TestTokens:
     def test_can_read_project_most_specific_wins(self):
         """can_read_project uses RBAC can() — defined in rbac.sql."""
         from pathlib import Path
-        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE OR REPLACE FUNCTION api.can_read_project' in rbac_sql
         start = rbac_sql.index('CREATE OR REPLACE FUNCTION api.can_read_project')
         end = rbac_sql.index('$$;', start) + 3
@@ -128,7 +128,7 @@ class TestTokens:
 
     def test_can_admin_project_defined(self):
         from pathlib import Path
-        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE OR REPLACE FUNCTION api.can_admin_project' in rbac_sql
         start = rbac_sql.index('CREATE OR REPLACE FUNCTION api.can_admin_project')
         end = rbac_sql.index('$$;', start) + 3
@@ -243,4 +243,3 @@ class TestTokens:
         assert "source IN ('manual', 'ldap', 'oidc')" in init
         src = migrations_src()
         assert 'users_auth_source_check' in src
-

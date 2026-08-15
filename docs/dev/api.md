@@ -683,7 +683,8 @@ See [postgrest-openapi.json](../postgrest-openapi.json) for a checked-in snapsho
 ### HSM RPC security
 
 HSM slot configuration is not a public PostgREST API. Anonymous callers cannot
-invoke `api.list_hsm_slots()` or `api.hsm_slot_url(uuid)`. Authenticated callers
+invoke `api.list_hsm_slots()`; the former `api.hsm_slot_url(uuid)` RPC was removed.
+Authenticated callers
 may receive slot metadata, but `pkcs11_url` is null unless the caller is a global
 admin. The URL resolver is reserved for internal application code, so HSM PINs
 and module paths are not exposed through the API.

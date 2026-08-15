@@ -71,8 +71,7 @@ supported, else AES-CBC). Unwrap returns a Fernet key again.
 | `app/core/config.py` | General application configuration; HSM runtime variables are read by `app/crypto/hsm.py` |
 | `app/crypto/__init__.py` | `_dek_for()` dispatches unwrap by `key_provider` (local vs hsm) and `hsm_slot_id` via `_slot_url()`; `project_dek()`; `slot_url()`/`clear_slot_url_cache()`; `encrypt_for_project`/`decrypt_for_project` |
 | `app/crypto/project_keys.py` | `ensure_project_key(provider, hsm_slot_id)`, `adopt_project_key`, `migrate_project_key(target_slot_id)`, `rotate_hsm_kek(slot_id)`, `encryption_summary`, `migrate_all_local_to_hsm(target_slot_id)`, `link_legacy_to_slot`, `rewrap_project_keys` |
-| `db/migrations/0027_hsm_slots.sql` | `private.hsm_slots` table + base HSM slot functions |
-| `db/migrations/0028_hsm_rls_hardening.sql` | Restricts HSM RPC grants, masks URLs for non-admins, protects RBAC subject lookup, and blocks unsafe slot URL changes |
+| `db/migrations/0001_init.sql` | Complete squashed schema/security baseline, including HSM slots and RLS hardening |
 | `softhsm2/` | Dev token-initialiser container and PIN-file setup |
 
 ## Manual SoftHSM2 setup (no compose)

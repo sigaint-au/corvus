@@ -144,7 +144,7 @@ class TestTeams:
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'GRANT SELECT ON api.user_directory TO authenticated' not in init
         assert 'private.lookup_user' in init
-        assert 'private.team_member_rows' in (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        assert 'private.team_member_rows' in (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
 
     def test_non_member_cannot_self_join(self):
         """RLS must reject binding insert when the actor cannot manage team RBAC."""
@@ -189,7 +189,7 @@ class TestTeams:
     def test_tm_insert_policy_forbids_self_join(self):
         """RBAC bindings write policy must require can_manage_rbac — no self-join escape hatch."""
         from pathlib import Path
-        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'rbac_bindings_write' in rbac_sql
         assert 'can_manage_rbac' in rbac_sql
         assert 'user_id = api.current_user_id()' not in rbac_sql.split('rbac_bindings_write')[1].split('CREATE POLICY')[0]
@@ -298,4 +298,3 @@ class TestTeams:
         with self.client.session_transaction() as s:
             flashes = s.get('_flashes') or []
         assert any(('owner' in msg.lower() or 'admin' in msg.lower() for _c, msg in flashes))
-

@@ -67,6 +67,8 @@ After restoring, set the same `MASTER_KEY`, `JWT_SECRET`, and `SECRET_KEY` in
 the app environment so existing ciphertext and tokens remain valid.
 
 > `0001_init.sql` / `0002_rbac.sql` are only for a **first** database init.
+> This branch uses a fresh-install-only squashed baseline; recreate the database
+> before applying it and do not use it as an upgrade script for an existing DB.
 > Existing databases are upgraded by `migrations.apply_pending()` at app
 > startup — do **not** re-run the baseline migrations over a restored database.
 
