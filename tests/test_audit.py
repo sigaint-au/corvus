@@ -9,7 +9,7 @@ import pytest
 
 import app as store
 import audit
-import config
+from core import config
 
 from tests.helpers import REPO_ROOT, migrations_src
 

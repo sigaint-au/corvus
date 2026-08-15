@@ -10,9 +10,9 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
+from auth import authz
+from core import config
+from core import db
 
 
 @authz.login_required

@@ -11,9 +11,9 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
+from auth import authz
+from core import config
+from core import db
 from .helpers import (
     _render_reveal_access_panel,
     _reveal_access_state,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from secret_kinds import expires_status, parse_secret_pairs, secret_due_status
+from secret_svc.secret_kinds import expires_status, parse_secret_pairs, secret_due_status
 
 from .search import (
     global_search,
@@ -28,6 +28,7 @@ __all__ = ["register", "expires_status", "parse_secret_pairs", "secret_due_statu
 
 
 def register(app):
+    """Register project listing, lifecycle, settings, and access routes."""
     app.get("/search")(global_search)
     app.get("/access-requests")(access_requests_inbox)
     app.get("/projects")(projects_list)

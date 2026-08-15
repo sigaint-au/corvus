@@ -12,6 +12,7 @@ Every step is a **copy-paste code block** — replace the `…` placeholders.
 | **app** (`secretstore`) | `Dockerfile` at repo root | **Build locally** (this guide) |
 | Postgres | `docker.io/library/postgres:16-alpine` | Pulled (from `compose.yml`) |
 | PostgREST | `docker.io/postgrest/postgrest:v12.2.3` | Pulled (from `compose.yml`) |
+| Redis | `docker.io/library/redis:7-alpine` | Pulled (from `compose.yml`) |
 
 Only the **app** image is built from this repo.
 

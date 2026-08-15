@@ -18,7 +18,7 @@ ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
 Python deps for unit tests and lint:
 
 ```bash
-pip install -r app/requirements.txt -r requirements-dev.txt
+pip install -e ".[dev]"
 ```
 
 ## Tests and lint

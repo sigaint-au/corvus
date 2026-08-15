@@ -10,11 +10,11 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
+from auth import authz
+from core import config
 import crypto
-import db
-from secret_kinds import (
+from core import db
+from secret_svc.secret_kinds import (
     STRUCTURED_VIEW_KINDS,
     normalize_kind,
 )

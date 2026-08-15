@@ -4,15 +4,16 @@ import logging
 
 from flask import jsonify, redirect, request, session, url_for
 
-import authz
-import config
-import db
-import pats
+from auth import authz
+from core import config
+from core import db
+from auth import pats
 
 log = logging.getLogger(__name__)
 
 
 def register(app):
+    """Register browser-session and personal-token API routes."""
     app.get("/api/token")(api_token)
     app.get("/api/users/suggest")(users_suggest)
 

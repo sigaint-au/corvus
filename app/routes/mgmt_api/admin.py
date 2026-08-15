@@ -7,7 +7,7 @@ from flask import (
     request,
 )
 import audit
-import db
+from core import db
 from .helpers import (
     _require_global_admin,
     _require_pat,

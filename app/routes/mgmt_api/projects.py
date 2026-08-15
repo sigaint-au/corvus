@@ -7,9 +7,9 @@ from flask import (
     request,
 )
 import audit
-import config
-import db
-import rbac_sync
+from core import config
+from core import db
+from auth import rbac_sync
 from lib.users import lookup_user_id
 from .helpers import (
     _require_pat,
@@ -49,7 +49,7 @@ def mgmt_create_project(team_ref):
         except Exception as e:
             return jsonify({"error": str(e)}), 400
     if encryption in ("byok", "project"):
-        import project_keys
+        from crypto import project_keys
 
         try:
             project_keys.ensure_project_key(str(row["id"]))

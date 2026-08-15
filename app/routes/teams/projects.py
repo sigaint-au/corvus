@@ -10,8 +10,8 @@ from flask import (
     session,
     url_for,
 )
-import authz
-import db
+from auth import authz
+from core import db
 import audit
 
 
@@ -38,8 +38,20 @@ def new_project_wizard(team_id):
     if my_role not in ("team-owner", "team-admin", "team-member"):
         flash("You don't have permission to create projects", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
+    hsm_slots = []
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM api.list_hsm_slots()")
+            hsm_slots = cur.fetchall() or []
+    except Exception:
+        hsm_slots = []
     return render_template(
-        "team_new_project.html", team=team, my_role=my_role, encryption="managed"
+        "team_new_project.html",
+        team=team,
+        my_role=my_role,
+        encryption="managed",
+        hsm_available=bool(hsm_slots),
+        hsm_slots=hsm_slots,
     )
 
 
@@ -60,6 +72,7 @@ def create_project(team_id):
     name = request.form["name"].strip()
     description = (request.form.get("description") or "").strip()[:500]
     encryption = (request.form.get("encryption") or "managed").strip().lower()
+    hsm_slot = (request.form.get("hsm_slot") or "").strip() or None
     pid = None
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
@@ -80,12 +93,25 @@ def create_project(team_id):
         except Exception as e:
             flash(str(e), "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
-    if encryption in ("byok", "project"):
-        import project_keys
+    if encryption in ("byok", "project", "hsm"):
+        from crypto import project_keys
 
+        provider = "hsm" if encryption == "hsm" else "local"
+        if provider == "hsm" and not hsm_slot:
+            try:
+                with db.connect_admin() as aconn, aconn.cursor() as acur:
+                    acur.execute("DELETE FROM api.projects WHERE id = %s", (str(pid),))
+            except Exception:
+                pass
+            flash(
+                "External HSM requires a named slot; choose Managed or Project key, "
+                "or configure an HSM slot first.",
+                "error",
+            )
+            return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
         try:
-            project_keys.ensure_project_key(pid)
-        except Exception:
+            project_keys.ensure_project_key(pid, provider=provider, hsm_slot_id=hsm_slot)
+        except Exception as e:
             # Roll back the creation: remove the project so we never leave a
             # project that advertised BYOK but has no key. CASCADE clears any
             # partially-created key row.
@@ -94,7 +120,10 @@ def create_project(team_id):
                     acur.execute("DELETE FROM api.projects WHERE id = %s", (str(pid),))
             except Exception:
                 pass
-            flash("Could not create the project key; project creation was rolled back", "error")
+            flash(
+                f"Could not create the project key ({e}); project creation was rolled back",
+                "error",
+            )
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             audit.log_org(
@@ -102,7 +131,7 @@ def create_project(team_id):
                 team_id=team_id,
                 project_id=pid,
                 action="project_key_created",
-                detail="byok (local key)",
+                detail=f"byok ({provider} key)",
             )
             conn.commit()
     return redirect(url_for("project_detail", project_id=pid))

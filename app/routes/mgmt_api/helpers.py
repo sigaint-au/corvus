@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from flask import jsonify
-import authz
-import pats
+from auth import authz
+from auth import pats
 from lib.auth_tokens import classify_token
 from lib.serialize import row_to_dict
 from lib.validate import is_uuid

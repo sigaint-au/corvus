@@ -7,9 +7,9 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import config
-import db
-import nav
+from core import config
+from core import db
+from ui import nav
 
 from tests.helpers import mock_conn as _conn
 

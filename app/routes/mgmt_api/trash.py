@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask import jsonify
 import audit
-import db
+from core import db
 from .helpers import (
     _require_pat,
     _resolve_project,

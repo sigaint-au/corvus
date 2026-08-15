@@ -1,4 +1,4 @@
-"""Unit tests for the versioned SQL migration runner (app/migrations.py)."""
+"""Unit tests for the versioned SQL migration runner (app/core/migrations.py)."""
 from __future__ import annotations
 
 import hashlib
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import migrations
+from core import migrations
 
 
 def _cur(fetchone=None, fetchall=None):
@@ -35,28 +35,39 @@ def _write_migrations(tmp_path, files):
 
 
 def test_migrations_ship_in_order():
-    """The repo's db/migrations/*.sql files are present and start with baseline."""
+    """The fresh-install squash contains only the two bootstrap files."""
     files = [p.name for p in migrations._migration_files()]
-    assert files[0] == "0001_init.sql"
-    assert files[1] == "0002_rbac.sql"
-    assert len(files) >= 3
-    # every file has a zero-padded 4-digit version prefix
+    assert files == ["0001_init.sql", "0002_rbac.sql"]
+    assert "no-op" in (migrations.MIGRATIONS_DIR / "0002_rbac.sql").read_text()
     for name in files:
         assert name[:4].isdigit()
         assert name[4] == "_"
 
 
-def test_project_crypto_migration_ships():
-    """0024_project_crypto adds the BYOK key table + per-row provider column.
-
-    Numbered 0024 because 0022/0023 were already used for shared-secrets
-    migrations on this branch; version prefixes must stay unique.
-    """
-    sql = (migrations.MIGRATIONS_DIR / "0024_project_crypto.sql").read_text()
-    assert "CREATE TABLE private.project_crypto_keys" in sql
+def test_squashed_baseline_contains_all_schema_layers():
+    """The consolidated baseline retains the complete current schema."""
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS private.project_crypto_keys" in sql
     assert "crypto_provider" in sql
     assert "api.secrets" in sql and "api.secret_versions" in sql
     assert "machine_upsert_enc" in sql
+    assert "REVOKE EXECUTE ON FUNCTION api.list_hsm_slots() FROM anon" in sql
+    assert "REVOKE EXECUTE ON FUNCTION api.hsm_slot_url(uuid)" in sql
+    assert "cannot change the URL of a slot used by project keys" in sql
+    assert "p_user IS NOT DISTINCT FROM api.current_user_id()" in sql
+    assert "p_subject IS NOT NULL" in sql
+    assert "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA api FROM PUBLIC" in sql
+    assert "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA rbac FROM PUBLIC" in sql
+    assert "REVOKE SELECT ON api.machine_tokens FROM authenticated" in sql
+    assert "secret does not belong to request project" in sql
+    assert "new access requests must be pending and unresolved" in sql
+    assert "CREATE TRIGGER guard_secret_access_request" in sql
+    assert "CREATE TRIGGER validate_binding_scope" in sql
+    assert "role % cannot be assigned at scope %" in sql
+    assert "DROP FUNCTION IF EXISTS api.hsm_slot_url(uuid)" in sql
+    assert "ALTER DEFAULT PRIVILEGES IN SCHEMA api" in sql
+    assert "ALTER DEFAULT PRIVILEGES IN SCHEMA rbac" in sql
+    assert "private.squashed_baseline_marker" in sql
 
 
 class TestPendingMigrations:
@@ -90,7 +101,7 @@ class TestApplyPending:
         d = _write_migrations(tmp_path, {
             "0003_add.sql": "ALTER TABLE api.secrets ADD COLUMN x int;",
         })
-        cur = _cur(fetchall=[], fetchone=None)  # empty migrations table, no schema
+        cur = _cur(fetchall=[], fetchone={"ok": True})  # squashed baseline exists
         with patch.object(migrations, "MIGRATIONS_DIR", d):
             migrations.apply_pending(cur)
         sqls = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
@@ -108,7 +119,7 @@ class TestApplyPending:
                 "$$ LANGUAGE plpgsql;"
             ),
         })
-        cur = _cur()
+        cur = _cur(fetchone={"ok": True})
         with patch.object(migrations, "MIGRATIONS_DIR", d):
             migrations.apply_pending(cur)
         # The single dollar-quoted statement must be executed as one chunk.
@@ -132,6 +143,14 @@ class TestApplyPending:
         # only the additive migration runs
         assert "ALTER TABLE x ADD COLUMN y int" in sqls
 
+    def test_pre_squash_schema_is_rejected(self, tmp_path):
+        """Fresh-only baseline must not silently adopt an older database."""
+        d = _write_migrations(tmp_path, {"0001_init.sql": "SELECT 1;"})
+        cur = _cur(fetchone={"ok": False})
+        with patch.object(migrations, "MIGRATIONS_DIR", d):
+            with pytest.raises(RuntimeError, match="recreate the database"):
+                migrations.apply_pending(cur)
+
     def test_access_mode_migration_runs_in_order(self, tmp_path):
         d = _write_migrations(tmp_path, {
             "0004_access_mode.sql": (
@@ -141,7 +160,7 @@ class TestApplyPending:
                 "ALTER TABLE api.secrets DROP COLUMN IF EXISTS acl_mode;\n"
             ),
         })
-        cur = _cur()
+        cur = _cur(fetchone={"ok": True})
         with patch.object(migrations, "MIGRATIONS_DIR", d):
             migrations.apply_pending(cur)
         executed = [str(c.args[0]) for c in cur.execute.call_args_list if c.args]

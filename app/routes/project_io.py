@@ -8,12 +8,12 @@ import logging
 from flask import Response, flash, redirect, render_template, request, session, url_for
 
 import audit
-import authz
-import config
+from auth import authz
+from core import config
 import crypto
-import db
-from secret_kinds import detect_secret_kind, normalize_kind, parse_secret_pairs
-from secret_ops import _upsert_secret
+from core import db
+from secret_svc.secret_kinds import detect_secret_kind, normalize_kind, parse_secret_pairs
+from secret_svc.secret_ops import _upsert_secret
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +72,7 @@ def _items_from_import_form():
 
 
 def register(app):
+    """Register project import and export routes."""
     app.get("/projects/<uuid:project_id>/export")(export_secrets)
     app.post("/projects/<uuid:project_id>/import/preview")(import_preview)
     app.post("/projects/<uuid:project_id>/import")(import_secrets)

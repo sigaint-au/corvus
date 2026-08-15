@@ -21,6 +21,8 @@ All environment variables and server settings for Sigaint Secret Server.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `POSTGREST_URL` | `http://localhost:3000` | PostgREST base URL |
+| `REDIS_URL` | unset | Shared project-key cache; Compose uses `redis://redis:6379/0` |
+| `REDIS_DEK_CACHE_TTL` | `300` | Project-key cache lifetime in seconds |
 | `GLOBAL_ADMIN_EMAIL` | — | Promote this email to global admin on first login |
 | `BOOTSTRAP_ADMIN_EMAIL` | — | Same as `GLOBAL_ADMIN_EMAIL` if unset |
 | `ALLOW_INSECURE_DEFAULTS` | `0` | `1` only for local dev defaults |
@@ -31,7 +33,7 @@ All environment variables and server settings for Sigaint Secret Server.
 | `MAX_CONTENT_LENGTH` | `1 MiB` | Request/import size cap (memory DoS guard) |
 
 > `DATABASE_ADMIN_URL` is **required** — the app uses it for idempotent schema
-> upgrades (`app/schema.py`). Compose sets it for you.
+> upgrades (`app/core/schema.py`). Compose sets it for you.
 
 ---
 
@@ -118,7 +120,7 @@ Configured under **Administration → Server settings**. Stored in
 | `RBAC_RESOURCES` | `teams, projects, secrets, bindings, roles, audit` | RBAC resources |
 | `RBAC_SCOPE_KINDS` | `cluster, team, project, secret` | RBAC scope kinds |
 | `RBAC_SUBJECT_KINDS` | `User, Group, ServiceAccount` | RBAC subject kinds |
-| `RBAC_BUILTIN_ROLES` | (see `config.py`) | All built-in role names |
+| `RBAC_BUILTIN_ROLES` | (see `core/config.py`) | All built-in role names |
 | `REVEAL_ACCESS_GRANT_CHOICES` | `15, 60, 240, 1440` | Allowed grant durations (minutes) |
 | `SECRET_KINDS` | `plain, database, certificate, ssh, kv` | Structured secret kinds |
 | `MAX_EXPIRY_DAYS` | `3650` | Max optional expiry |

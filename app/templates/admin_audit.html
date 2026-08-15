@@ -75,10 +75,16 @@
     <h2>Role-change audit</h2>
   </div>
   <p class="muted">
-    Membership and role changes from org audit (team roles, project roles, ownership, invites, LDAP maps).
+    Membership, role, and encryption-key changes from org audit (team/project roles, ownership, invites, LDAP maps, BYOK keys).
   </p>
   <form method="get" action="{{ url_for('admin_audit') }}" class="audit-filters" role="search">
     <input type="hidden" name="tab" value="roles">
+    <label>Show
+      <select name="role_actions" onchange="this.form.submit()">
+        <option value="roles" {% if role_actions != 'encryption' %}selected{% endif %}>Role changes</option>
+        <option value="encryption" {% if role_actions == 'encryption' %}selected{% endif %}>Encryption keys</option>
+      </select>
+    </label>
     <fieldset class="group search-input">
       {% include "partials/search_icon.html" %}
       <input type="search" name="q" value="{{ search_q or '' }}"

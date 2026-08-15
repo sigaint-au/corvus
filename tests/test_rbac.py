@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-import config
+from core import config
 
 
 def test_builtin_role_names_match_docs():
@@ -27,7 +27,7 @@ def test_builtin_role_names_match_docs():
 
 def test_rbac_sql_ships_can_and_tables():
     root = Path(__file__).resolve().parents[1]
-    sql = (root / "db" / "migrations" / "0002_rbac.sql").read_text()
+    sql = (root / "db" / "migrations" / "0001_init.sql").read_text()
     assert "CREATE TABLE IF NOT EXISTS rbac.roles" in sql
     assert "CREATE TABLE IF NOT EXISTS rbac.bindings" in sql
     assert "CREATE OR REPLACE FUNCTION api.can(" in sql
@@ -56,7 +56,7 @@ def test_rbac_sql_ships_can_and_tables():
 
 def test_schema_applies_migrations():
     from pathlib import Path
-    import migrations as migrations_mod
+    from core import migrations as migrations_mod
 
     src = Path(migrations_mod.__file__).read_text()
     assert "_split_sql_statements" in src
@@ -134,7 +134,7 @@ def test_parse_rules_yaml_rejects_empty():
 
 
 def test_parse_access_mode_accepts_rbac_modes():
-    from secret_ops import _parse_access_mode
+    from secret_svc.secret_ops import _parse_access_mode
 
     assert _parse_access_mode("restricted") == "restricted"
     assert _parse_access_mode("inherit") == "inherit"
@@ -156,8 +156,8 @@ def test_schema_scrubs_legacy_access_modes():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
-    access = (root / 'db' / 'migrations' / '0004_access_mode.sql').read_text()
-    cleanup = (root / 'db' / 'migrations' / '0017_access_mode_cleanup.sql').read_text()
+    access = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
+    cleanup = access
     assert "WHERE access_mode = 'custom'" in access
     assert "WHERE access_mode NOT IN ('inherit', 'restricted')" in access
     assert "DROP COLUMN IF EXISTS acl_mode" in access

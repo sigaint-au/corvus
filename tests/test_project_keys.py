@@ -1,10 +1,12 @@
-"""Unit tests for per-project crypto key lifecycle (app/project_keys.py)."""
+"""Unit tests for per-project crypto key lifecycle (app/crypto/project_keys.py)."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import project_keys
+import pytest
+
+from crypto import project_keys
 
 
 def _conn(fetchone=None, fetchall=None):
@@ -81,3 +83,237 @@ class TestProjectKeys:
         admin_conn, admin_cur = _conn(fetchall=[{"project_id": str(uuid4()), "key_enc": "not-a-fernet"}])
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn):
             assert project_keys.rewrap_project_keys("old-master-key") == 0
+
+    def test_ensure_project_key_hsm_requires_slot(self):
+        from crypto import hsm
+
+        pid = str(uuid4())
+        admin_conn, admin_cur = _conn(fetchone=None)
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(hsm, "wrap_dek_for_slot"):
+            with pytest.raises(RuntimeError, match="requires a named slot"):
+                project_keys.ensure_project_key(pid, provider="hsm")
+        insert = [c.args for c in admin_cur.execute.call_args_list
+                  if "INSERT INTO private.project_crypto_keys" in str(c.args[0])]
+        assert insert == []
+
+    def test_rewrap_skips_hsm_rows(self):
+        """HSM-wrapped DEKs must not be touched by MASTER_KEY rotation."""
+        rows = [
+            {"project_id": str(uuid4()), "key_enc": "hsm-blob", "key_provider": "hsm"},
+            {"project_id": str(uuid4()), "key_enc": "local-blob", "key_provider": "local"},
+        ]
+        admin_conn, admin_cur = _conn(fetchone=None, fetchall=rows)
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn):
+            n = project_keys.rewrap_project_keys("old-master-key")
+        # only the 'local' row is even attempted; 'local-blob' isn't valid Fernet
+        # under the old key, so it's skipped → 0 re-wrapped, and the hsm row is
+        # never UPDATEd.
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert n == 0
+        assert not any("hsm-blob" in str(u[1]) for u in updates)
+    def test_migrate_project_key_to_hsm(self):
+        from crypto import hsm
+        from cryptography.fernet import Fernet
+
+        pid = str(uuid4())
+        slot_id = str(uuid4())
+        old_dek = Fernet.generate_key()
+        new_dek = Fernet.generate_key()
+        admin_conn, admin_cur = _conn(fetchone={"key_provider": "local"}, fetchall=[])
+        slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "project_dek", return_value=old_dek), \
+             patch.object(project_keys.crypto, "generate_project_key", return_value=new_dek), \
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "wrap_dek_for_slot", return_value=("hsm-wrapped", "byok-kek")) as wrap_hsm:
+            n = project_keys.migrate_project_key(pid, "hsm", target_slot_id=slot_id)
+        assert n == 0
+        wrap_hsm.assert_called_once_with(slot_url, new_dek)
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert len(updates) == 1
+        params = updates[0][1]
+        assert params[0] == "hsm-wrapped"
+        assert params[1] == "hsm"
+        assert params[2] == "byok-kek"
+        assert str(params[3]) == slot_id
+
+    def test_migrate_project_key_to_local(self):
+        from cryptography.fernet import Fernet
+
+        pid = str(uuid4())
+        old_dek = Fernet.generate_key()
+        new_dek = Fernet.generate_key()
+        admin_conn, admin_cur = _conn(fetchone={"key_provider": "hsm"}, fetchall=[])
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "project_dek", return_value=old_dek), \
+             patch.object(project_keys.crypto, "generate_project_key", return_value=new_dek), \
+             patch.object(project_keys.crypto, "wrap_project_key", return_value="local-wrapped") as wrap_local:
+            n = project_keys.migrate_project_key(pid, "local")
+        assert n == 0
+        wrap_local.assert_called_once_with(new_dek)
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert len(updates) == 1
+        params = updates[0][1]
+        assert params[0] == "local-wrapped"
+        assert params[1] == "local"
+        assert params[2] is None
+
+    def test_rotate_hsm_kek(self):
+        from crypto import hsm
+
+        slot_id = str(uuid4())
+        rows = [
+            {"project_id": str(uuid4()), "key_enc": "old-wrap", "kms_key_ref": "byok-kek"},
+        ]
+        admin_conn, admin_cur = _conn(fetchone=None, fetchall=rows)
+        raw = b"x" * 32
+        slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "parse_pkcs11_url", return_value={"kek_label": "byok-kek"}), \
+             patch.object(hsm, "generate_kek"), \
+             patch.object(hsm, "unwrap_dek_for_slot", return_value=raw) as unwrap, \
+             patch.object(hsm, "wrap_dek_with_label", return_value="new-wrap") as wrap:
+            n = project_keys.rotate_hsm_kek(slot_id)
+        assert n == 1
+        unwrap.assert_called_once_with(slot_url, "old-wrap", "byok-kek")
+        wrap.assert_called_once()
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert len(updates) == 1
+        params = updates[0][1]
+        assert params[0] == "new-wrap"
+        assert params[1].startswith("byok-kek-")
+
+    def test_encryption_summary(self):
+        rows = [
+            {"project_id": str(uuid4()), "project_name": "a", "team_name": "T",
+             "key_provider": "hsm", "key_created_at": None, "key_id": None},
+            {"project_id": str(uuid4()), "project_name": "b", "team_name": "T",
+             "key_provider": "local", "key_created_at": None, "key_id": None},
+            {"project_id": str(uuid4()), "project_name": "c", "team_name": "T",
+             "key_provider": None, "key_created_at": None, "key_id": None},
+        ]
+        admin_conn, admin_cur = _conn(fetchone=None, fetchall=rows)
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys, "count_master_rows", return_value=0):
+            summary = project_keys.encryption_summary()
+        assert summary["counts"] == {"managed": 1, "local": 1, "hsm": 1}
+        assert len(summary["projects"]) == 3
+
+    def test_migrate_all_local_to_hsm(self):
+        slot_id = str(uuid4())
+        admin_conn, admin_cur = _conn(
+            fetchone={"key_provider": "hsm"}, fetchall=[{"project_id": str(uuid4())}]
+        )
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys, "migrate_project_key", return_value=0) as migrate:
+            n = project_keys.migrate_all_local_to_hsm(target_slot_id=slot_id)
+        assert n == 1
+        migrate.assert_called_once()
+        assert migrate.call_args.kwargs["target_slot_id"] == slot_id
+
+    def test_migrate_all_local_to_hsm_requires_slot(self):
+        with pytest.raises(RuntimeError, match="target HSM slot"):
+            project_keys.migrate_all_local_to_hsm(target_slot_id=None)
+
+    def test_ensure_project_key_hsm_slot(self):
+        from crypto import hsm
+
+        pid, slot_id = str(uuid4()), str(uuid4())
+        admin_conn, admin_cur = _conn(fetchone=None)
+        slot_url = "pkcs11:token=t;object=byok-kek?module-path=/m.so&pin-value=x"
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "wrap_dek_for_slot", return_value=("wrapped", "byok-kek")):
+            created = project_keys.ensure_project_key(pid, provider="hsm", hsm_slot_id=slot_id)
+        assert created is True
+        insert = [c.args for c in admin_cur.execute.call_args_list
+                  if "INSERT INTO private.project_crypto_keys" in str(c.args[0])]
+        assert len(insert) == 1
+        params = insert[0][1]  # (project_id, key_enc, provider, kms_ref, hsm_slot_id)
+        assert params[1] == "wrapped"
+        assert params[2] == "hsm"
+        assert params[3] == "byok-kek"
+        assert str(params[4]) == slot_id
+
+    def test_migrate_between_slots_rewraps_only(self):
+        from crypto import hsm
+        from cryptography.fernet import Fernet
+
+        pid, slot_a, slot_b = str(uuid4()), str(uuid4()), str(uuid4())
+        dek = Fernet.generate_key()
+        admin_conn, admin_cur = _conn(
+            fetchone={"key_provider": "hsm", "hsm_slot_id": slot_a},
+            fetchall=[],
+        )
+        slot_url_b = "pkcs11:token=b;object=byok-kek?module-path=/m.so&pin-value=x"
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url_b), \
+             patch.object(project_keys.crypto, "project_dek", return_value=dek), \
+             patch.object(hsm, "wrap_dek_for_slot", return_value=("wrapped-b", "byok-kek2")) as wrap:
+            n = project_keys.migrate_project_key(pid, "hsm", target_slot_id=slot_b)
+        assert n == 0  # re-wrap only, no secret re-encryption
+        wrap.assert_called_once_with(slot_url_b, dek)
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert len(updates) == 1
+        params = updates[0][1]
+        assert params[0] == "wrapped-b"
+        assert params[1] == "byok-kek2"
+        assert str(params[2]) == slot_b
+
+    def test_link_legacy_to_slot(self):
+        from crypto import hsm
+
+        pid, slot_id = str(uuid4()), str(uuid4())
+        admin_conn, admin_cur = _conn(fetchone=None, fetchall=[])
+        admin_cur.rowcount = 2
+        slot_url = "pkcs11:token=t;object=byok-kek?module-path=/m.so&pin-value=x"
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "available_for_slot", return_value=True), \
+             patch.object(hsm, "parse_pkcs11_url", return_value={"kek_label": "byok-kek"}):
+            n = project_keys.link_legacy_to_slot(slot_id)
+        assert n == 2
+        updates = [c.args for c in admin_cur.execute.call_args_list
+                   if "UPDATE private.project_crypto_keys" in str(c.args[0])]
+        assert len(updates) == 1
+        assert str(updates[0][1][0]) == slot_id
+
+    def test_link_legacy_to_slot_unreachable(self):
+        """Raises when the HSM slot is not reachable."""
+        from crypto import hsm
+
+        slot_id = str(uuid4())
+        admin_conn, _ = _conn(fetchone=None, fetchall=[])
+        slot_url = "pkcs11:token=t;object=byok-kek?module-path=/m.so&pin-value=x"
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "available_for_slot", return_value=False):
+            with pytest.raises(RuntimeError, match="not reachable"):
+                project_keys.link_legacy_to_slot(slot_id)
+
+    def test_rotate_hsm_kek_for_slot(self):
+        from crypto import hsm
+
+        slot_id = str(uuid4())
+        rows = [
+            {"project_id": str(uuid4()), "key_enc": "old", "kms_key_ref": "byok-kek"},
+        ]
+        admin_conn, admin_cur = _conn(fetchone=None, fetchall=rows)
+        slot_url = "pkcs11:token=t;object=byok-kek?module-path=/m.so&pin-value=x"
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(project_keys.crypto, "clear_project_key_cache"), \
+             patch.object(hsm, "parse_pkcs11_url", return_value={"kek_label": "byok-kek"}), \
+             patch.object(hsm, "generate_kek"), \
+             patch.object(hsm, "unwrap_dek_for_slot", return_value=b"x" * 32), \
+             patch.object(hsm, "wrap_dek_with_label", return_value="new") as wrap:
+            n = project_keys.rotate_hsm_kek(slot_id=slot_id)
+        assert n == 1
+        wrap.assert_called_once()

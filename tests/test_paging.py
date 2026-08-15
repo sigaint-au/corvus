@@ -6,12 +6,12 @@ from uuid import uuid4
 
 import pytest
 
-import config
-import db
-import nav
-import paging
+from core import config
+from core import db
+from ui import nav
+from ui import paging
 from routes.project_tokens import insert_token_scopes, parse_token_scope_lines
-from secret_ops import _load_team_secrets_page
+from secret_svc.secret_ops import _load_team_secrets_page
 
 def test_page_window_basic():
     w = paging.page_window(100, 2, per_page=25)

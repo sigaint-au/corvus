@@ -32,6 +32,7 @@
       <tr>
         <th>Name</th>
         <th>Description</th>
+        <th>Encryption</th>
         <th>Secrets</th>
         <th>ID</th>
       </tr>
@@ -41,6 +42,11 @@
       <tr>
         <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
         <td class="muted col-note">{{ p.description or '-' }}</td>
+        <td class="muted">
+          {% if p.key_provider == 'hsm' %}HSM
+          {% elif p.key_provider == 'local' %}Local
+          {% else %}Managed{% endif %}
+        </td>
         <td class="muted">{{ p.secret_count if p.secret_count is defined else '-' }}</td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
       </tr>

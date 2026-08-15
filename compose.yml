@@ -17,6 +17,27 @@ services:
       timeout: 3s
       retries: 20
 
+  softhsm2:
+    build:
+      context: .
+      dockerfile: softhsm2/Dockerfile
+    environment:
+      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-secretserver}
+      HSM_SO_PIN: ${HSM_SO_PIN:-1234}
+      HSM_PIN: ${HSM_PIN:-1234}
+      # Shared volume path must be world-traversable for appuser (uid 10001).
+      # Do not use /var/lib/softhsm (package dir is root:softhsm 770).
+      SOFTHSM2_TOKEN_DIR: /hsm/tokens
+      SOFTHSM2_CONF: /hsm/tokens/softhsm2.conf
+    volumes:
+      - hsmdata:/hsm/tokens
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /hsm/tokens/.ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
+
   postgrest:
     image: docker.io/postgrest/postgrest:v12.2.3
     depends_on:
@@ -31,6 +52,14 @@ services:
     ports:
       - "3000:3000"
 
+  redis:
+    image: docker.io/library/redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   app:
     build: .
     image: localhost/secretserver_app:latest
@@ -39,6 +68,10 @@ services:
         condition: service_healthy
       postgrest:
         condition: service_started
+      redis:
+        condition: service_healthy
+      softhsm2:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgres://authenticator:authenticator@db:5432/secretserver
       DATABASE_ADMIN_URL: postgres://postgres:postgres@db:5432/secretserver
@@ -46,12 +79,26 @@ services:
       MASTER_KEY: ${MASTER_KEY:-dev-master-key-change-in-prod!!}
       SECRET_KEY: ${SECRET_KEY:-flask-session-secret-change-me}
       POSTGREST_URL: http://postgrest:3000
+      REDIS_URL: redis://redis:6379/0
+      REDIS_DEK_CACHE_TTL: ${REDIS_DEK_CACHE_TTL:-300}
       GLOBAL_ADMIN_EMAIL: ${GLOBAL_ADMIN_EMAIL:-}
+      # SoftHSM2 token dir (the app resolves HSM slots by PKCS#11 URL, which
+      # points at libsofthsm2.so and this token directory).
+      SOFTHSM2_CONF: /hsm/tokens/softhsm2.conf
+      HSM_ALLOWED_MODULE_DIRS: /usr/lib,/usr/local/lib,/lib
       # Opt-in only — default off so refuse_insecure_defaults() actually runs.
       # For local play with baked-in secrets: ALLOW_INSECURE_DEFAULTS=1
       ALLOW_INSECURE_DEFAULTS: ${ALLOW_INSECURE_DEFAULTS:-0}
+    volumes:
+      - hsmdata:/hsm/tokens
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     # Hardened runtime: non-root image USER + drop caps + read-only root FS
     read_only: true
     cap_drop:
@@ -64,3 +111,4 @@ services:
 
 volumes:
   pgdata:
+  hsmdata:

@@ -1,13 +1,14 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import patch
+import json
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 import app as store
-import config
+from core import config
 import crypto
 
 store.app.config["TESTING"] = True
@@ -47,6 +48,28 @@ class TestProjectCrypto:
         with patch.object(crypto.db, "connect_admin", return_value=conn):
             assert crypto.decrypt_for_project(pid, token, "project") == "secret-value"
 
+    def test_project_key_uses_shared_redis_cache(self):
+        pid = str(uuid4())
+        row = {"key_enc": crypto.wrap_project_key(crypto.generate_project_key())}
+        conn, _ = _conn(fetchone=row)
+        client = MagicMock()
+        client.get.side_effect = ["0", None, "0", json.dumps(row)]
+        with patch.object(crypto.cache, "redis_client", return_value=client), \
+             patch.object(crypto.db, "connect_admin", return_value=conn) as connect:
+            assert crypto.project_has_key(pid) is True
+            assert crypto.project_has_key(pid) is True
+        connect.assert_called_once()
+        client.setex.assert_called_once()
+
+    def test_project_key_invalidation_advances_shared_epoch(self):
+        client = MagicMock()
+        with patch.object(crypto.cache, "redis_client", return_value=client):
+            crypto.clear_project_key_cache()
+        assert [call.args for call in client.incr.call_args_list] == [
+            ("secretserver:crypto:project-key:epoch",),
+            ("secretserver:crypto:hsm-slot:epoch",),
+        ]
+
     def test_master_fallback_when_no_key(self):
         pid = str(uuid4())
         conn, cur = _conn()
@@ -85,9 +108,155 @@ class TestProjectCrypto:
             with pytest.raises(ValueError):
                 crypto.decrypt_for_project(pid2, token, "project")
 
+    def test_hsm_provider_roundtrip(self):
+        from crypto import hsm
+
+        pid = str(uuid4())
+        raw = crypto.generate_project_key()
+        slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
+        conn, _ = _conn(
+            fetchone={
+                "key_enc": "hsm-wrapped",
+                "key_provider": "hsm",
+                "kms_key_ref": "byok-kek",
+                "hsm_slot_id": "s1",
+            }
+        )
+        with patch.object(crypto.db, "connect_admin", return_value=conn), \
+             patch.object(crypto, "_slot_url", return_value=slot_url), \
+             patch.object(hsm, "unwrap_dek_for_slot", return_value=raw):
+            token, provider = crypto.encrypt_for_project(pid, "secret-value")
+        assert provider == "project"
+        with patch.object(crypto.db, "connect_admin", return_value=conn), \
+             patch.object(crypto, "_slot_url", return_value=slot_url), \
+             patch.object(hsm, "unwrap_dek_for_slot", return_value=raw):
+            assert crypto.decrypt_for_project(pid, token, "project") == "secret-value"
+
+    def test_hsm_unwrap_used_for_hsm_provider(self):
+        from crypto import hsm
+
+        pid = str(uuid4())
+        raw = crypto.generate_project_key()
+        slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
+        conn, _ = _conn(
+            fetchone={
+                "key_enc": "hsm-wrapped",
+                "key_provider": "hsm",
+                "kms_key_ref": "byok-kek",
+                "hsm_slot_id": "s1",
+            }
+        )
+        with patch.object(crypto.db, "connect_admin", return_value=conn), \
+             patch.object(crypto, "_slot_url", return_value=slot_url), \
+             patch.object(hsm, "unwrap_dek_for_slot", return_value=raw) as unwrap:
+            crypto.encrypt_for_project(pid, "x")
+        unwrap.assert_called_once_with(slot_url, "hsm-wrapped", "byok-kek")
+
+
+class TestHsmDekContract:
+    """Fernet.generate_key() is 44 bytes; HSM wraps the decoded 32 raw bytes."""
+
+    def test_fernet_key_to_raw_accepts_generate_project_key(self):
+        from crypto import hsm
+
+        fkey = crypto.generate_project_key()
+        assert len(fkey) == 44
+        raw = hsm.fernet_key_to_raw(fkey)
+        assert len(raw) == 32
+        assert hsm.raw_to_fernet_key(raw) == fkey
+
+    def test_fernet_key_to_raw_accepts_32_bytes(self):
+        from crypto import hsm
+        import os
+
+        raw = os.urandom(32)
+        assert hsm.fernet_key_to_raw(raw) == raw
+
+    def test_fernet_key_to_raw_rejects_bad_length(self):
+        from crypto import hsm
+
+        with pytest.raises(ValueError, match="DEK must be"):
+            hsm.fernet_key_to_raw(b"too-short")
+
+    def test_ensure_project_key_hsm_passes_fernet_key_to_wrap(self):
+        """Regression: wrap_dek_for_slot must receive Fernet key material."""
+        from crypto import hsm
+        from crypto import project_keys
+
+        pid = str(uuid4())
+        slot_id = str(uuid4())
+        seen = {}
+
+        def capture_wrap(slot_url, dek):
+            seen["dek"] = dek
+            hsm.fernet_key_to_raw(dek)
+            return ("hsm-wrapped", "byok-kek")
+
+        admin_conn, admin_cur = _project_keys_conn(fetchone=None)
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "slot_url", return_value="pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"), \
+             patch.object(hsm, "wrap_dek_for_slot", side_effect=capture_wrap):
+            assert project_keys.ensure_project_key(
+                pid, provider="hsm", hsm_slot_id=slot_id
+            ) is True
+        assert len(seen["dek"]) == 44
+        assert hsm.fernet_key_to_raw(seen["dek"])  # does not raise
+
+
+class TestDekResolution:
+    def test_dek_for_hsm_slot(self):
+        from crypto import hsm
+
+        raw = crypto.generate_project_key()
+        slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
+        row = {
+            "key_enc": "slot-wrapped",
+            "key_provider": "hsm",
+            "kms_key_ref": "byok-kek",
+            "hsm_slot_id": "s1",
+        }
+        with patch.object(crypto, "_slot_url", return_value=slot_url), \
+             patch.object(hsm, "unwrap_dek_for_slot", return_value=raw) as unwrap:
+            out = crypto._dek_for(row)
+        assert out == raw
+        unwrap.assert_called_once_with(slot_url, "slot-wrapped", "byok-kek")
+
+    def test_dek_for_hsm_requires_slot(self):
+        row = {
+            "key_enc": "x",
+            "key_provider": "hsm",
+            "kms_key_ref": "byok-kek",
+            "hsm_slot_id": None,
+        }
+        with pytest.raises(RuntimeError, match="no slot"):
+            crypto._dek_for(row)
+
+    def test_dek_for_hsm_missing_slot_url(self):
+        row = {
+            "key_enc": "x",
+            "key_provider": "hsm",
+            "kms_key_ref": "byok-kek",
+            "hsm_slot_id": "s1",
+        }
+        with patch.object(crypto, "_slot_url", return_value=None):
+            with pytest.raises(RuntimeError, match="slot not found"):
+                crypto._dek_for(row)
+
+
+def _project_keys_conn(fetchone=None, fetchall=None):
+    cur = MagicMock()
+    cur.fetchone.return_value = fetchone
+    cur.fetchall.return_value = fetchall if fetchall is not None else []
+    conn = MagicMock()
+    conn.cursor.return_value = cur
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    cur.__enter__.return_value = cur
+    cur.__exit__.return_value = False
+    return conn, cur
+
 
 def _conn(fetchone=None, fetch_key=None):
-    from unittest.mock import MagicMock
     cur = MagicMock()
     if fetch_key is not None:
         cur.fetchone.return_value = {"key_enc": fetch_key}
@@ -100,4 +269,3 @@ def _conn(fetchone=None, fetch_key=None):
     cur.__enter__.return_value = cur
     cur.__exit__.return_value = False
     return conn, cur
-

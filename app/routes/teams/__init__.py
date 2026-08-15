@@ -45,6 +45,7 @@ from .groups import (
 
 
 def register(app):
+    """Register team, membership, invitation, and group routes."""
     app.get("/teams")(teams)
     app.post("/teams")(create_team)
     app.get("/teams/<uuid:team_id>")(team_detail)

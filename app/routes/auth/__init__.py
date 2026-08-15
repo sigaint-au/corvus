@@ -47,6 +47,7 @@ from .totp import (
 
 
 def register(app):
+    """Register authentication, registration, session, and profile routes."""
     app.post("/select-team")(select_team)
     app.get("/")(index)
     app.route("/login", methods=["GET", "POST"])(login)

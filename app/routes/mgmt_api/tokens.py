@@ -12,8 +12,8 @@ from flask import (
     jsonify,
     request,
 )
-import config
-import db
+from core import config
+from core import db
 from crypto import sha256_hex
 from .helpers import (
     _require_pat,

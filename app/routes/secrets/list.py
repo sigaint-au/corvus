@@ -13,12 +13,12 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
-import nav
-import paging
-from secret_ops import _load_shared_secrets_page, _load_team_secrets_page
+from auth import authz
+from core import config
+from core import db
+from ui import nav
+from ui import paging
+from secret_svc.secret_ops import _load_shared_secrets_page, _load_team_secrets_page
 
 log = logging.getLogger(__name__)
 

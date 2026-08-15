@@ -29,6 +29,9 @@
   <a href="{{ url_for('server_settings', tab='email') }}"
      class="tab {% if active_tab == 'email' %}active{% endif %}"
 >Email</a>
+  <a href="{{ url_for('server_settings', tab='encryption') }}"
+     class="tab {% if active_tab == 'encryption' %}active{% endif %}"
+>Encryption</a>
 </nav>
 
 {% if active_tab == 'general' %}
@@ -733,6 +736,231 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     </label>
     <button type="submit">Send test</button>
   </form>
+</section>
+{% elif active_tab == 'encryption' %}
+{% set c = encryption.summary.counts %}
+
+{% if encryption.legacy_hsm_count %}
+<div role="alert" data-variant="warning">
+  <strong>⚠ {{ encryption.legacy_hsm_count }} project(s) have no HSM slot assigned and cannot be decrypted.</strong>
+  Link them to a slot immediately from the slot menu below.
+</div>
+{% endif %}
+
+<section class="crypto-panel">
+  <div class="section-head">
+    <h2>Server-wide key</h2>
+  </div>
+  <div class="table">
+    <table>
+      <tbody>
+        <tr>
+          <th scope="row">Status</th>
+          <td>
+            {% if encryption.master_key_is_default %}
+            <span class="badge" data-variant="danger">Default</span>
+            {% else %}
+            <span class="badge" data-variant="success">Custom</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">Rotate</th>
+          <td class="muted">
+            <code class="k">flask --app app rekey-project-keys --old-master-key &lt;old&gt;</code>
+            <span class="muted">(local keys only)</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="crypto-panel">
+  <div class="section-head">
+    <h2>HSM slots</h2>
+    <a class="button outline small" href="{{ url_for('hsm_slot_new_wizard') }}">+ Add HSM slot</a>
+  </div>
+  {% if encryption.hsm_slots %}
+  <div class="table" style="overflow: visible"><table>
+    <thead><tr><th>Name</th><th>PKCS#11 URL</th><th>Status</th><th class="acts-menu"></th></tr></thead>
+    <tbody>
+    {% for slot in encryption.hsm_slots %}
+      <tr>
+        <td>
+           {{ slot.name }}
+           {% if slot.is_default %}<span class="badge" data-variant="primary">default</span>{% endif %}
+           {% if slot.project_count %}<span class="muted">({{ slot.project_count }} project keys)</span>{% endif %}
+        </td>
+        <td class="muted col-note"><code class="k">{{ slot.pkcs11_url|redact_pin }}</code></td>
+        <td>
+          {% if slot.available %}
+          <span class="badge" data-variant="success">Connected</span>
+          {% else %}
+          <span class="badge" data-variant="danger">Offline</span>
+          {% endif %}
+        </td>
+        <td class="acts-menu">
+          {% set _menu = 'slot-menu-' ~ slot.id %}
+          <ot-dropdown>
+            <button type="button" class="ghost icon" popovertarget="{{ _menu }}" aria-label="Actions for {{ slot.name }}">
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+                <circle cx="8" cy="3" r="1.5"/>
+                <circle cx="8" cy="8" r="1.5"/>
+                <circle cx="8" cy="13" r="1.5"/>
+              </svg>
+            </button>
+            <menu popover id="{{ _menu }}">
+              <button type="button" role="menuitem" class="ghost"
+                      data-nav="{{ url_for('hsm_slot_new_wizard', slot_id=slot.id) }}"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Edit</button>
+              <button type="button" role="menuitem" class="ghost"
+                      hx-post="{{ url_for('server_settings', tab='encryption') }}"
+                      hx-vals='{"action":"hsm_slot_test","slot_id":"{{ slot.id }}"}'
+                      hx-target="body" hx-swap="outerHTML"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Test connection</button>
+              {% if encryption.legacy_hsm_count %}
+              <button type="button" role="menuitem" class="ghost"
+                      hx-post="{{ url_for('server_settings', tab='encryption') }}"
+                      hx-vals='{"action":"hsm_slot_link","slot_id":"{{ slot.id }}"}'
+                      hx-target="body" hx-swap="outerHTML"
+                      hx-confirm="Link {{ encryption.legacy_hsm_count }} legacy HSM project(s) to this slot?"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Link legacy project(s)</button>
+              {% endif %}
+              <button type="button" role="menuitem" class="ghost"
+                      hx-post="{{ url_for('server_settings', tab='encryption') }}"
+                      hx-vals='{"action":"hsm_slot_rotate","slot_id":"{{ slot.id }}"}'
+                      hx-target="body" hx-swap="outerHTML"
+                      hx-confirm="Rotate KEK for slot '{{ slot.name }}' and re-wrap all its project keys?"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Rotate KEK</button>
+              <hr>
+              <button type="button" role="menuitem" class="ghost" data-variant="danger"
+                      hx-post="{{ url_for('server_settings', tab='encryption') }}"
+                      hx-vals='{"action":"hsm_slot_delete","slot_id":"{{ slot.id }}"}'
+                      hx-target="body" hx-swap="outerHTML"
+                      hx-confirm="Delete HSM slot “{{ slot.name }}”?"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Delete</button>
+            </menu>
+          </ot-dropdown>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="muted">No named slots configured.</p>
+  {% endif %}
+  {% if encryption.hsm_slots and c.local > 0 %}
+  <form method="post" class="row mt-1">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="hsm_migrate_all">
+    <label class="flex-2">Migrate all local project keys to HSM slot
+      <select name="target_slot" required>
+        {% for slot in encryption.hsm_slots %}
+        <option value="{{ slot.id }}">{{ slot.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit"
+            onclick="return confirm('Migrate all {{ c.local }} local project key(s) to the selected HSM slot? All secrets will be re-encrypted.')">
+      Migrate all local to HSM
+    </button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="crypto-panel">
+  <div class="section-head">
+    <h2>Project posture</h2>
+    <form method="get" action="{{ url_for('server_settings') }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="encryption">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ encryption_q or '' }}"
+               placeholder="Search" autocomplete="off" aria-label="Search projects">
+      </fieldset>
+      {% if encryption_q %}
+      <a class="button ghost small" href="{{ url_for('server_settings', tab='encryption') }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+
+  {% set projects = encryption.summary.projects %}
+  {% if projects %}
+  <div class="table"><table>
+    <thead>
+      <tr>
+        <th>Team</th>
+        <th>Project</th>
+        <th>Encryption</th>
+        <th>Slot</th>
+        <th>Key created</th>
+        <th>Key ID</th>
+        <th>Sync</th>
+        <th class="acts-menu"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td class="muted">{{ p.team_name }}</td>
+        <td>
+          <a href="{{ url_for('project_detail', project_id=p.project_id, tab='settings') }}">{{ p.project_name }}</a>
+        </td>
+        <td class="muted">
+          {% if p.provider == 'hsm' %}HSM
+          {% elif p.provider == 'local' %}Local
+          {% else %}Managed{% endif %}
+        </td>
+        <td class="muted">
+          {% if p.provider == 'hsm' %}
+            {% if p.hsm_slot_name %}{{ p.hsm_slot_name }}{% else %}<span class="badge" data-variant="danger" title="No HSM slot assigned">⚠ No slot</span>{% endif %}
+          {% else %}-{% endif %}
+        </td>
+        <td class="muted">
+          {% if p.key_created_at %}{{ p.key_created_at.strftime('%Y-%m-%d') }}{% else %}-{% endif %}
+        </td>
+        <td class="muted">
+          {% if p.key_id %}<code class="k">{{ p.key_id[:8] }}</code>{% else %}-{% endif %}
+        </td>
+        <td class="muted">
+          {% if p.provider == 'managed' %}-
+          {% elif p.pending %}{{ p.pending }} pending
+          {% else %}In sync{% endif %}
+        </td>
+        <td class="acts-menu">
+          {% if p.provider == 'local' or (p.provider == 'hsm' and p.pending) %}
+          {% set _menu = 'pp-menu-' ~ p.project_id %}
+          <ot-dropdown>
+            <button type="button" class="ghost icon" popovertarget="{{ _menu }}" aria-label="Actions for {{ p.project_name }}">
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+                <circle cx="8" cy="3" r="1.5"/>
+                <circle cx="8" cy="8" r="1.5"/>
+                <circle cx="8" cy="13" r="1.5"/>
+              </svg>
+            </button>
+            <menu popover id="{{ _menu }}">
+              <button type="button" role="menuitem" class="ghost"
+                      data-nav="{{ url_for('project_detail', project_id=p.project_id, tab='settings') }}"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">
+                {% if p.provider == 'local' %}Migrate to HSM{% elif p.pending %}Re-encrypt{% endif %}
+              </button>
+            </menu>
+          </ot-dropdown>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% with pager = projects_pager %}
+    {% include "partials/pager.html" %}
+  {% endwith %}
+  {% else %}
+  <p class="empty">
+    {% if encryption_q %}No projects match “{{ encryption_q }}”.{% else %}No projects yet.{% endif %}
+  </p>
+  {% endif %}
 </section>
 {% endif %}
 {% endblock %}

@@ -13,12 +13,12 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
-import ldap_auth
-import rbac_sync
-import settings_svc
+from auth import authz
+from core import config
+from core import db
+from integrations import ldap_auth
+from auth import rbac_sync
+from core import settings_svc
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +103,7 @@ def team_detail(team_id):
         tab = "projects"
     q = (request.args.get("q") or "").strip()
     members, projects, ldap_maps, oidc_maps = [], [], [], []
+    hsm_count = local_count = managed_count = 0
     groups = []
     invites, join_requests, org_events = [], [], []
     access_bindings = []
@@ -146,6 +147,29 @@ def team_detail(team_id):
                     (str(team_id),),
                 )
             projects = cur.fetchall()
+            provider_map = {}
+            ids = [p["id"] for p in projects]
+            if ids:
+                try:
+                    cur.execute(
+                        "SELECT * FROM api.project_key_providers(%s::uuid[])",
+                        (ids,),
+                    )
+                    provider_map = {
+                        str(r["project_id"]): r["key_provider"]
+                        for r in (cur.fetchall() or [])
+                    }
+                except Exception:
+                    provider_map = {}
+            hsm_count = local_count = managed_count = 0
+            for p in projects:
+                p["key_provider"] = provider_map.get(str(p["id"]))
+                if p["key_provider"] == "hsm":
+                    hsm_count += 1
+                elif p["key_provider"] == "local":
+                    local_count += 1
+                else:
+                    managed_count += 1
         elif tab == "members":
             # User subjects only (people + invites)
 
@@ -272,6 +296,9 @@ def team_detail(team_id):
         search_q=q,
         members=members,
         projects=projects,
+        hsm_count=hsm_count,
+        local_count=local_count,
+        managed_count=managed_count,
         groups=groups,
         my_role=my_role,
         ldap_maps=ldap_maps,

@@ -93,7 +93,7 @@ Unit tests live under `tests/` (not shipped in the container image). They use
 **pytest** with a mocked DB — Postgres is not required.
 
 ```bash
-pip install -r app/requirements.txt -r requirements-dev.txt
+pip install -e ".[dev]"
 pytest
 # or: tox -e py
 ```

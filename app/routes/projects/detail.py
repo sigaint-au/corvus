@@ -11,16 +11,16 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
-import nav
-import paging
-from secret_kinds import (
+from auth import authz
+from core import config
+from core import db
+from ui import nav
+from ui import paging
+from secret_svc.secret_kinds import (
     annotate_token_expiry,
     secret_due_status,
 )
-from secret_ops import _load_secrets_page
+from secret_svc.secret_ops import _load_secrets_page
 
 
 @authz.login_required
@@ -68,6 +68,22 @@ def projects_list():
                     (*params, projects_pager["limit"], projects_pager["offset"]),
                 )
                 projects = cur.fetchall() or []
+                provider_map = {}
+                ids = [p["id"] for p in projects]
+                if ids:
+                    try:
+                        cur.execute(
+                            "SELECT * FROM api.project_key_providers(%s::uuid[])",
+                            (ids,),
+                        )
+                        provider_map = {
+                            str(r["project_id"]): r["key_provider"]
+                            for r in (cur.fetchall() or [])
+                        }
+                    except Exception:
+                        provider_map = {}
+                for p in projects:
+                    p["key_provider"] = provider_map.get(str(p["id"]))
     return render_template(
         "projects.html",
         team=team,
@@ -162,6 +178,7 @@ def project_detail(project_id):
         can_settings = bool(can_admin or can_delete)
         project_crypto = None
         project_master_rows = 0
+        hsm_slots = []
 
         if tab == "settings" and not can_settings:
             tab = "secrets"
@@ -265,12 +282,18 @@ def project_detail(project_id):
             except Exception:
                 project_secret_keys = []
         elif tab == "settings":
-            import project_keys
+            from crypto import project_keys
 
             project_crypto = project_keys.project_crypto_status(project_id)
             project_master_rows = project_keys.count_master_rows(project_id)
+            try:
+                with db.connect_admin() as conn, conn.cursor() as cur:
+                    cur.execute("SELECT * FROM api.list_hsm_slots()")
+                    hsm_slots = cur.fetchall() or []
+            except Exception:
+                hsm_slots = []
         elif tab == "access" and can_admin:
-            import rbac_sync
+            from auth import rbac_sync
 
             cur.execute(
                 "SELECT api.can_manage_rbac('project', %s::uuid) AS ok",
@@ -340,10 +363,10 @@ def project_detail(project_id):
             access_pending_count = 0
         # import: no extra queries
     if access_bindings:
-        import rbac_sync
+        from auth import rbac_sync
 
         rbac_sync.enrich_binding_emails(access_bindings)
-    import settings_svc
+    from core import settings_svc
 
     public_base = settings_svc.public_base_url(request.url_root or "")
     return render_template(
@@ -397,6 +420,8 @@ def project_detail(project_id):
         access_mode_labels=config.ACCESS_MODE_LABELS,
         project_crypto=project_crypto,
         project_master_rows=project_master_rows,
+        hsm_slots=hsm_slots,
+        hsm_available=bool(hsm_slots),
     )
 
 
@@ -533,20 +558,71 @@ def project_crypto_action(project_id):
             url_for("project_detail", project_id=project_id, tab="settings")
         )
     if action == "adopt":
-        import project_keys
+        from crypto import project_keys
 
-        created = project_keys.ensure_project_key(project_id)
-        n = project_keys.adopt_project_key(project_id)
+        provider = (request.form.get("provider") or "local").strip().lower()
+        if provider not in ("local", "hsm"):
+            provider = "local"
+        hsm_slot = (request.form.get("hsm_slot") or "").strip() or None
+        if provider == "hsm" and not hsm_slot:
+            flash("External HSM requires a named slot", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="settings")
+            )
+        try:
+            created = project_keys.ensure_project_key(
+                project_id, provider=provider, hsm_slot_id=hsm_slot
+            )
+            n = project_keys.adopt_project_key(
+                project_id, provider=provider, hsm_slot_id=hsm_slot
+            )
+        except Exception as e:
+            flash(f"Key adoption failed: {e}", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="settings")
+            )
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             audit.log_org(
                 cur,
                 team_id=team_id,
                 project_id=project_id,
                 action="project_key_adopted",
-                detail=f"re-encrypted={n}" + (" (key created)" if created else ""),
+                detail=f"provider={provider} re-encrypted={n}"
+                + (" (key created)" if created else ""),
             )
             conn.commit()
         flash(f"Project key adopted — re-encrypted {n} secret row(s)", "ok")
+    elif action == "migrate":
+        from crypto import project_keys
+
+        new_provider = (request.form.get("provider") or "hsm").strip().lower()
+        if new_provider not in ("local", "hsm"):
+            new_provider = "hsm"
+        target_slot = (request.form.get("target_slot") or "").strip() or None
+        if new_provider == "hsm" and not target_slot:
+            flash("External HSM requires a named slot", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="settings")
+            )
+        try:
+            n = project_keys.migrate_project_key(
+                project_id, new_provider, target_slot_id=target_slot
+            )
+        except Exception as e:
+            flash(f"Key migration failed: {e}", "error")
+            return redirect(
+                url_for("project_detail", project_id=project_id, tab="settings")
+            )
+        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            audit.log_org(
+                cur,
+                team_id=team_id,
+                project_id=project_id,
+                action="project_key_migrated",
+                detail=f"to={new_provider} re-encrypted={n}",
+            )
+            conn.commit()
+        flash(f"Project key migrated to {new_provider} — re-encrypted {n} row(s)", "ok")
     else:
         flash("Unknown encryption action", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="settings"))

@@ -7,13 +7,13 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import authz
-import config
-import db
-import ldap_auth
-import lockout
-import settings_svc
-import user_sessions
+from auth import authz
+from core import config
+from core import db
+from integrations import ldap_auth
+from auth import lockout
+from core import settings_svc
+from auth import user_sessions
 
 from tests.helpers import mock_conn as _conn
 
@@ -22,24 +22,24 @@ store.app.config["TESTING"] = True
 class TestMailer:
 
     def test_smtp_configured_requires_host_and_from(self):
-        import mailer
+        from integrations import mailer
         assert not mailer.smtp_configured({'smtp_enabled': 'true', 'smtp_host': '', 'smtp_from_email': 'a@b.c'})
         assert not mailer.smtp_configured({'smtp_enabled': 'false', 'smtp_host': 'h', 'smtp_from_email': 'a@b.c'})
         assert mailer.smtp_configured({'smtp_enabled': 'true', 'smtp_host': 'smtp.example.com', 'smtp_from_email': 'a@b.c'})
 
     def test_login_alerts_need_smtp(self):
-        import mailer
+        from integrations import mailer
         assert not mailer.login_alerts_enabled({'smtp_enabled': 'true', 'smtp_host': 'h', 'smtp_from_email': 'a@b.c', 'smtp_login_alerts': 'false'})
         assert mailer.login_alerts_enabled({'smtp_enabled': 'true', 'smtp_host': 'h', 'smtp_from_email': 'a@b.c', 'smtp_login_alerts': 'true'})
 
     def test_send_email_not_configured(self):
-        import mailer
+        from integrations import mailer
         ok, err = mailer.send_email('a@b.c', 'subj', 'body', cfg={'smtp_enabled': 'false', 'smtp_host': '', 'smtp_from_email': ''})
         assert not ok
         assert 'SMTP' in err
 
     def test_send_email_starttls(self):
-        import mailer
+        from integrations import mailer
         cfg = {'smtp_enabled': 'true', 'smtp_host': 'smtp.example.com', 'smtp_port': '587', 'smtp_encryption': 'starttls', 'smtp_username': 'u', 'smtp_password': '', 'smtp_from_email': 'from@ex.com', 'smtp_from_name': 'App'}
         mock_smtp = MagicMock()
         mock_smtp.__enter__ = MagicMock(return_value=mock_smtp)

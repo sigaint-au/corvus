@@ -30,41 +30,50 @@ PostgREST (:3000) ◄── JWT (via /api/token) ──► Postgres (RLS)
 
 ```
 app/
-  app.py            # WSGI entry, security headers, schema bootstrap, CLI cmds
-  config.py         # env vars + RBAC constants
-  db.py             # connections + JWT/RLS helpers (connect, as_user, make_jwt)
-  schema.py         # schema bootstrap: apply pending migrations + promote admin
-  migrations.py     # versioned migration runner (db/migrations/*.sql)
-  authz.py          # auth decorators, CSRF, safe redirect
-  crypto.py         # Fernet encrypt/decrypt (MASTER_KEY) + per-project BYOK seam
-  project_keys.py   # per-project DEK lifecycle (create/adopt/re-encrypt)
-  audit.py          # audit helpers + formatting
-  nav.py            # sidebar navigation context
-  pins.py           # secret pins / recent
-  paging.py         # pagination helpers
-  secret_kinds.py   # structured secret parsing (db/cert/ssh/kv)
-  secret_ops.py     # shared secret DB helpers (list, parse, upsert)
-  settings_svc.py   # server settings
-  totp_svc.py       # TOTP 2FA
-  pats.py           # personal access tokens
-  ldap_auth.py      # LDAP bind + group sync
-  oidc_auth.py      # OIDC SSO
-  dir_sync.py       # directory group sync
-  rbac_sync.py      # RBAC binding sync helpers (sync_user_team_binding, etc.)
-  mailer.py         # SMTP
-  lockout.py        # login lockout
-  user_sessions.py  # server-side sessions
+  app.py               # WSGI entry, security headers, schema bootstrap, CLI cmds
+  core/                # core infrastructure
+    config.py          # env vars + RBAC constants
+    db.py              # connections + JWT/RLS helpers (connect, as_user, make_jwt)
+    schema.py          # schema bootstrap: apply pending migrations + promote admin
+    migrations.py      # versioned migration runner (db/migrations/*.sql)
+    settings_svc.py    # server settings
+  crypto/              # encryption & key management
+    __init__.py        # Fernet encrypt/decrypt (MASTER_KEY) + per-project BYOK seam
+    project_keys.py    # per-project DEK lifecycle (create/adopt/re-encrypt)
+    hsm.py             # PKCS#11 wrapper for external-HSM (SoftHSM2) BYOK
+  auth/                # authentication & authorization services
+    authz.py           # auth decorators, CSRF, safe redirect
+    lockout.py         # login lockout
+    passwords.py       # password change/reset
+    totp_svc.py        # TOTP 2FA
+    user_sessions.py   # server-side sessions
+    pats.py            # personal access tokens
+    rbac_sync.py       # RBAC binding sync helpers (sync_user_team_binding, etc.)
+  integrations/        # external integrations
+    ldap_auth.py       # LDAP bind + group sync
+    oidc_auth.py       # OIDC SSO
+    mailer.py          # SMTP
+    dir_sync.py        # directory group sync
+  secret_svc/          # secret service
+    secret_kinds.py    # structured secret parsing (db/cert/ssh/kv)
+    secret_ops.py      # shared secret DB helpers (list, parse, upsert)
+  ui/                  # UI helpers
+    nav.py             # sidebar navigation context
+    pins.py            # secret pins / recent
+    paging.py          # pagination helpers
+  audit/               # audit logging (constants, dates, export, queries, write)
+  lib/                 # shared helpers (auth_tokens, datetime_utils, serialize, users, validate)
   routes/
-    auth/            # login, register, 2FA, reset
-    teams/           # teams, members, groups, invites
-    projects/        # projects, members, group roles, settings
-    secrets/         # secret CRUD, reveal, history, access requests, access mode
-    project_io.py    # import/export
-    project_tokens.py # machine token scopes
-    admin/           # server settings, users, audit
-    api.py           # /api/token, /api/users/suggest, /health
-    eso/             # /eso/v1 machine + PAT secret API
-    mgmt_api/        # management API (teams, members via PAT)
+    auth/              # login, register, 2FA, reset
+    teams/             # teams, members, groups, invites
+    projects/          # projects, members, group roles, settings
+    secrets/           # secret CRUD, reveal, history, access requests, access mode
+    project_io.py      # import/export
+    project_tokens.py  # machine token scopes
+    admin/             # server settings, users, audit
+    api.py             # /api/token, /api/users/suggest, /health
+    eso/               # /eso/v1 machine + PAT secret API
+    mgmt_api/          # management API (teams, members via PAT)
 ```
 
 ---
@@ -73,15 +82,14 @@ app/
 
 ```
 db/migrations/
-  0001_init.sql     # Tables + ENABLE/FORCE RLS + non-RBAC functions (01-init.sql)
-  0002_rbac.sql     # RBAC schema + auth functions + all RLS policies (02-rbac.sql)
-  0003_….sql …      # additive, idempotent migrations (applied by migrations.py)
+  0001_init.sql     # Complete squashed schema/security baseline (01-init.sql)
+  0002_rbac.sql     # No-op bootstrap/version marker (02-rbac.sql)
 ```
 
 On fresh databases, `docker-entrypoint-initdb.d` runs the two baseline
-migrations (`0001_init.sql`, `0002_rbac.sql`). On every startup the app applies
-any remaining migrations via `migrations.apply_pending()`, recording each
-version + checksum in `private.schema_migrations`.
+migrations (`0001_init.sql`, `0002_rbac.sql`). On every startup the app checks
+the two baseline versions via `migrations.apply_pending()`, recording their
+versions and checksums in `private.schema_migrations`.
 
 ---
 
@@ -98,6 +106,15 @@ cur.execute("SELECT set_config('request.jwt.claims', %s, false)", (claims,))
 
 `api.current_user_id()` reads the `sub` claim. All RLS policies and helper
 functions key off that value.
+
+Mutable application caches use Redis when `REDIS_URL` is configured:
+project-key rows, HSM slot URLs, and OIDC discovery documents use shared epoch
+keys, so updates invalidate every app replica. JWKS clients and Fernet objects
+are not retained in process memory. If Redis is unavailable, the app bypasses
+caching and reads the source directly; it never uses a process-local stale-key
+cache. If Redis is unavailable during invalidation, an already-populated Redis
+entry can survive until its TTL; use a database-backed generation or
+transactional outbox if that failure mode must be eliminated.
 
 ---
 

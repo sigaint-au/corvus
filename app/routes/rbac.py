@@ -8,9 +8,9 @@ import re
 from flask import flash, redirect, render_template, request, session, url_for
 
 import audit
-import authz
-import config
-import db
+from auth import authz
+from core import config
+from core import db
 from lib.users import lookup_user_id
 from lib.validate import is_uuid
 
@@ -111,6 +111,7 @@ def parse_rules_yaml(text: str) -> list[tuple[list[str], list[str]]]:
 
 
 def register(app):
+    """Register RBAC role, binding, and access-review routes."""
     app.get("/rbac/roles")(rbac_roles)
     app.post("/rbac/roles")(rbac_roles_create)
     app.post("/rbac/roles/<uuid:role_id>/delete")(rbac_roles_delete)
@@ -256,6 +257,7 @@ def rbac_roles_create():
 
 @authz.login_required
 def rbac_roles_delete(role_id):
+    """Delete a non-built-in RBAC role and return to the role catalogue."""
     tab = (request.form.get("tab") or "custom").strip() or "custom"
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
@@ -525,6 +527,7 @@ def rbac_bindings():
 
 @authz.login_required
 def rbac_bindings_create():
+    """Create a validated RBAC binding at the requested scope."""
     scope_kind = (request.form.get("scope_kind") or "team").strip()
     scope_id = (request.form.get("scope_id") or "").strip() or None
     role_name = (request.form.get("role_name") or "").strip()
@@ -702,6 +705,7 @@ def rbac_bindings_create():
 
 @authz.login_required
 def rbac_bindings_delete(binding_id):
+    """Delete an RBAC binding and return to its scope view."""
     scope = request.form.get("scope") or "team"
     scope_id = request.form.get("scope_id") or ""
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:

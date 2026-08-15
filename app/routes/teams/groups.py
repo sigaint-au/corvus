@@ -11,9 +11,9 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import db
-import rbac_sync
+from auth import authz
+from core import db
+from auth import rbac_sync
 from lib.users import lookup_user_id
 
 

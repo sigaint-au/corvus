@@ -37,6 +37,7 @@ from .health import health
 
 
 def register(app):
+    """Register the External Secrets Operator-compatible API routes."""
     app.get("/eso/v1/projects")(eso_list_projects)
     app.get("/eso/v1/projects/<project_ref>/secrets/<path:key>")(eso_get_secret)
     app.post("/eso/v1/projects/<project_ref>/secrets/<path:key>/access-request")(eso_request_secret_access)

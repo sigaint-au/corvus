@@ -1,0 +1,218 @@
+"""Versioned SQL migration runner.
+
+Migrations live in ``db/migrations/*.sql`` and are applied once, in filename
+order, by ``apply_pending()``. Applied versions and their checksums are
+recorded in ``private.schema_migrations`` (admin-only; the ``private`` schema
+is not exposed to PostgREST).
+
+The two baseline migrations (``0001_init.sql``, ``0002_rbac.sql``) are applied
+by ``docker-entrypoint-initdb.d`` on a fresh volume. On startup, if the schema
+already exists but the migrations table is empty, they are seeded as applied so
+existing volumes never re-run baseline DDL; only additive migrations run.
+
+The caller is responsible for holding the ``pg_advisory_lock`` serialization
+around ``apply_pending()`` (see :func:`schema.ensure_schema`).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+from pathlib import Path
+
+log = __import__("logging").getLogger(__name__)
+
+# Repo root in dev (app/../db/migrations); /db/migrations in the container
+# (Dockerfile copies db/migrations -> /db/migrations).
+_env_migrations_dir = os.environ.get("MIGRATIONS_DIR", "")
+MIGRATIONS_DIR = (
+    Path(_env_migrations_dir)
+    if _env_migrations_dir
+    else Path(__file__).resolve().parents[2] / "db" / "migrations"
+)
+
+# Baseline migrations are applied by docker-entrypoint on a fresh volume and
+# must not be re-run on existing volumes (they contain non-idempotent DDL).
+BASELINE_VERSIONS = ("0001", "0002")
+
+_MIGRATIONS_TABLE = "private.schema_migrations"
+
+
+def _split_sql_statements(sql: str) -> list[str]:
+    """Split a SQL script into statements, respecting dollar-quoted bodies."""
+    stmts: list[str] = []
+    buf: list[str] = []
+    i = 0
+    n = len(sql)
+    in_dollar = False
+    dollar_tag = ""
+    while i < n:
+        if not in_dollar and sql[i] == "-" and i + 1 < n and sql[i + 1] == "-":
+            # line comment
+            while i < n and sql[i] != "\n":
+                buf.append(sql[i])
+                i += 1
+            continue
+        if not in_dollar and sql[i] == "$":
+            # start dollar quote $$ or $tag$
+            j = i + 1
+            while j < n and (sql[j].isalnum() or sql[j] == "_"):
+                j += 1
+            if j < n and sql[j] == "$":
+                dollar_tag = sql[i : j + 1]
+                in_dollar = True
+                buf.append(dollar_tag)
+                i = j + 1
+                continue
+        if in_dollar:
+            if sql.startswith(dollar_tag, i):
+                buf.append(dollar_tag)
+                i += len(dollar_tag)
+                in_dollar = False
+                dollar_tag = ""
+                continue
+            buf.append(sql[i])
+            i += 1
+            continue
+        if sql[i] == ";":
+            chunk = "".join(buf).strip()
+            if chunk:
+                stmts.append(chunk)
+            buf = []
+            i += 1
+            continue
+        buf.append(sql[i])
+        i += 1
+    chunk = "".join(buf).strip()
+    if chunk:
+        stmts.append(chunk)
+    return stmts
+
+
+def _migration_files() -> list[Path]:
+    """Return migration SQL files in lexical (version) order."""
+    if not MIGRATIONS_DIR.is_dir():
+        return []
+    return sorted(MIGRATIONS_DIR.glob("*.sql"))
+
+
+def _version_of(path: Path) -> str:
+    """Extract the leading version number (e.g. ``0004``) from a filename."""
+    return path.name.split("_", 1)[0]
+
+
+def _checksum(sql: str) -> str:
+    """SHA-256 hex digest of a migration file's raw contents."""
+    return hashlib.sha256(sql.encode("utf-8")).hexdigest()
+
+
+def _ensure_table(cur) -> None:
+    """Create the migration-tracking table if it does not exist."""
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {_MIGRATIONS_TABLE} (
+          version text PRIMARY KEY,
+          applied_at timestamptz NOT NULL DEFAULT now(),
+          checksum text NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        f"REVOKE ALL ON {_MIGRATIONS_TABLE} FROM authenticator, authenticated, anon"
+    )
+
+
+def _applied_checksums(cur) -> dict[str, str]:
+    """Return a mapping of applied migration version -> checksum."""
+    cur.execute(f"SELECT version, checksum FROM {_MIGRATIONS_TABLE}")
+    return {str(r["version"]): str(r["checksum"]) for r in (cur.fetchall() or [])}
+
+
+def _squashed_baseline_exists(cur) -> bool:
+    """Return True when the current fresh-install baseline is present."""
+    cur.execute(
+        "SELECT to_regclass('private.squashed_baseline_marker') IS NOT NULL AS ok"
+    )
+    return bool((cur.fetchone() or {}).get("ok"))
+
+
+def _migration_specs() -> list[tuple[str, str, str]]:
+    """Return ``(version, sql, checksum)`` for every migration file, in order."""
+    specs: list[tuple[str, str, str]] = []
+    for path in _migration_files():
+        sql = path.read_text()
+        specs.append((_version_of(path), sql, _checksum(sql)))
+    return specs
+
+
+def pending_migrations(cur) -> list[tuple[str, str]]:
+    """Return unapplied migrations as ``(version, sql)`` pairs, in order.
+
+    Raises ``RuntimeError`` when an already-applied version's checksum no
+    longer matches its file (schema drift).
+    """
+    _ensure_table(cur)
+    applied = _applied_checksums(cur)
+    pending: list[tuple[str, str]] = []
+    for version, sql, checksum in _migration_specs():
+        if version in applied:
+            if applied[version] != checksum:
+                raise RuntimeError(
+                    f"migration {version} checksum mismatch: recorded "
+                    f"{applied[version]} != current {checksum} (schema drift detected)"
+                )
+            continue
+        pending.append((version, sql))
+    return pending
+
+
+def apply_pending(cur) -> None:
+    """Apply all pending migrations, recording each version after it succeeds.
+
+    The baseline (``0001_init``, ``0002_rbac``) is seeded as applied after the
+    Docker bootstrap leaves the tracking table empty. A pre-squash schema without
+    the baseline marker is rejected. Every migration is applied via
+    :func:`_split_sql_statements` (dollar-quote aware) and its checksum is
+    recorded only after all of its statements succeed, so a partial failure
+    is retried on the next boot.
+    """
+    _ensure_table(cur)
+    applied = _applied_checksums(cur)
+    if not applied and not _squashed_baseline_exists(cur):
+        raise RuntimeError(
+            "database is not initialized with the squashed baseline; "
+            "recreate the database for this fresh-install-only branch"
+        )
+    seed_baseline = not applied
+
+    for version, sql, checksum in _migration_specs():
+        if version in applied:
+            if applied[version] != checksum:
+                raise RuntimeError(
+                    f"migration {version} checksum mismatch: recorded "
+                    f"{applied[version]} != current {checksum} (schema drift detected)"
+                )
+            continue
+        if seed_baseline and version in BASELINE_VERSIONS:
+            cur.execute(
+                f"""
+                INSERT INTO {_MIGRATIONS_TABLE} (version, checksum)
+                VALUES (%s, %s)
+                ON CONFLICT (version) DO NOTHING
+                """,
+                (version, checksum),
+            )
+            log.info("seeded baseline migration %s", version)
+            continue
+        for stmt in _split_sql_statements(sql):
+            body = "\n".join(
+                ln for ln in stmt.splitlines() if not ln.strip().startswith("--")
+            ).strip()
+            if not body:
+                continue
+            cur.execute(stmt)
+        cur.execute(
+            f"INSERT INTO {_MIGRATIONS_TABLE} (version, checksum) VALUES (%s, %s)",
+            (version, checksum),
+        )
+        log.info("applied migration %s", version)

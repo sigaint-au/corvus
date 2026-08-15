@@ -222,7 +222,7 @@ manifest [openshift-eso.yaml](../openshift-eso.yaml).
 |------|------|
 | `Dockerfile` | App image (build context = repo root) |
 | `compose.yml` | Postgres + PostgREST + app |
-| `db/migrations/0001_init.sql` | Tables + `ENABLE/FORCE RLS` (baseline, applied as `01-init.sql`) |
-| `db/migrations/0002_rbac.sql` | RBAC functions + all RLS policies (baseline, applied as `02-rbac.sql`) |
-| `app/` | Flask app; `migrations.py` applies remaining migrations on existing volumes |
+| `db/migrations/0001_init.sql` | Complete schema/security baseline (applied as `01-init.sql`) |
+| `db/migrations/0002_rbac.sql` | No-op bootstrap/version marker (applied as `02-rbac.sql`) |
+| `app/` | Flask app; `core/migrations.py` applies remaining migrations on existing volumes |
 | `docs/` | This documentation set |

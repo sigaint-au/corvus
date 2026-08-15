@@ -9,54 +9,74 @@
 {% include "partials/breadcrumb.html" %}
 
 <div class="page-head">
-  <h1>New project in {{ team.name }}</h1>
+  <h1>New project</h1>
 </div>
-<p class="page-desc muted">Projects group secrets under one set of access rules and permissions.</p>
+<p class="page-desc muted">{{ team.name }}</p>
 
-<form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="settings-form">
+<form method="post" action="{{ url_for('create_project', team_id=team.id) }}" class="settings-form"
+      onsubmit="var h=this.querySelector('input[name=encryption]:checked');return h&&h.value==='hsm'?confirm('Create with an HSM-wrapped key? The HSM must stay available for future access.'):true;">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
-  <section class="card">
-    <h2>1 · Basics</h2>
-    <label>Project name
-      <input type="text" name="name" required placeholder="e.g. production-api"
-             autocomplete="off" maxlength="200">
-    </label>
-    <label>Description
-      <input type="text" name="description" maxlength="500"
-             placeholder="optional purpose" autocomplete="off">
-    </label>
-  </section>
-
-  <section class="card">
-    <h2>2 · Encryption</h2>
-    <fieldset>
-      <label class="radio-line">
-        <input type="radio" name="encryption" value="managed" {% if encryption == 'managed' %}checked{% endif %}>
-        <span>
-          <strong>Managed — platform key</strong>
-          <span class="muted">Secrets are encrypted under the server-wide key. Best when you want zero key management.</span>
-        </span>
+  <section>
+    <div class="section-head"><h2>Basics</h2></div>
+    <div class="field-grid">
+      <label class="span-2">Name
+        <input type="text" name="name" required placeholder="e.g. production-api"
+               autocomplete="off" maxlength="200">
       </label>
-      <label class="radio-line">
-        <input type="radio" name="encryption" value="byok"
-               {% if encryption == 'byok' %}checked{% endif %}>
-        <span>
-          <strong>Project key — bring your own key</strong>
-          <span class="muted">Each project gets its own encryption key, generated and stored locally (external KMS support planned). Manage it from the project Settings tab.{% if my_role not in ('team-owner', 'team-admin') %} You must be a team owner or admin to manage keys.{% endif %}</span>
-        </span>
+      <label class="span-2">Description
+        <input type="text" name="description" maxlength="500"
+               placeholder="optional" autocomplete="off">
       </label>
-    </fieldset>
-    <p class="field-hint">A project key separates this project's secrets from other projects', but it does <strong>not</strong> protect against compromise of the server-wide <code>MASTER_KEY</code>, which wraps every project key.</p>
-  </section>
-
-  <section class="card">
-    <h2>3 · Create</h2>
-    <p class="muted">After creation you can add secrets and invite members from the project page. The encryption choice can be adopted or changed later under Project Settings → Encryption.</p>
-    <div class="section-tools">
-      <a class="button ghost" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Cancel</a>
-      <button type="submit" class="primary">Create project</button>
     </div>
   </section>
+
+  <section>
+    <div class="section-head"><h2>Encryption</h2></div>
+    <fieldset class="crypto-choice">
+      <legend class="visually-hidden">Encryption</legend>
+      <label class="radio-card">
+        <input type="radio" name="encryption" value="managed" {% if encryption == 'managed' %}checked{% endif %}>
+        <span class="radio-card-body">
+          <strong>Managed</strong>
+          <span class="muted">Server-wide key</span>
+        </span>
+      </label>
+      <label class="radio-card">
+        <input type="radio" name="encryption" value="byok"
+               {% if encryption == 'byok' %}checked{% endif %}
+               {% if my_role not in ('team-owner', 'team-admin') %}disabled{% endif %}>
+        <span class="radio-card-body">
+          <strong>Local</strong>
+          <span class="muted">Project key{% if my_role not in ('team-owner', 'team-admin') %} · owners/admins only{% endif %}</span>
+        </span>
+      </label>
+      {% if hsm_available %}
+      <label class="radio-card">
+        <input type="radio" name="encryption" value="hsm"
+               {% if encryption == 'hsm' %}checked{% endif %}
+               {% if my_role not in ('team-owner', 'team-admin') %}disabled{% endif %}>
+        <span class="radio-card-body">
+          <strong>HSM</strong>
+          <span class="muted">Project key in HSM{% if my_role not in ('team-owner', 'team-admin') %} · owners/admins only{% endif %}</span>
+        </span>
+      </label>
+      {% if hsm_slots %}
+      <label>HSM slot
+        <select name="hsm_slot">
+          {% for s in hsm_slots %}
+          <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      {% endif %}
+    </fieldset>
+  </section>
+
+  <p class="create-actions">
+    <a class="button ghost" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Cancel</a>
+    <button type="submit" class="button">Create project</button>
+  </p>
 </form>
 {% endblock %}

@@ -609,6 +609,11 @@
       color: var(--muted-foreground);
       margin-top: .15rem;
     }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px;
+      padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
     /* Settings identity forms: grouped grids so LDAP/OIDC are less a tall stack */
     .settings-form {
       display: flex;
@@ -663,6 +668,85 @@
     }
     .field-group .check-row:first-of-type {
       margin-top: .15rem;
+    }
+    /* Project encryption (settings + new-project wizard) */
+    .crypto-panel .section-head { margin-bottom: .85rem; }
+    .crypto-status {
+      display: flex;
+      flex-direction: column;
+      gap: .55rem;
+    }
+    .crypto-status-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .45rem .6rem;
+    }
+    .crypto-panel .section-tools form.inline {
+      display: inline-flex;
+    }
+    .crypto-panel .section-tools .toolbar {
+      margin: 0;
+    }
+    .crypto-panel .field-hint {
+      margin: .65rem 0 0;
+    }
+    .crypto-choice {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+      margin: 0;
+      padding: 0;
+      border: none;
+    }
+    .radio-card {
+      display: flex;
+      align-items: flex-start;
+      gap: .65rem;
+      margin: 0;
+      padding: .75rem .85rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--background);
+      cursor: pointer;
+    }
+    .radio-card:has(input:checked) {
+      border-color: var(--ring);
+      background: var(--muted);
+    }
+    .radio-card:has(input:disabled) {
+      opacity: .65;
+      cursor: not-allowed;
+    }
+    .radio-card input[type="radio"] {
+      margin: .2rem 0 0;
+      flex: 0 0 auto;
+    }
+    .radio-card-body {
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+      min-width: 0;
+    }
+    .radio-card-body strong {
+      font-weight: 600;
+      font-size: .925rem;
+    }
+    .create-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: .5rem;
+      margin: 0;
+    }
+    .crypto-adopt {
+      margin-top: .85rem;
+    }
+    .crypto-adopt .form-actions {
+      margin: .65rem 0 0;
+    }
+    .crypto-adopt .crypto-choice {
+      max-width: 28rem;
     }
     @media (max-width: 720px) {
       .field-grid { grid-template-columns: 1fr; }
@@ -2642,6 +2726,7 @@
              href="{{ url_for('admin_audit') }}">Auditing</a>
           <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}"
              href="{{ url_for('server_settings') }}">Server settings</a>
+
         </div>
       </details>
       {% endif %}

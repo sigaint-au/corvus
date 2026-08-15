@@ -7,11 +7,16 @@ from .audit import (
     admin_audit_access_export,
     admin_audit_export,
 )
-from .settings import server_settings
+from .settings import (
+    server_settings,
+    hsm_slot_new_wizard,
+)
 
 
 def register(app):
+    """Register administration, audit, and server-settings routes."""
     app.route("/admin/audit", methods=["GET", "POST"])(admin_audit)
     app.get("/admin/audit/access/export")(admin_audit_access_export)
     app.get("/admin/audit/export")(admin_audit_export)
     app.route("/settings", methods=["GET", "POST"])(server_settings)
+    app.route("/settings/encryption/hsm-slots/new", methods=["GET", "POST"])(hsm_slot_new_wizard)

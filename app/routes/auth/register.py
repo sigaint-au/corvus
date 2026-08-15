@@ -10,11 +10,11 @@ from flask import (
     session,
     url_for,
 )
-import authz
-import db
+from auth import authz
+from core import db
 import psycopg
-import settings_svc
-import totp_svc
+from core import settings_svc
+from auth import totp_svc
 from .helpers import (
     _establish_session,
     _finish_login_redirect,

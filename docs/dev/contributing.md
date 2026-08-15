@@ -12,7 +12,7 @@ git clone <repo-url> secretserver
 cd secretserver
 
 # Install deps
-pip install -r app/requirements.txt -r requirements-dev.txt
+pip install -e ".[dev]"
 
 # Run tests
 pytest
@@ -27,7 +27,7 @@ tox -e lint
 
 ```
 app/            # Flask app (flat modules + routes/ + lib/)
-db/migrations/  # Versioned SQL migrations (0001_init.sql, 0002_rbac.sql, …)
+db/migrations/  # Squashed fresh-install SQL baseline (0001_init.sql + marker)
 docs/           # Documentation (user/, admin/, dev/)
 tests/          # pytest suite
 scripts/        # dev seed (seed_mock.py)
@@ -41,12 +41,11 @@ Dockerfile      # App image
 
 1. **Write a failing test first** where possible. Tests live in `tests/` and
    mock the DB — no live Postgres needed.
-2. **Schema changes are a migration.** Create `db/migrations/NNNN_slug.sql`
-   (zero-padded next number) with idempotent SQL, then run the full suite and
-   lint. `0001_init.sql` and `0002_rbac.sql` are the baseline (run on fresh
-   volumes) — never edit them. Each migration's version + sha256 checksum is
-   recorded in `private.schema_migrations`; editing a released migration causes
-   a checksum-drift error on startup.
+2. **Schema changes update the fresh-install baseline.** This branch uses a
+   fresh-install-only squash: update the ordered content in
+   `db/migrations/0001_init.sql`, keep `0002_rbac.sql` as the no-op marker, and
+   recreate the database volume. Existing databases are not supported by this
+   baseline.
 3. **Run the full suite and lint** before submitting:
    ```bash
    pytest

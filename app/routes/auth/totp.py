@@ -11,8 +11,8 @@ from flask import (
     session,
     url_for,
 )
-import authz
-import totp_svc
+from auth import authz
+from auth import totp_svc
 log = logging.getLogger(__name__)
 
 

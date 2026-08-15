@@ -8,11 +8,11 @@ from uuid import uuid4
 import pytest
 
 import app as store
-import authz
-import config
-import db
-import ldap_auth
-import settings_svc
+from auth import authz
+from core import config
+from core import db
+from integrations import ldap_auth
+from core import settings_svc
 
 from tests.helpers import REPO_ROOT, mock_conn as _conn
 
@@ -27,7 +27,7 @@ class TestTotp:
         import struct
         import time
 
-        import totp_svc
+        from auth import totp_svc
 
         secret = (base64.b32encode(b"0" * 20)).decode().rstrip("=")
         code = totp_svc._totp_code(secret, int(time.time()) // 30)
@@ -36,7 +36,7 @@ class TestTotp:
         assert not totp_svc.verify_code(secret, 'abcdef')
 
     def test_recovery_code_hash_roundtrip(self):
-        import totp_svc
+        from auth import totp_svc
         codes = totp_svc.generate_recovery_codes(3)
         assert len(codes) == 3
         assert re.search('^([a-f0-9]{4}-){7}[a-f0-9]{4}$', codes[0])
@@ -47,7 +47,7 @@ class TestTotp:
         assert totp_svc.recovery_hash_matches(codes[0], legacy)
 
     def test_needs_challenge(self):
-        import totp_svc
+        from auth import totp_svc
         uid = str(uuid4())
         with patch.object(totp_svc, 'is_enabled', return_value=True):
             assert totp_svc.needs_challenge(uid, False) == 'verify'
@@ -58,7 +58,7 @@ class TestTotp:
             assert totp_svc.needs_challenge(uid, True) is None
 
     def test_user_totp_row_fails_closed(self):
-        import totp_svc
+        from auth import totp_svc
         with patch.object(db, 'connect_admin', side_effect=RuntimeError('db down')):
             with pytest.raises(totp_svc.TotpStoreError):
                 totp_svc.user_totp_row(str(uuid4()))

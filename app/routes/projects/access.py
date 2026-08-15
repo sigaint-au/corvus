@@ -10,9 +10,9 @@ from flask import (
     url_for,
 )
 import audit
-import authz
-import config
-import db
+from auth import authz
+from core import config
+from core import db
 from lib.users import lookup_user_id
 
 
@@ -55,7 +55,7 @@ def add_project_binding(project_id):
         )
         proj = cur.fetchone()
         try:
-            import rbac_sync
+            from auth import rbac_sync
 
             rbac_sync.sync_user_project_binding(
                 cur,
@@ -96,7 +96,7 @@ def remove_project_binding(project_id, user_id):
         )
         proj = cur.fetchone()
         try:
-            import rbac_sync
+            from auth import rbac_sync
 
             rbac_sync.sync_user_project_binding(
                 cur, user_id=user_id, project_id=project_id, role=None
@@ -150,7 +150,7 @@ def add_project_group_role(project_id):
             flash("Group not found on this team", "error")
             return redirect(dest)
         try:
-            import rbac_sync
+            from auth import rbac_sync
 
             rbac_sync.sync_group_project_binding(
                 cur,
@@ -191,7 +191,7 @@ def remove_project_group_role(project_id, group_id):
         )
         proj = cur.fetchone()
         try:
-            import rbac_sync
+            from auth import rbac_sync
 
             rbac_sync.sync_group_project_binding(
                 cur,
@@ -240,7 +240,7 @@ def project_access_binding_create(project_id):
             flash("Project not found", "error")
             return redirect(url_for("projects"))
         try:
-            import rbac_sync
+            from auth import rbac_sync
 
             if role_name not in rbac_sync.PROJECT_ROLE_NAMES:
                 flash("Unknown role", "error")

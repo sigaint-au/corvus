@@ -10,7 +10,7 @@ import pytest
 
 import app as store
 import audit
-import config
+from core import config
 
 from tests.helpers import APP_ROOT, REPO_ROOT, migrations_src, routes_module_src
 
@@ -27,11 +27,7 @@ class TestOrgAccess:
         assert 'CREATE TABLE api.team_invites' in init
         assert 'CREATE TABLE api.team_join_requests' in init
         assert 'CREATE TABLE api.org_audit' in init
-        # guard_last_team_owner moved to rbac.sql as guard_last_team_owner_binding
-        rbac_sql = (root / 'db' / 'migrations' / '0002_rbac.sql').read_text()
-        assert 'guard_last_team_owner' in rbac_sql
-        assert 'guard_last_team_owner' not in init
-        assert 'rbac.guard_last_team_owner_binding' in rbac_sql
+        assert 'rbac.guard_last_team_owner_binding' in init
         assert 'private.project_member_rows' in init
         assert 'private.audit_org' in init
         assert 'default_token_days' in init
@@ -83,7 +79,7 @@ class TestOrgAccess:
         assert 'touch_secret_access' in src
         routes = routes_module_src('secrets')
         assert routes.count('touch_secret_access') >= 2
-        ops = (APP_ROOT / 'secret_ops.py').read_text()
+        ops = (APP_ROOT / 'secret_svc' / 'secret_ops.py').read_text()
         assert 'secret_meta' in ops
 
     def test_machine_token_scope_schema(self):
@@ -105,11 +101,9 @@ class TestOrgAccess:
         from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         src = migrations_src()
-        # RLS policies moved from init.sql to rbac.sql
-        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'USING (api.can_admin_project(id))' in rbac_sql
         assert 'USING (api.can_admin_project(id))' in src
-        # Legacy tm_insert policy removed from init.sql; RBAC bindings write policy in rbac.sql
         assert 'rbac_bindings_write' in rbac_sql
         assert 'can_manage_rbac' in rbac_sql
         assert 'CREATE POLICY secret_versions_insert ON api.secret_versions FOR INSERT' not in init
@@ -136,7 +130,7 @@ class TestOrgAccess:
         assert 'CREATE TABLE api.secret_acl' not in init
         assert 'api.can_access_secret' in init  # referenced in private functions (comment + calls)
         # can_access_secret_row and can_reveal_secret defined in rbac.sql (moved from init.sql)
-        rbac = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'api.can_access_secret_row' in rbac
         # RLS policies pass deleted_at=NULL explicitly so the deleted_at guard
         # in can_access_secret_row does not reject soft-deletes/trash.
@@ -156,7 +150,7 @@ class TestOrgAccess:
     def test_can_access_secret_row_modes_in_sql(self):
         """rbac.sql defines can_access_secret_row with mode branches and k8s bindings."""
         from pathlib import Path
-        rbac = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         start = rbac.index('FUNCTION api.can_access_secret_row')
         body = rbac[start:start + 2500]
         for mode in ('inherit', 'restricted'):
@@ -172,7 +166,7 @@ class TestOrgAccess:
         """Self-service (my access) and resource-level (effective access)
         helpers exist in rbac.sql with the grants they need."""
         from pathlib import Path
-        sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'FUNCTION api.my_access_rows()' in sql
         assert 'FUNCTION api.effective_access_rows(' in sql
         assert 'FROM api.rbac_subjects(' in sql
@@ -187,27 +181,27 @@ class TestOrgAccess:
 
     def test_shared_with_me_and_project_select_for_grantees(self):
         """Shared secrets helper exists; projects/teams SELECT allow secret grantees."""
-        sql = (REPO_ROOT / 'db' / 'migrations' / '0022_shared_with_me.sql').read_text()
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'FUNCTION private.shared_with_me_secret_rows()' in sql
         assert "GRANT EXECUTE ON FUNCTION private.shared_with_me_secret_rows" in sql
         assert "scope_kind = 'secret'" in sql
         assert 'secret_requires_approval' in sql
         assert 'NOT api.is_team_member(p.team_id)' in sql
-        proj = sql[sql.index('CREATE POLICY projects_select ON api.projects'):]
+        proj = sql[sql.rindex('CREATE POLICY projects_select ON api.projects'):]
         proj = proj[:proj.index(';')]
         assert 'can_access_secret_row' in proj
-        teams = sql[sql.index('CREATE POLICY teams_select ON api.teams'):]
+        teams = sql[sql.rindex('CREATE POLICY teams_select ON api.teams'):]
         teams = teams[:teams.index(';')]
         assert 'can_access_secret_row' in teams
 
     def test_shared_grantee_can_write_recent_and_pins(self):
         """secret_recent / secret_pins INSERT must not require project membership."""
-        sql = (REPO_ROOT / 'db' / 'migrations' / '0023_shared_recent_pins.sql').read_text()
-        recent = sql[sql.index('CREATE POLICY secret_recent_insert ON api.secret_recent'):]
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
+        recent = sql[sql.rindex('CREATE POLICY secret_recent_insert ON api.secret_recent'):]
         recent = recent[:recent.index(';')]
         assert 'can_access_secret_row' in recent
         assert 'can_read_project' not in recent
-        pins = sql[sql.index('CREATE POLICY secret_pins_insert ON api.secret_pins'):]
+        pins = sql[sql.rindex('CREATE POLICY secret_pins_insert ON api.secret_pins'):]
         pins = pins[:pins.index(';')]
         assert 'can_access_secret_row' in pins
         assert 'can_read_project' not in pins
@@ -221,7 +215,7 @@ class TestOrgAccess:
         SELECT must expose trash rows to writers. Regression for
         'new row violates row-level security policy for table secrets'."""
         from pathlib import Path
-        rbac = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         upd = rbac[rbac.index('CREATE POLICY secrets_update ON api.secrets'):]
         upd = upd[:upd.index(';')]
         assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in upd
@@ -327,7 +321,7 @@ class TestOrgAccess:
         # Legacy tables removed from init.sql
         assert 'CREATE TABLE api.project_group_roles' not in init
         assert 'api._role_rank' not in init
-        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0002_rbac.sql').read_text()
+        rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'api.project_role' in rbac_sql
         src = migrations_src()
         assert 'CREATE TABLE IF NOT EXISTS api.groups' in src
@@ -335,7 +329,7 @@ class TestOrgAccess:
         assert 'DROP TABLE IF EXISTS api.secret_acl' in src
         teams_src = routes_module_src('teams')
         assert 'create_team_group' in teams_src
-        assert 'apply_group_membership_maps' in Path(APP_ROOT / 'ldap_auth.py').read_text()
+        assert 'apply_group_membership_maps' in Path(APP_ROOT / 'integrations' / 'ldap_auth.py').read_text()
         seed = (REPO_ROOT / 'scripts' / 'seed_mock.py').read_text()
         assert 'GROUPS' in seed
         assert 'PROJECT_GROUP_BINDINGS' in seed
@@ -348,7 +342,7 @@ class TestOrgAccess:
     def test_dir_sync_group_membership_maps(self):
         """Directory sync upserts/removes group_members for external_key matches."""
         from unittest.mock import MagicMock
-        import dir_sync
+        from integrations import dir_sync
         uid = str(uuid4())
         gid_match = str(uuid4())
         gid_other = str(uuid4())
@@ -374,4 +368,3 @@ class TestOrgAccess:
         assert '/login' in (r.location or '')
         with c.session_transaction() as s:
             assert s.get('invite_token') == 'not-a-real-token'
-

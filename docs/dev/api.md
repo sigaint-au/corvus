@@ -680,6 +680,19 @@ curl -s -H "Authorization: Bearer $JWT" \
 
 See [postgrest-openapi.json](../postgrest-openapi.json) for a checked-in snapshot.
 
+### HSM RPC security
+
+HSM slot configuration is not a public PostgREST API. Anonymous callers cannot
+invoke `api.list_hsm_slots()`; the former `api.hsm_slot_url(uuid)` RPC was removed.
+Authenticated callers
+may receive slot metadata, but `pkcs11_url` is null unless the caller is a global
+admin. The URL resolver is reserved for internal application code, so HSM PINs
+and module paths are not exposed through the API.
+
+PostgREST also cannot select `machine_tokens.token_hash`; only token metadata is
+available to authenticated users. Access-request and RBAC binding writes are
+validated by database triggers in addition to the web UI checks.
+
 ### Important limitations
 
 - **Creating secrets via PostgREST** requires a pre-encrypted `value_enc`.

@@ -1,0 +1,118 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secretserver"
+version = "0.1.0"
+description = "Self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.ink UI)"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = [
+    "flask==3.1.0",
+    "psycopg[binary]>=3.2.4,<4",
+    "psycopg-pool>=3.2,<4",
+    "PyJWT==2.10.1",
+    "cryptography==44.0.0",
+    "gunicorn==23.0.0",
+    "ldap3==2.9.1",
+    "qrcode==8.0",
+    "python-pkcs11==0.7.0",
+    "redis>=5,<6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.5",
+    "pytest-cov==6.0.0",
+    "pylint==3.3.6",
+    "tox==4.25.0",
+    "ruff==0.6.9",
+    "mypy==1.13.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["app"]
+include = ["*"]
+
+[project.urls]
+Documentation = "https://github.com/mhahl/secretserver/blob/main/docs/"
+Source = "https://github.com/mhahl/secretserver"
+
+# ── Ruff (replaces ruff.toml) ──────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["app", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",  # line length handled by formatter
+    "B008",  # function calls in defaults (Flask patterns)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "auth", "crypto", "integrations", "secret_svc", "ui", "lib", "routes", "audit", "tests"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ── Pytest (replaces pytest.ini) ────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+pythonpath = [".", "app"]
+addopts = "-q --strict-markers --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+markers = [
+    "live: opt-in tests against a running app, PostgREST, and ESO stack",
+]
+
+# ── Pyright (replaces pyrightconfig.json) ──────────────────────────────
+[tool.pyright]
+include = ["app"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+reportMissingImports = false
+reportOptionalMemberAccess = false
+reportOptionalSubscript = false
+reportUnusedImport = false
+reportUnusedFunction = false
+
+# ── Mypy ───────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = false
+files = ["app"]
+
+# ── Pylint (supplements .pylintrc) ─────────────────────────────────────
+[tool.pylint.main]
+jobs = 0
+py-version = "3.12"
+ignore-paths = ["tests"]
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.design]
+max-args = 12
+max-locals = 40
+max-branches = 30
+max-statements = 100
+
+[tool.pylint.reports]
+score = true
+fail-under = 9.5
+output-format = "colorized"
+
+[tool.pylint.typecheck]
+ignored-modules = ["ldap3", "qrcode", "pyotp"]

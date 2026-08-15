@@ -10,8 +10,8 @@ from flask import (
     session,
     url_for,
 )
-import authz
-import pats
+from auth import authz
+from auth import pats
 log = logging.getLogger(__name__)
 
 

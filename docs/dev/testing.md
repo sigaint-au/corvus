@@ -7,7 +7,7 @@ Unit tests use **pytest** with a mocked DB — Postgres is not required.
 ## Prerequisites
 
 ```bash
-pip install -r app/requirements.txt -r requirements-dev.txt
+pip install -e ".[dev]"
 ```
 
 ---
@@ -33,6 +33,7 @@ tests/
   test_crypto.py       # Fernet encrypt/decrypt
   test_eso.py          # /eso/v1 machine + PAT API
   test_health.py       # /health endpoint
+  test_live_api.py     # opt-in live app/PostgREST/ESO smoke tests
   test_helpers.py      # test utility helpers
   test_jwt.py          # JWT generation/validation
   test_ldap.py         # LDAP bind + group sync
@@ -53,8 +54,9 @@ tests/
   test_ui.py           # template rendering, role tooltips
 ```
 
-`pytest.ini` sets `testpaths = tests`, `pythonpath = . app`, and strict
-markers.
+`pyproject.toml` `[tool.pytest.ini_options]` sets `testpaths = tests`,
+`pythonpath = . app`, and strict markers. The `live` marker is opt-in and
+skips unless its required environment variables are configured.
 
 ---
 
@@ -67,13 +69,36 @@ tox -e lint
 # Or directly (from app/)
 cd app
 pylint --rcfile=../.pylintrc \
-  app.py audit.py authz.py config.py crypto.py db.py dir_sync.py \
-  ldap_auth.py lockout.py mailer.py nav.py oidc_auth.py paging.py \
-  passwords.py pats.py pins.py rbac_sync.py schema.py secret_kinds.py secret_ops.py \
-  settings_svc.py totp_svc.py user_sessions.py routes
+  app.py \
+  core auth crypto integrations secret_svc ui \
+  audit lib routes
 ```
 
 ---
+
+## Live API smoke tests
+
+The default suite uses mocked database connections. To exercise a running
+Compose deployment, configure the endpoints and credentials, then run:
+
+```bash
+LIVE_APP_URL=http://127.0.0.1:8080 \
+LIVE_POSTGREST_URL=http://127.0.0.1:3000 \
+LIVE_API_JWT="$JWT" \
+LIVE_MACHINE_TOKEN="$MACHINE_TOKEN" \
+LIVE_PROJECT_REF="$PROJECT_UUID" \
+pytest -m live tests/test_live_api.py
+```
+
+`LIVE_API_JWT` must be a user JWT from `/api/token`; use a non-global-admin JWT
+for the URL-redaction assertion. Set `LIVE_API_JWT_IS_GLOBAL_ADMIN=1` only when
+the JWT belongs to a global admin. The live tests verify the health endpoint,
+anonymous denial of both sensitive HSM RPCs, authenticated PostgREST access
+without HSM URLs, and optional machine-token project access. Migration assertion
+tests cover the database triggers and grants; a live PostgreSQL run is still
+required to verify effective ACLs and RLS behavior.
+Run `scripts/seed_mock.py` in the app container first; it prints the machine
+API token and project reference for the optional test.
 
 ## Test conventions
 
@@ -81,9 +106,8 @@ pylint --rcfile=../.pylintrc \
 - The app is imported with `TESTING=True`, so `ensure_schema()` is skipped.
 - Tests cover auth, CSRF, sessions, secrets, ESO, PATs, teams, groups, RLS
   schema, pagination, machine token scopes, audit, TOTP, LDAP, mailer, lockout.
-- Schema assertion tests check `db/migrations/0002_rbac.sql` (not
-  `0001_init.sql`) for RBAC functions and RLS policies, since these were moved
-  from the baseline init migration to the rbac migration.
+- Schema assertion tests check the consolidated `db/migrations/0001_init.sql`
+  baseline for RBAC functions and RLS policies.
 - Role names in tests use RBAC names: `team-owner`, `team-admin`,
   `team-member`, `team-viewer`, `project-admin`, `project-write`,
   `project-read`, `service-read`, `service-reveal`, `service-write`.

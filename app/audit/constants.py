@@ -33,6 +33,11 @@ ORG_TEAM_SETTINGS = "team_settings"
 ORG_PROJECT_MEMBER_ADD = "project_member_add"
 ORG_PROJECT_MEMBER_REMOVE = "project_member_remove"
 ORG_PROJECT_MEMBER_ROLE = "project_member_role"
+ORG_PROJECT_KEY_CREATED = "project_key_created"
+ORG_PROJECT_KEY_ADOPTED = "project_key_adopted"
+ORG_PROJECT_KEY_MIGRATED = "project_key_migrated"
+ORG_HSM_KEK_ROTATED = "hsm_kek_rotated"
+ORG_HSM_BULK_MIGRATED = "hsm_bulk_migrated"
 
 _ACTION_VERB = {
     "created": "created",
@@ -73,6 +78,15 @@ ROLE_CHANGE_ACTIONS = (
     ORG_PROJECT_MEMBER_ADD,
     ORG_PROJECT_MEMBER_REMOVE,
     ORG_PROJECT_MEMBER_ROLE,
+)
+
+# Org actions for the encryption key lifecycle (filtered in the admin audit UI)
+ENC_CHANGE_ACTIONS = (
+    ORG_PROJECT_KEY_CREATED,
+    ORG_PROJECT_KEY_ADOPTED,
+    ORG_PROJECT_KEY_MIGRATED,
+    ORG_HSM_KEK_ROTATED,
+    ORG_HSM_BULK_MIGRATED,
 )
 
 
