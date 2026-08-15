@@ -777,6 +777,9 @@
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="action" value="adopt">
       <input type="hidden" name="provider" value="{{ project_crypto.key_provider or 'local' }}">
+      {% if project_crypto.key_provider == 'hsm' and project_crypto.hsm_slot_id %}
+      <input type="hidden" name="hsm_slot" value="{{ project_crypto.hsm_slot_id }}">
+      {% endif %}
       <button type="submit" class="button outline small">
         Re-encrypt {{ project_master_rows }}
       </button>
