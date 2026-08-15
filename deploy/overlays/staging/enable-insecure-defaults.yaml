@@ -1,3 +1,6 @@
+# WARNING: STAGING / DEVELOPMENT ONLY.
+# NEVER apply this patch to a production environment.
+# ALLOW_INSECURE_DEFAULTS allows starting with empty/default master keys for testing.
 apiVersion: v1
 kind: ConfigMap
 metadata:

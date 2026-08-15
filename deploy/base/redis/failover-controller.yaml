@@ -59,7 +59,7 @@ spec:
               set -eu
               : > /tmp/leader   # leader-election lock file
               while :; do
-                IP=$(redis-cli -h redis-sentinel -p 26379 -a "$${REDIS_SENTINEL_PASSWORD}" --no-auth-warning \
+                IP=$(redis-cli -h redis-sentinel -p 26379 -a "${REDIS_SENTINEL_PASSWORD}" --no-auth-warning \
                      SENTINEL get-master-addr-by-name secretserver-master 2>/dev/null \
                      | head -n 1 || true)
                 if [ -n "$IP" ]; then

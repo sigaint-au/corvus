@@ -8,8 +8,6 @@ metadata:
     app.kubernetes.io/name: app
     app.kubernetes.io/part-of: secretserver
   annotations:
-    # nginx ingress class — operators swap to gateway-api or ALB in overlay.
-    kubernetes.io/ingress.class: nginx
     # Tight TLS: only TLS 1.2/1.3, modern ciphers.
     nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.2 TLSv1.3"
     nginx.ingress.kubernetes.io/ssl-ciphers: "EECDH+AESGCM:EDH+AESGCM"
@@ -17,7 +15,7 @@ metadata:
     # Rate-limit: per-IP, defends against brute-force / secret scraping.
     nginx.ingress.kubernetes.io/limit-rps: "30"
     nginx.ingress.kubernetes.io/limit-connections: "10"
-    # Body size must match the app's MAX_CONTENT_LENGTH (default 16MB).
+    # Body size matches the app's MAX_CONTENT_LENGTH (16MB).
     nginx.ingress.kubernetes.io/proxy-body-size: "16m"
     # Backend keepalive to the pod — important for HTMX streaming.
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
@@ -29,7 +27,6 @@ metadata:
     # ExternalDNS sync.
     external-dns.alpha.kubernetes.io/hostname: "secretserver.example.internal"
 spec:
-  # Default backend is the app — every path goes to the flask pods.
   ingressClassName: nginx
   tls:
     - hosts:

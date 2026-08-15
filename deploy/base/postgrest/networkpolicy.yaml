@@ -23,12 +23,14 @@ spec:
       ports:
         - port: 3000
           protocol: TCP
-    # Probe traffic from kubelet.
+    # Probe traffic from kubelet across private cluster CIDRs.
     - from:
         - ipBlock:
             cidr: 10.0.0.0/8
-            except:
-              - 10.0.0.0/29
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
       ports:
         - port: 3000
           protocol: TCP

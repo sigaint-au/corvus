@@ -92,6 +92,8 @@ spec:
               echo "first-run init complete"
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 999
             capabilities:
@@ -181,7 +183,6 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --redis.addr=redis://localhost:6379
-            - --redis.password-file=/etc/redis-secrets/password
           ports:
             - name: metrics
               containerPort: 9121
@@ -201,6 +202,8 @@ spec:
               memory: "64Mi"
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             capabilities:
               drop: ["ALL"]
@@ -229,4 +232,3 @@ spec:
         resources:
           requests:
             storage: 10Gi
-        storageClassName: ""

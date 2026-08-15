@@ -34,7 +34,7 @@ spec:
           protocol: TCP
         - port: 26379
           protocol: TCP
-    # From the failover controller (kubectl exec probes).
+    # From the failover controller (kubectl exec probes / health checks).
     - from:
         - podSelector:
             matchLabels:
@@ -45,12 +45,14 @@ spec:
           protocol: TCP
         - port: 26379
           protocol: TCP
-    # Probe traffic.
+    # Probe / Prometheus metrics scrape traffic.
     - from:
         - ipBlock:
             cidr: 10.0.0.0/8
-            except:
-              - 10.0.0.0/29
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
       ports:
         - port: 6379
           protocol: TCP
@@ -144,8 +146,10 @@ spec:
     - from:
         - ipBlock:
             cidr: 10.0.0.0/8
-            except:
-              - 10.0.0.0/29
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
       ports:
         - port: 26379
           protocol: TCP
@@ -177,4 +181,53 @@ spec:
               app.kubernetes.io/part-of: secretserver
       ports:
         - port: 26379
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secretserver-redis-failover-controller
+  labels:
+    app.kubernetes.io/name: redis-failover-controller
+    app.kubernetes.io/part-of: secretserver
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis-failover-controller
+      app.kubernetes.io/part-of: secretserver
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Sentinel communication on port 26379 (redis-cli query for master)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-sentinel
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 26379
+          protocol: TCP
+    # Kubernetes API server access (kubectl patch svc / label pods)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+        - port: 8443
           protocol: TCP

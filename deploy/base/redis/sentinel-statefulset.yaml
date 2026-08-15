@@ -86,8 +86,8 @@ spec:
               sentinel parallel-syncs secretserver-master 1
               sentinel failover-timeout secretserver-master 10000
               sentinel announce-ip $(hostname -i)
-              sentinel auth-pass secretserver-master $${REDIS_PASSWORD}
-              requirepass $${REDIS_SENTINEL_PASSWORD}
+              sentinel auth-pass secretserver-master ${REDIS_PASSWORD}
+              requirepass ${REDIS_SENTINEL_PASSWORD}
               EOF
               exec redis-server /tmp/sentinel.conf --sentinel
           ports:

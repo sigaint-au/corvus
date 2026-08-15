@@ -21,7 +21,7 @@ Secret Server. Designed around Kubernetes best practices:
 - **cert-manager**-issued TLS for the ingress, HSTS enabled.
 - **Default-deny** NetworkPolicy in the namespace; per-component
   policies open only the minimum required paths.
-- **PodMonitor** for Prometheus scraping of every component.
+- **PodMonitor** for Prometheus scraping of stateful metrics.
 - **Overlays** for prod and staging (different hostnames, replica counts,
   storage classes).
 
@@ -36,8 +36,8 @@ deploy/
 │   ├── kustomization.yaml            # composes all base resources
 │   ├── namespace.yaml                # secretserver namespace + PSS labels
 │   ├── rbac/                         # PriorityClass + ServiceAccounts + RBAC
-│   ├── app/                          # Flask/gunicorn Deployment
-│   ├── postgrest/                    # PostgREST Deployment
+│   ├── app/                          # Flask/gunicorn Deployment + HPA + PDB
+│   ├── postgrest/                    # PostgREST Deployment + HPA + PDB
 │   ├── postgres/                     # CloudNativePG Cluster + backups + NetPol
 │   ├── redis/                        # Redis + Sentinel + failover controller
 │   ├── secrets/                      # bootstrap-time Secret templates + README
@@ -121,12 +121,11 @@ Secrets — `kubectl apply` of an `Opaque` Secret is sufficient.
 - `JWT_SECRET` in `secretserver-app-secrets` and `PGRST_JWT_SECRET` in
   `secretserver-postgrest-secrets` **must be equal**. A mismatch makes
   every PostgREST call 401.
-- `MASTER_KEY` is the encryption key for `crypto_provider='master'`
-  secrets. Rotating it requires running
-  `flask rekey-project-keys --old-master-key "$OLD_MASTER_KEY"`
-  afterward, otherwise every project BYOK-wrapped DEK is unreadable.
-- `SECRET_KEY` is Flask session signing. Rotating it invalidates every
-  active session.
+- `MASTER_KEY` rotation requires running the re-wrapping CLI tool (see
+  runbook below).
+- DB password changes require updating both
+  `secretserver-postgres-authenticator` and `DATABASE_URL` in
+  `secretserver-app-secrets`.
 
 ---
 
@@ -135,102 +134,46 @@ Secrets — `kubectl apply` of an `Opaque` Secret is sufficient.
 ### Build & diff locally
 
 ```bash
-kustomize build deploy/base | less
-kustomize build deploy/overlays/prod | less
+# Render prod overlay to stdout
+kubectl kustomize deploy/overlays/prod
 
-# Server-side dry-run against a cluster
-kubectl kustomize deploy/overlays/prod | \
-  kubectl apply --dry-run=server -f -
+# Diff against what's currently in the cluster
+kubectl diff -k deploy/overlays/prod
+
+# Dry-run validation against the live API
+kubectl apply -k deploy/overlays/prod --dry-run=server
 ```
 
-### Apply prod
+### Apply in order
 
 ```bash
-# 1. (Once per cluster) install the cluster prerequisites above.
-# 2. Bootstrap Secrets — the script writes them to the namespace.
+# 1. Bootstrap secrets FIRST (workloads will fail to start without them)
 scripts/bootstrap-secrets.sh secretserver
-# 3. Apply the workloads.
+
+# 2. Apply the overlay
 kubectl apply -k deploy/overlays/prod
+
+# 3. Wait for database readiness
+kubectl -n secretserver wait --for=condition=Ready cluster/secretserver-postgres --timeout=300s
+
+# 4. Wait for app deployment
+kubectl -n secretserver rollout status deploy/secretserver-app --timeout=180s
 ```
-
-Watch the rollout:
-
-```bash
-kubectl -n secretserver get pods -w
-kubectl -n secretserver get cluster secretserver-postgres -w
-kubectl -n secretserver get hpa secretserver-app -w
-```
-
-### Apply staging
-
-```bash
-kubectl create namespace secretserver-staging || true
-scripts/bootstrap-secrets.sh secretserver-staging
-kubectl apply -k deploy/overlays/staging
-```
-
----
-
-## HA characteristics
-
-| Component       | Replicas | HA mechanism                                         |
-| --------------- | -------- | ----------------------------------------------------- |
-| App (Flask)     | 3 → 10   | HPA on CPU/mem + PDB minAvailable=2 + topology-spread |
-| PostgREST       | 2 → 6    | HPA on CPU/mem + PDB minAvailable=1 + topology-spread |
-| Postgres        | 3        | CloudNativePG sync-replication quorum + fencing       |
-| Redis           | 3        | Sentinel quorum=2, AOF everysec                       |
-| Redis Sentinel  | 3        | StatefulSet, anti-affinity hostname, quorum=2         |
-| Redis failover  | 1 (ctrl) | Watches sentinel, patches Service selector            |
-| Ingress         | n/a      | nginx ingress controller (cluster-managed HA)         |
-
-Survives:
-
-- ✅ Single node loss across replicas (`topologySpreadConstraints` +
-  `podAntiAffinity`).
-- ✅ Single Postgres primary failure (fencing + sync quorum: replicas
-  auto-promote in <30s).
-- ✅ Single Redis master failure (sentinel quorum elects a new master
-  in <5s; controller patches the master Service).
-- ✅ Rolling app deployments with zero downtime
-  (`maxUnavailable: 0`).
-- ✅ Voluntary disruptions (drains, autoscaler scale-down) blocked by
-  PDB until safe.
-
----
-
-## HSM integration (production)
-
-The base manifests assume an **external PKCS#11 HSM** (AWS CloudHSM,
-Azure Dedicated HSM, Thales Luna, etc.). The application stores slot
-URLs in `private.hsm_slots` and resolves them at runtime; the operator's
-responsibility is to make the PKCS#11 module reachable.
-
-Common patterns:
-
-- **Network-attached HSM**: open the HSM port (e.g. 1798) from the
-  cluster's egress IP block. Patch the `app/deployment.yaml` egress
-  NetworkPolicy to permit this CIDR.
-- **CSI driver + Secrets Store CSI** (recommended for cloud HSMs):
-  mount a CSI volume into the app pod containing the PKCS#11 module
-  `.so` and pin-source file. Add a `volumeMount` to the app pod via
-  overlay patch.
-- **SoftHSM2 in dev only**: copy `softhsm2/Dockerfile` from this repo
-  and add a StatefulSet + shared volume. **Never run SoftHSM2 in
-  production** — it does not provide real key protection.
 
 ---
 
 ## Operations runbook
 
-### Promote an admin (one-time)
+### Initial admin promotion (one-time)
 
 ```bash
-kubectl -n secretserver exec -it deploy/secretserver-app -- \
+# 1. Set the email in the overlay configmap or pass via CLI:
+kubectl -n secretserver exec deploy/secretserver-app -- \
   flask --app app:app promote-admin --email=ops@example.com
-```
 
-Or set `GLOBAL_ADMIN_EMAIL` in `deploy/app/configmap.yaml` overlay and
-restart the Deployment; the next request from that account is promoted.
+# 2. Or set GLOBAL_ADMIN_EMAIL in deploy/base/app/configmap.yaml and rollout restart:
+kubectl -n secretserver rollout restart deploy/secretserver-app
+```
 
 ### Rotate MASTER_KEY
 
@@ -318,14 +261,16 @@ kubectl -n secretserver get backup -l cnpg.io/cluster=secretserver-postgres
 
 ## Monitoring
 
-PodMonitors scrape:
+PodMonitors scrape Prometheus metrics endpoints:
 
-| Component      | Port | Path       |
-| -------------- | ---- | ---------- |
-| App            | 8080 | /healthz   |
-| PostgREST      | 3000 | /metrics   |
-| Postgres (cnpg)| 9187 | /metrics   |
-| Redis          | 9121 | /metrics   |
+| Component       | Port | Path       | Notes                                      |
+| --------------- | ---- | ---------- | ------------------------------------------ |
+| Postgres (cnpg) | 9187 | /metrics   | Native CloudNativePG Prometheus metrics    |
+| Redis           | 9121 | /metrics   | redis-exporter sidecar                     |
+
+Health endpoints:
+- App: `/healthz` (liveness, 200 OK) and `/readyz` (readiness, DB check) on port 8080.
+- PostgREST: HTTP health check on port 3000.
 
 Alerts to start with:
 
@@ -340,26 +285,23 @@ Alerts to start with:
 
 ## Caveats and tradeoffs
 
-- The kustomize `redis-failover-controller` is a deliberate
-  alternative to the Spotahome Redis Operator. It is a shell loop
-  that polls sentinel and patches Services. For higher-confidence
-  deployments, **replace it with the Spotahome operator** (drop
-  `deploy/redis/failover-controller.yaml` from the kustomization, add
-  the operator Helm release, and let it manage the StatefulSet).
+- The kustomize `redis-failover-controller` is a lightweight,
+  kustomize-native alternative to the Spotahome Redis Operator. It is a
+  shell loop that polls Sentinel and patches the `redis-master` Service
+  selector. For higher-confidence deployments, **replace it with the
+  Spotahome operator** (drop `deploy/redis/failover-controller.yaml`
+  from the kustomization, add the operator Helm release, and let it
+  manage the StatefulSet).
 - The base `Cluster` uses `synchronous: quorum` — writes block until
   one replica acknowledges. This is **the safe HA setting**; for
   latency-critical workloads, switch to `mode: preferred` in the prod
   overlay.
-- The app's `REDIS_URL` points at sentinel (`redis-sentinel:26379`).
-  The current `app/core/cache.py` uses `redis.from_url(REDIS_URL)`
-  which **does not** perform sentinel-aware discovery. Two options:
-  1. Patch `cache.py` to use `redis.sentinel.Sentinel` (preferred).
-  2. Change the overlay's `REDIS_URL` to `redis://redis-master:6379/0`
-     and rely on the failover controller to keep the Service selector
-     current.
+- The app's `REDIS_URL` points at `redis-master:6379/0`. The
+  `redis-failover-controller` dynamically maintains the `redis-master`
+  Service selector to track the active master pod elected by Sentinel.
 - HSM is **not** deployed in the cluster — the deployment assumes an
   external PKCS#11 module (cloud HSM or hardware). See the HSM
-  integration section above.
+  integration section in `docs/` for details.
 - Secrets bootstrap is operator-managed, not kustomize-managed. The
   `scripts/bootstrap-secrets.sh` helper writes Secrets into the
   namespace on demand; production environments should use sealed-secrets

@@ -26,11 +26,6 @@ spec:
         app.kubernetes.io/name: app
         app.kubernetes.io/component: web
         app.kubernetes.io/part-of: secretserver
-      annotations:
-        # Tell Prometheus to scrape /healthz for liveness vs. /readyz for readiness.
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
-        prometheus.io/path: "/healthz"
     spec:
       serviceAccountName: secretserver-app
       automountServiceAccountToken: false
@@ -96,8 +91,7 @@ spec:
             - configMapRef:
                 name: secretserver-app-env
           env:
-            # Secrets are projected from ESO into these Secret names; mount
-            # via env value references. The pod does NOT bake secrets in.
+            # Secrets are projected from operator-managed Secrets into these env vars.
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

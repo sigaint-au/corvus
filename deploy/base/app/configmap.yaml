@@ -7,15 +7,13 @@ metadata:
     app.kubernetes.io/part-of: secretserver
 data:
   # Non-secret runtime env for the Flask app. Sensitive values (DB creds,
-  # MASTER_KEY / JWT_SECRET / SECRET_KEY) are sourced from ESO-managed
+  # MASTER_KEY / JWT_SECRET / SECRET_KEY) are sourced from operator-managed
   # Secrets and referenced via env.valueFrom.secretKeyRef in deployment.yaml.
   POSTGREST_URL: "http://secretserver-postgrest:3000"
-  # Sentinel-fronted Redis: client connects to the sentinels, sentinels
-  # return the current master. URL includes sentinel service name; the
-  # app's redis client must be sentinel-aware (cache.py uses from_url()
-  # which is sufficient when pointed at a headless sentinel service that
-  # returns the master's ARecord).
-  REDIS_URL: "redis://redis-sentinel:26379/0"
+  # Redis cache connection: points to the redis-master ClusterIP Service.
+  # The redis-failover-controller updates the redis-master Service selector
+  # automatically whenever Sentinel elects a new master.
+  REDIS_URL: "redis://redis-master:6379/0"
   REDIS_DEK_CACHE_TTL: "300"
   # Force Secure cookies behind ingress TLS.
   COOKIE_SECURE: "1"
@@ -25,6 +23,11 @@ data:
   SOFTHSM2_CONF: ""
   HSM_ALLOWED_MODULE_DIRS: "/usr/lib,/usr/local/lib,/lib,/opt/hsm/lib"
   HSM_TEST_TIMEOUT_SECONDS: "10"
+  # App payload and UI settings (matches Ingress 16m proxy-body-size)
+  MAX_CONTENT_LENGTH: "16777216"
+  CLIPBOARD_CLEAR_SECONDS: "30"
+  REVEAL_AUTO_HIDE_SECONDS: "60"
+  REVEAL_ACCESS_GRANT_MINUTES: "15"
   # Schema bootstrap safety net: refuse insecure defaults in non-dev.
   FLASK_ENV: "production"
   PYTHONUNBUFFERED: "1"

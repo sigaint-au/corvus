@@ -14,7 +14,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # From the app (authenticator role).
+    # From the Flask application pods.
     - from:
         - podSelector:
             matchLabels:
@@ -23,7 +23,7 @@ spec:
       ports:
         - port: 5432
           protocol: TCP
-    # From PostgREST.
+    # From PostgREST pods.
     - from:
         - podSelector:
             matchLabels:
@@ -32,23 +32,48 @@ spec:
       ports:
         - port: 5432
           protocol: TCP
-    # From the CNPG operator (replication, monitoring).
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: cnpg-system
+    # Inter-instance replication and metrics within the Postgres cluster.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+              app.kubernetes.io/part-of: secretserver
       ports:
         - port: 5432
           protocol: TCP
-        - port: 8000   # operator metrics endpoint
+        - port: 8000
           protocol: TCP
-    # Probe traffic from kubelet.
+        - port: 9187
+          protocol: TCP
+    # From CloudNativePG Operator pods specifically in cnpg-system.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - port: 5432
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+        - port: 9187
+          protocol: TCP
+    # Probe and metrics scraping from private cluster CIDRs.
     - from:
         - ipBlock:
             cidr: 10.0.0.0/8
-            except:
-              - 10.0.0.0/29
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
       ports:
         - port: 5432
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+        - port: 9187
           protocol: TCP
   egress:
     # DNS.
@@ -64,9 +89,7 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Cluster-internal replication between Postgres pods (port 5432) is
-    # handled by the operator; K8s network policies don't block same-namespace
-    # pod-to-pod by default unless we add an explicit deny. We allow it:
+    # Inter-replica streaming replication.
     - to:
         - podSelector:
             matchLabels:
@@ -75,25 +98,23 @@ spec:
       ports:
         - port: 5432
           protocol: TCP
-    # Kubernetes API for CNPG operator (fencing, backups).
-    - to:
-        - namespaceSelector: {}
-          podSelector:
-            matchLabels:
-              component: kube-apiserver
-      ports:
-        - port: 443
+        - port: 8000
           protocol: TCP
-    # Backup destination (S3 / GCS / Azure) — overlay restricts to the
-    # right CIDR for the chosen provider. The default 0.0.0.0/0 covers
-    # everything; tighten via patch.
+    # K8s API server for CNPG instance status updates and fencing.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+        - port: 8443
+          protocol: TCP
+    # Outbound S3/GCS backup destinations (barman-cloud).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
       ports:
         - port: 443
           protocol: TCP

@@ -18,24 +18,3 @@ spec:
   namespaceSelector:
     matchNames:
       - secretserver
----
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: secretserver-postgrest
-  labels:
-    app.kubernetes.io/name: postgrest
-    app.kubernetes.io/part-of: secretserver
-spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: postgrest
-      app.kubernetes.io/part-of: secretserver
-  podMetricsEndpoints:
-    - port: http
-      path: /metrics
-      interval: 30s
-      scrapeTimeout: 10s
-  namespaceSelector:
-    matchNames:
-      - secretserver
