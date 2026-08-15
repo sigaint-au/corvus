@@ -14,19 +14,21 @@ Secret Server. Designed around Kubernetes best practices:
 - **HA Redis** via Sentinel (3 sentinels + 3 redis replicas, AOF
   persistence, automatic master promotion) with a kustomize-native
   failover controller (replaces the Spotahome operator pattern).
-- **External Secrets Operator** for every secret
-  (MASTER_KEY / JWT_SECRET / SECRET_KEY / DB passwords / Redis
-  passwords / backup credentials). No plaintext secrets in the tree.
+- **No external secret store** — this application *is* the secrets
+  store for other systems, so its own bootstrap credentials live as
+  ordinary Kubernetes Secrets created by the operator (see
+  "Secrets bootstrap" below). No External Secrets Operator, no Vault.
 - **cert-manager**-issued TLS for the ingress, HSTS enabled.
 - **Default-deny** NetworkPolicy in the namespace; per-component
   policies open only the minimum required paths.
 - **PodMonitor** for Prometheus scraping of every component.
 - **Overlays** for prod and staging (different hostnames, replica counts,
-  storage classes, secrets backends).
+  storage classes).
 
 ---
 
 ## Layout
+
 ```
 deploy/
 ├── README.md                         # this file
@@ -38,90 +40,93 @@ deploy/
 │   ├── postgrest/                    # PostgREST Deployment
 │   ├── postgres/                     # CloudNativePG Cluster + backups + NetPol
 │   ├── redis/                        # Redis + Sentinel + failover controller
-│   ├── external-secrets/             # ClusterSecretStore + ExternalSecrets
+│   ├── secrets/                      # bootstrap-time Secret templates + README
 │   ├── ingress/                      # Ingress + Certificate + ClusterIssuer
 │   └── networkpolicies/              # default-deny umbrella policy
 └── overlays/
-    ├── prod/                         # prod: 5 app / 2-6 postgrest / 3 pg / 3 redis
+    ├── prod/                         # prod: 5 app / 3 pg / 3 redis, SSD, Let's Encrypt
     └── staging/                      # staging: smaller counts, self-signed cert
 ```
 
-| Component                                | Used for                              | Install                                                       |
-| ---------------------------------------- | ------------------------------------- | ------------------------------------------------------------- |
-| [CloudNativePG][cnpg]                    | HA Postgres                           | `kubectl apply -f cnpg-1.24.yaml` (from cnpg.io)              |
-| [cert-manager][cm]                       | TLS for Ingress                       | `kubectl apply -f cert-manager-v1.15.yaml`                    |
-| [nginx Ingress Controller][ing]          | Edge TLS / rate-limit                 | `helm install ingress-nginx ingress-nginx/ingress-nginx`      |
-| [External Secrets Operator][eso]         | Vault → K8s Secret sync               | `helm install eso external-secrets/external-secrets`          |
-| [Prometheus Operator][po]                | PodMonitor CRDs                       | `helm install prometheus prometheus-community/kube-prometheus`|
+---
+
+## Cluster prerequisites
+
+Install once per cluster:
+
+| Component                         | Used for                       | Install                                                       |
+| --------------------------------- | ------------------------------ | ------------------------------------------------------------- |
+| [CloudNativePG][cnpg]             | HA Postgres                    | `kubectl apply -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.24.yaml` |
+| [cert-manager][cm]                | TLS for Ingress                | `kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.0/cert-manager.yaml` |
+| [nginx Ingress Controller][ing]   | Edge TLS / rate-limit          | `helm install ingress-nginx ingress-nginx/ingress-nginx`      |
+| [Prometheus Operator][po]         | PodMonitor CRDs                | `helm install prometheus prometheus-community/kube-prometheus`|
 
 [cnpg]: https://cloudnative-pg.io/
 [cm]: https://cert-manager.io/
 [ing]: https://kubernetes.github.io/ingress-nginx/
-[eso]: https://external-secrets.io/
 [po]: https://prometheus-operator.dev/
 
-Vault prerequisites (in your Vault cluster):
+---
+
+## Secrets bootstrap
+
+This application acts as the external secrets store for *other*
+systems. Its own bootstrap credentials are not pulled from any
+external store — operators create plain Kubernetes `Opaque` Secrets
+in the namespace before applying the workloads.
+
+### Required Secrets
+
+| Secret name                          | Consumed by          | Required keys                                              |
+| ------------------------------------ | -------------------- | ---------------------------------------------------------- |
+| `secretserver-app-secrets`           | app Deployment       | `DATABASE_URL`, `DATABASE_ADMIN_URL`, `JWT_SECRET`, `MASTER_KEY`, `SECRET_KEY` |
+| `secretserver-postgrest-secrets`     | postgrest Deployment | `PGRST_DB_URI`, `PGRST_JWT_SECRET` (must match app's `JWT_SECRET`) |
+| `secretserver-postgres-superuser`    | CNPG Cluster CR      | `username`, `password` — bootstraps the cluster            |
+| `secretserver-postgres-authenticator`| CNPG Cluster CR      | `username`, `password` — application DB role               |
+| `secretserver-redis-secrets`         | redis + sentinel     | `REDIS_PASSWORD`, `REDIS_SENTINEL_PASSWORD`                |
+| `secretserver-postgres-backup` (opt) | CNPG ScheduledBackup | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_BUCKET` |
+
+`deploy/base/secrets/secrets.example.yaml` ships structural templates
+with empty `stringData:` blocks. **Do not apply it directly** — it is
+a reference only.
+
+### Recommended bootstrap path
 
 ```bash
-# 1. Enable K8s auth
-vault auth enable kubernetes
-
-# 2. Write the policy
-cat <<'EOF' | vault policy write secretserver-app -
-path "secret/data/secretserver/*" {
-  capabilities = ["read"]
-}
-path "secret/metadata/secretserver/*" {
-  capabilities = ["list"]
-}
-EOF
-
-# 3. Bind the policy to a K8s role tied to the external-secrets-reader SA
-vault write auth/kubernetes/role/secretserver-prod \
-  bound_service_account_names=external-secrets-reader \
-  bound_service_account_namespaces=secretserver \
-  policies=secretserver-app \
-  ttl=24h
+# Generates random passwords (32-byte urlsafe-base64 for Fernet keys,
+# 32-char alphanumeric for DB / Redis) and applies the Secrets.
+scripts/bootstrap-secrets.sh secretserver
+# or for staging:
+scripts/bootstrap-secrets.sh secretserver-staging
 ```
 
-Render the base without an overlay first (sanity check):
+The script dumps the generated values to `/tmp/secretserver-bootstrap.env`
+(chmod 600, auto-deleted in 60s). **Back up `MASTER_KEY`** — losing it
+makes every encrypted secret unrecoverable.
 
-```bash
-kustomize build deploy/base | less
-```
+### Production / non-disposable environments
 
-Vault KV-v2 layout (the `secret/data/...` paths):
+For environments where ephemeral secrets aren't acceptable, generate
+values out-of-band and `kubectl apply` each Secret individually:
 
-```
-secret/data/secretserver/
-├── app/
-│   ├── database_url         # postgresql://authenticator:<pw>@<service>:5432/secretserver
-│   ├── database_admin_url   # postgresql://postgres:<pw>@<service>:5432/secretserver
-│   ├── jwt_secret           # 32+ random bytes
-│   ├── master_key           # 32+ random bytes (Fernet)
-│   └── secret_key           # Flask session signing key
-├── postgrest/
-│   ├── db_uri               # postgresql://authenticator:<pw>@<service>:5432/secretserver
-│   └── jwt_secret           # matches app/jwt_secret
-├── postgres/
-│   ├── superuser_username   # postgres
-│   ├── superuser_password   # random, ≥24 chars
-│   ├── app_username         # secretserver-app
-│   └── app_password         # random
-├── redis/
-│   ├── password             # 32+ chars
-│   └── sentinel_password    # 32+ chars
-└── postgres-backup/
-    ├── aws_access_key_id
-    ├── aws_secret_access_key
-    ├── aws_region           # us-east-1
-    ├── aws_endpoint         # optional (S3-compatible stores)
-    └── aws_bucket           # secretserver-prod-pg-backups
-```
+- Sealed Secrets (`kubeseal` against the cluster's pubkey).
+- HashiCorp Vault with `vault kv put` then a sealed-secret wrapper.
+- AWS / GCP / Azure Secrets Manager sync via CI/CD credential broker.
 
-> **The Cluster CR references `secretserver-postgres-superuser` for the
-> bootstrap password.** Seed that Secret (or write it via ESO) **before**
-> applying the Cluster. The Cluster will refuse to reconcile without it.
+The cluster does not require any operator component to manage these
+Secrets — `kubectl apply` of an `Opaque` Secret is sufficient.
+
+### Key rotation rules
+
+- `JWT_SECRET` in `secretserver-app-secrets` and `PGRST_JWT_SECRET` in
+  `secretserver-postgrest-secrets` **must be equal**. A mismatch makes
+  every PostgREST call 401.
+- `MASTER_KEY` is the encryption key for `crypto_provider='master'`
+  secrets. Rotating it requires running
+  `flask rekey-project-keys --old-master-key "$OLD_MASTER_KEY"`
+  afterward, otherwise every project BYOK-wrapped DEK is unreadable.
+- `SECRET_KEY` is Flask session signing. Rotating it invalidates every
+  active session.
 
 ---
 
@@ -130,7 +135,7 @@ secret/data/secretserver/
 ### Build & diff locally
 
 ```bash
-# Render prod overlay to stdout, pipe through kubeval if installed
+kustomize build deploy/base | less
 kustomize build deploy/overlays/prod | less
 
 # Server-side dry-run against a cluster
@@ -141,6 +146,10 @@ kubectl kustomize deploy/overlays/prod | \
 ### Apply prod
 
 ```bash
+# 1. (Once per cluster) install the cluster prerequisites above.
+# 2. Bootstrap Secrets — the script writes them to the namespace.
+scripts/bootstrap-secrets.sh secretserver
+# 3. Apply the workloads.
 kubectl apply -k deploy/overlays/prod
 ```
 
@@ -156,6 +165,7 @@ kubectl -n secretserver get hpa secretserver-app -w
 
 ```bash
 kubectl create namespace secretserver-staging || true
+scripts/bootstrap-secrets.sh secretserver-staging
 kubectl apply -k deploy/overlays/staging
 ```
 
@@ -225,23 +235,36 @@ restart the Deployment; the next request from that account is promoted.
 ### Rotate MASTER_KEY
 
 ```bash
-# 1. Set the new key in Vault:
-#    secret/data/secretserver/app/master_key = <new value>
-#
-# 2. Force a refresh and rollout:
-kubectl -n secretserver annotate externalsecret secretserver-app-secrets \
-  force-sync=$(date +%s) --overwrite
+# 1. Replace the MASTER_KEY value in secretserver-app-secrets.
+kubectl -n secretserver patch secret secretserver-app-secrets \
+  --type=json \
+  -p '[{"op":"replace","path":"/data/MASTER_KEY","value":"'"$(python3 -c 'import secrets;print(secrets.token_urlsafe(48))' | base64 -w0)"'"}]'
+
+# 2. Roll the Deployment so new pods pick up the new key.
 kubectl -n secretserver rollout restart deploy/secretserver-app
-#
+
 # 3. After pods come back, re-wrap project DEKs:
 kubectl -n secretserver exec deploy/secretserver-app -- \
   flask rekey-project-keys --old-master-key "$OLD_MASTER_KEY"
 ```
 
+### Rotate DB password
+
+```bash
+# 1. Generate a new password and update both Secrets.
+NEW_PW=$(python3 -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(32)))')
+kubectl -n secretserver patch secret secretserver-postgres-authenticator \
+  --type=json -p "[{\"op\":\"replace\",\"path\":\"/data/password\",\"value\":\"$(echo -n "$NEW_PW" | base64 -w0)\"}]"
+kubectl -n secretserver patch secret secretserver-app-secrets \
+  --type=json -p "[{\"op\":\"replace\",\"path\":\"/data/DATABASE_URL\",\"value\":\"$(echo -n "postgresql://secretserver-app:$NEW_PW@secretserver-postgres-rw:5432/secretserver" | base64 -w0)\"}]"
+
+# 2. Roll the deployments so new pods connect with the new password.
+kubectl -n secretserver rollout restart deploy/secretserver-app deploy/secretserver-postgrest
+```
+
 ### Postgres failover (manual)
 
 ```bash
-# Switch to a designated replica (no data loss):
 kubectl -n secretserver cnpg promote secretserver-postgres \
   --target=secretserver-postgres-2
 ```
@@ -249,10 +272,8 @@ kubectl -n secretserver cnpg promote secretserver-postgres \
 ### Postgres restore (point-in-time)
 
 ```bash
-# List available recovery targets:
 kubectl -n secretserver cnpg status secretserver-postgres
 
-# Restore to a target time using the latest base backup + WAL replay:
 kubectl -n secretserver cnpg recovery secretserver-postgres \
   --source=secretserver-postgres-daily-YYYYMMDDHHMMSS \
   --target-time="2025-01-15 03:00:00 UTC"
@@ -261,12 +282,10 @@ kubectl -n secretserver cnpg recovery secretserver-postgres \
 ### Redis failover verification
 
 ```bash
-# Inside the cluster, point at the sentinel service:
 kubectl -n secretserver exec deploy/redis-failover-controller -- \
   redis-cli -h redis-sentinel -p 26379 -a "$SENTINEL_PW" \
   SENTINEL get-master-addr-by-name secretserver-master
 
-# Cordon a redis pod and watch sentinel elect a new master:
 kubectl -n secretserver cordon <node-running-redis-0>
 kubectl -n secretserver drain <node-running-redis-0> --ignore-errors
 ```
@@ -274,12 +293,8 @@ kubectl -n secretserver drain <node-running-redis-0> --ignore-errors
 ### Backup verification
 
 ```bash
-# Check the daily backup ran:
 kubectl -n secretserver get scheduledbackup secretserver-postgres-daily
 kubectl -n secretserver get backup -l cnpg.io/cluster=secretserver-postgres
-
-# Inspect a backup artifact:
-kubectl -n secretserver describe backup secretserver-postgres-daily-YYYYMMDDHHMMSS
 ```
 
 ---
@@ -295,8 +310,9 @@ kubectl -n secretserver describe backup secretserver-postgres-daily-YYYYMMDDHHMM
 3. **Redis**: pin a new `bitnami/redis` tag in the overlay's
    `images:` block. StatefulSet `RollingUpdate` with `maxSurge: 0,
    maxUnavailable: 1` restarts one pod at a time.
-4. **Secrets rotation**: push the new value to Vault, annotate the
-   ExternalSecret with `force-sync`, restart the consuming Deployment.
+4. **Secret rotation**: `kubectl patch secret` (see runbook above) or
+   re-run `scripts/bootstrap-secrets.sh` — then roll the consuming
+   Deployment.
 
 ---
 
@@ -311,13 +327,6 @@ PodMonitors scrape:
 | Postgres (cnpg)| 9187 | /metrics   |
 | Redis          | 9121 | /metrics   |
 
-Recommended Grafana dashboards:
-
-- CNPG provided dashboard for Postgres (lag, WAL, replication slots).
-- Redis exporter dashboard (hit rate, evictions, memory).
-- Generic Flask/gunicorn: add `nginx-ingress` + `kube-state-metrics`
-  panels for HTTP latency, request rate, pod restarts.
-
 Alerts to start with:
 
 - Postgres replication lag > 30s for 5m
@@ -325,7 +334,6 @@ Alerts to start with:
 - Redis master unreachable from any sentinel > 30s
 - App readiness failing > 50% of replicas > 5m
 - HPA at maxReplicas for 10m (capacity-planning signal)
-- ESO `ClusterSecretStoreReady=False` for 5m
 - TLS cert expiry < 14 days
 
 ---
@@ -333,8 +341,8 @@ Alerts to start with:
 ## Caveats and tradeoffs
 
 - The kustomize `redis-failover-controller` is a deliberate
-  alternative to the Spotahome Redis Operator. It is a 30-line shell
-  loop that polls sentinel and patches Services. For higher-confidence
+  alternative to the Spotahome Redis Operator. It is a shell loop
+  that polls sentinel and patches Services. For higher-confidence
   deployments, **replace it with the Spotahome operator** (drop
   `deploy/redis/failover-controller.yaml` from the kustomization, add
   the operator Helm release, and let it manage the StatefulSet).
@@ -352,3 +360,7 @@ Alerts to start with:
 - HSM is **not** deployed in the cluster — the deployment assumes an
   external PKCS#11 module (cloud HSM or hardware). See the HSM
   integration section above.
+- Secrets bootstrap is operator-managed, not kustomize-managed. The
+  `scripts/bootstrap-secrets.sh` helper writes Secrets into the
+  namespace on demand; production environments should use sealed-secrets
+  or a CI/CD credential broker instead.

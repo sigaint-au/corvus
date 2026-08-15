@@ -2,10 +2,12 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # High-availability base composition for Secret Server.
-# Secrets (MASTER_KEY / JWT_SECRET / SECRET_KEY / DB passwords) are sourced
-# from External Secrets Operator (see external-secrets/) — never commit real
-# secrets to this tree. Overlay (e.g. overlays/prod) is where replicas, ingress
-# hostnames, resource quotas, and replica-count tuning belong.
+# This application IS the secrets store for other systems — it does NOT
+# fetch its own bootstrap credentials from an external store. The DATABASE
+# / REDIS / POSTGREST bootstrap Secrets must exist in the namespace before
+# the workloads reconcile (see deploy/README.md → "Secrets bootstrap").
+# Overlay (e.g. overlays/prod) is where replicas, ingress hostnames,
+# resource quotas, and replica-count tuning belong.
 namespace: secretserver
 
 # Labels propagated to every resource. `includeSelectors: false` keeps
@@ -24,6 +26,6 @@ resources:
   - postgrest
   - postgres
   - redis
-  - external-secrets
+  - secrets
   - ingress
   - networkpolicies

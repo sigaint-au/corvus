@@ -1,10 +1,14 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Staging overlay — single AZ-tolerant replica counts, self-signed TLS,
-# vault dev-mode secret store. Apply with:
+# Staging overlay — single AZ-tolerant replica counts, self-signed TLS.
+# Apply with:
 #
 #   kubectl apply -k deploy/overlays/staging
+#
+# Bootstrap-time Secrets are NOT managed by this overlay. Run
+# `scripts/bootstrap-secrets.sh secretserver-staging` once before
+# applying (see deploy/README.md → "Secrets bootstrap").
 
 namespace: secretserver-staging
 
@@ -50,10 +54,6 @@ patches:
     target:
       kind: Certificate
       name: secretserver-tls
-  - path: vault-server-patch.yaml
-    target:
-      kind: ClusterSecretStore
-      name: secretserver-vault
   - path: enable-insecure-defaults.yaml
     target:
       kind: ConfigMap

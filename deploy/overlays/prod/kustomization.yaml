@@ -11,11 +11,14 @@ kind: Kustomization
 #   * CloudNativePG operator (cnpg)
 #   * cert-manager (cert-manager.io)
 #   * nginx Ingress Controller
-#   * External Secrets Operator
 #   * Prometheus Operator (for PodMonitor CRDs)
 #
-# Before applying: replace hostname, Vault server URL, and issuer email
-# via patches below or by editing this overlay.
+# Bootstrap-time Secrets (DB / Redis / app) are NOT managed by this
+# overlay. Run `scripts/bootstrap-secrets.sh secretserver` once before
+# applying (see deploy/README.md → "Secrets bootstrap").
+#
+# Before applying: replace hostname and issuer email via patches below
+# or by editing this overlay.
 
 namespace: secretserver
 
@@ -77,10 +80,6 @@ patches:
     target:
       kind: Deployment
       name: secretserver-app
-  - path: vault-server-patch.yaml
-    target:
-      kind: ClusterSecretStore
-      name: secretserver-vault
 
 configurations:
   - kustomize-config.yaml
