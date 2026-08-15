@@ -6,13 +6,21 @@ re-exported here so ``import crypto`` and ``from crypto import encrypt``
 continue to work as before.
 """
 from base64 import urlsafe_b64encode
-from functools import lru_cache
+import json
+import logging
 from hashlib import sha256
 
 from cryptography.fernet import Fernet
 
-from core.config import MASTER_KEY
-from core import db
+from core import cache, db
+from core.config import MASTER_KEY, REDIS_DEK_CACHE_TTL
+
+log = logging.getLogger(__name__)
+_REDIS_EPOCH_KEY = "secretserver:crypto:project-key:epoch"
+_SLOT_EPOCH_KEY = "secretserver:crypto:hsm-slot:epoch"
+def _cache_epoch(client) -> str:
+    """Return the shared project-key cache epoch."""
+    return client.get(_REDIS_EPOCH_KEY) or "0"
 
 
 def sha256_hex(val: str) -> str:
@@ -45,7 +53,6 @@ def fernet_for(master_key: str) -> Fernet:
     return Fernet(key)
 
 
-@lru_cache(maxsize=1)
 def _fernet() -> Fernet:
     """Build and cache the Fernet instance derived from ``MASTER_KEY``.
 
@@ -108,7 +115,8 @@ def decrypt(val: str) -> str:
 # bytes are wrapped by the HSM slot's KEK (see ``hsm.wrap_dek_for_slot``).
 # Values encrypted with a project DEK carry ``crypto_provider='project'``;
 # values encrypted with the app master key are ``'master'`` (legacy / non-BYOK).
-# Resolution is cached per process and can be cleared after key events.
+# Resolution is cached in Redis and can be invalidated across replicas after
+# key events. Redis contains the wrapped key row, never the unwrapped DEK.
 
 
 def generate_project_key() -> bytes:
@@ -126,9 +134,20 @@ def unwrap_project_key(key_enc: str) -> bytes:
     return _fernet().decrypt(key_enc.encode())
 
 
-@lru_cache(maxsize=512)
 def _project_key(project_id: str) -> dict | None:
     """Return the project's crypto-key row, or None when it has no key."""
+    client = None
+    cache_key = None
+    try:
+        client = cache.redis_client()
+        if client is not None:
+            epoch = _cache_epoch(client)
+            cache_key = f"secretserver:crypto:project-key:{epoch}:{project_id}"
+            cached = client.get(cache_key)
+            if cached is not None:
+                return json.loads(cached)
+    except Exception as e:
+        log.warning("project-key Redis cache read failed: %s", e)
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
@@ -139,7 +158,13 @@ def _project_key(project_id: str) -> dict | None:
                 (str(project_id),),
             )
             row = cur.fetchone()
-        return dict(row) if row else None
+        row = dict(row) if row else None
+        if client is not None and cache_key is not None and row is not None:
+            try:
+                client.setex(cache_key, REDIS_DEK_CACHE_TTL, json.dumps(row, default=str))
+            except Exception as e:
+                log.warning("project-key Redis cache write failed: %s", e)
+        return row
     except Exception:
         # Key lookup is best-effort: when it fails (e.g. admin DSN unavailable,
         # table not migrated, or unit-test mocks) fall back to the master key.
@@ -154,18 +179,34 @@ def _project_key_enc(project_id: str) -> str | None:
     return row["key_enc"] if row else None
 
 
-@lru_cache(maxsize=64)
 def _slot_url(slot_id: str) -> str | None:
     """Return a named HSM slot's PKCS#11 URL, or None when it cannot be read."""
+    client = cache.redis_client()
     try:
+        epoch = client.get(_SLOT_EPOCH_KEY) or "0" if client is not None else "0"
+        key = f"secretserver:crypto:hsm-slot:{epoch}:{slot_id}"
+        if client is not None:
+            try:
+                cached = client.get(key)
+                if cached is not None:
+                    return cached or None
+            except Exception as e:
+                log.warning("HSM slot Redis cache read failed: %s", e)
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT pkcs11_url FROM private.hsm_slots WHERE id = %s",
                 (str(slot_id),),
             )
             row = cur.fetchone()
-        return row["pkcs11_url"] if row else None
-    except Exception:
+        value = row["pkcs11_url"] if row else ""
+        if client is not None:
+            try:
+                client.setex(key, REDIS_DEK_CACHE_TTL, value)
+            except Exception as e:
+                log.warning("HSM slot Redis cache write failed: %s", e)
+        return value or None
+    except Exception as e:
+        log.warning("HSM slot lookup failed: %s", e)
         return None
 
 
@@ -175,8 +216,13 @@ def slot_url(slot_id) -> str | None:
 
 
 def clear_slot_url_cache() -> None:
-    """Forget cached slot URLs (call after slot add/edit/delete)."""
-    _slot_url.cache_clear()
+    """Invalidate cached slot URLs across replicas."""
+    client = cache.redis_client()
+    try:
+        if client is not None:
+            client.incr(_SLOT_EPOCH_KEY)
+    except Exception as e:
+        log.warning("HSM slot Redis cache invalidation failed: %s", e)
 
 
 def _dek_for(row: dict) -> bytes:
@@ -206,8 +252,15 @@ def project_has_key(project_id) -> bool:
 
 
 def clear_project_key_cache() -> None:
-    """Forget cached project keys (call after adopt/rotate/revoke)."""
-    _project_key.cache_clear()
+    """Invalidate project-key rows for every replica via Redis."""
+    # ponytail: Redis outage can leave old entries until TTL; use a DB-backed
+    # generation or transactional outbox if cache invalidation must be durable.
+    client = cache.redis_client()
+    try:
+        if client is not None:
+            client.incr(_REDIS_EPOCH_KEY)
+    except Exception as e:
+        log.warning("project-key Redis cache invalidation failed: %s", e)
     clear_slot_url_cache()
 
 

@@ -1,6 +1,7 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -46,6 +47,28 @@ class TestProjectCrypto:
         assert token != crypto.encrypt("secret-value")
         with patch.object(crypto.db, "connect_admin", return_value=conn):
             assert crypto.decrypt_for_project(pid, token, "project") == "secret-value"
+
+    def test_project_key_uses_shared_redis_cache(self):
+        pid = str(uuid4())
+        row = {"key_enc": crypto.wrap_project_key(crypto.generate_project_key())}
+        conn, _ = _conn(fetchone=row)
+        client = MagicMock()
+        client.get.side_effect = ["0", None, "0", json.dumps(row)]
+        with patch.object(crypto.cache, "redis_client", return_value=client), \
+             patch.object(crypto.db, "connect_admin", return_value=conn) as connect:
+            assert crypto.project_has_key(pid) is True
+            assert crypto.project_has_key(pid) is True
+        connect.assert_called_once()
+        client.setex.assert_called_once()
+
+    def test_project_key_invalidation_advances_shared_epoch(self):
+        client = MagicMock()
+        with patch.object(crypto.cache, "redis_client", return_value=client):
+            crypto.clear_project_key_cache()
+        assert [call.args for call in client.incr.call_args_list] == [
+            ("secretserver:crypto:project-key:epoch",),
+            ("secretserver:crypto:hsm-slot:epoch",),
+        ]
 
     def test_master_fallback_when_no_key(self):
         pid = str(uuid4())

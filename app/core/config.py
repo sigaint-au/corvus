@@ -14,6 +14,8 @@ DATABASE_ADMIN_URL = os.environ.get("DATABASE_ADMIN_URL", "").strip()
 JWT_SECRET = os.environ.get("JWT_SECRET", _DEFAULT_JWT_SECRET)
 MASTER_KEY = os.environ.get("MASTER_KEY", _DEFAULT_MASTER_KEY)
 POSTGREST_URL = os.environ.get("POSTGREST_URL", "http://localhost:3000")
+REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+REDIS_DEK_CACHE_TTL = max(1, int(os.environ.get("REDIS_DEK_CACHE_TTL", "300")))
 
 
 def master_key_is_default() -> bool:

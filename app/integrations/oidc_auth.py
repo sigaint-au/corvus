@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import logging
 import secrets
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,15 +17,13 @@ import jwt
 from jwt import PyJWKClient
 
 import crypto
-from core import db
+from core import cache, db
 from core import settings_svc
 
 log = logging.getLogger(__name__)
 
-# issuer -> (fetched_at_monotonic, doc)
-_discovery_cache: dict[str, tuple[float, dict]] = {}
-_jwks_clients: dict[str, PyJWKClient] = {}
 _DISCOVERY_TTL_SEC = 3600
+_DISCOVERY_EPOCH_KEY = "secretserver:oidc:discovery:epoch"
 
 # Never accept symmetric/none algs from discovery (alg-confusion)
 _ALLOWED_ID_TOKEN_ALGS = frozenset(
@@ -173,20 +170,34 @@ def discover(issuer: str | None = None) -> dict:
     issuer = (issuer or oidc_cfg()["oidc_issuer"]).rstrip("/")
     if not issuer:
         raise RuntimeError("OIDC issuer not configured")
-    now = time.monotonic()
-    cached = _discovery_cache.get(issuer)
-    if cached and (now - cached[0]) < _DISCOVERY_TTL_SEC:
-        return cached[1]
+    client = cache.redis_client()
+    epoch = "0"
+    if client is not None:
+        try:
+            epoch = client.get(_DISCOVERY_EPOCH_KEY) or "0"
+            cached = client.get(f"secretserver:oidc:discovery:{epoch}:{issuer}")
+            if cached is not None:
+                return json.loads(cached)
+        except Exception as e:
+            log.warning("OIDC discovery Redis cache read failed: %s", e)
     url = issuer + "/.well-known/openid-configuration"
     doc = _http_json("GET", url)
     if not doc.get("authorization_endpoint") or not doc.get("token_endpoint"):
         raise RuntimeError("OIDC discovery missing endpoints")
-    _discovery_cache[issuer] = (now, doc)
+    if client is not None:
+        try:
+            client.setex(
+                f"secretserver:oidc:discovery:{epoch}:{issuer}",
+                _DISCOVERY_TTL_SEC,
+                json.dumps(doc),
+            )
+        except Exception as e:
+            log.warning("OIDC discovery Redis cache write failed: %s", e)
     return doc
 
 
 def clear_discovery_cache():
-    """Clear cached OIDC discovery documents and JWKS clients.
+    """Invalidate cached OIDC discovery documents across replicas.
 
     Returns:
         None.
@@ -194,8 +205,12 @@ def clear_discovery_cache():
     Example:
         >>> clear_discovery_cache()
     """
-    _discovery_cache.clear()
-    _jwks_clients.clear()
+    client = cache.redis_client()
+    if client is not None:
+        try:
+            client.incr(_DISCOVERY_EPOCH_KEY)
+        except Exception as e:
+            log.warning("OIDC discovery Redis cache invalidation failed: %s", e)
 
 
 def redirect_uri_for_request(url_root: str = "") -> str:
@@ -313,10 +328,7 @@ def verify_id_token(id_token: str, *, nonce: str) -> dict[str, Any]:
     jwks_uri = doc.get("jwks_uri")
     if not jwks_uri:
         raise RuntimeError("OIDC discovery missing jwks_uri")
-    client = _jwks_clients.get(jwks_uri)
-    if client is None:
-        client = PyJWKClient(jwks_uri, cache_keys=True)
-        _jwks_clients[jwks_uri] = client
+    client = PyJWKClient(jwks_uri, cache_jwk_set=False, cache_keys=False)
     key = client.get_signing_key_from_jwt(id_token)
     advertised = doc.get("id_token_signing_alg_values_supported") or ["RS256"]
     algs = [a for a in advertised if a in _ALLOWED_ID_TOKEN_ALGS]

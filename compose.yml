@@ -52,6 +52,14 @@ services:
     ports:
       - "3000:3000"
 
+  redis:
+    image: docker.io/library/redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   app:
     build: .
     image: localhost/secretserver_app:latest
@@ -60,6 +68,8 @@ services:
         condition: service_healthy
       postgrest:
         condition: service_started
+      redis:
+        condition: service_healthy
       softhsm2:
         condition: service_healthy
     environment:
@@ -69,6 +79,8 @@ services:
       MASTER_KEY: ${MASTER_KEY:-dev-master-key-change-in-prod!!}
       SECRET_KEY: ${SECRET_KEY:-flask-session-secret-change-me}
       POSTGREST_URL: http://postgrest:3000
+      REDIS_URL: redis://redis:6379/0
+      REDIS_DEK_CACHE_TTL: ${REDIS_DEK_CACHE_TTL:-300}
       GLOBAL_ADMIN_EMAIL: ${GLOBAL_ADMIN_EMAIL:-}
       # SoftHSM2 token dir (the app resolves HSM slots by PKCS#11 URL, which
       # points at libsofthsm2.so and this token directory).
