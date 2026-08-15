@@ -740,6 +740,13 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 {% elif active_tab == 'encryption' %}
 {% set c = encryption.summary.counts %}
 
+{% if encryption.legacy_hsm_count %}
+<div role="alert" data-variant="warning">
+  <strong>⚠ {{ encryption.legacy_hsm_count }} project(s) have no HSM slot assigned and cannot be decrypted.</strong>
+  Link them to a slot immediately from the slot menu below.
+</div>
+{% endif %}
+
 <section class="crypto-panel">
   <div class="section-head">
     <h2>Server-wide key</h2>
@@ -776,7 +783,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   </div>
   {% if encryption.hsm_slots %}
   <div class="table" style="overflow: visible"><table>
-    <thead><tr><th>Name</th><th>PKCS#11 URL</th><th class="acts-menu"></th></tr></thead>
+    <thead><tr><th>Name</th><th>PKCS#11 URL</th><th>Status</th><th class="acts-menu"></th></tr></thead>
     <tbody>
     {% for slot in encryption.hsm_slots %}
       <tr>
@@ -785,6 +792,13 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
           {% if slot.is_default %}<span class="badge" data-variant="primary">default</span>{% endif %}
         </td>
         <td class="muted col-note"><code class="k">{{ slot.pkcs11_url|redact_pin }}</code></td>
+        <td>
+          {% if slot.available %}
+          <span class="badge" data-variant="success">Connected</span>
+          {% else %}
+          <span class="badge" data-variant="danger">Offline</span>
+          {% endif %}
+        </td>
         <td class="acts-menu">
           {% set _menu = 'slot-menu-' ~ slot.id %}
           <ot-dropdown>
@@ -796,6 +810,9 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
               </svg>
             </button>
             <menu popover id="{{ _menu }}">
+              <button type="button" role="menuitem" class="ghost"
+                      data-nav="{{ url_for('hsm_slot_new_wizard', slot_id=slot.id) }}"
+                      popovertarget="{{ _menu }}" popovertargetaction="hide">Edit</button>
               <button type="button" role="menuitem" class="ghost"
                       hx-post="{{ url_for('server_settings', tab='encryption') }}"
                       hx-vals='{"action":"hsm_slot_test","slot_id":"{{ slot.id }}"}'
@@ -813,7 +830,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
                       hx-post="{{ url_for('server_settings', tab='encryption') }}"
                       hx-vals='{"action":"hsm_slot_rotate","slot_id":"{{ slot.id }}"}'
                       hx-target="body" hx-swap="outerHTML"
-                      hx-confirm="Rotate this slot's KEK and re-wrap all its project keys?"
+                      hx-confirm="Rotate KEK for slot '{{ slot.name }}' and re-wrap all its project keys?"
                       popovertarget="{{ _menu }}" popovertargetaction="hide">Rotate KEK</button>
               <hr>
               <button type="button" role="menuitem" class="ghost" data-variant="danger"
@@ -831,6 +848,23 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   </table></div>
   {% else %}
   <p class="muted">No named slots configured.</p>
+  {% endif %}
+  {% if encryption.hsm_slots and c.local > 0 %}
+  <form method="post" class="row mt-1">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="hsm_migrate_all">
+    <label class="flex-2">Migrate all local project keys to HSM slot
+      <select name="target_slot" required>
+        {% for slot in encryption.hsm_slots %}
+        <option value="{{ slot.id }}">{{ slot.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit"
+            onclick="return confirm('Migrate all {{ c.local }} local project key(s) to the selected HSM slot? All secrets will be re-encrypted.')">
+      Migrate all local to HSM
+    </button>
+  </form>
   {% endif %}
 </section>
 
@@ -879,7 +913,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         </td>
         <td class="muted">
           {% if p.provider == 'hsm' %}
-            {% if p.hsm_slot_name %}{{ p.hsm_slot_name }}{% else %}Legacy{% endif %}
+            {% if p.hsm_slot_name %}{{ p.hsm_slot_name }}{% else %}<span class="badge" data-variant="danger" title="No HSM slot assigned">⚠ No slot</span>{% endif %}
           {% else %}-{% endif %}
         </td>
         <td class="muted">

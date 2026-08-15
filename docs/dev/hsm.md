@@ -61,7 +61,7 @@ supported, else AES-CBC). Unwrap returns a Fernet key again.
 
 | File | Role |
 |------|------|
-| `app/hsm.py` | PKCS#11 wrapper: `parse_pkcs11_url`/`redact_pkcs11_url`, `generate_kek`/`delete_kek`, and slot-aware `available_for_slot`/`status_for_slot`/`ensure_kek_for_slot`/`wrap_dek_for_slot`/`unwrap_dek_for_slot`/`wrap_dek_with_label`/`test_connection_for_slot` |
+| `app/hsm.py` | PKCS#11 wrapper: `parse_pkcs11_url`/`redact_pkcs11_url`/`has_inline_pin`, `generate_kek`/`delete_kek`, and slot-aware `available_for_slot`/`status_for_slot`/`ensure_kek_for_slot`/`wrap_dek_for_slot`/`unwrap_dek_for_slot`/`wrap_dek_with_label`/`test_connection_for_slot` |
 | `app/config.py` | `master_key_is_default()` (no HSM env vars) |
 | `app/crypto.py` | `_dek_for()` dispatches unwrap by `key_provider` (local vs hsm) and `hsm_slot_id` via `_slot_url()`; `project_dek()`; `slot_url()`/`clear_slot_url_cache()`; `encrypt_for_project`/`decrypt_for_project` |
 | `app/project_keys.py` | `ensure_project_key(provider, hsm_slot_id)`, `adopt_project_key`, `migrate_project_key(target_slot_id)`, `rotate_hsm_kek(slot_id)`, `encryption_summary`, `migrate_all_local_to_hsm(target_slot_id)`, `link_legacy_to_slot`, `rewrap_project_keys` |
@@ -129,7 +129,25 @@ pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofths
   named slots exist.
 - **Linking legacy projects**: once a slot's KEK label matches a legacy
   project's `kms_key_ref`, use the "Link legacy project(s)" action — a
-  metadata-only `UPDATE` (no re-encryption).
+  metadata-only `UPDATE` (no re-encryption). The slot must be reachable
+  (`available_for_slot`) before linking; the KEK label is verified against the
+  live token.
+
+## `test_connection_for_slot` behavior
+
+Returns `(True, msg)` when the token is reachable, **even if the KEK is missing**
+— the KEK is created lazily on first use. Returns `(False, error)` only when the
+session cannot be opened (module not found, token missing, wrong PIN, etc.).
+
+## `has_inline_pin`
+
+```python
+hsm.has_inline_pin(url: str) -> bool
+```
+
+Returns `True` when the URL contains `pin-value=` (inline PIN). Used by the admin
+UI to warn that inline PINs are stored in the database. Prefer `pin-source=`
+(file-based PIN).
 
 ## Notes / caveats
 

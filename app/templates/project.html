@@ -758,7 +758,7 @@
       <span class="badge" data-variant="success">Project key</span>
       <span class="muted">
         {% if project_crypto.key_provider == 'hsm' %}
-          HSM{% if project_crypto.hsm_slot_name %} · {{ project_crypto.hsm_slot_name }}{% elif project_crypto.hsm_slot_id is none %} · Legacy{% endif %}{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
+          HSM{% if project_crypto.hsm_slot_name %} · {{ project_crypto.hsm_slot_name }}{% elif project_crypto.hsm_slot_id is none %} · ⚠ No slot{% endif %}{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
         {% else %}
           Local
         {% endif %}
@@ -797,7 +797,7 @@
     {% if hsm_slots %}
     <select name="target_slot" aria-label="HSM slot">
       {% for s in hsm_slots %}
-      <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %}>{{ s.name }}</option>
+      <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
       {% endfor %}
     </select>
     {% endif %}
@@ -830,6 +830,15 @@
       </label>
       {% endif %}
     </fieldset>
+    {% if hsm_slots %}
+    <label>HSM slot
+      <select name="hsm_slot">
+        {% for s in hsm_slots %}
+        <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
     <p class="form-actions">
       <button type="submit" class="button outline small">Adopt project key</button>
     </p>

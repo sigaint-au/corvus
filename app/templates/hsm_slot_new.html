@@ -1,19 +1,20 @@
 {% extends "base.html" %}
-{% block title %}New HSM slot - {{ app_name }}{% endblock %}
+{% block title %}{{ 'Edit' if slot_id else 'New' }} HSM slot - {{ app_name }}{% endblock %}
 {% block body %}
 {% set breadcrumbs = [
   ('Server settings', url_for('server_settings', tab='encryption')),
-  ('New HSM slot', none),
+  ('Edit HSM slot' if slot_id else 'New HSM slot', none),
 ] %}
 {% include "partials/breadcrumb.html" %}
 
 <div class="page-head">
-  <h1>New HSM slot</h1>
+  <h1>{{ 'Edit' if slot_id else 'New' }} HSM slot</h1>
 </div>
-<p class="page-desc muted">Add a named PKCS#11 slot. The app will open a session against this module/token and store the key-encryption key.</p>
+<p class="page-desc muted">{{ 'Update' if slot_id else 'Add a' }} named PKCS#11 slot. The app will open a session against this module/token and store the key-encryption key.</p>
 
 <form method="post" action="{{ url_for('hsm_slot_new_wizard') }}" class="settings-form">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  {% if slot_id %}<input type="hidden" name="slot_id" value="{{ slot_id }}">{% endif %}
 
   <section>
     <div class="section-head"><h2>Details</h2></div>
@@ -26,6 +27,7 @@
         <input type="text" name="pkcs11_url" value="{{ pkcs11_url or '' }}" required
                placeholder="pkcs11:token=...;object=...?module-path=/path/to/module.so&pin-source=/run/secrets/hsm-pin" autocomplete="off">
         <span class="field-hint">Format: <code>pkcs11:token=&lt;label&gt;;object=&lt;KEK label&gt;?module-path=&lt;.so&gt;&amp;pin-source=&lt;pin file&gt;</code></span>
+        <span class="field-hint">Prefer <code>pin-source=</code> (file path) over <code>pin-value=</code> (inline). Inline PINs are stored in the database.</span>
       </label>
       <label class="span-2">Description
         <input type="text" name="description" value="{{ description or '' }}" maxlength="200" autocomplete="off">
@@ -50,7 +52,13 @@
     <p class="form-actions">
       <a class="button ghost" href="{{ url_for('server_settings', tab='encryption') }}">Cancel</a>
       <button type="submit" name="action" value="test" class="button outline">Test connection</button>
-      <button type="submit" name="action" value="create" class="button">Create slot</button>
+      <button type="submit" name="action" value="create" class="button">{{ 'Save changes' if slot_id else 'Create slot' }}</button>
+      {% if test_result is sameas false %}
+      <button type="submit" name="action" value="force_create" class="button outline"
+              onclick="return confirm('Save this slot without a successful connection test? The slot will be created but may not work until the HSM is reachable.')">
+        Save without testing
+      </button>
+      {% endif %}
     </p>
   </section>
 </form>

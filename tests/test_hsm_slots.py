@@ -1,7 +1,7 @@
 """Unit tests for the PKCS#11 URL parser and multi-slot HSM functions."""
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -48,6 +48,27 @@ class TestParsePkcs11Url:
         with pytest.raises(ValueError, match="pkcs11"):
             hsm.parse_pkcs11_url("http://example.com")
 
+    def test_pin_source_file_error_raises(self):
+        """pin-source pointing at a missing file raises a clear ValueError."""
+        with pytest.raises(ValueError, match="Cannot read PIN file"):
+            hsm.parse_pkcs11_url(
+                "pkcs11:token=t;object=k?module-path=/m.so&pin-source=/nonexistent/path/pin"
+            )
+
+
+class TestHasInlinePin:
+    def test_inline_pin_detected(self):
+        assert hsm.has_inline_pin("pkcs11:token=t?module-path=/m.so&pin-value=1234") is True
+
+    def test_pin_source_not_inline(self):
+        assert hsm.has_inline_pin("pkcs11:token=t?module-path=/m.so&pin-source=/p") is False
+
+    def test_empty_url(self):
+        assert hsm.has_inline_pin("") is False
+
+    def test_no_pin(self):
+        assert hsm.has_inline_pin("pkcs11:token=t?module-path=/m.so") is False
+
 
 class TestRedactPkcs11Url:
     def test_redacts_pin_value(self):
@@ -59,6 +80,44 @@ class TestRedactPkcs11Url:
         url = "pkcs11:token=t?module-path=/m.so&pin-source=/run/secrets/hsm-pin"
         out = hsm.redact_pkcs11_url(url)
         assert "/run/secrets/hsm" in out
+
+
+class TestTestConnectionForSlot:
+    """test_connection_for_slot returns (True, ...) when reachable, even if KEK is missing."""
+
+    def test_returns_true_when_kek_missing(self):
+        mock_session = MagicMock()
+        mock_session.__enter__.return_value = mock_session
+        mock_session.__exit__.return_value = False
+        mock_session.get_objects.return_value = iter([])
+        with patch.object(hsm, "_session", return_value=mock_session), \
+             patch.object(hsm, "_pkcs11"):
+            ok, msg = hsm.test_connection_for_slot(
+                "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
+            )
+        assert ok is True
+        assert "KEK not present" in msg
+
+    def test_returns_true_when_kek_present(self):
+        mock_session = MagicMock()
+        mock_session.__enter__.return_value = mock_session
+        mock_session.__exit__.return_value = False
+        mock_session.get_objects.return_value = iter([MagicMock()])
+        with patch.object(hsm, "_session", return_value=mock_session), \
+             patch.object(hsm, "_pkcs11"):
+            ok, msg = hsm.test_connection_for_slot(
+                "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
+            )
+        assert ok is True
+        assert "KEK present" in msg
+
+    def test_returns_false_on_error(self):
+        with patch.object(hsm, "_session", side_effect=RuntimeError("boom")):
+            ok, msg = hsm.test_connection_for_slot(
+                "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
+            )
+        assert ok is False
+        assert "boom" in msg
 
 
 class TestSlotFunctions:

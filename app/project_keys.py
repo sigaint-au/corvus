@@ -506,6 +506,8 @@ def link_legacy_to_slot(slot_id) -> int:
     slot_url = crypto.slot_url(slot_id)
     if not slot_url:
         raise RuntimeError("named HSM slot not found")
+    if not hsm.available_for_slot(slot_url):
+        raise RuntimeError("HSM slot is not reachable; cannot verify KEK label")
     slot_kek = hsm.parse_pkcs11_url(slot_url)["kek_label"]
     with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
         cur.execute(

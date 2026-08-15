@@ -269,7 +269,6 @@ class TestProjectKeys:
 
     def test_link_legacy_to_slot(self):
         import hsm
-        from cryptography.fernet import Fernet
 
         pid, slot_id = str(uuid4()), str(uuid4())
         admin_conn, admin_cur = _conn(fetchone=None, fetchall=[])
@@ -277,6 +276,7 @@ class TestProjectKeys:
         slot_url = "pkcs11:token=t;object=byok-kek?module-path=/m.so&pin-value=x"
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
              patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "available_for_slot", return_value=True), \
              patch.object(hsm, "parse_pkcs11_url", return_value={"kek_label": "byok-kek"}):
             n = project_keys.link_legacy_to_slot(slot_id)
         assert n == 2
@@ -284,6 +284,19 @@ class TestProjectKeys:
                    if "UPDATE private.project_crypto_keys" in str(c.args[0])]
         assert len(updates) == 1
         assert str(updates[0][1][0]) == slot_id
+
+    def test_link_legacy_to_slot_unreachable(self):
+        """Raises when the HSM slot is not reachable."""
+        import hsm
+
+        slot_id = str(uuid4())
+        admin_conn, _ = _conn(fetchone=None, fetchall=[])
+        slot_url = "pkcs11:token=t;object=byok-kek?module-path=/m.so&pin-value=x"
+        with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
+             patch.object(project_keys.crypto, "slot_url", return_value=slot_url), \
+             patch.object(hsm, "available_for_slot", return_value=False):
+            with pytest.raises(RuntimeError, match="not reachable"):
+                project_keys.link_legacy_to_slot(slot_id)
 
     def test_rotate_hsm_kek_for_slot(self):
         import hsm

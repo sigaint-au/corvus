@@ -182,16 +182,30 @@ pkcs11:token=<label>;object=<KEK label>?module-path=/path/to/module.so&pin-sourc
 
 - **Add a slot** with a name and PKCS#11 URL (the PIN is either inline as
   `pin-value=` or read from a file via `pin-source=`; the UI redacts inline
-  PINs).
+  PINs and warns when an inline PIN is stored in the database).
+- **Edit a slot** via the slot menu → Edit (pre-fills the wizard form).
 - **Default slot**: new HSM projects auto-select it in the wizard.
+- **Status badge**: each slot shows a Connected/Offline badge (checked on page
+  load).
 - **Test** verifies the slot's token opens and the KEK exists (non-destructive).
-- **Rotate KEK** generates a fresh KEK and re-wraps the slot's projects.
+  Returns success even when the KEK is missing (created on first use).
+- **Save without testing**: when the connection test fails, a "Save without
+  testing" button appears — use for slots that will be reachable later (e.g.
+  HSM not yet online during initial setup).
+- **Rotate KEK** generates a fresh KEK and re-wraps the slot's projects. The
+  confirm dialog shows the slot name.
 - **Delete** is blocked while projects still reference the slot.
 - **Link legacy project(s)**: associates pre-slot HSM projects (created before
   named slots) with a slot whose KEK label matches — metadata only, no
-  re-encryption.
+  re-encryption. The slot must be reachable before linking.
+- **Migrate all local to HSM**: when local BYOK projects exist and slots are
+  configured, a slot selector + button appears to bulk-migrate all local
+  projects to a chosen slot.
 - **Migrating between slots**: per-project Settings → migrate with the target
   slot re-wraps the existing DEK (no secret re-encryption).
+- **Legacy warning banner**: when HSM projects have no slot assigned
+  (`hsm_slot_id IS NULL`), a warning banner appears at the top of the
+  Encryption tab. The posture table shows "⚠ No slot" instead of "Legacy".
 
 If no named slots are configured, external-HSM encryption is unavailable (add a
 slot first).

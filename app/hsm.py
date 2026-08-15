@@ -78,8 +78,11 @@ def parse_pkcs11_url(url: str) -> dict:
     if pin_value is not None:
         pin = pin_value
     elif pin_source:
-        with open(pin_source, "r", encoding="utf-8") as fh:
-            pin = fh.read().strip()
+        try:
+            with open(pin_source, "r", encoding="utf-8") as fh:
+                pin = fh.read().strip()
+        except OSError as e:
+            raise ValueError(f"Cannot read PIN file {pin_source}: {e}") from e
 
     slot_id = (
         path_parts.get("slot-id")
@@ -110,6 +113,22 @@ def redact_pkcs11_url(url: str) -> str:
     import re
 
     return re.sub(r"(?i)(pin-value)=[^&;]*", r"\1=***", url or "")
+
+
+def has_inline_pin(url: str) -> bool:
+    """Return True when the URL contains an inline ``pin-value=`` (not ``pin-source``).
+
+    Used by the admin UI to warn that inline PINs are stored in the database.
+
+    Example:
+        >>> has_inline_pin("pkcs11:token=t?module-path=/m.so&pin-value=1234")
+        True
+        >>> has_inline_pin("pkcs11:token=t?module-path=/m.so&pin-source=/p")
+        False
+    """
+    import re
+
+    return bool(re.search(r"(?i)pin-value=", url or ""))
 
 
 def _pkcs11():
@@ -395,7 +414,7 @@ def test_connection_for_slot(pkcs11_url: str) -> tuple[bool, str]:
         with _session(rw=False, pkcs11_url=pkcs11_url) as session:
             has = _find_kek(session, pkcs11, c["kek_label"]) is not None
         if not has:
-            return False, "token reachable but KEK not present yet"
+            return True, "token reachable, KEK not present (created on first use)"
         return True, "connection OK; KEK present"
     except Exception as e:
         return False, str(e)

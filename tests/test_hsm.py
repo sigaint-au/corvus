@@ -5,7 +5,11 @@ from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import app as store
+import audit
+import authz
+import crypto
 import db
+import hsm
 import project_keys
 
 store.app.config["TESTING"] = True
@@ -117,3 +121,105 @@ class TestHsmSettingsAdopt:
             )
         assert r.status_code == 302
         migrate.assert_called_once_with(UUID(self.pid), "hsm", target_slot_id=slot)
+
+
+class TestHsmSlotWizard:
+    """Tests for the HSM slot wizard (create, edit, save-without-testing)."""
+
+    def setup_method(self):
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s["user_id"] = self.uid
+            s["is_global_admin"] = True
+
+    def test_wizard_edit_prefills_slot(self):
+        """GET with slot_id pre-fills the form and shows 'Edit' title."""
+        slot_id = str(uuid4())
+        slot_data = {
+            "id": slot_id,
+            "name": "prod-hsm",
+            "pkcs11_url": "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x",
+            "description": "Production HSM",
+            "is_default": True,
+        }
+        from tests.helpers import mock_conn
+        user_conn, _ = mock_conn(fetchone=slot_data)
+        with patch.object(authz, "is_global_admin", return_value=True), \
+             patch.object(db, "as_user", return_value=user_conn):
+            r = self.client.get(f"/settings/encryption/hsm-slots/new?slot_id={slot_id}")
+        assert r.status_code == 200
+        assert b"Edit HSM slot" in r.data
+        assert b"prod-hsm" in r.data
+        assert b"Production HSM" in r.data
+
+    def test_wizard_create_logs_audit(self):
+        """POST create logs an hsm_slot_added audit event."""
+        from tests.helpers import mock_conn
+        admin_conn, _ = mock_conn(fetchone={"is_global_admin": True})
+        user_conn, _ = mock_conn(fetchone={"id": str(uuid4())})
+        with patch.object(authz, "is_global_admin", return_value=True), \
+             patch.object(hsm, "test_connection_for_slot", return_value=(True, "OK")), \
+             patch.object(db, "as_user", return_value=user_conn), \
+             patch.object(db, "connect_admin", return_value=admin_conn), \
+             patch.object(crypto, "clear_slot_url_cache"), \
+             patch.object(audit, "log_org") as log_org:
+            r = self.client.post(
+                "/settings/encryption/hsm-slots/new",
+                data={
+                    "action": "create",
+                    "name": "test-slot",
+                    "pkcs11_url": "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x",
+                },
+            )
+        assert r.status_code == 302
+        log_org.assert_called_once()
+        assert log_org.call_args.kwargs["action"] == "hsm_slot_added"
+
+    def test_wizard_force_create_saves_without_test(self):
+        """POST force_create saves the slot even when the connection test fails."""
+        from tests.helpers import mock_conn
+        admin_conn, _ = mock_conn(fetchone={"is_global_admin": True})
+        user_conn, _ = mock_conn(fetchone={"id": str(uuid4())})
+        with patch.object(authz, "is_global_admin", return_value=True), \
+             patch.object(hsm, "test_connection_for_slot", return_value=(False, "connection refused")), \
+             patch.object(db, "as_user", return_value=user_conn), \
+             patch.object(db, "connect_admin", return_value=admin_conn), \
+             patch.object(crypto, "clear_slot_url_cache"), \
+             patch.object(audit, "log_org") as log_org:
+            r = self.client.post(
+                "/settings/encryption/hsm-slots/new",
+                data={
+                    "action": "force_create",
+                    "name": "offline-slot",
+                    "pkcs11_url": "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x",
+                },
+            )
+        assert r.status_code == 302
+        log_org.assert_called_once()
+        assert log_org.call_args.kwargs["action"] == "hsm_slot_added"
+
+    def test_wizard_edit_logs_audit(self):
+        """POST create with slot_id logs hsm_slot_edited (not added)."""
+        slot_id = str(uuid4())
+        from tests.helpers import mock_conn
+        admin_conn, _ = mock_conn(fetchone={"is_global_admin": True})
+        user_conn, _ = mock_conn(fetchone={"id": slot_id})
+        with patch.object(authz, "is_global_admin", return_value=True), \
+             patch.object(hsm, "test_connection_for_slot", return_value=(True, "OK")), \
+             patch.object(db, "as_user", return_value=user_conn), \
+             patch.object(db, "connect_admin", return_value=admin_conn), \
+             patch.object(crypto, "clear_slot_url_cache"), \
+             patch.object(audit, "log_org") as log_org:
+            r = self.client.post(
+                "/settings/encryption/hsm-slots/new",
+                data={
+                    "action": "create",
+                    "slot_id": slot_id,
+                    "name": "updated-slot",
+                    "pkcs11_url": "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x",
+                },
+            )
+        assert r.status_code == 302
+        log_org.assert_called_once()
+        assert log_org.call_args.kwargs["action"] == "hsm_slot_edited"

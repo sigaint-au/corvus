@@ -65,7 +65,7 @@
       <label>HSM slot
         <select name="hsm_slot">
           {% for s in hsm_slots %}
-          <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %}>{{ s.name }}</option>
+          <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
           {% endfor %}
         </select>
       </label>
