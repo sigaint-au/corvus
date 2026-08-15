@@ -19,6 +19,8 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import signal
+from contextlib import contextmanager
 from urllib.parse import unquote
 
 log = logging.getLogger(__name__)
@@ -31,6 +33,27 @@ _IV_LEN = 16
 # Blob version prefixes so unwrap can tell CBC from key-wrap.
 _FMT_CBC = b"\x01"
 _FMT_KEY_WRAP = b"\x02"
+_HSM_TEST_TIMEOUT = max(1, int(os.environ.get("HSM_TEST_TIMEOUT_SECONDS", "10")))
+
+
+def _raise_timeout(_signum, _frame):
+    raise TimeoutError("HSM connection timed out")
+
+
+@contextmanager
+def _operation_timeout(seconds: int):
+    try:
+        previous_handler = signal.getsignal(signal.SIGALRM)
+        signal.signal(signal.SIGALRM, _raise_timeout)
+    except ValueError:
+        yield
+        return
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def parse_pkcs11_url(url: str) -> dict:
@@ -139,9 +162,21 @@ def _pkcs11():
     return pkcs11
 
 
+def _allowed_module_path(module_path: str) -> bool:
+    """Return whether a PKCS#11 module is inside the configured allow-list."""
+    configured = os.environ.get("HSM_ALLOWED_MODULE_DIRS", "/usr/lib,/usr/local/lib,/lib")
+    real_path = os.path.realpath(module_path)
+    return any(
+        real_path == directory or real_path.startswith(directory + os.sep)
+        for directory in (os.path.realpath(p.strip()) for p in configured.split(",") if p.strip())
+    )
+
+
 def _session(rw: bool, pkcs11_url: str):
     """Open a PKCS#11 session (logged in) against a named slot's PKCS#11 URL."""
     parsed = parse_pkcs11_url(pkcs11_url)
+    if not _allowed_module_path(parsed["module_path"]):
+        raise ValueError("PKCS#11 module path is outside the configured allow-list")
     pkcs11 = _pkcs11()
     try:
         lib = pkcs11.lib(parsed["module_path"])
@@ -340,6 +375,9 @@ def status_for_slot(pkcs11_url: str) -> dict:
     if not os.path.exists(c["module_path"]):
         result["error"] = f"PKCS#11 module not found: {c['module_path']}"
         return result
+    if not _allowed_module_path(c["module_path"]):
+        result["error"] = "PKCS#11 module path is outside the configured allow-list"
+        return result
     try:
         pkcs11 = _pkcs11()
         with _session(rw=False, pkcs11_url=pkcs11_url) as session:
@@ -409,12 +447,13 @@ def wrap_dek_with_label(pkcs11_url: str, dek: bytes, kek_label: str) -> str:
 def test_connection_for_slot(pkcs11_url: str) -> tuple[bool, str]:
     """Open a read-only session on the slot and check KEK existence."""
     try:
-        c = parse_pkcs11_url(pkcs11_url)
-        pkcs11 = _pkcs11()
-        with _session(rw=False, pkcs11_url=pkcs11_url) as session:
-            has = _find_kek(session, pkcs11, c["kek_label"]) is not None
-        if not has:
-            return True, "token reachable, KEK not present (created on first use)"
-        return True, "connection OK; KEK present"
+        with _operation_timeout(_HSM_TEST_TIMEOUT):
+            c = parse_pkcs11_url(pkcs11_url)
+            with _session(rw=False, pkcs11_url=pkcs11_url) as session:
+                pkcs11 = _pkcs11()
+                has = _find_kek(session, pkcs11, c["kek_label"]) is not None
+            if not has:
+                return True, "token reachable, KEK not present (created on first use)"
+            return True, "connection OK; KEK present"
     except Exception as e:
         return False, str(e)

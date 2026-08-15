@@ -59,6 +59,15 @@ def test_project_crypto_migration_ships():
     assert "machine_upsert_enc" in sql
 
 
+def test_hsm_hardening_migration_restricts_sensitive_access():
+    sql = (migrations.MIGRATIONS_DIR / "0028_hsm_rls_hardening.sql").read_text()
+    assert "REVOKE EXECUTE ON FUNCTION api.list_hsm_slots() FROM anon" in sql
+    assert "REVOKE EXECUTE ON FUNCTION api.hsm_slot_url(uuid)" in sql
+    assert "cannot change the URL of a slot used by project keys" in sql
+    assert "p_user IS NOT DISTINCT FROM api.current_user_id()" in sql
+    assert "p_subject IS NOT NULL" in sql
+
+
 class TestPendingMigrations:
     def test_returns_unapplied_in_order(self, tmp_path):
         d = _write_migrations(tmp_path, {

@@ -788,8 +788,9 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     {% for slot in encryption.hsm_slots %}
       <tr>
         <td>
-          {{ slot.name }}
-          {% if slot.is_default %}<span class="badge" data-variant="primary">default</span>{% endif %}
+           {{ slot.name }}
+           {% if slot.is_default %}<span class="badge" data-variant="primary">default</span>{% endif %}
+           {% if slot.project_count %}<span class="muted">({{ slot.project_count }} project keys)</span>{% endif %}
         </td>
         <td class="muted col-note"><code class="k">{{ slot.pkcs11_url|redact_pin }}</code></td>
         <td>

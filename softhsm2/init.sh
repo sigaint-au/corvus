@@ -39,6 +39,9 @@ touch "$TOKEN_DIR/.ready"
 chown -R 10001:10001 "$TOKEN_DIR" 2>/dev/null || true
 chmod 755 "$TOKEN_DIR" 2>/dev/null || true
 chmod -R u+rwX,g+rX,o+rX "$TOKEN_DIR" 2>/dev/null || true
+printf '%s\n' "$USER_PIN" > "$TOKEN_DIR/hsm-pin"
+chown 10001:10001 "$TOKEN_DIR/hsm-pin" 2>/dev/null || true
+chmod 600 "$TOKEN_DIR/hsm-pin"
 
 echo "SoftHSM2 token ready; keeping container alive."
 exec sleep infinity

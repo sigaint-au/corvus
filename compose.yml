@@ -73,6 +73,7 @@ services:
       # SoftHSM2 token dir (the app resolves HSM slots by PKCS#11 URL, which
       # points at libsofthsm2.so and this token directory).
       SOFTHSM2_CONF: /hsm/tokens/softhsm2.conf
+      HSM_ALLOWED_MODULE_DIRS: /usr/lib,/usr/local/lib,/lib
       # Opt-in only — default off so refuse_insecure_defaults() actually runs.
       # For local play with baked-in secrets: ALLOW_INSECURE_DEFAULTS=1
       ALLOW_INSECURE_DEFAULTS: ${ALLOW_INSECURE_DEFAULTS:-0}

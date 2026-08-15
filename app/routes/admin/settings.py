@@ -442,39 +442,6 @@ def server_settings():
                     flash(f"Migrated {n} local project key(s) to HSM", "ok")
                 except Exception as e:
                     flash(f"Bulk migration failed: {e}", "error")
-        elif action in ("hsm_slot_add", "hsm_slot_edit"):
-            slot_id = (request.form.get("slot_id") or "").strip() or None
-            name = (request.form.get("name") or "").strip()
-            slot_url = (request.form.get("pkcs11_url") or "").strip()
-            description = (request.form.get("description") or "").strip()[:200]
-            is_default = bool(request.form.get("is_default"))
-            if not name or not slot_url:
-                flash("Slot name and PKCS#11 URL are required", "error")
-            else:
-                try:
-                    hsm.parse_pkcs11_url(slot_url)
-                except ValueError as e:
-                    flash(f"Invalid PKCS#11 URL: {e}", "error")
-                else:
-                    if hsm.has_inline_pin(slot_url):
-                        log.warning("HSM slot %r uses inline pin-value (stored in DB)", name)
-                    try:
-                        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-                            cur.execute(
-                                "SELECT api.hsm_slot_upsert(%s::uuid, %s, %s, %s, %s) AS id",
-                                (slot_id, name, slot_url, description, is_default),
-                            )
-                        crypto.clear_slot_url_cache()
-                        with db.connect_admin() as conn, conn.cursor() as cur:
-                            audit.log_org(
-                                cur,
-                                action="hsm_slot_added" if slot_id is None else "hsm_slot_edited",
-                                detail=f"name={name} inline_pin={hsm.has_inline_pin(slot_url)}",
-                            )
-                            conn.commit()
-                        flash("HSM slot saved" + (" (warning: inline PIN stored in database)" if hsm.has_inline_pin(slot_url) else ""), "ok")
-                    except Exception as e:
-                        flash(f"HSM slot save failed: {e}", "error")
         elif action == "hsm_slot_delete":
             slot_id = (request.form.get("slot_id") or "").strip()
             if not slot_id:
@@ -493,10 +460,13 @@ def server_settings():
         elif action == "hsm_slot_test":
             slot_id = (request.form.get("slot_id") or "").strip()
             slot_url = None
-            with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+            with db.connect_admin() as conn, conn.cursor() as cur:
                 if slot_id:
-                    cur.execute("SELECT api.hsm_slot_url(%s::uuid) AS u", (slot_id,))
-                    slot_url = (cur.fetchone() or {}).get("u")
+                    cur.execute(
+                        "SELECT pkcs11_url FROM private.hsm_slots WHERE id = %s::uuid",
+                        (slot_id,),
+                    )
+                    slot_url = (cur.fetchone() or {}).get("pkcs11_url")
             if not slot_url:
                 flash("HSM slot not found", "error")
             else:
@@ -555,8 +525,6 @@ def server_settings():
             "user_reset_password": "users",
             "user_reset_2fa": "users",
             "hsm_migrate_all": "encryption",
-            "hsm_slot_add": "encryption",
-            "hsm_slot_edit": "encryption",
             "hsm_slot_delete": "encryption",
             "hsm_slot_test": "encryption",
             "hsm_slot_link": "encryption",
@@ -668,8 +636,17 @@ def server_settings():
         hsm_slots = []
         legacy_hsm_count = 0
         with db.connect_admin() as conn, conn.cursor() as cur:
-            cur.execute("SELECT * FROM api.list_hsm_slots()")
+            cur.execute("SELECT * FROM private.hsm_slots ORDER BY is_default DESC, name")
             hsm_slots = cur.fetchall() or []
+            cur.execute(
+                "SELECT hsm_slot_id, count(*) AS n "
+                "FROM private.project_crypto_keys "
+                "WHERE key_provider = 'hsm' AND hsm_slot_id IS NOT NULL "
+                "GROUP BY hsm_slot_id"
+            )
+            slot_counts = {row["hsm_slot_id"]: int(row["n"]) for row in cur.fetchall()}
+            for slot in hsm_slots:
+                slot["project_count"] = slot_counts.get(slot["id"], 0)
             cur.execute(
                 "SELECT count(*) AS n FROM private.project_crypto_keys "
                 "WHERE key_provider = 'hsm' AND hsm_slot_id IS NULL"
@@ -725,6 +702,13 @@ def hsm_slot_new_wizard():
         is_default = bool(request.form.get("is_default"))
         slot_id = (request.form.get("slot_id") or "").strip() or None
         force_save = action == "force_create"
+        if slot_id and not pkcs11_url:
+            with db.connect_admin() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pkcs11_url FROM private.hsm_slots WHERE id = %s::uuid",
+                    (slot_id,),
+                )
+                pkcs11_url = (cur.fetchone() or {}).get("pkcs11_url") or ""
         if not name or not pkcs11_url:
             return render_template(
                 "hsm_slot_new.html",
@@ -733,7 +717,7 @@ def hsm_slot_new_wizard():
                 description=description,
                 is_default=is_default,
                 test_result=None,
-                test_error="Name and PKCS#11 URL are required",
+                test_message="Name and PKCS#11 URL are required",
                 slot_id=slot_id,
             )
         try:
@@ -746,18 +730,18 @@ def hsm_slot_new_wizard():
                 description=description,
                 is_default=is_default,
                 test_result=False,
-                test_error=f"Invalid PKCS#11 URL: {e}",
+                test_message=f"Invalid PKCS#11 URL: {e}",
                 slot_id=slot_id,
             )
         test_ok = False
-        test_error = None
+        test_message = None
         try:
             ok, msg = hsm.test_connection_for_slot(pkcs11_url)
             test_ok = ok
-            test_error = None if ok else msg
+            test_message = msg
         except Exception as e:
             test_ok = False
-            test_error = str(e)
+            test_message = str(e)
         if action in ("create", "force_create") and (test_ok or force_save):
             try:
                 with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -790,33 +774,44 @@ def hsm_slot_new_wizard():
             description=description,
             is_default=is_default,
             test_result=test_ok,
-            test_error=test_error,
+            test_message=test_message,
             slot_id=slot_id,
         )
     slot_id = (request.args.get("slot_id") or "").strip() or None
     name = ""
     pkcs11_url = ""
+    pkcs11_url_display = ""
     description = ""
     is_default = False
+    project_count = 0
     if slot_id:
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM api.list_hsm_slots() WHERE id = %s::uuid",
-                (slot_id,),
-            )
+            cur.execute("SELECT * FROM api.list_hsm_slots() WHERE id = %s::uuid", (slot_id,))
             slot = cur.fetchone()
         if slot:
             name = slot["name"]
-            pkcs11_url = slot["pkcs11_url"]
+            pkcs11_url_display = hsm.redact_pkcs11_url(slot["pkcs11_url"])
             description = slot.get("description") or ""
             is_default = bool(slot.get("is_default"))
+            try:
+                with db.connect_admin() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT count(*) AS n FROM private.project_crypto_keys "
+                        "WHERE key_provider = 'hsm' AND hsm_slot_id = %s::uuid",
+                        (slot_id,),
+                    )
+                    project_count = int((cur.fetchone() or {}).get("n") or 0)
+            except Exception:
+                project_count = 0
     return render_template(
         "hsm_slot_new.html",
         name=name,
         pkcs11_url=pkcs11_url,
+        pkcs11_url_display=pkcs11_url_display,
         description=description,
         is_default=is_default,
+        project_count=project_count,
         test_result=None,
-        test_error=None,
+        test_message=None,
         slot_id=slot_id,
     )
