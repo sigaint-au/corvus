@@ -41,11 +41,17 @@ def test_live_health_endpoint():
 
 @pytest.mark.skipif(not _POSTGREST_URL, reason="LIVE_POSTGREST_URL is not configured")
 def test_live_hsm_rpc_is_not_anonymous():
-    """Verify anonymous callers cannot invoke the sensitive HSM slot RPC."""
+    """Verify anonymous callers cannot invoke sensitive HSM slot RPCs."""
     status, _ = _request(
         f"{_POSTGREST_URL}/rpc/list_hsm_slots",
         method="POST",
         body=b"{}",
+    )
+    assert status in (401, 404)
+    status, _ = _request(
+        f"{_POSTGREST_URL}/rpc/hsm_slot_url",
+        method="POST",
+        body=json.dumps({"p_slot_id": "00000000-0000-0000-0000-000000000000"}).encode(),
     )
     assert status in (401, 404)
 

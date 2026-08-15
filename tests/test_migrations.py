@@ -68,6 +68,19 @@ def test_hsm_hardening_migration_restricts_sensitive_access():
     assert "p_subject IS NOT NULL" in sql
 
 
+def test_rls_boundary_hardening_migration_closes_database_boundaries():
+    """0029 hardens default function grants and workflow invariants."""
+    sql = (migrations.MIGRATIONS_DIR / "0029_rls_boundary_hardening.sql").read_text()
+    assert "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA api FROM PUBLIC" in sql
+    assert "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA rbac FROM PUBLIC" in sql
+    assert "REVOKE SELECT ON api.machine_tokens FROM authenticated" in sql
+    assert "secret does not belong to request project" in sql
+    assert "new access requests must be pending and unresolved" in sql
+    assert "CREATE TRIGGER guard_secret_access_request" in sql
+    assert "CREATE TRIGGER validate_binding_scope" in sql
+    assert "role % cannot be assigned at scope %" in sql
+
+
 class TestPendingMigrations:
     def test_returns_unapplied_in_order(self, tmp_path):
         d = _write_migrations(tmp_path, {

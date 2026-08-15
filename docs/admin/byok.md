@@ -198,6 +198,9 @@ pkcs11:token=<label>;object=<KEK label>?module-path=/path/to/module.so&pin-sourc
 - **Rotate KEK** generates a fresh KEK and re-wraps the slot's projects. The
   confirm dialog shows the slot name.
 - **Delete** is blocked while projects still reference the slot.
+- Slot URLs and HSM PINs are not exposed through the PostgREST API. The database
+  revokes default `PUBLIC` function execution and only exposes non-sensitive
+  slot metadata to ordinary authenticated callers.
 - **Link legacy project(s)**: associates pre-slot HSM projects (created before
   named slots) with a slot whose KEK label matches — metadata only, no
   re-encryption. The slot must be reachable before linking.

@@ -178,6 +178,21 @@ Defined in `rbac.sql`.
 - A slot URL cannot change while project keys reference that slot. Use a new slot
   and migrate the projects instead.
 
+`0029_rls_boundary_hardening.sql` adds the remaining database-boundary controls:
+
+- `PUBLIC` function execution is revoked from the `api` schema; functions must
+  be explicitly granted to `anon`, `authenticated`, or `authenticator`.
+- `PUBLIC` function execution is also revoked from the `rbac` schema; only the
+  startup role-seeding function is granted to `authenticator`.
+- `machine_tokens.token_hash` is not selectable by `authenticated`; only token
+  metadata columns are exposed.
+- Access requests must reference a secret in the same project and cannot have
+  their identity fields rewritten after creation.
+- RBAC bindings enforce the same role/scope compatibility as the web UI.
+- All API tables use `FORCE ROW LEVEL SECURITY`. PostgreSQL superusers still
+  bypass RLS, so user-scoped application code must use `db.as_user()` rather
+  than `db.connect_admin()`.
+
 ---
 
 ## RLS policies

@@ -28,7 +28,7 @@ _env_migrations_dir = os.environ.get("MIGRATIONS_DIR", "")
 MIGRATIONS_DIR = (
     Path(_env_migrations_dir)
     if _env_migrations_dir
-    else Path(__file__).resolve().parent.parent / "db" / "migrations"
+    else Path(__file__).resolve().parents[2] / "db" / "migrations"
 )
 
 # Baseline migrations are applied by docker-entrypoint on a fresh volume and

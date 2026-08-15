@@ -93,8 +93,10 @@ pytest -m live tests/test_live_api.py
 `LIVE_API_JWT` must be a user JWT from `/api/token`; use a non-global-admin JWT
 for the URL-redaction assertion. Set `LIVE_API_JWT_IS_GLOBAL_ADMIN=1` only when
 the JWT belongs to a global admin. The live tests verify the health endpoint,
-anonymous denial of the sensitive HSM RPC, authenticated PostgREST access
-without HSM URLs, and optional machine-token project access.
+anonymous denial of both sensitive HSM RPCs, authenticated PostgREST access
+without HSM URLs, and optional machine-token project access. Migration assertion
+tests cover the database triggers and grants; a live PostgreSQL run is still
+required to verify effective ACLs and RLS behavior.
 Run `scripts/seed_mock.py` in the app container first; it prints the machine
 API token and project reference for the optional test.
 

@@ -15,6 +15,7 @@ from core.config import DATABASE_ADMIN_URL, DATABASE_URL, JWT_SECRET
 
 # ── Connection pools (admin only; user connections stay direct) ──────────
 _admin_pool = None
+_admin_pool_opened = False
 
 try:
     from psycopg_pool import ConnectionPool
@@ -33,9 +34,10 @@ except ImportError:
 
 def _ensure_admin_pool():
     """Lazily open the admin pool on first use (avoids connecting at import)."""
-    global _admin_pool
-    if _admin_pool is not None and not _admin_pool._opened:
+    global _admin_pool_opened
+    if _admin_pool is not None and not _admin_pool_opened:
         _admin_pool.open()
+        _admin_pool_opened = True
     return _admin_pool
 
 
@@ -45,10 +47,11 @@ def close_pools():
     Example:
         >>> close_pools()
     """
-    global _admin_pool
+    global _admin_pool, _admin_pool_opened
     if _admin_pool is not None:
         _admin_pool.close()
         _admin_pool = None
+        _admin_pool_opened = False
 
 
 def connect(autocommit=False):
