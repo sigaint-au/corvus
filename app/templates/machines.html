@@ -5,7 +5,23 @@
   <h1>Machine accounts</h1>
 </div>
 {% if not team %}
-<p class="empty">Select a team in the sidebar.</p>
+{% if nav_teams %}
+<p class="empty">
+  Select a team to view machine accounts.
+  <form method="post" action="{{ url_for('select_team') }}" class="inline">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
+    <select name="team_id" onchange="this.form.submit()" aria-label="Select a team">
+      <option value="" selected disabled>Choose a team…</option>
+      {% for t in nav_teams %}
+      <option value="{{ t.id }}">{{ t.name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</p>
+{% else %}
+<p class="empty">No teams yet. Ask a team administrator to invite you or contact your administrator for access.</p>
+{% endif %}
 {% else %}
 <p class="page-desc muted">Team: <strong>{{ team.name }}</strong></p>
 <section class="list-panel">
@@ -34,7 +50,7 @@
 </table>
 </div>
 {% else %}
-<p class="empty">No machine accounts. Create one on a project page.</p>
+<p class="empty">No machine accounts. <a href="{{ url_for('projects_list') }}">Create one on a project page</a>.</p>
 {% endif %}
 </section>
 {% endif %}

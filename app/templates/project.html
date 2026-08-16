@@ -9,7 +9,7 @@
 {% include "partials/breadcrumb.html" %}
 <div class="page-head"><h1>{{ project.name }}</h1></div>
 {% if project.description %}
-<p class="page-desc">{{ project.description }}</p>
+<p class="page-desc">{{ project.description }} <span class="muted">· Project ID: <code class="k">{{ project.id }}</code></span></p>
 {% elif can_admin or can_settings %}
 <p class="page-desc muted">
   No description yet -
@@ -21,9 +21,11 @@
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
     </svg>
   </a>
+  · Project ID: <code class="k">{{ project.id }}</code>
 </p>
-{% endif %}
+{% else %}
 <p class="page-desc muted">Project ID: <code class="k">{{ project.id }}</code></p>
+{% endif %}
 
 {% if new_token %}
 <div class="token-once">

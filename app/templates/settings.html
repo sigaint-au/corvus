@@ -18,7 +18,7 @@
 <div class="page-panel">
 
 {% if active_tab == 'general' %}
-<section>
+<section class="list-panel">
   <h2>Server URL</h2>
   <p class="muted">
     Public base URL of this application (no trailing slash). Used for OIDC redirect URIs
@@ -35,7 +35,7 @@
   </form>
 </section>
 
-<section>
+<section class="list-panel">
   <h2>Account registration</h2>
   <p class="muted">
     Control whether new local accounts can be created at <code>/register</code>.
@@ -53,7 +53,7 @@
   </form>
 </section>
 
-<section>
+<section class="list-panel">
   <h2>Team creation</h2>
   <p class="muted">
     When disabled, only global admins can create teams. Existing teams are unchanged.
@@ -70,7 +70,7 @@
   </form>
 </section>
 
-<section>
+<section class="list-panel">
   <h2>Two-factor authentication</h2>
   <p class="muted">
     Any user can enable TOTP. When enforced below, global admins must enroll and can't disable 2FA.
@@ -133,7 +133,7 @@
 </section>
 
 {% elif active_tab == 'branding' %}
-<section>
+<section class="list-panel">
   <h2>Branding</h2>
   <p class="muted">
     Product name shown in the sidebar, login screen, and page titles.
@@ -166,7 +166,7 @@
 </section>
 
 {% elif active_tab == 'banner' %}
-<section>
+<section class="list-panel">
   <h2>Classification banner</h2>
   <p class="muted">Shown at the top of every page when enabled.</p>
   <form method="post" id="banner-form">
@@ -257,7 +257,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 </script>
 
 {% elif active_tab == 'users' %}
-<section>
+<section class="list-panel">
   <h2>Platform users</h2>
   <p class="muted">
     All accounts on this server. Disable blocks sign-in and revokes sessions.
@@ -359,7 +359,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 </section>
 
 {% elif active_tab == 'admins' %}
-<section>
+<section class="list-panel">
   <h2>Global admins</h2>
   <p class="muted">Global admins can access every team, project, and server settings.</p>
   {% set admin_users = users|selectattr('is_global_admin')|list %}
@@ -406,7 +406,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 </section>
 
 {% elif active_tab == 'ldap' %}
-<section>
+<section class="list-panel">
   <h2>LDAP authentication</h2>
   <p class="muted page-desc">
     Directory login alongside local accounts. Groups are read on each sign-in.
@@ -497,7 +497,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   </form>
 </section>
 
-<section>
+<section class="list-panel">
   <h2>LDAP group → roles</h2>
   <p class="muted">
     Map directory groups to roles. Matching groups sync global admin on login.
@@ -543,7 +543,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 </section>
 
 {% elif active_tab == 'oidc' %}
-<section>
+<section class="list-panel">
   <h2>OIDC / SSO</h2>
   <p class="muted page-desc">
     Authorization-code login (Keycloak and other OIDC providers). Accounts are linked by
@@ -620,7 +620,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     <p class="form-actions"><button type="submit">Save OIDC settings</button></p>
   </form>
 </section>
-<section>
+<section class="list-panel">
   <h2>OIDC group → roles</h2>
   <p class="muted">
     Map IdP groups (or realm roles) to server roles. Matching groups sync global admin on login.
@@ -664,7 +664,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
     <button type="submit">Add map</button>
   </form>
 </section>
-<section>
+<section class="list-panel">
   <h2>OIDC client checklist</h2>
   <p class="muted">
     Works with any OpenID Connect provider (Keycloak, Authentik, Okta, Azure AD, etc.).
@@ -687,7 +687,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
 </section>
 
 {% elif active_tab == 'email' %}
-<section>
+<section class="list-panel">
   <h2>Email (SMTP)</h2>
   <p class="muted">
     Outbound mail for password reset links and optional login alerts.
@@ -751,7 +751,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   </form>
 </section>
 
-<section>
+<section class="list-panel">
   <h2>Send test email</h2>
   <p class="muted">Uses the saved SMTP settings. Save first if you just changed them.</p>
   <form method="post" class="row">
@@ -831,7 +831,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
         <td class="acts-menu">
           {% set _menu = 'slot-menu-' ~ slot.id %}
           <ot-dropdown>
-            <button type="button" class="ghost icon" popovertarget="{{ _menu }}" aria-label="Actions for {{ slot.name }}">
+            <button type="button" class="ghost icon" popovertarget="{{ _menu }}" title="Actions for {{ slot.name }}" aria-label="Actions for {{ slot.name }}">
               <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
                 <circle cx="8" cy="3" r="1.5"/>
                 <circle cx="8" cy="8" r="1.5"/>
@@ -961,7 +961,7 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
           {% if p.provider == 'local' or (p.provider == 'hsm' and p.pending) %}
           {% set _menu = 'pp-menu-' ~ p.project_id %}
           <ot-dropdown>
-            <button type="button" class="ghost icon" popovertarget="{{ _menu }}" aria-label="Actions for {{ p.project_name }}">
+            <button type="button" class="ghost icon" popovertarget="{{ _menu }}" title="Actions for {{ p.project_name }}" aria-label="Actions for {{ p.project_name }}">
               <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
                 <circle cx="8" cy="3" r="1.5"/>
                 <circle cx="8" cy="8" r="1.5"/>
