@@ -28,10 +28,9 @@ from lib.users import user_email
 log = logging.getLogger(__name__)
 
 SETTINGS_CATEGORIES = [
-    ("system", "System", [("general", "General"), ("branding", "Branding"), ("banner", "Classification")]),
+    ("system", "System", [("general", "General"), ("branding", "Branding"), ("banner", "Classification"), ("email", "Email"), ("encryption", "Encryption")]),
     ("access", "Access", [("admins", "Admins"), ("users", "Users")]),
     ("authentication", "Authentication", [("ldap", "LDAP"), ("oidc", "OIDC / SSO")]),
-    ("operations", "Operations", [("email", "Email"), ("encryption", "Encryption")]),
 ]
 ALL_TABS = tuple(t for _, _, subs in SETTINGS_CATEGORIES for t, _ in subs)
 TAB_CATEGORY = {t: c for c, _, subs in SETTINGS_CATEGORIES for t, _ in subs}
