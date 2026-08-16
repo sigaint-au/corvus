@@ -47,6 +47,14 @@ def eso_get_secret(project_ref, key):
             pid = _resolve_project_ref(cur, project_ref, kind=kind, thash=thash)
             if not pid:
                 return jsonify({"error": "unauthorized"}), 401
+            # Defense in depth: reject service-read tokens at the app layer too.
+            cur.execute(
+                "SELECT private.machine_role(%s::uuid, %s) AS role",
+                (pid, thash),
+            )
+            mrole = (cur.fetchone() or {}).get("role")
+            if mrole == "service-read":
+                return jsonify({"error": "token does not have reveal access"}), 403
             cur.execute(
                 "SELECT * FROM private.machine_get_row(%s::uuid, %s, %s)",
                 (pid, thash, key),
@@ -214,6 +222,14 @@ def eso_list_secrets(project_ref):
                 )
                 conn.commit()
                 return jsonify({"items": [_meta_item(r) for r in rows]})
+            # Defense in depth: reject service-read for bulk value listing.
+            cur.execute(
+                "SELECT private.machine_role(%s::uuid, %s) AS role",
+                (pid, thash),
+            )
+            mrole = (cur.fetchone() or {}).get("role")
+            if mrole == "service-read":
+                return jsonify({"error": "token does not have reveal access"}), 403
             cur.execute(
                 "SELECT * FROM private.machine_list_enc(%s::uuid, %s)",
                 (pid, thash),

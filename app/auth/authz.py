@@ -1,4 +1,5 @@
 """Auth decorators, admin checks, CSRF."""
+import logging
 import secrets
 from functools import wraps
 from urllib.parse import urlsplit
@@ -6,6 +7,8 @@ from urllib.parse import urlsplit
 from flask import abort, current_app, flash, redirect, request, session, url_for
 
 from core import db
+
+log = logging.getLogger(__name__)
 
 
 # Endpoints allowed while pending 2FA challenge or forced TOTP enrollment
@@ -246,7 +249,9 @@ def is_account_disabled(user_id: str) -> bool:
 
     Returns:
         ``True`` if the user row has a non-null ``disabled_at``; ``False``
-        for missing users, empty ids, or DB errors.
+        for missing users or empty ids. On DB errors, returns ``True``
+        (fail-closed) so a database outage cannot allow disabled
+        accounts to access the app.
 
     Example:
         >>> if is_account_disabled(uid):
@@ -263,7 +268,10 @@ def is_account_disabled(user_id: str) -> bool:
             row = cur.fetchone()
             return bool(row and row.get("disabled_at"))
     except Exception:
-        return False
+        # Fail closed: treat as disabled when the DB is unreachable so
+        # a database outage cannot allow disabled accounts to access the app.
+        log.warning("is_account_disabled DB error for %s — failing closed", user_id)
+        return True
 
 
 def csrf_token() -> str:
@@ -290,7 +298,8 @@ def csrf_protect():
     """Reject mutating requests without a valid session CSRF token.
 
     No-op for safe methods, ``/eso/`` (Bearer machine/PAT secret API),
-    ``/api/token``, and unit tests unless ``CSRF_TESTING`` is enabled.
+    ``/api/token``, ``/api/v1/manage`` (Bearer PAT management API),
+    and unit tests unless ``CSRF_TESTING`` is enabled.
     Compares ``session["_csrf"]`` to form ``_csrf`` or header ``X-CSRF-Token``.
 
     Returns:
@@ -309,6 +318,11 @@ def csrf_protect():
     # PAT exchange / JSON API token minting is GET-only; keep path free for future POSTs
     if request.path.startswith("/api/token"):
         return
+    # Management API (PAT Bearer tokens — not session-cookie CSRF surface)
+    if request.path.startswith("/api/v1/manage"):
+        auth = request.headers.get("Authorization") or ""
+        if auth.lower().startswith("bearer "):
+            return
     # Unit tests skip unless CSRF_TESTING is set
     if current_app.config.get("TESTING") and not current_app.config.get("CSRF_TESTING"):
         return

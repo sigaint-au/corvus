@@ -138,8 +138,15 @@ transactional outbox if that failure mode must be eliminated.
    - `pat_…` → user id → `db.as_user()` → RLS.
 3. Machine helpers gate on `auth_machine(project, hash)` (validity + expiry)
    and the token role (`service-read`/`service-reveal`/`service-write`).
-4. Secret values are decrypted with `MASTER_KEY` and returned as plaintext.
+   `service-read` tokens are rejected at both the DB function level
+   (``machine_get_row`` / ``machine_list_enc`` return no rows) and the app
+   layer (explicit 403 before decryption) — they can only list metadata.
+4. Secret values are decrypted with the project DEK (or ``MASTER_KEY``)
+   and returned as plaintext. Only ``service-reveal`` and ``service-write``
+   tokens receive plaintext.
 5. Reveals are audited.
+6. Management API (``/api/v1/manage``) POST/DELETE/PATCH routes are
+   CSRF-exempt when a Bearer token is present (PAT auth, not session cookie).
 
 ---
 

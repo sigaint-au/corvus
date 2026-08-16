@@ -30,7 +30,7 @@ class TestESO:
     def test_get_secret_ok(self):
         enc = crypto.encrypt('val')
         sid = uuid4()
-        fo = [{'ok': True}, {'id': sid, 'key': 'KEY', 'value_enc': enc, 'note': 'n', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None}, {'label': 'eso:ss_testtoke'}]
+        fo = [{'ok': True}, {'role': 'service-reveal'}, {'id': sid, 'key': 'KEY', 'value_enc': enc, 'note': 'n', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None, 'crypto_provider': 'master'}, {'label': 'eso:ss_testtoke'}]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
@@ -49,12 +49,32 @@ class TestESO:
         assert any(('revealed' in p for p in audit_params))
 
     def test_get_secret_not_found(self):
-        fo = [{'ok': True}, None]
+        fo = [{'ok': True}, {'role': 'service-reveal'}, None]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
             r = self.client.get(f'/eso/v1/projects/{self.pid}/secrets/MISSING', headers={'Authorization': 'Bearer ss_x'})
         assert r.status_code == 404
+
+    def test_get_secret_service_read_forbidden(self):
+        """service-read tokens must not reveal plaintext values."""
+        fo = [{'ok': True}, {'role': 'service-read'}]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, 'connect', return_value=conn):
+            r = self.client.get(f'/eso/v1/projects/{self.pid}/secrets/KEY', headers={'Authorization': 'Bearer ss_read'})
+        assert r.status_code == 403
+        assert 'reveal' in r.get_json().get('error', '')
+
+    def test_list_service_read_forbidden(self):
+        """service-read tokens must not bulk-list plaintext values."""
+        fo = [{'ok': True}, {'label': 'eso:ss_ro'}, {'role': 'service-read'}]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, 'connect', return_value=conn):
+            r = self.client.get(f'/eso/v1/projects/{self.pid}/secrets', headers={'Authorization': 'Bearer ss_ro'})
+        assert r.status_code == 403
+        assert 'reveal' in r.get_json().get('error', '')
 
     def test_list_unauthorized(self):
         conn, _ = _conn(fetchone={'ok': False})
@@ -63,9 +83,9 @@ class TestESO:
         assert r.status_code == 401
 
     def test_list_ok(self):
-        fo = [{'ok': True}, {'label': 'eso:ss_ok'}]
+        fo = [{'ok': True}, {'label': 'eso:ss_ok'}, {'role': 'service-reveal'}]
         enc = crypto.encrypt('v1')
-        conn, cur = _conn(fetchall=[{'key': 'A', 'value_enc': enc}])
+        conn, cur = _conn(fetchall=[{'key': 'A', 'value_enc': enc, 'crypto_provider': 'master'}])
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
             r = self.client.get(f'/eso/v1/projects/{self.pid}/secrets', headers={'Authorization': 'Bearer ss_ok'})
@@ -191,6 +211,28 @@ class TestESO:
                 r = self.client.post(f'/eso/v1/projects/{self.pid}/secrets', json={'key': 'K', 'value': 'v'}, headers={'Authorization': 'Bearer ss_write'})
             assert r.status_code != 400
             assert r.status_code == 200
+        finally:
+            store.app.config['CSRF_TESTING'] = False
+
+    def test_mgmt_post_exempt_from_csrf_with_bearer(self):
+        """Management API POST with Bearer token must not require session CSRF."""
+        store.app.config['CSRF_TESTING'] = True
+        try:
+            uid = str(uuid4())
+            tid = uuid4()
+            conn, cur = _conn()
+            cur.fetchone.side_effect = [
+                {'id': tid},  # _resolve_team
+                {'r': 'team-owner'},  # api.team_role
+                {'id': str(uuid4())},  # lookup_user_id
+            ]
+            with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+                r = self.client.post(
+                    f'/api/v1/manage/teams/{tid}/members',
+                    json={'email': 'u@x.com', 'role': 'team-member'},
+                    headers={'Authorization': 'Bearer pat_csrf_test1234'},
+                )
+            assert r.status_code != 400, f"CSRF blocked PAT POST: {r.status_code}"
         finally:
             store.app.config['CSRF_TESTING'] = False
 
