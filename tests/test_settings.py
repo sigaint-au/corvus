@@ -8,6 +8,7 @@ import pytest
 
 import app as store
 from auth import authz
+from core import cache
 from core import config
 import crypto
 from core import db
@@ -93,6 +94,31 @@ class TestSettings:
             r = self.client.get('/settings?tab=admins')
         assert r.status_code == 200
         assert b'Global admins' in r.data
+
+    def test_settings_health_tab(self):
+        with self.client.session_transaction() as s:
+            s['user_id'] = self.uid
+            s['email'] = 'admin@ex.com'
+            s['is_global_admin'] = True
+        conn, _ = _conn(fetchone={'v': 'PostgreSQL 16.1 on x86_64', 'db': 'secrets', 'usr': 'admin'}, fetchall=[])
+        with patch.object(db, 'as_user', return_value=_conn(fetchall=[])[0]), patch.object(db, 'connect_admin', return_value=conn), patch.object(authz, 'is_global_admin', return_value=True), patch.object(settings_svc, 'get_settings', return_value={}), patch.object(settings_svc, 'classification', return_value={'enabled': False, 'text': '', 'color': '#000', 'fg': '#fff'}), patch.object(cache, 'redis_client', return_value=None):
+            r = self.client.get('/settings?tab=health')
+        assert r.status_code == 200
+        assert b'Server health' in r.data
+        assert b'PostgreSQL' in r.data
+        assert b'Redis' in r.data
+        assert b'Test connection' in r.data
+        assert b'not configured' in r.data
+
+    def test_health_test_redis_post_redirects(self):
+        with self.client.session_transaction() as s:
+            s['user_id'] = self.uid
+            s['email'] = 'admin@ex.com'
+            s['is_global_admin'] = True
+        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(cache, 'redis_client', return_value=None), patch.object(db, 'connect_admin', return_value=_conn(fetchall=[])[0]):
+            r = self.client.post('/settings', data={'action': 'health_test_redis'}, follow_redirects=False)
+        assert r.status_code == 302
+        assert 'tab=health' in r.location
 
     def test_save_classification(self):
         with self.client.session_transaction() as s:

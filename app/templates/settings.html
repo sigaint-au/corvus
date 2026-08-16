@@ -1021,6 +1021,106 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   })();
   </script>
 {% endif %}
+
+{% if active_tab == 'health' and health_probe %}
+<section class="crypto-panel">
+  <div class="section-head">
+    <h2>Server health</h2>
+  </div>
+  <div class="table">
+    <table>
+      <tbody>
+        <tr><th scope="row">Uptime</th><td>{{ health_probe.uptime }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="crypto-panel">
+  <div class="section-head">
+    <div>
+      <h2>PostgreSQL</h2>
+      <p class="muted">Admin connection used by settings, schema, and audit.</p>
+    </div>
+    <form method="post">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="health_test_postgres">
+      <button type="submit" class="button outline small">Test connection</button>
+    </form>
+  </div>
+  <div class="status-row">
+    {% if health_probe.postgres.ok %}
+    <span class="badge" data-variant="success">Connected</span>
+    {% else %}
+    <span class="badge" data-variant="danger">Unreachable</span>
+    {% endif %}
+    <code class="k">{{ health_probe.postgres.detail }}</code>
+  </div>
+</section>
+
+<section class="crypto-panel">
+  <div class="section-head">
+    <div>
+      <h2>Redis</h2>
+      <p class="muted">Optional shared cache for DEK wrappers and OIDC discovery.</p>
+    </div>
+    <form method="post">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="health_test_redis">
+      <button type="submit" class="button outline small">Test connection</button>
+    </form>
+  </div>
+  <div class="status-row">
+    {% if health_probe.redis.ok %}
+    <span class="badge" data-variant="success">Connected</span>
+    {% elif 'not configured' in health_probe.redis.detail %}
+    <span class="badge" data-variant="secondary">Not configured</span>
+    {% else %}
+    <span class="badge" data-variant="danger">Unreachable</span>
+    {% endif %}
+    <code class="k">{{ health_probe.redis.detail }}</code>
+  </div>
+</section>
+
+<section class="crypto-panel">
+  <div class="section-head">
+    <div>
+      <h2>HSM slots</h2>
+      <p class="muted">PKCS#11 tokens holding project key-encryption keys.</p>
+    </div>
+    <form method="post">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="health_test_hsm">
+      <button type="submit" class="button outline small">Test all slots</button>
+    </form>
+  </div>
+  {% if health_probe.hsm.slots %}
+  <div class="table"><table>
+    <thead><tr><th>Slot</th><th>Status</th><th>Details</th></tr></thead>
+    <tbody>
+    {% for slot in health_probe.hsm.slots %}
+      <tr>
+        <td>
+          {{ slot.name }}
+          {% if slot.is_default %}<span class="badge" data-variant="primary">default</span>{% endif %}
+        </td>
+        <td>
+          {% if slot.ok %}
+          <span class="badge" data-variant="success">Connected</span>
+          {% else %}
+          <span class="badge" data-variant="danger">Unreachable</span>
+          {% endif %}
+        </td>
+        <td class="muted col-note">{{ slot.detail }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No HSM slots configured.</p>
+  {% endif %}
+</section>
+{% endif %}
 </div>
 </div>
 {% endblock %}

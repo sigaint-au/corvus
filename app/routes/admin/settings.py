@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from flask import (
     flash,
     redirect,
@@ -13,6 +14,7 @@ from flask import (
 )
 from auth import authz
 import audit
+from core import cache
 from core import config
 import crypto
 from core import db
@@ -27,8 +29,112 @@ from auth import user_sessions
 from lib.users import user_email
 log = logging.getLogger(__name__)
 
+_PROCESS_START = time.time()
+
+
+def _format_uptime(start: float) -> str:
+    """Return human-readable uptime since the given process-start timestamp."""
+    delta = max(0, int(time.time() - start))
+    days, rem = divmod(delta, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or parts:
+        parts.append(f"{hours}h")
+    if minutes or parts:
+        parts.append(f"{minutes}m")
+    parts.append(f"{secs}s")
+    return " ".join(parts)
+
+
+def _db_probe() -> dict:
+    """Probe the Postgres admin connection and report version/database."""
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT version() AS v, current_database() AS db, current_user AS usr"
+            )
+            row = cur.fetchone() or {}
+        detail = (
+            f"{row.get('v', 'n/a')} — database {row.get('db', '?')} "
+            f"as {row.get('usr', '?')}"
+        )
+        return {"ok": True, "detail": detail}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)}
+
+
+def _redis_probe() -> dict:
+    """Probe Redis connectivity (returns ``ok=True`` with notice when disabled)."""
+    client = cache.redis_client()
+    if client is None:
+        return {"ok": False, "detail": "not configured (REDIS_URL unset)"}
+    try:
+        info = client.info("server")
+        version = (info or {}).get("redis_version", "unknown")
+        return {"ok": True, "detail": f"Redis {version} reachable"}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)}
+
+
+def _hsm_probe() -> tuple[list, dict]:
+    """Probe every configured HSM slot; returns ``(slots, summary)``."""
+    slots = []
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM private.hsm_slots ORDER BY is_default DESC, name")
+            slots = cur.fetchall() or []
+    except Exception as e:
+        return [], {"ok": False, "detail": f"slot list unavailable: {e}", "count": 0}
+    results = []
+    for slot in slots:
+        status = hsm.status_for_slot(slot["pkcs11_url"])
+        results.append(
+            {
+                "id": slot["id"],
+                "name": slot["name"],
+                "is_default": slot.get("is_default", False),
+                "ok": status.get("available") and not status.get("error"),
+                "detail": status.get("error") or (
+                    "connected, KEK present"
+                    if status.get("kek_exists")
+                    else "connected, KEK not present (created on first use)"
+                ),
+            }
+        )
+    ok = bool(slots) and all(r["ok"] for r in results)
+    detail = (
+        f"{len(slots)} slot(s), all reachable" if ok and slots
+        else f"{len(slots)} slot(s), some unreachable" if slots
+        else "no slots configured"
+    )
+    return results, {"ok": ok, "detail": detail, "count": len(slots)}
+
+
+def _health_probe() -> dict:
+    """Return live connectivity status for the server-health panel.
+
+    Returns:
+        Dict keyed by component (``postgres``, ``redis``, ``hsm``) with
+        ``ok``/``detail``, plus ``uptime`` text.
+
+    Example:
+        >>> probe = _health_probe()
+        >>> probe["postgres"]["ok"] in (True, False)
+        True
+    """
+    slots, hsm = _hsm_probe()
+    return {
+        "uptime": _format_uptime(_PROCESS_START),
+        "postgres": _db_probe(),
+        "redis": _redis_probe(),
+        "hsm": {**hsm, "slots": slots},
+    }
+
 SETTINGS_CATEGORIES = [
-    ("system", "System", [("general", "General"), ("branding", "Branding"), ("banner", "Classification"), ("email", "Email"), ("encryption", "Encryption")]),
+    ("system", "System", [("general", "General"), ("branding", "Branding"), ("banner", "Classification"), ("email", "Email"), ("encryption", "Encryption"), ("health", "Health")]),
     ("access", "Access", [("admins", "Admins"), ("users", "Users")]),
     ("authentication", "Authentication", [("ldap", "LDAP"), ("oidc", "OIDC / SSO")]),
 ]
@@ -532,6 +638,18 @@ def server_settings():
                     flash(f"HSM KEK rotated — re-wrapped {n} project key(s)", "ok")
                 except Exception as e:
                     flash(f"HSM KEK rotation failed: {e}", "error")
+        elif action in ("health_test_postgres", "health_test_redis", "health_test_hsm"):
+            probe = _health_probe()
+            if action == "health_test_postgres":
+                ok, detail = probe["postgres"]["ok"], probe["postgres"]["detail"]
+                label = "Postgres"
+            elif action == "health_test_redis":
+                ok, detail = probe["redis"]["ok"], probe["redis"]["detail"]
+                label = "Redis"
+            else:
+                ok, detail = probe["hsm"]["ok"], probe["hsm"]["detail"]
+                label = "HSM"
+            flash(f"{label}: {detail}", "ok" if ok else "error")
         # Stay on the relevant tab after save
         tab_for = {
             "server_url": "general",
@@ -559,6 +677,9 @@ def server_settings():
             "hsm_slot_test": "encryption",
             "hsm_slot_link": "encryption",
             "hsm_slot_rotate": "encryption",
+            "health_test_postgres": "health",
+            "health_test_redis": "health",
+            "health_test_hsm": "health",
             "token_policy": "general",
         }
         tab = tab_for.get(action, "general")
@@ -684,6 +805,7 @@ def server_settings():
             "legacy_hsm_count": legacy_hsm_count,
             "redact": hsm.redact_pkcs11_url,
         }
+    health_probe = _health_probe() if tab == "health" else None
     return render_template(
         "settings.html",
         settings=settings,
@@ -703,6 +825,7 @@ def server_settings():
         encryption_q=encryption_q,
         encryption_page=encryption_page,
         projects_pager=projects_pager,
+        health_probe=health_probe,
     )
 
 
