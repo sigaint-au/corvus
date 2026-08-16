@@ -655,17 +655,51 @@
     }
     /* Project encryption (settings + new-project wizard) */
     .crypto-panel .section-head { margin-bottom: .85rem; }
-    .crypto-status {
-      display: flex;
-      flex-direction: column;
-      gap: .55rem;
-    }
-    .crypto-status-row {
+    .crypto-overview {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--background);
+      padding: .95rem 1rem;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: .45rem .6rem;
+      justify-content: space-between;
+      gap: .6rem 1.25rem;
     }
+    .crypto-summary {
+      display: flex;
+      align-items: center;
+      gap: .8rem;
+      min-width: 0;
+    }
+    .crypto-provider-dot {
+      width: .6rem;
+      height: .6rem;
+      border-radius: 999px;
+      flex: 0 0 auto;
+      background: var(--muted-foreground);
+    }
+    .crypto-provider-dot.is-local { background: var(--accent-foreground, var(--foreground)); }
+    .crypto-provider-dot.is-hsm { background: var(--warning); }
+    .crypto-provider-dot.is-managed { background: var(--muted-foreground); }
+    .crypto-summary-body {
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+      min-width: 0;
+    }
+    .crypto-summary-body strong {
+      font-weight: 600;
+      font-size: .95rem;
+    }
+    .crypto-summary-body .muted { font-size: .85rem; }
+    .crypto-sync {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      font-size: .85rem;
+    }
+    .crypto-sync .muted { white-space: normal; }
     .crypto-panel .section-tools form.inline {
       display: inline-flex;
     }
@@ -679,14 +713,17 @@
     .crypto-actions {
       display: flex;
       flex-wrap: wrap;
-      align-items: end;
+      align-items: center;
       gap: .65rem .85rem;
       margin: .85rem 0 0;
+      padding-top: .85rem;
+      border-top: 1px solid var(--border);
     }
     .crypto-actions form.inline {
       display: inline-flex;
       align-items: end;
       gap: .5rem;
+      margin: 0;
     }
     .crypto-actions label {
       display: inline-flex;
@@ -710,28 +747,38 @@
       padding: 0;
       border: none;
     }
+    .crypto-choice legend {
+      padding: 0 0 .35rem;
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--muted-foreground);
+    }
     .radio-card {
       display: flex;
-      align-items: flex-start;
-      gap: .65rem;
+      align-items: center;
+      gap: .7rem;
       margin: 0;
-      padding: .75rem .85rem;
+      padding: .85rem 1rem;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--background);
       cursor: pointer;
+      transition: border-color .12s ease, background .12s ease, box-shadow .12s ease;
     }
+    .radio-card:hover { border-color: var(--ring); }
     .radio-card:has(input:checked) {
       border-color: var(--ring);
       background: var(--muted);
+      box-shadow: 0 0 0 1px var(--ring);
     }
     .radio-card:has(input:disabled) {
       opacity: .65;
       cursor: not-allowed;
     }
     .radio-card input[type="radio"] {
-      margin: .2rem 0 0;
+      margin: 0;
       flex: 0 0 auto;
+      accent-color: var(--ring);
     }
     .radio-card-body {
       display: flex;
@@ -741,8 +788,9 @@
     }
     .radio-card-body strong {
       font-weight: 600;
-      font-size: .925rem;
+      font-size: .95rem;
     }
+    .radio-card-body .muted { font-size: .85rem; }
     .token-policy-grid {
       gap: .75rem;
     }
@@ -803,11 +851,13 @@
       margin: .65rem 0 0;
     }
     .crypto-adopt .crypto-choice {
-      max-width: 28rem;
+      max-width: 34rem;
     }
     @media (max-width: 720px) {
       .field-grid { grid-template-columns: 1fr; }
       .field-grid > .span-2 { grid-column: auto; }
+      .crypto-overview { align-items: flex-start; }
+      .crypto-sync { width: 100%; }
     }
 
     .check-row {
