@@ -14,9 +14,17 @@
 -- ── machine_get_row: refuse service-read ──────────────────────────────
 --
 -- Input:  p_project (uuid), p_hash (text), p_key (text)
--- Output: TABLE(id, key, value_enc, note, kind, expires_at, created_at, updated_at)
+-- Output: TABLE(id, key, value_enc, note, kind, expires_at, created_at, updated_at, crypto_provider)
 --         — empty when token is service-read, invalid, or key not allowed
 -- Example: SELECT * FROM private.machine_get_row('<uuid>', '<hash>', 'API_KEY');
+--
+-- The baseline squashed 0001 already shipped a machine_get_row returning the
+-- rotation_* columns; this migration replaces it with a narrower signature
+-- that adds the service-read gate. CREATE OR REPLACE rejects return-type
+-- changes, so drop the old signature first (same pattern as 0001's own
+-- crypto_provider change).
+
+DROP FUNCTION IF EXISTS private.machine_get_row(uuid, text, text);
 
 CREATE OR REPLACE FUNCTION private.machine_get_row(p_project uuid, p_hash text, p_key text)
 RETURNS TABLE (
