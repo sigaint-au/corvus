@@ -90,7 +90,7 @@ DEFAULT_SETTINGS = {
     "server_url": "",
     # Product branding (sidebar, page titles, mail/TOTP issuer fallbacks)
     "brand_name": "Sigaint",
-    "brand_tagline": "Secret Server",
+    "brand_tagline": "Secret Server v0.1.0",
     "classification_enabled": "false",
     "classification_text": "OFFICIAL",
     "classification_color": "#677381",
