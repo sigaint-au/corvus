@@ -15,7 +15,7 @@ from .helpers import (
     _audit,
     _machine_actor,
     _meta_item,
-    _parse_auth,
+    _require_auth,
     _parse_expires_from_body,
     _pat_can_write,
     _require_machine_write,
@@ -85,9 +85,10 @@ def eso_patch_secret(project_ref, key):
         PATCH /eso/v1/projects/<project_ref>/secrets/API_KEY
         {"note": "rotated in CI", "expires_days": 90}
     """
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
     body = request.get_json(silent=True) or {}
     key = (key or "").strip()
     if not key:
@@ -285,9 +286,10 @@ def eso_delete_secret(project_ref, key):
         DELETE /eso/v1/projects/<project_ref>/secrets/API_KEY
         Authorization: Bearer ss_… | pat_…
     """
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
     key = (key or "").strip()
     if not key:
         return jsonify({"error": "key required"}), 400

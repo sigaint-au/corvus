@@ -11,7 +11,7 @@ from .helpers import (
     _machine_actor,
     _meta_item,
     _meta_list_query,
-    _parse_auth,
+    _require_auth,
     _resolve_project_ref,
 )
 
@@ -34,9 +34,10 @@ def eso_get_secret(project_ref, key):
         GET /eso/v1/projects/<project_ref>/secrets/<key>
         Authorization: Bearer ss_… | pat_…
     """
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
     key = (key or "").strip()
 
     if kind == "machine":
@@ -47,6 +48,14 @@ def eso_get_secret(project_ref, key):
             pid = _resolve_project_ref(cur, project_ref, kind=kind, thash=thash)
             if not pid:
                 return jsonify({"error": "unauthorized"}), 401
+            # Defense in depth: reject service-read tokens at the app layer too.
+            cur.execute(
+                "SELECT private.machine_role(%s::uuid, %s) AS role",
+                (pid, thash),
+            )
+            mrole = (cur.fetchone() or {}).get("role")
+            if mrole == "service-read":
+                return jsonify({"error": "token does not have reveal access"}), 403
             cur.execute(
                 "SELECT * FROM private.machine_get_row(%s::uuid, %s, %s)",
                 (pid, thash, key),
@@ -184,9 +193,10 @@ def eso_list_secrets(project_ref):
         GET /eso/v1/projects/<id>/secrets?meta=1&q=db
         Authorization: Bearer ss_… | pat_…
     """
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
     meta, q = _meta_list_query()
 
     if kind == "machine":
@@ -214,6 +224,14 @@ def eso_list_secrets(project_ref):
                 )
                 conn.commit()
                 return jsonify({"items": [_meta_item(r) for r in rows]})
+            # Defense in depth: reject service-read for bulk value listing.
+            cur.execute(
+                "SELECT private.machine_role(%s::uuid, %s) AS role",
+                (pid, thash),
+            )
+            mrole = (cur.fetchone() or {}).get("role")
+            if mrole == "service-read":
+                return jsonify({"error": "token does not have reveal access"}), 403
             cur.execute(
                 "SELECT * FROM private.machine_list_enc(%s::uuid, %s)",
                 (pid, thash),

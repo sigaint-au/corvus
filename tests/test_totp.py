@@ -68,7 +68,7 @@ class TestTotp:
         client = store.app.test_client()
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'A'})
-        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value='verify'):
+        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch.object(authz, 'is_account_disabled', return_value=False), patch('auth.totp_svc.needs_challenge', return_value='verify'):
             r = client.post('/login', data={'email': 'a@b.c', 'password': 'secret12'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/login/2fa' in r.location
@@ -85,7 +85,7 @@ class TestTotp:
             s['pending_2fa_email'] = 'a@b.c'
             s['pending_2fa_name'] = 'A'
             s['pending_2fa_admin'] = False
-        with patch('auth.totp_svc.verify_user_code', return_value=(True, 'totp')), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch('auth.user_sessions.create_session', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
+        with patch('auth.totp_svc.verify_user_code', return_value=(True, 'totp')), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_account_disabled', return_value=False), patch('auth.user_sessions.create_session', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = client.post('/login/2fa', data={'code': '123456'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/teams' in r.location
@@ -98,7 +98,7 @@ class TestTotp:
         client = store.app.test_client()
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid, 'email': 'admin@b.c', 'name': 'A'})
-        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=True), patch('auth.totp_svc.needs_challenge', return_value='enroll'), patch('auth.user_sessions.create_session', return_value=None):
+        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=True), patch.object(authz, 'is_account_disabled', return_value=False), patch('auth.totp_svc.needs_challenge', return_value='enroll'), patch('auth.user_sessions.create_session', return_value=None):
             r = client.post('/login', data={'email': 'admin@b.c', 'password': 'secret12'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/profile/2fa' in r.location

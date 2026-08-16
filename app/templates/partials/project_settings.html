@@ -1,0 +1,199 @@
+{% if can_admin %}
+<section>
+  <div class="section-head">
+    <h2>General</h2>
+    <p class="muted section-head-desc">Applied when new secrets are created in this project.</p>
+  </div>
+  <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="settings-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <fieldset class="field-group">
+      <legend>Project</legend>
+      <div class="field-grid">
+        <label class="span-2">Description
+          <input type="text" name="description" maxlength="500"
+                 value="{{ project.description or '' }}"
+                 placeholder="Short purpose for this project">
+          <span class="field-hint">Shown at the top of this project alongside its name.</span>
+        </label>
+      </div>
+    </fieldset>
+    <fieldset class="field-group">
+      <legend>Reveal access</legend>
+      <div class="field-grid">
+        <label class="check-row span-2">
+          <input type="checkbox" name="require_reveal_approval" value="1"
+                 {% if require_reveal_approval %}checked{% endif %}>
+          Require approval to reveal secrets
+        </label>
+        <label>Default access for new secrets
+          <select name="default_access_mode">
+            <option value="inherit" {% if (project.default_access_mode or 'inherit') == 'inherit' %}selected{% endif %}>
+              Inherit team / project roles
+            </option>
+            <option value="restricted" {% if project.default_access_mode == 'restricted' %}selected{% endif %}>
+              Restricted (role bindings only)
+            </option>
+          </select>
+        </label>
+        <span class="field-hint span-2">
+          The project default is a baseline: individual secrets can override it (require or exempt)
+          on their Access tab, and existing secrets keep their current mode.
+        </span>
+        <span class="field-hint span-2">
+          <strong>Inherit</strong> means new secrets follow team/project roles;
+          <strong>Restricted</strong> starts them locked to role bindings only.
+        </span>
+      </div>
+    </fieldset>
+    <p class="form-actions">
+      <button type="submit" class="button">Save changes</button>
+    </p>
+  </form>
+</section>
+{% endif %}
+{% if can_settings %}
+<section class="crypto-panel">
+  <div class="section-head">
+    <h2>Encryption</h2>
+  </div>
+
+  <div class="crypto-status">
+    <div class="crypto-status-row">
+      {% if project_crypto %}
+      <span class="badge" data-variant="success">Project key</span>
+      <span class="muted">
+        {% if project_crypto.key_provider == 'hsm' %}
+          HSM{% if project_crypto.hsm_slot_name %} · {{ project_crypto.hsm_slot_name }}{% elif project_crypto.hsm_slot_id is none %} · <span class="badge" data-variant="warning">no slot</span>{% endif %}{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
+        {% else %}
+          Local
+        {% endif %}
+        {% if project_crypto.created_at %} · {{ project_crypto.created_at.strftime('%Y-%m-%d') }}{% endif %}
+        {% if project_crypto.key_id %} · key <code class="k">{{ project_crypto.key_id|string|truncate(8, True, '') }}</code>{% endif %}
+      </span>
+      {% else %}
+      <span class="badge" data-variant="secondary">Managed</span>
+      <span class="muted">Server-wide key</span>
+      {% endif %}
+    </div>
+    <div class="crypto-status-row">
+      {% if project_crypto and not project_master_rows %}
+      <span class="badge" data-variant="success">In sync</span>
+      <span class="muted">All secrets use the project key</span>
+      {% elif project_master_rows %}
+      <span class="badge" data-variant="warning">{{ project_master_rows }} pending</span>
+      <span class="muted">Still on the server-wide key</span>
+      {% else %}
+      <span class="muted">New secrets use the server-wide key until you adopt a project key</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if project_crypto and not project_master_rows %}
+  <p class="field-hint">All secrets are encrypted with the project key. No action needed.</p>
+  {% endif %}
+
+  {% if can_manage_keys and project_crypto %}
+  <div class="crypto-actions">
+    {% if project_master_rows %}
+    <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
+          class="inline"
+          onsubmit="return confirm('Re-encrypt {{ project_master_rows }} secret(s) with the project key?');">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="adopt">
+      <input type="hidden" name="provider" value="{{ project_crypto.key_provider or 'local' }}">
+      {% if project_crypto.key_provider == 'hsm' and project_crypto.hsm_slot_id %}
+      <input type="hidden" name="hsm_slot" value="{{ project_crypto.hsm_slot_id }}">
+      {% endif %}
+      <button type="submit" class="button outline small">Re-encrypt {{ project_master_rows }}</button>
+    </form>
+    {% endif %}
+    {% if hsm_available and project_crypto.key_provider == 'local' %}
+    <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
+          class="inline"
+          onsubmit="return confirm('Migrate this project to an HSM-wrapped key? All secrets will be re-encrypted. The HSM must remain available for all future access.');">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="migrate">
+      <input type="hidden" name="provider" value="hsm">
+      {% if hsm_slots %}
+      <label>HSM slot
+        <select name="target_slot">
+          {% for s in hsm_slots %}
+          <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <button type="submit" class="button outline small">Migrate to HSM</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if can_manage_keys and not project_crypto %}
+  <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
+        class="crypto-adopt"
+        onsubmit="var p=this.querySelector('input[name=provider]:checked');var h=p&&p.value==='hsm';return confirm(h?'Create an HSM-wrapped project key and re-encrypt secrets onto it?':'Create a project key and re-encrypt secrets onto it?');">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="adopt">
+    <fieldset class="crypto-choice">
+      <legend class="sr-only">Key provider</legend>
+      <label class="radio-card">
+        <input type="radio" name="provider" value="local" checked>
+        <span class="radio-card-body">
+          <strong>Local</strong>
+          <span class="muted">Project key wrapped by the server</span>
+        </span>
+      </label>
+      {% if hsm_available %}
+      <label class="radio-card">
+        <input type="radio" name="provider" value="hsm">
+        <span class="radio-card-body">
+          <strong>HSM</strong>
+          <span class="muted">Project key wrapped by the HSM</span>
+        </span>
+      </label>
+      {% endif %}
+    </fieldset>
+    {% if hsm_slots %}
+    <label class="crypto-hsm-slot" data-hsm-slot hidden>HSM slot
+      <select name="hsm_slot">
+        {% for s in hsm_slots %}
+        <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <p class="form-actions">
+      <button type="submit" class="button">Adopt project key</button>
+    </p>
+  </form>
+  <script>
+  (function () {
+    var form = document.querySelector('.crypto-adopt');
+    if (!form) return;
+    var slot = form.querySelector('[data-hsm-slot]');
+    var radios = form.querySelectorAll('input[name="provider"]');
+    function sync() {
+      var hsm = form.querySelector('input[name="provider"]:checked');
+      if (slot) slot.hidden = !(hsm && hsm.value === 'hsm');
+    }
+    radios.forEach(function (r) { r.addEventListener('change', sync); });
+    sync();
+  })();
+  </script>
+  {% endif %}
+</section>
+{% endif %}
+{% if can_delete %}
+<section>
+  <div class="section-head">
+    <h2>Danger zone</h2>
+  </div>
+  <p class="muted">Delete this project and all secrets, audit history, and machine tokens. Irreversible.</p>
+  <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
+        onsubmit="return confirm('Delete project “{{ project.name }}” and all its data? This cannot be undone.')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <button type="submit" data-variant="danger">Delete project</button>
+  </form>
+</section>
+{% endif %}

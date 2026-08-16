@@ -1,3 +1,0 @@
--- Squashed no-op migration marker.
--- All schema, functions, policies, grants, and cleanup are in 0001_init.sql.
--- This file remains so Docker bootstrap and baseline version tracking keep their stable two-file contract.

@@ -1,0 +1,61 @@
+<section>
+  <h2>Pinned secrets</h2>
+  {% if pins %}
+  <div class="table"><table>
+    <thead>
+      <tr>
+        <th>Key</th>
+        <th>Project</th>
+        <th>Team</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in pins %}
+      <tr>
+        <td>
+          <a href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}">
+            <code>{{ s.key }}</code>
+          </a>
+        </td>
+        <td>{{ s.project_name }}</td>
+        <td class="muted">{{ s.team_name }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">Pin a secret from a project's secrets list.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Recently accessed</h2>
+  {% if recent %}
+  <div class="table"><table>
+    <thead>
+      <tr>
+        <th>Key</th>
+        <th>Project</th>
+        <th>Team</th>
+        <th>When</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in recent %}
+      <tr>
+        <td>
+          <a href="{{ url_for('project_detail', project_id=s.project_id, tab='secrets', q=s.key) }}">
+            <code>{{ s.key }}</code>
+          </a>
+        </td>
+        <td>{{ s.project_name }}</td>
+        <td class="muted">{{ s.team_name }}</td>
+        <td class="muted">{{ s.accessed_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No recent secret access yet.</p>
+  {% endif %}
+</section>

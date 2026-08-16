@@ -1,0 +1,69 @@
+<section>
+  <div class="section-head">
+    <h2>Audit log</h2>
+  </div>
+  <p class="muted">Who did what to secrets in this project, and when.</p>
+  <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="audit-filters" role="search">
+    <input type="hidden" name="tab" value="audit">
+    <fieldset class="group search-input">
+      {% include "partials/search_icon.html" %}
+      <input type="search" name="q" value="{{ search_q or '' }}"
+             placeholder="Search" autocomplete="off" aria-label="Search audit log">
+    </fieldset>
+    <label>Actor email
+      <input type="search" name="actor" value="{{ audit_actor or '' }}"
+             placeholder="e.g. alice@example.com" autocomplete="off">
+    </label>
+    <label>Action
+      <select name="action">
+        <option value="">All actions</option>
+        {% for a in audit_actions %}
+        <option value="{{ a }}" {% if audit_action == a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>From
+      <input type="date" name="since" value="{{ audit_since or '' }}">
+    </label>
+    <label>To
+      <input type="date" name="until" value="{{ audit_until or '' }}">
+    </label>
+    {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
+    <div class="audit-filter-actions">
+      <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}">Clear</a>
+    </div>
+    {% endif %}
+  </form>
+  {% if audit_log %}
+  <div class="table"><table class="audit-table">
+    <thead>
+      <tr>
+        <th>What happened</th>
+        <th>When</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for e in audit_log %}
+      <tr>
+        <td>
+          <span class="audit-summary">{{ e.summary }}</span>
+          <span class="audit-action audit-{{ e.action }}">{{ e.action }}</span>
+        </td>
+        <td class="muted" title="{{ e.created_at }}">{{ e.when_display }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% with pager=audit_pager %}
+    {% include "partials/pager.html" %}
+  {% endwith %}
+  {% else %}
+  <p class="empty">
+    {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
+    No audit events match these filters.
+    {% else %}
+    No audit events yet.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>

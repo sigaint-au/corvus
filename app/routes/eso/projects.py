@@ -7,7 +7,7 @@ from flask import (
     request,
 )
 from core import db
-from .helpers import _parse_auth
+from .helpers import _require_auth
 
 
 def eso_list_projects():
@@ -24,9 +24,10 @@ def eso_list_projects():
         GET /eso/v1/projects?q=ios
         Authorization: Bearer pat_…
     """
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
     if kind != "pat":
         return jsonify(
             {"error": "project list requires a personal access token (pat_…)"}

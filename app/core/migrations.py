@@ -5,9 +5,9 @@ order, by ``apply_pending()``. Applied versions and their checksums are
 recorded in ``private.schema_migrations`` (admin-only; the ``private`` schema
 is not exposed to PostgREST).
 
-The two baseline migrations (``0001_init.sql``, ``0002_rbac.sql``) are applied
-by ``docker-entrypoint-initdb.d`` on a fresh volume. On startup, if the schema
-already exists but the migrations table is empty, they are seeded as applied so
+The squashed baseline (``0001_init.sql``) is applied by
+``docker-entrypoint-initdb.d`` on a fresh volume. On startup, if the schema
+already exists but the migrations table is empty, it is seeded as applied so
 existing volumes never re-run baseline DDL; only additive migrations run.
 
 The caller is responsible for holding the ``pg_advisory_lock`` serialization
@@ -31,9 +31,9 @@ MIGRATIONS_DIR = (
     else Path(__file__).resolve().parents[2] / "db" / "migrations"
 )
 
-# Baseline migrations are applied by docker-entrypoint on a fresh volume and
-# must not be re-run on existing volumes (they contain non-idempotent DDL).
-BASELINE_VERSIONS = ("0001", "0002")
+# The baseline migration is applied by docker-entrypoint on a fresh volume and
+# must not be re-run on existing volumes (it contains non-idempotent DDL).
+BASELINE_VERSIONS = ("0001",)
 
 _MIGRATIONS_TABLE = "private.schema_migrations"
 

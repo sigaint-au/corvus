@@ -69,7 +69,7 @@ class TestMailer:
         client = store.app.test_client()
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'A'})
-        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(lockout, 'is_locked', return_value=False), patch.object(lockout, 'clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=True), patch('integrations.mailer.send_login_alert', return_value=(True, '')) as alert, patch.object(user_sessions, 'create_session', return_value=None):
+        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(lockout, 'is_locked', return_value=False), patch.object(lockout, 'clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch.object(authz, 'is_account_disabled', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=True), patch('integrations.mailer.send_login_alert', return_value=(True, '')) as alert, patch.object(user_sessions, 'create_session', return_value=None):
             r = client.post('/login', data={'email': 'a@b.c', 'password': 'secret12'}, follow_redirects=False)
         assert r.status_code == 302
         alert.assert_called_once()

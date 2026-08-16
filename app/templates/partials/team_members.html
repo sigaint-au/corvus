@@ -1,0 +1,129 @@
+<section>
+  <h2>Members</h2>
+  <p class="muted">People with a team role binding. Manage groups and advanced bindings under <a href="{{ url_for('team_detail', team_id=team.id, tab='access') if is_admin else '#' }}">Access</a>.</p>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('add_team_binding', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>User email
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="e.g. alice@example.com" autocomplete="off">
+    </label>
+    <label>Role
+      <select name="role">
+        {% for rname, label in team_role_dropdown|default([]) %}
+        {% if rname != 'team-owner' or my_role == 'team-owner' %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Add</button>
+  </form>
+  {% endif %}
+  {% if members %}
+  <div class="table">
+    <table>
+      <thead><tr><th>Member</th><th>Role</th><th>Created</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+      {% for b in members %}
+        <tr>
+          <td>
+            {{ b.subject_email or b.subject_id }}
+          </td>
+          <td>
+            <span class="badge" data-variant="secondary"
+                  title="{{ b.role_name }}">{{ b.role_short if b.role_short and b.role_short != b.role_name else b.role_name }}</span>
+          </td>
+          <td class="muted">{{ b.created_at|time_ago if b.created_at else '-' }}</td>
+          {% if is_admin %}
+          <td class="acts">
+            <form method="post"
+                  action="{{ url_for('remove_team_binding', team_id=team.id, user_id=b.subject_id) }}"
+                  class="inline"
+                  onsubmit="return confirm('Remove this member?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Remove</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No members yet.</p>
+  {% endif %}
+</section>
+
+{% if is_admin and active_tab == 'members' %}
+<section>
+  <h2>Invites &amp; join requests</h2>
+  <p class="muted">Share a link. Recipients sign in, request to join, and an owner approves.</p>
+  <form method="post" action="{{ url_for('create_team_invite', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Role
+      <select name="role">
+        {% for rname, label in team_role_dropdown|default([]) %}
+        {% if rname != 'team-owner' %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <label>Expires (days) <input type="number" name="expires_days" min="1" max="90" value="7"></label>
+    <button type="submit">Create invite link</button>
+  </form>
+  {% if invites %}
+  <div class="table"><table>
+    <thead><tr><th>Role</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for i in invites %}
+      <tr>
+        <td><span class="badge" data-variant="secondary">{{ i.role }}</span></td>
+        <td class="muted">{{ i.expires_at }}</td>
+        <td class="muted">{% if i.revoked_at %}revoked{% else %}active{% endif %}</td>
+        <td class="acts">
+          {% if not i.revoked_at %}
+          <form method="post" action="{{ url_for('revoke_team_invite', team_id=team.id, invite_id=i.id) }}"
+                class="inline" onsubmit="return confirm('Revoke this invite?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Revoke</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+
+  <h3>Pending requests</h3>
+  {% if join_requests %}
+  <div class="table"><table>
+    <thead><tr><th>User</th><th>Role</th><th>Requested</th><th></th></tr></thead>
+    <tbody>
+    {% for r in join_requests %}
+      <tr>
+        <td>{{ r.name or r.email }} <span class="muted">{{ r.email }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ r.role }}</span></td>
+        <td class="muted">{{ r.created_at }}</td>
+        <td class="acts">
+          <form method="post" action="{{ url_for('approve_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link">Approve</button>
+          </form>
+          <form method="post" action="{{ url_for('reject_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Reject</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No pending join requests.</p>
+  {% endif %}
+</section>
+{% endif %}

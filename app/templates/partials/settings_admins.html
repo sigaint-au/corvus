@@ -1,0 +1,46 @@
+<section class="list-panel">
+  <h2>Global admins</h2>
+  <p class="muted">Global admins can access every team, project, and server settings.</p>
+  {% set admin_users = users|selectattr('is_global_admin')|list %}
+  {% if admin_users %}
+  <div class="table"><table>
+    <thead>
+      <tr><th>User</th><th>Role</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for u in admin_users %}
+      <tr>
+        <td>{{ u.name or u.email }} <span class="muted">{{ u.email }}</span>
+          {% if u.auth_source %}<span class="muted">({{ u.auth_source }})</span>{% endif %}
+        </td>
+        <td>Global admin</td>
+        <td class="acts">
+          {% if u.id|string != session.user_id %}
+          <form method="post" class="inline" onsubmit="return confirm('Remove global admin?');">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="demote">
+            <input type="hidden" name="user_id" value="{{ u.id }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+          {% else %}
+          <span class="muted">you</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No global admins found.</p>
+  {% endif %}
+  <form method="post" class="row mt-1">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="promote">
+    <label class="flex-2">User email
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="e.g. alice@example.com" autocomplete="off">
+    </label>
+    <button type="submit">Make global admin</button>
+  </form>
+</section>
+

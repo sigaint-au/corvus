@@ -162,7 +162,7 @@ RBAC_RESOURCES = (
     "users",
     "*",
 )
-# Built-in role names (seeded in db/migrations/0002_rbac.sql) — keep in sync with rbac.ensure_builtin_roles
+# Built-in role names (seeded in db/migrations/0001_init.sql) — keep in sync with rbac.ensure_builtin_roles
 RBAC_BUILTIN_ROLES = (
     "global-admin",
     "audit-viewer",

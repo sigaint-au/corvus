@@ -1,0 +1,40 @@
+<section>
+  <div class="section-head">
+    <h2>Projects</h2>
+    <a href="{{ url_for('projects_list') }}" class="muted">All projects →</a>
+  </div>
+  {% if projects %}
+  <div class="table"><table>
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th>Team</th>
+        <th>Access</th>
+        <th>Secrets</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
+        <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}">{{ p.team_name }}</a></td>
+        <td>
+          {% if p.project_role %}
+          <span class="badge" data-variant="secondary" title="Project-level role">{{ p.project_role }}</span>
+          {% elif p.team_role %}
+          <span class="badge" data-variant="secondary" title="Via team membership">team {{ p.team_role }}</span>
+          {% elif user.is_global_admin %}
+          <span class="badge" data-variant="secondary">global admin</span>
+          {% else %}
+          <span class="muted">-</span>
+          {% endif %}
+        </td>
+        <td>{{ p.secret_count }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No projects available to you yet.</p>
+  {% endif %}
+</section>

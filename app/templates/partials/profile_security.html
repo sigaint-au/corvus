@@ -1,0 +1,224 @@
+<section>
+  <h2>API access</h2>
+  <p class="muted">Short-lived JWT for PostgREST (<code class="k">GET /api/token</code>).</p>
+  <label>Session JWT
+    <input type="text" id="session-jwt" class="session-jwt-field"
+           value="" readonly placeholder="Not loaded" autocomplete="off">
+  </label>
+  <p class="acts form-actions-tight">
+    <button type="button" class="link" id="show-session-jwt">Show</button>
+    <button type="button" class="link copy-btn" data-copy-target="session-jwt"
+            data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy</button>
+  </p>
+  <script>
+  (function () {
+    var btn = document.getElementById('show-session-jwt');
+    var inp = document.getElementById('session-jwt');
+    if (!btn || !inp) return;
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      fetch('{{ url_for("api_token") }}', {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function (data) {
+          inp.value = data.access_token || '';
+          if (window.ssToast) window.ssToast('JWT loaded');
+        })
+        .catch(function () {
+          if (window.ssToast) window.ssToast('Could not load JWT');
+        })
+        .finally(function () { btn.disabled = false; });
+    });
+  })();
+  </script>
+</section>
+
+{% if new_pat %}
+<div class="token-once">
+  <strong>New token (copy now)</strong>
+  <pre id="new-pat-value">{{ new_pat }}</pre>
+  <p class="form-actions form-actions-tight">
+    <button type="button" class="link copy-btn" data-copy-target="new-pat-value"
+            data-clear-seconds="0">Copy</button>
+  </p>
+</div>
+{% endif %}
+
+<section>
+  <h2>Personal access tokens</h2>
+  <p class="muted">Long-lived <code class="k">pat_…</code> tokens for CLI. Exchange via <code class="k">/api/token</code>.</p>
+  <form method="post" action="{{ url_for('create_personal_token') }}" class="row row-end">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="flex-2">Name
+      <input type="text" name="name" required maxlength="80" placeholder="laptop-cli" autocomplete="off">
+    </label>
+    <label>Expires (days)
+      <input type="number" name="expires_days" min="1" max="3650" placeholder="never">
+    </label>
+    <button type="submit">Create token</button>
+  </form>
+  {% if personal_tokens %}
+  <div class="table"><table class="table-spaced">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Prefix</th>
+        <th>Created</th>
+        <th>Expires</th>
+        <th>Last used</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in personal_tokens %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td><code class="k">{{ t.token_prefix }}…</code></td>
+        <td class="muted" title="{{ t.created_at }}">{{ t.created_at|time_ago if t.created_at else '-' }}</td>
+        <td class="muted">{{ t.expires_at or 'never' }}</td>
+        <td class="muted" title="{{ t.last_used_at }}">
+          {% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}-{% endif %}
+        </td>
+        <td class="acts">
+          <form method="post" action="{{ url_for('delete_personal_token', token_id=t.id) }}" class="inline"
+                onsubmit="return confirm('Revoke token “{{ t.name }}”?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Revoke</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">None yet.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Two-factor authentication</h2>
+  {% if totp_enabled %}
+  <p>
+    <span class="badge" data-variant="secondary">Enabled</span>
+    {% if user.totp_enabled_at %}
+    <span class="muted">since {{ user.totp_enabled_at }}</span>
+    {% endif %}
+    · {{ totp_recovery_remaining }} recovery codes left
+    {% if totp_enforced_for_user %}<span class="muted">(required for global admins)</span>{% endif %}
+  </p>
+  <form method="post" action="{{ url_for('totp_regenerate_recovery') }}" class="row mt-1">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="flex-2">Confirm with code
+      <input type="text" name="code" required autocomplete="one-time-code"
+             placeholder="123456 or xxxx-xxxx">
+    </label>
+    <button type="submit">Regenerate recovery codes</button>
+  </form>
+  {% if not totp_enforced_for_user %}
+  <form method="post" action="{{ url_for('totp_disable') }}" class="mt-1"
+        onsubmit="return confirm('Disable two-factor authentication?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Disable - confirm with code
+      <input type="text" name="code" required autocomplete="one-time-code"
+             placeholder="123456 or xxxx-xxxx">
+    </label>
+    <p class="form-actions"><button type="submit" data-variant="danger">Disable 2FA</button></p>
+  </form>
+  {% endif %}
+  {% else %}
+  <p class="muted">
+    Authenticator app at sign-in.
+    {% if totp_enforced_for_user %}<strong>Required for global admins.</strong>{% endif %}
+  </p>
+  <p class="form-actions"><a class="button outline" href="{{ url_for('totp_setup') }}">Set up 2FA</a></p>
+  {% endif %}
+</section>
+
+{% if user.auth_source == 'local' %}
+<section>
+  <h2>Change password</h2>
+  <p class="muted">Signs out other devices.</p>
+  <form method="post" action="{{ url_for('change_password') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Current password
+      <input type="password" name="current_password" required autocomplete="current-password">
+    </label>
+    <label>New password
+      <input type="password" name="new_password" required minlength="8" autocomplete="new-password">
+    </label>
+    <label>Confirm new password
+      <input type="password" name="new_password_confirm" required minlength="8" autocomplete="new-password">
+    </label>
+    <p class="form-actions"><button type="submit">Update password</button></p>
+  </form>
+</section>
+{% else %}
+<section>
+  <h2>Password</h2>
+  <p class="muted">
+    {% if user.auth_source == 'oidc' %}Managed by OIDC SSO.
+    {% elif user.auth_source == 'ldap' %}Managed in the LDAP directory.
+    {% else %}Managed by your identity provider.{% endif %}
+  </p>
+</section>
+{% endif %}
+
+<section>
+  <div class="section-head">
+    <h2>Active sessions</h2>
+    {% if active_sessions and active_sessions|length > 1 %}
+    <form method="post" action="{{ url_for('revoke_other_sessions') }}" class="inline"
+          onsubmit="return confirm('Sign out all other devices?')">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button type="submit" class="link">Sign out other sessions</button>
+    </form>
+    {% endif %}
+  </div>
+  <p class="muted">Signed-in devices.</p>
+  {% if active_sessions %}
+  <div class="table"><table>
+    <thead>
+      <tr>
+        <th>Device / browser</th>
+        <th>IP</th>
+        <th>Last active</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for s in active_sessions %}
+      <tr>
+        <td>
+          <span title="{{ s.user_agent }}">
+            {{ (s.user_agent or 'Unknown client')[:72] }}{% if s.user_agent and s.user_agent|length > 72 %}…{% endif %}
+          </span>
+          {% if current_sid and s.id|string == current_sid|string %}
+          <span class="badge" data-variant="secondary">This device</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ s.ip or '-' }}</td>
+        <td class="muted" title="{{ s.last_seen_at|time_when }}">{{ s.last_seen_at|time_ago }}</td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('revoke_session', session_id=s.id) }}"
+                class="inline"
+                onsubmit="return confirm('{% if current_sid and s.id|string == current_sid|string %}Sign out this device?{% else %}Sign out this session?{% endif %}')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">
+              {% if current_sid and s.id|string == current_sid|string %}Sign out{% else %}Revoke{% endif %}
+            </button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No active sessions recorded for this account.</p>
+  {% endif %}
+</section>

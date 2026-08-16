@@ -18,13 +18,15 @@ store.app.config["TESTING"] = True
 class TestUIShell:
 
     def test_login_is_auth_layout(self):
-        r = store.app.test_client().get('/login')
+        conn, _ = _conn(fetchall=[])
+        with patch.object(db, 'connect_admin', return_value=conn):
+            r = store.app.test_client().get('/login')
         assert b'class="auth"' in r.data
         assert b'auth-card' in r.data
         assert b'class="sidebar"' not in r.data
         assert b'Sigaint' in r.data
         assert b'Secret Server' in r.data
-        assert b'light-dark(#000000, #f5f5f5)' in r.data
+        assert b'static/app.css' in r.data
 
     def test_app_has_sidebar(self):
         c = store.app.test_client()
@@ -190,9 +192,11 @@ class TestUIShell:
         # Accessibility: a keyboard-first skip link must render on app pages.
         assert b'class="skip-link"' in r.data
         assert b'Skip to content' in r.data
-        # Responsive tables: the oat .table scroll container must exist.
-        assert b'.table {' in r.data
-        assert b'overflow-x: auto' in r.data
+        # Responsive tables: app.css defines the oat .table scroll container.
+        css = store.app.test_client().get('/static/app.css')
+        assert css.status_code == 200
+        assert b'.table {' in css.data
+        assert b'overflow-x: auto' in css.data
 
     def test_machines_template_shows_last_used(self):
         from flask import render_template
@@ -207,11 +211,11 @@ class TestUIShell:
         assert 'class="table"' in html    # machine table is scrollable/responsive
 
     def test_project_tabs_use_nav_links_not_tablist_role(self):
-        # Server-side page tabs are plain navigation links (no fake tablist),
-        # so screen readers announce them as links, not broken tabs. Scope the
-        # check to the actual <nav class="tabs"> markup (not the shared <style>
-        # block, whose `.role-mode-tabs [role=tablist]` selector legitimately
-        # contains `role=` text).
+        # Server-side page navigation is plain links (no fake tablist), so
+        # screen readers announce them as links, not broken tabs. Scope the
+        # check to the actual <nav class="page-subnav"> markup (not the
+        # shared <style> block, whose `.role-mode-tabs [role=tablist]` selector
+        # legitimately contains `role=` text).
         from flask import render_template
         project = {
             'id': str(uuid4()), 'name': 'App', 'team_id': str(uuid4()),
@@ -219,11 +223,11 @@ class TestUIShell:
         }
         with store.app.test_request_context('/projects/p?tab=secrets'):
             html = render_template('project.html', project=project, active_tab='secrets')
-        i = html.find('<nav class="tabs"')
+        i = html.find('<nav class="page-subnav"')
         j = html.find('</nav>', i)
         tabs = html[i:j] if i != -1 and j != -1 else ''
         assert 'role="tablist"' not in tabs
         assert 'role="tab"' not in tabs
-        assert 'class="tab ' in tabs
-        assert 'tab active' in tabs
+        assert 'page-subnav-link' in tabs
+        assert 'page-subnav-link active' in tabs
 

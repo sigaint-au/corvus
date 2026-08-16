@@ -12,11 +12,11 @@ Secret server: self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.i
 ## Run the app / dev containers
 
 - `scripts/_lib.sh` picks `podman-compose` or `docker compose` (whichever exists), roots the repo, loads `.env`.
-- `scripts/up.sh` (build+start, `ALLOW_INSECURE_DEFAULTS=1` for local dev), `rebuild.sh`, `restart.sh`, `down.sh`, `logs.sh`, `status.sh`. Fresh DB is bootstrapped by `docker-entrypoint-initdb.d` running the complete squashed `db/migrations/0001_init.sql` then the no-op `0002_rbac.sql` marker. This branch is fresh-install-only; recreate existing databases after baseline changes.
+- `scripts/up.sh` (build+start, `ALLOW_INSECURE_DEFAULTS=1` for local dev), `rebuild.sh`, `restart.sh`, `down.sh`, `logs.sh`, `status.sh`. Fresh DB is bootstrapped by `docker-entrypoint-initdb.d` running the complete squashed `db/migrations/0001_init.sql`. This branch is fresh-install-only; recreate existing databases after baseline changes.
 
 ## DB / RLS / RBAC / migrations (hard-earned)
 
-- **Migrations are the sole source of truth for DDL.** The fresh-install baseline lives in `db/migrations/0001_init.sql`; `0002_rbac.sql` is a no-op bootstrap marker. Existing databases are not supported by this squashed baseline.
+- **Migrations are the sole source of truth for DDL.** The fresh-install baseline lives in `db/migrations/0001_init.sql`. Existing databases are not supported by this squashed baseline.
 - **Keep the squashed baseline ordered** — RBAC definitions live inside `db/migrations/0001_init.sql`; do not create a second baseline definition.
 - **Adding a migration:** create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it idempotent where possible, and run `pytest` + `tox -e lint`. Never edit an already-released migration file — its checksum is recorded.
 - Machine-token `role` column uses `read/reveal/write` (`service-*` is the RBAC name).

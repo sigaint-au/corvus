@@ -39,8 +39,8 @@ def register_page():
         flash(notice or "Account registration is disabled", "error")
         return redirect(url_for("login"))
     if request.method == "POST":
-        email = request.form["email"].strip()
-        password = request.form["password"]
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
         name = request.form.get("name", "").strip()
         if len(password) < 8:
             flash("Password must be at least 8 characters", "error")

@@ -1,0 +1,242 @@
+<section>
+  <h2>Team settings</h2>
+  <form method="post" action="{{ url_for('update_team_settings', team_id=team.id) }}" id="team-settings-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="row">
+      <label>Default machine-token expiry (days)
+        <input type="number" name="default_token_days" min="1" max="{{ max_expiry_days|default(3650) }}"
+               value="{{ team.default_token_days or '' }}" placeholder="server default">
+      </label>
+    </div>
+    <p class="muted">Leave blank to use no default (tokens never expire unless set per token).</p>
+
+    <h3>Classification banner</h3>
+    <p class="muted">Optional override of the server-wide banner while this team is selected in the sidebar.</p>
+    <label class="check-row">
+      <input type="checkbox" name="use_classification_override" id="class-override" value="1"
+             {% if team.classification_enabled is not none %}checked{% endif %}
+             onchange="syncTeamClassForm()">
+      Override server classification banner for this team
+    </label>
+    <div id="team-banner-fields">
+      <label class="check-row">
+        <input type="checkbox" name="classification_enabled" id="classification_enabled" value="1"
+               {% if team.classification_enabled %}checked{% endif %}
+               onchange="updateTeamBannerPreview()">
+        Show classification banner
+      </label>
+      <label>Banner text
+        <input type="text" name="classification_text" id="classification_text" maxlength="120"
+               value="{{ team.classification_text or classification.text or 'OFFICIAL' }}"
+               placeholder="OFFICIAL - SENSITIVE"
+               oninput="updateTeamBannerPreview()">
+      </label>
+      <div class="row">
+        <div>
+          <label>Background colour</label>
+          <div class="color-field">
+            <input type="color" id="classification_color_picker"
+                   value="{{ team.classification_color or classification.color or '#677381' }}"
+                   oninput="document.getElementById('classification_color').value=this.value; updateTeamBannerPreview();">
+            <input type="text" name="classification_color" id="classification_color"
+                   value="{{ team.classification_color or classification.color or '#677381' }}"
+                   pattern="#[0-9A-Fa-f]{6}"
+                   oninput="syncTeamColor('classification_color'); updateTeamBannerPreview();">
+          </div>
+        </div>
+        <div>
+          <label>Text colour</label>
+          <div class="color-field">
+            <input type="color" id="classification_fg_picker"
+                   value="{{ team.classification_fg or classification.fg or '#ffffff' }}"
+                   oninput="document.getElementById('classification_fg').value=this.value; updateTeamBannerPreview();">
+            <input type="text" name="classification_fg" id="classification_fg"
+                   value="{{ team.classification_fg or classification.fg or '#ffffff' }}"
+                   pattern="#[0-9A-Fa-f]{6}"
+                   oninput="syncTeamColor('classification_fg'); updateTeamBannerPreview();">
+          </div>
+        </div>
+      </div>
+      <p class="muted preset-label">Presets</p>
+      <div class="swatch-row">
+        <button type="button" class="swatch" data-bg="#000000" title="Black"
+                onclick="applyTeamPreset('#000000','#ffffff')"></button>
+        <button type="button" class="swatch" data-bg="#677381" title="Slate"
+                onclick="applyTeamPreset('#677381','#ffffff')"></button>
+        <button type="button" class="swatch" data-bg="#47817F" title="Teal-grey"
+                onclick="applyTeamPreset('#47817F','#ffffff')"></button>
+        <button type="button" class="swatch" data-bg="#c62828" title="Red"
+                onclick="applyTeamPreset('#c62828','#ffffff')"></button>
+        <button type="button" class="swatch" data-bg="#ef6c00" title="Orange"
+                onclick="applyTeamPreset('#ef6c00','#000000')"></button>
+        <button type="button" class="swatch" data-bg="#f9a825" title="Amber"
+                onclick="applyTeamPreset('#f9a825','#000000')"></button>
+        <button type="button" class="swatch" data-bg="#1565c0" title="Blue"
+                onclick="applyTeamPreset('#1565c0','#ffffff')"></button>
+        <button type="button" class="swatch swatch-light" data-bg="#ffffff" title="White"
+                onclick="applyTeamPreset('#ffffff','#000000')"></button>
+      </div>
+      <div class="banner-preview" id="team-banner-preview"
+           style="background: {{ team.classification_color or classification.color or '#677381' }}; color: {{ team.classification_fg or classification.fg or '#ffffff' }};">
+        {{ team.classification_text or classification.text or 'Preview' }}
+      </div>
+    </div>
+    <p class="form-actions"><button type="submit">Save team settings</button></p>
+  </form>
+  <script>
+  function applyTeamPreset(bg, fg) {
+    document.getElementById('classification_color').value = bg;
+    document.getElementById('classification_color_picker').value = bg;
+    document.getElementById('classification_fg').value = fg;
+    document.getElementById('classification_fg_picker').value = fg;
+    updateTeamBannerPreview();
+  }
+  function syncTeamColor(id) {
+    var v = document.getElementById(id).value;
+    if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+      document.getElementById(id + '_picker').value = v;
+    }
+  }
+  function updateTeamBannerPreview() {
+    var el = document.getElementById('team-banner-preview');
+    if (!el) return;
+    var text = document.getElementById('classification_text').value || 'Preview';
+    el.textContent = text;
+    el.style.background = document.getElementById('classification_color').value;
+    el.style.color = document.getElementById('classification_fg').value;
+    el.style.opacity = document.getElementById('classification_enabled').checked ? '1' : '0.45';
+  }
+  function syncTeamClassForm() {
+    var on = document.getElementById('class-override').checked;
+    var box = document.getElementById('team-banner-fields');
+    box.style.opacity = on ? '1' : '0.45';
+    box.querySelectorAll('input, button').forEach(function (el) {
+      if (el.type === 'hidden') return;
+      el.disabled = !on;
+    });
+    if (on) updateTeamBannerPreview();
+  }
+  syncTeamClassForm();
+  updateTeamBannerPreview();
+  </script>
+</section>
+
+<section>
+  <h2>LDAP group membership</h2>
+  <p class="muted">
+    Automatically add matching LDAP users to this team on login.
+    {% if not ldap_enabled %}<strong>LDAP is currently disabled</strong> in server settings.{% endif %}
+  </p>
+  {% if ldap_maps %}
+  <div class="table"><table>
+    <thead><tr><th>LDAP group</th><th>Team role</th><th></th></tr></thead>
+    <tbody>
+    {% for m in ldap_maps %}
+      <tr>
+        <td><code class="k">{{ m.ldap_group }}</code></td>
+        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('delete_team_ldap_map', team_id=team.id, map_id=m.id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove this LDAP mapping?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No LDAP group maps for this team.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('add_team_ldap_map', team_id=team.id) }}" class="row mt-1">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="flex-2">LDAP directory group (CN or DN)
+      <input type="text" name="ldap_group" required
+             placeholder="e.g. eng-secrets  or  cn=eng-secrets,cn=groups,dc=example,dc=com">
+    </label>
+    <label>Team role
+      <select name="role">
+        {% for rname, label in team_role_dropdown|default([]) %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Add map</button>
+  </form>
+</section>
+
+<section>
+  <h2>OIDC group membership</h2>
+  <p class="muted">
+    Automatically add matching SSO users to this team on login.
+    {% if not oidc_enabled %}<strong>OIDC is currently disabled</strong> in server settings.{% endif %}
+  </p>
+  {% if oidc_maps %}
+  <div class="table"><table>
+    <thead><tr><th>OIDC group</th><th>Team role</th><th></th></tr></thead>
+    <tbody>
+    {% for m in oidc_maps %}
+      <tr>
+        <td><code class="k">{{ m.oidc_group }}</code></td>
+        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('delete_team_oidc_map', team_id=team.id, map_id=m.id) }}"
+                class="inline"
+                onsubmit="return confirm('Remove this OIDC mapping?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No OIDC group maps for this team.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('add_team_oidc_map', team_id=team.id) }}" class="row mt-1">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="flex-2">OIDC directory group (token claim value)
+      <input type="text" name="oidc_group" required
+             placeholder="e.g. eng-secrets (exact groups claim value)">
+    </label>
+    <label>Team role
+      <select name="role">
+        {% for rname, label in team_role_dropdown|default([]) %}
+        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Add map</button>
+  </form>
+</section>
+
+{% if my_role == 'team-owner' %}
+<section>
+  <h2>Transfer ownership</h2>
+  <p class="muted">Promotes the user to owner and demotes you to admin.</p>
+  <form method="post" action="{{ url_for('transfer_team_ownership', team_id=team.id) }}" class="row"
+        onsubmit="return confirm('Transfer ownership to this user?')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>New owner (user email)
+      <input type="email" name="email" required class="user-suggest"
+             list="user-suggest-list" placeholder="e.g. new-owner@example.com" autocomplete="off">
+    </label>
+    <button type="submit">Transfer</button>
+  </form>
+</section>
+
+<section>
+  <h2>Danger zone</h2>
+  <p class="muted">Delete this team and all projects, secrets, members, and machine tokens. Irreversible.</p>
+  <form method="post" action="{{ url_for('delete_team', team_id=team.id) }}"
+        onsubmit="return confirm('Delete team “{{ team.name }}” and everything in it? This cannot be undone.')">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <button type="submit" data-variant="danger">Delete team</button>
+  </form>
+</section>
+{% endif %}

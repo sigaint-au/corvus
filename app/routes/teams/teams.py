@@ -70,7 +70,7 @@ def create_team():
     if not settings_svc.can_create_team(session.get("is_global_admin")):
         flash("Only global admins can create teams", "error")
         return redirect(url_for("teams"))
-    name = request.form["name"].strip()
+    name = request.form.get("name", "").strip()
     if not name:
         flash("Name required", "error")
         return redirect(url_for("teams"))

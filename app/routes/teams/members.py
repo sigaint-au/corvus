@@ -136,7 +136,7 @@ def add_team_binding(team_id):
     Example:
         POST /teams/<team_id>/members with email and role form fields
     """
-    email = request.form["email"].strip().lower()
+    email = request.form.get("email", "").strip().lower()
     role = request.form.get("role", "team-member")
     role_names = config.RBAC_TEAM_ROLE_NAMES
     if role not in role_names:

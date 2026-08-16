@@ -13,6 +13,7 @@ from flask import (
     request,
 )
 import audit
+from core import cache
 from core import config
 import crypto
 from core import db
@@ -86,6 +87,30 @@ def _parse_auth():
         True
     """
     return classify_token(bearer_raw())
+
+
+_ESO_RATE_LIMIT = 100
+_ESO_RATE_WINDOW = 60
+
+
+def _require_auth():
+    """Parse Bearer auth and enforce the machine-token rate limit.
+
+    Returns:
+        ``((kind, ident), None)`` when authorized, or ``(None, error_tuple)``
+        where error_tuple is ``(jsonify(...), status)``. Machine tokens are
+        throttled per token hash (sliding window via Redis; fails open when
+        Redis is unavailable). PATs are not throttled here — session/DB-backed
+        controls already apply.
+    """
+    kind, ident = _parse_auth()
+    if kind is None:
+        return None, (jsonify({"error": "unauthorized"}), 401)
+    if kind == "machine" and cache.rate_limited(
+        f"secretserver:rl:{ident}", limit=_ESO_RATE_LIMIT, window=_ESO_RATE_WINDOW
+    ):
+        return None, (jsonify({"error": "rate limited"}), 429)
+    return (kind, ident), None
 
 
 def _machine_actor(cur, project_id, thash: str) -> str:
@@ -341,9 +366,10 @@ def _upsert_body(project_ref, key: str, body: dict):
     Returns:
         Flask ``(response, status)`` tuple.
     """
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
 
     key = (key or "").strip()
     value = body.get("value")

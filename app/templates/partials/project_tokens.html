@@ -1,0 +1,88 @@
+<section class="machine-accounts">
+  <div class="section-head">
+    <div class="section-head-main">
+      <h2>Machine accounts</h2>
+    </div>
+  </div>
+  <p class="page-desc muted">
+    Project-scoped tokens for ESO and CI. Use a <strong>key allow-list</strong> to limit which secrets automation can see.
+  </p>
+
+  {% if can_write %}
+  {% with form_id='token-form', default_name='machine', compact=false %}
+    {% include "partials/token_create_form.html" %}
+  {% endwith %}
+  {% endif %}
+
+  <section class="token-list-section list-panel">
+    <h3 class="token-list-title">Active tokens</h3>
+    {% if tokens %}
+    <div class="table">
+    <table>
+      <thead>
+        <tr>
+           <th>Name</th>
+           <th>Machine account ID</th>
+           <th>Prefix</th>
+          <th>Role</th>
+          <th>Key scope</th>
+          <th>Last used</th>
+          <th>Created</th>
+          <th>Expires</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for t in tokens %}
+        <tr>
+           <td>{{ t.name }}</td>
+           <td><code class="k">{{ t.id }}</code></td>
+           <td><code class="k">{{ t.token_prefix }}…</code></td>
+          <td><span class="badge" data-variant="secondary">{{ t.role or 'service-reveal' }}</span></td>
+          <td class="col-note">
+            {% if t.scopes %}
+            <div class="token-scope-badges"
+                 title="{% for sc in t.scopes %}{{ sc.secret_key or sc.key_pattern }}{% if not loop.last %}, {% endif %}{% endfor %}">
+              {% for sc in t.scopes[:8] %}
+              <span class="badge outline{% if sc.key_pattern %} token-scope-glob{% endif %}"
+                    title="{% if sc.key_pattern %}Glob pattern{% else %}Exact key{% endif %}">
+                {% if sc.secret_key %}{{ sc.secret_key }}{% else %}{{ sc.key_pattern }}{% endif %}
+              </span>
+              {% endfor %}
+              {% if t.scopes|length > 8 %}
+              <span class="muted">+{{ t.scopes|length - 8 }} more</span>
+              {% endif %}
+              {% if t.scopes|length == 1 and (t.scopes[0].key_pattern|default('')) == '*' %}
+              <span class="muted">all keys</span>
+              {% endif %}
+            </div>
+            {% else %}
+            <span class="badge" data-variant="secondary">all keys</span>
+            {% endif %}
+          </td>
+          <td class="muted" title="{% if t.last_used_at %}{{ t.last_used_at|time_when }}{% endif %}">{% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}never{% endif %}</td>
+          <td class="muted">{{ t.created_at }}</td>
+          <td class="muted">
+            {{ t.expires_at or 'never' }}
+            {% if t.due == 'overdue' %}<span class="badge" data-variant="danger">expired</span>
+            {% elif t.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
+          </td>
+          <td class="acts">
+            {% if can_write %}
+            <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
+                  onsubmit="return confirm('Revoke token “{{ t.name }}”?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Revoke</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="empty">No machine accounts yet.</p>
+    {% endif %}
+  </section>
+</section>

@@ -69,7 +69,7 @@ def create_project(team_id):
         POST /teams/<team_id>/projects with form fields name=My Project,
         encryption=byok
     """
-    name = request.form["name"].strip()
+    name = request.form.get("name", "").strip()
     description = (request.form.get("description") or "").strip()[:500]
     encryption = (request.form.get("encryption") or "managed").strip().lower()
     hsm_slot = (request.form.get("hsm_slot") or "").strip() or None

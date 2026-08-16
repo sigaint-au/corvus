@@ -48,8 +48,8 @@ def login():
         GET/POST /login
     """
     if request.method == "POST":
-        email = request.form["email"].strip()
-        password = request.form["password"]
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
         ldap_on = settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled"))
         if lockout.is_locked(email):
             flash("Too many failed attempts. Try again in a few minutes.", "error")
