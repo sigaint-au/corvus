@@ -1729,6 +1729,67 @@
       text-decoration: underline;
     }
     /* Secret kind chips use the same oat .badge solid style as overdue/soon. */
+    .secret-title {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      margin: 0;
+    }
+    .secret-title .copy-btn {
+      padding: .2rem;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      border-radius: 4px;
+      font-size: .85rem;
+      vertical-align: middle;
+    }
+    .secret-title .copy-btn:hover {
+      color: var(--foreground);
+      background: var(--accent);
+    }
+    .secret-summary-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--background);
+      padding: .85rem 1rem;
+      margin: 0 0 1.25rem;
+    }
+    .secret-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+      gap: .75rem 1.25rem;
+    }
+    .secret-summary-grid > div {
+      display: flex;
+      flex-direction: column;
+      gap: .15rem;
+      min-width: 0;
+    }
+    .secret-summary-grid .field-label {
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted-foreground);
+    }
+    .mono-val {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .875rem;
+      word-break: break-all;
+    }
+    .db-view-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .db-params-card h3,
+    .db-uri-card h3 {
+      margin: 0 0 .65rem;
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--foreground);
+    }
     .secret-acl-section { margin-top: 1.5rem; }
     .secret-view .kv-view-table td { vertical-align: middle; }
     .secret-view .input-with-btn { max-width: 100%; }
