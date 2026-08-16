@@ -26,7 +26,7 @@ class TestUIShell:
         assert b'class="sidebar"' not in r.data
         assert b'Sigaint' in r.data
         assert b'Secret Server' in r.data
-        assert b'light-dark(#000000, #f5f5f5)' in r.data
+        assert b'static/app.css' in r.data
 
     def test_app_has_sidebar(self):
         c = store.app.test_client()
@@ -192,9 +192,11 @@ class TestUIShell:
         # Accessibility: a keyboard-first skip link must render on app pages.
         assert b'class="skip-link"' in r.data
         assert b'Skip to content' in r.data
-        # Responsive tables: the oat .table scroll container must exist.
-        assert b'.table {' in r.data
-        assert b'overflow-x: auto' in r.data
+        # Responsive tables: app.css defines the oat .table scroll container.
+        css = store.app.test_client().get('/static/app.css')
+        assert css.status_code == 200
+        assert b'.table {' in css.data
+        assert b'overflow-x: auto' in css.data
 
     def test_machines_template_shows_last_used(self):
         from flask import render_template

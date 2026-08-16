@@ -1,0 +1,53 @@
+<section>
+  <div class="section-head">
+    <h2>Projects</h2>
+    <div class="section-tools">
+      <form method="get" action="{{ url_for('team_detail', team_id=team.id) }}" class="toolbar" role="search">
+        <input type="hidden" name="tab" value="projects">
+        <fieldset class="group search-input">
+          {% include "partials/search_icon.html" %}
+          <input type="search" name="q" value="{{ search_q or '' }}"
+                 placeholder="Search" autocomplete="off" aria-label="Search projects">
+        </fieldset>
+        {% if search_q %}
+        <a class="button ghost small" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Clear</a>
+        {% endif %}
+      </form>
+      {% if my_role in ('team-owner', 'team-admin', 'team-member') %}
+      <a class="button outline small" href="{{ url_for('new_project_wizard', team_id=team.id) }}">+ Add project</a>
+      {% endif %}
+    </div>
+  </div>
+  {% if projects %}
+  <div class="table"><table>
+    <thead><tr><th>Name</th><th>Description</th><th>Encryption</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="{{ url_for('project_detail', project_id=p.id) }}">{{ p.name }}</a></td>
+        <td class="muted col-note">{{ p.description or '-' }}</td>
+        <td class="muted">
+          {% if p.key_provider == 'hsm' %}HSM
+          {% elif p.key_provider == 'local' %}Local
+          {% else %}Managed{% endif %}
+        </td>
+        <td class="muted"><code class="k">{{ p.id }}</code></td>
+        {% if my_role in ('team-owner', 'team-admin') %}
+        <td class="acts">
+          <form method="post"
+                action="{{ url_for('delete_project_from_team', team_id=team.id, project_id=p.id) }}"
+                class="inline"
+                onsubmit="return confirm('Delete project “{{ p.name }}” and all its data? This cannot be undone.')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Delete</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">{% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}</p>
+  {% endif %}
+</section>

@@ -1,0 +1,69 @@
+<section>
+  <h2>Account</h2>
+  <dl class="profile-dl">
+    <div>
+      <dt>Name</dt>
+      <dd>{{ user.name or '-' }}</dd>
+    </div>
+    <div>
+      <dt>Email</dt>
+      <dd>{{ user.email }}</dd>
+    </div>
+    <div>
+      <dt>Sign-in</dt>
+      <dd>
+        {% if user.auth_source == 'ldap' %}
+        <span class="badge" data-variant="secondary">LDAP</span> Directory
+        {% elif user.auth_source == 'oidc' %}
+        <span class="badge" data-variant="secondary">OIDC</span> Single sign-on
+        {% elif user.auth_source == 'local' or not user.auth_source %}
+        <span class="badge" data-variant="secondary">Local</span> Database (password)
+        {% else %}
+        <span class="badge" data-variant="secondary">{{ user.auth_source }}</span>
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>Role</dt>
+      <dd>
+        {% if user.is_global_admin %}
+        <span class="badge" data-variant="secondary">Global admin</span>
+        {% else %}
+        User
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>Member since</dt>
+      <dd class="muted">{{ user.created_at or '-' }}</dd>
+    </div>
+  </dl>
+</section>
+
+<section>
+  <h2>At a glance</h2>
+  <div class="profile-stats">
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.teams }}</span>
+      <span class="profile-stat-l">Teams</span>
+    </div>
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.projects }}</span>
+      <span class="profile-stat-l">Projects</span>
+    </div>
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.secrets }}</span>
+      <span class="profile-stat-l">Secrets</span>
+    </div>
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.pins }}</span>
+      <span class="profile-stat-l">Pinned</span>
+    </div>
+    {% if stats.pending_joins %}
+    <div class="profile-stat">
+      <span class="profile-stat-n">{{ stats.pending_joins }}</span>
+      <span class="profile-stat-l">Pending joins</span>
+    </div>
+    {% endif %}
+  </div>
+</section>

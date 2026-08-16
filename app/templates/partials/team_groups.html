@@ -1,0 +1,67 @@
+<section>
+  <div class="section-head">
+    <h2>Groups</h2>
+    <form method="get" action="{{ url_for('team_detail', team_id=team.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="groups">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ search_q or '' }}"
+               placeholder="Search" autocomplete="off" aria-label="Search groups">
+      </fieldset>
+      {% if search_q %}
+      <a class="button ghost small" href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+  <p class="muted">
+    Groups are named collections of users (RBAC <strong>Group</strong> subjects).
+    Manage who is in the group here; grant team access on
+    <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}">Access</a>
+    (add binding → subject kind Group), or project Access / secret Permissions.
+    Map LDAP/OIDC via an external key (sync on login).
+  </p>
+  {% if is_admin %}
+  <form method="post" action="{{ url_for('create_team_group', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Group name <input type="text" name="name" required placeholder="e.g. platform-ops"></label>
+    <label>Source
+      <select name="source">
+        <option value="manual">manual</option>
+        <option value="ldap">ldap</option>
+        <option value="oidc">oidc</option>
+      </select>
+    </label>
+    <label>Directory group key
+      <input type="text" name="external_key"
+             placeholder="e.g. cn=ops,ou=groups,dc=example,dc=com  or  platform-ops">
+    </label>
+    <button type="submit">Create group</button>
+  </form>
+  {% endif %}
+  {% if groups %}
+  <div class="table"><table>
+    <thead><tr><th>Name</th><th>Source</th><th>External</th><th>Members</th><th></th></tr></thead>
+    <tbody>
+    {% for g in groups %}
+      <tr>
+        <td><a href="{{ url_for('team_group_detail', team_id=team.id, group_id=g.id) }}">{{ g.name }}</a></td>
+        <td><span class="badge" data-variant="secondary">{{ g.source }}</span></td>
+        <td class="muted"><code class="k">{{ g.external_key or '-' }}</code></td>
+        <td>{{ g.member_count }}</td>
+        <td class="acts">
+          {% if is_admin %}
+          <form method="post" action="{{ url_for('delete_team_group', team_id=team.id, group_id=g.id) }}"
+                class="inline" onsubmit="return confirm('Delete group “{{ g.name }}”?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="link danger">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">{% if search_q %}No groups match “{{ search_q }}”.{% else %}No groups yet.{% endif %}</p>
+  {% endif %}
+</section>

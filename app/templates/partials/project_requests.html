@@ -1,0 +1,92 @@
+<section>
+  <div class="section-head">
+    <h2>Reveal requests</h2>
+  </div>
+  <p class="muted">Pending and recent reveal-approval requests for this project.</p>
+  {% if access_requests %}
+  <div class="table">
+  <table class="access-requests-table">
+    <thead>
+      <tr>
+        <th>Secret</th>
+        <th>Requester</th>
+        <th>Status</th>
+        <th>Reason</th>
+        <th>Requested</th>
+        {% if can_admin %}<th>Actions</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in access_requests %}
+      <tr>
+        <td>
+          {% if r.secret_id and r.secret_key %}
+          <a href="{{ url_for('secret_view', project_id=project.id, secret_id=r.secret_id) }}">
+            <code class="k">{{ r.secret_key }}</code>
+          </a>
+          {% else %}
+          <span class="muted">-</span>
+          {% endif %}
+        </td>
+        <td>
+          {{ r.name or r.email }}
+          {% if r.name %}<span class="muted">{{ r.email }}</span>{% endif %}
+        </td>
+        <td>
+          <span class="badge"{% if r.status == 'approved' %} data-variant="success"{% elif r.status == 'denied' %} data-variant="danger"{% elif r.status == 'pending' %} data-variant="warning"{% else %} data-variant="secondary"{% endif %}>{{ r.status }}</span>
+          {% if r.status == 'approved' and r.approved_until %}
+          <span class="muted" title="{{ r.approved_until|time_when }}">{{ r.approved_until|expires }}</span>
+          {% elif r.status == 'denied' and r.resolver_email %}
+          <span class="muted">by {{ r.resolver_email }}</span>
+          {% endif %}
+        </td>
+        <td class="muted col-note">{{ r.reason or '-' }}</td>
+        <td class="muted">{{ r.created_at }}</td>
+        {% if can_admin %}
+        <td class="acts access-acts">
+          {% if r.status == 'pending' %}
+          <div class="access-acts-stack">
+            <form method="post"
+                  id="approve-{{ r.id }}"
+                  action="{{ url_for('approve_secret_access', project_id=project.id, req_id=r.id) }}"
+                  class="access-approve-form"
+                  onsubmit="var s=this.querySelector('#grant-minutes-{{ r.id }}');var m=parseInt(s?s.value:'0',10);var lab=m<60?m+' minutes':(m===60?'1 hour':(m===1440?'1 day':(m/60)+' hours'));return confirm('Approve reveal for '+lab+'?') && setAccessBusy(this,'Approving…');">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <label class="visually-hidden" for="grant-minutes-{{ r.id }}">Grant duration</label>
+              <select name="minutes" id="grant-minutes-{{ r.id }}" class="bulk-action" aria-label="Grant duration">
+                {% for m in grant_choices %}
+                <option value="{{ m }}" {% if m == grant_minutes %}selected{% endif %}>
+                  {% if m < 60 %}{{ m }} min{% elif m == 60 %}1 hour{% elif m == 1440 %}1 day{% else %}{{ m // 60 }} hours{% endif %}
+                </option>
+                {% endfor %}
+              </select>
+            </form>
+            <div class="access-acts-btns">
+              <button type="submit" form="approve-{{ r.id }}" class="link">Approve</button>
+              <form method="post"
+                    action="{{ url_for('deny_secret_access', project_id=project.id, req_id=r.id) }}"
+                    class="inline"
+                    onsubmit="return confirm('Deny this reveal request?') && setAccessBusy(this, 'Denying…')">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button type="submit" class="link danger">Deny</button>
+              </form>
+            </div>
+          </div>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">
+    {% if can_admin %}
+    No access requests yet.
+    {% else %}
+    You have no access requests.
+    {% endif %}
+  </p>
+  {% endif %}
+</section>

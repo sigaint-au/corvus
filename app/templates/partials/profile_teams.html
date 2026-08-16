@@ -1,0 +1,67 @@
+<section>
+  <div class="section-head">
+    <h2>Teams</h2>
+    <a href="{{ url_for('teams') }}" class="muted">All teams →</a>
+  </div>
+  {% if teams %}
+  <div class="table"><table>
+    <thead>
+      <tr>
+        <th>Team</th>
+        <th>Your role</th>
+        <th>Source</th>
+        <th>Projects</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for t in teams %}
+      <tr>
+        <td><a href="{{ url_for('team_detail', team_id=t.id) }}">{{ t.name }}</a></td>
+        <td>
+        {% set role_help = {
+          'team-owner': 'Full control of the team',
+          'team-admin': 'Administer team projects and members',
+          'team-member': 'Create and update secrets in team projects',
+          'team-viewer': 'Read-only access',
+        } %}
+        {% if t.role %}
+        <span class="badge" data-variant="secondary" title="{{ role_help.get(t.role, '') }}">{{ t.role }}</span>
+        {% else %}
+        <span class="muted">-</span>
+        {% endif %}
+      </td>
+      <td class="muted">{{ t.source or 'manual' }}</td>
+        <td>{{ t.project_count }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">You are not a member of any teams yet.</p>
+  {% endif %}
+</section>
+
+{% if pending_joins %}
+<section>
+  <h2>Pending join requests</h2>
+  <p class="muted">Waiting for a team owner or admin to approve.</p>
+  <div class="table"><table>
+    <thead>
+      <tr>
+        <th>Team</th>
+        <th>Requested role</th>
+        <th>Requested</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in pending_joins %}
+      <tr>
+        <td>{{ r.team_name }}</td>
+        <td><span class="badge" data-variant="secondary">{{ r.role }}</span></td>
+        <td class="muted">{{ r.created_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}

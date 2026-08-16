@@ -1,0 +1,90 @@
+<section class="list-panel">
+  <h2>Classification banner</h2>
+  <p class="muted">Shown at the top of every page when enabled.</p>
+  <form method="post" id="banner-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="classification">
+    <label class="check-row">
+      <input type="checkbox" name="classification_enabled" value="1"
+             {% if settings.classification_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Show classification banner
+    </label>
+    <label>Banner text
+      <input type="text" name="classification_text" maxlength="120"
+             value="{{ settings.classification_text }}"
+             placeholder="OFFICIAL - SENSITIVE" required>
+    </label>
+    <div class="row">
+      <div>
+        <label>Background colour</label>
+        <div class="color-field">
+          <input type="color" id="classification_color_picker"
+                 value="{{ settings.classification_color }}"
+                 oninput="document.getElementById('classification_color').value=this.value; updatePreview();">
+          <input type="text" name="classification_color" id="classification_color"
+                 value="{{ settings.classification_color }}" pattern="#[0-9A-Fa-f]{6}"
+                 required oninput="syncColor('classification_color'); updatePreview();">
+        </div>
+      </div>
+      <div>
+        <label>Text colour</label>
+        <div class="color-field">
+          <input type="color" id="classification_fg_picker"
+                 value="{{ settings.classification_fg }}"
+                 oninput="document.getElementById('classification_fg').value=this.value; updatePreview();">
+          <input type="text" name="classification_fg" id="classification_fg"
+                 value="{{ settings.classification_fg }}" pattern="#[0-9A-Fa-f]{6}"
+                 required oninput="syncColor('classification_fg'); updatePreview();">
+        </div>
+      </div>
+    </div>
+    <p class="muted preset-label">Presets</p>
+    <div class="swatch-row">
+      <button type="button" class="swatch" data-bg="#000000" title="Black"
+              onclick="applyPreset('#000000','#ffffff')"></button>
+      <button type="button" class="swatch" data-bg="#677381" title="Slate"
+              onclick="applyPreset('#677381','#ffffff')"></button>
+      <button type="button" class="swatch" data-bg="#47817F" title="Teal-grey"
+              onclick="applyPreset('#47817F','#ffffff')"></button>
+      <button type="button" class="swatch" data-bg="#c62828" title="Red"
+              onclick="applyPreset('#c62828','#ffffff')"></button>
+      <button type="button" class="swatch" data-bg="#ef6c00" title="Orange"
+              onclick="applyPreset('#ef6c00','#000000')"></button>
+      <button type="button" class="swatch" data-bg="#f9a825" title="Amber"
+              onclick="applyPreset('#f9a825','#000000')"></button>
+      <button type="button" class="swatch" data-bg="#1565c0" title="Blue"
+              onclick="applyPreset('#1565c0','#ffffff')"></button>
+      <button type="button" class="swatch swatch-light" data-bg="#ffffff" title="White"
+              onclick="applyPreset('#ffffff','#000000')"></button>
+    </div>
+    <div class="banner-preview" id="banner-preview"
+         style="background: {{ settings.classification_color }}; color: {{ settings.classification_fg }};">
+      {{ settings.classification_text or 'Preview' }}
+    </div>
+    <p class="form-actions"><button type="submit">Save banner</button></p>
+  </form>
+</section>
+<script>
+function applyPreset(bg, fg) {
+  document.getElementById('classification_color').value = bg;
+  document.getElementById('classification_color_picker').value = bg;
+  document.getElementById('classification_fg').value = fg;
+  document.getElementById('classification_fg_picker').value = fg;
+  updatePreview();
+}
+function syncColor(id) {
+  var v = document.getElementById(id).value;
+  if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+    document.getElementById(id + '_picker').value = v;
+  }
+}
+function updatePreview() {
+  var el = document.getElementById('banner-preview');
+  var text = document.querySelector('[name=classification_text]').value || 'Preview';
+  el.textContent = text;
+  el.style.background = document.getElementById('classification_color').value;
+  el.style.color = document.getElementById('classification_fg').value;
+}
+document.querySelector('[name=classification_text]').addEventListener('input', updatePreview);
+</script>
+

@@ -1,0 +1,158 @@
+<div class="stack eso-integration" id="eso-integration"
+         data-project-id="{{ project.id }}"
+         data-project-name="{{ project.name }}"
+         data-base-url="{{ public_base_url or '' }}">
+  <div class="section-head">
+    <h2>External Secrets Operator</h2>
+  </div>
+
+  {% if can_write %}
+  <section class="eso-token-create">
+    {% with form_id='eso-token-form', default_name='eso', return_tab='integrations', compact=true %}
+      {% include "partials/token_create_form.html" %}
+    {% endwith %}
+  </section>
+  {% else %}
+  <p class="muted">You need write access to create a machine account. Paste an existing token below to generate manifests.</p>
+  {% endif %}
+
+  <section class="eso-yaml-config">
+    <h3>Manifest options</h3>
+    <div class="row">
+      <label>App base URL
+        <input type="url" id="eso-base-url" value="{{ public_base_url or '' }}"
+               placeholder="https://secretstore.example.com" required>
+      </label>
+      <label>Kubernetes namespace
+        <input type="text" id="eso-namespace" value="default" placeholder="default"
+               pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?">
+      </label>
+      <label>Resource name prefix
+        <input type="text" id="eso-name-prefix" value="{{ project.name|lower|replace(' ', '-')|replace('_', '-') }}"
+               placeholder="my-app" pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?">
+      </label>
+    </div>
+    <div class="row">
+      <label>Machine token
+        <span class="input-with-btn">
+          <input type="password" id="eso-token" value="{{ new_token or '' }}"
+                 placeholder="ss_… paste or create above" autocomplete="off">
+          <button type="button" class="icon-btn text-btn" id="eso-token-toggle" title="Show/hide token"
+                  aria-label="Show or hide token">Show</button>
+        </span>
+      </label>
+      <label>Store kind
+        <select id="eso-store-kind">
+          <option value="SecretStore" selected>SecretStore (namespaced)</option>
+          <option value="ClusterSecretStore">ClusterSecretStore</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="eso-yaml-out" id="eso-yaml-panel" {% if not new_token %}hidden{% endif %}>
+    <div class="section-head">
+      <h3>Generated YAML</h3>
+      <button type="button" class="button outline small copy-btn" id="eso-copy"
+              data-copy-target="eso-yaml"
+              data-clear-seconds="0">Copy YAML</button>
+    </div>
+    <textarea id="eso-yaml" class="mono-area eso-yaml" rows="18" readonly
+              spellcheck="false" aria-label="Generated ESO YAML"></textarea>
+  </section>
+  <p class="muted" id="eso-yaml-hint" {% if new_token %}hidden{% endif %}>
+    Create a machine account above (or paste a token) to generate the Secret and SecretStore YAML.
+  </p>
+</div>
+<script>
+(function () {
+  var root = document.getElementById('eso-integration');
+  if (!root) return;
+  var projectId = root.getAttribute('data-project-id') || '';
+  var yamlEl = document.getElementById('eso-yaml');
+  var panel = document.getElementById('eso-yaml-panel');
+  var hint = document.getElementById('eso-yaml-hint');
+  var baseEl = document.getElementById('eso-base-url');
+  var nsEl = document.getElementById('eso-namespace');
+  var prefixEl = document.getElementById('eso-name-prefix');
+  var tokenEl = document.getElementById('eso-token');
+  var kindEl = document.getElementById('eso-store-kind');
+  var tokenToggle = document.getElementById('eso-token-toggle');
+
+  function dnsName(s) {
+    s = (s || 'app').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!s) s = 'app';
+    if (!/^[a-z]/.test(s)) s = 'x-' + s;
+    return s.slice(0, 63).replace(/-+$/g, '') || 'app';
+  }
+  function yamlQuote(s) {
+    return String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+  function buildYaml() {
+    var token = (tokenEl && tokenEl.value || '').trim();
+    var hasToken = !!token;
+    if (panel) panel.hidden = !hasToken;
+    if (hint) hint.hidden = hasToken;
+    if (!hasToken) {
+      if (yamlEl) yamlEl.value = '';
+      return;
+    }
+    var base = (baseEl && baseEl.value || '').replace(/\/+$/, '');
+    var ns = (nsEl && nsEl.value || 'default').trim() || 'default';
+    var prefix = dnsName(prefixEl && prefixEl.value);
+    var storeKind = (kindEl && kindEl.value) || 'SecretStore';
+    var tokenSecret = prefix + '-machine-token';
+    var storeName = prefix + '-webhook';
+    var url = base + '/eso/v1/projects/' + projectId + '/secrets/{{ "{{ .remoteRef.key }}" }}';
+    var lines = [];
+    lines.push('# Generated for project ' + projectId);
+    lines.push('# External Secrets Operator - webhook provider (Secret + SecretStore only)');
+    lines.push('apiVersion: v1');
+    lines.push('kind: Secret');
+    lines.push('metadata:');
+    lines.push('  name: ' + tokenSecret);
+    lines.push('  namespace: ' + ns);
+    lines.push('  labels:');
+    lines.push('    external-secrets.io/type: webhook');
+    lines.push('stringData:');
+    lines.push('  token: "' + yamlQuote(token) + '"');
+    lines.push('---');
+    lines.push('apiVersion: external-secrets.io/v1');
+    lines.push('kind: ' + storeKind);
+    lines.push('metadata:');
+    lines.push('  name: ' + storeName);
+    if (storeKind === 'SecretStore') {
+      lines.push('  namespace: ' + ns);
+    }
+    lines.push('spec:');
+    lines.push('  provider:');
+    lines.push('    webhook:');
+    lines.push('      url: "' + yamlQuote(url) + '"');
+    lines.push('      result:');
+    lines.push('        jsonPath: "$.value"');
+    lines.push('      headers:');
+    lines.push('        Authorization: "Bearer {{ "{{ .auth.token }}" }}"');
+    lines.push('        Content-Type: application/json');
+    lines.push('      secrets:');
+    lines.push('        - name: auth');
+    lines.push('          secretRef:');
+    lines.push('            name: ' + tokenSecret);
+    if (storeKind === 'ClusterSecretStore') {
+      lines.push('            namespace: ' + ns);
+    }
+    if (yamlEl) yamlEl.value = lines.join('\n') + '\n';
+  }
+
+  ['input', 'change'].forEach(function (ev) {
+    root.addEventListener(ev, buildYaml);
+  });
+  if (tokenToggle && tokenEl) {
+    tokenToggle.addEventListener('click', function () {
+      var show = tokenEl.type === 'password';
+      tokenEl.type = show ? 'text' : 'password';
+      tokenToggle.textContent = show ? 'Hide' : 'Show';
+    });
+  }
+  buildYaml();
+})();
+</script>

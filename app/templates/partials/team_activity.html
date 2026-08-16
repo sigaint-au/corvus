@@ -1,0 +1,21 @@
+<section>
+  <h2>Access activity</h2>
+  <p class="muted">Membership, invites, LDAP maps, and team settings changes.</p>
+  {% if org_events %}
+  <div class="table"><table>
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for e in org_events %}
+      <tr>
+        <td class="muted">{{ e.created_at }}</td>
+        <td>{{ e.actor_email or 'unknown' }}</td>
+        <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
+        <td class="muted">{{ e.detail }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No activity yet.</p>
+  {% endif %}
+</section>

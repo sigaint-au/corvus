@@ -1,0 +1,32 @@
+<section class="list-panel">
+  <h2>Branding</h2>
+  <p class="muted">
+    Product name shown in the sidebar, login screen, and page titles.
+    Classification banner colours are under the Classification tab.
+  </p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="branding">
+    <label>Brand name
+      <input type="text" name="brand_name" required maxlength="80"
+             value="{{ settings.brand_name or 'Sigaint' }}"
+             placeholder="Sigaint">
+    </label>
+    <label>Tagline
+      <input type="text" name="brand_tagline" maxlength="120"
+             value="{{ settings.brand_tagline if settings.brand_tagline is not none else 'Secret Server' }}"
+             placeholder="Secret Server">
+    </label>
+    <p class="muted field-spacer">
+      Preview:
+      <strong>{{ settings.brand_name or 'Sigaint' }}</strong>
+      {% if settings.brand_tagline %}
+      <span class="muted">{{ settings.brand_tagline }}</span>
+      {% endif %}
+      · page titles:
+      <code class="k">{{ settings.brand_name or 'Sigaint' }}{% if settings.brand_tagline %} {{ settings.brand_tagline }}{% endif %}</code>
+    </p>
+    <p class="form-actions"><button type="submit">Save branding</button></p>
+  </form>
+</section>
+

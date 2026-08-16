@@ -1,0 +1,136 @@
+<section class="list-panel">
+  <h2>LDAP authentication</h2>
+  <p class="muted page-desc">
+    Directory login alongside local accounts. Groups are read on each sign-in.
+    Use <code class="k">ldaps://</code> or StartTLS - plain <code class="k">ldap://</code> without TLS is refused.
+  </p>
+  <form method="post" class="settings-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="ldap">
+
+    <label class="check-row">
+      <input type="checkbox" name="ldap_enabled" value="1"
+             {% if settings.ldap_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Enable LDAP login
+    </label>
+
+    <fieldset class="field-group">
+      <legend>Connection</legend>
+      <div class="field-grid">
+        <label class="span-2">Server URL
+          <input type="text" name="ldap_url" value="{{ settings.ldap_url }}"
+                 placeholder="ldaps://ipa.example.com or ldap://ipa.example.com:389">
+        </label>
+        <label class="check-row span-2">
+          <input type="checkbox" name="ldap_start_tls" value="1"
+                 {% if settings.ldap_start_tls in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+          StartTLS after connect
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>Service bind</legend>
+      <div class="field-grid">
+        <label class="span-2">Bind DN
+          <input type="text" name="ldap_bind_dn" value="{{ settings.ldap_bind_dn }}"
+                 placeholder="uid=svc-secretstore,cn=users,cn=accounts,dc=example,dc=com">
+        </label>
+        <label class="span-2">Bind password
+          <input type="password" name="ldap_bind_password" value="" autocomplete="new-password"
+                 placeholder="{% if settings.ldap_bind_password_set %}•••••••• (leave blank to keep){% else %}optional for anonymous bind{% endif %}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>User lookup</legend>
+      <div class="field-grid">
+        <label class="span-2">Search base
+          <input type="text" name="ldap_user_base" value="{{ settings.ldap_user_base }}"
+                 placeholder="cn=users,cn=accounts,dc=example,dc=com">
+        </label>
+        <label class="span-2">User filter
+          <input type="text" name="ldap_user_filter" value="{{ settings.ldap_user_filter }}"
+                 placeholder="(|(mail={login})(uid={login}))">
+          <span class="field-hint"><code class="k">{login}</code> is replaced with the signed-in identifier</span>
+        </label>
+        <label>Email attribute
+          <input type="text" name="ldap_email_attr" value="{{ settings.ldap_email_attr or 'mail' }}">
+        </label>
+        <label>Display name attribute
+          <input type="text" name="ldap_name_attr" value="{{ settings.ldap_name_attr or 'displayName' }}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>Groups</legend>
+      <div class="field-grid">
+        <label class="check-row span-2">
+          <input type="checkbox" name="ldap_use_memberof" value="1"
+                 {% if settings.ldap_use_memberof in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+          Use <code class="k">memberOf</code> for groups
+        </label>
+        <label class="span-2">Group search base
+          <input type="text" name="ldap_group_base" value="{{ settings.ldap_group_base }}"
+                 placeholder="e.g. cn=groups,cn=accounts,dc=example,dc=com">
+          <span class="field-hint">Only needed when not using memberOf</span>
+        </label>
+        <label class="span-2">Group filter
+          <input type="text" name="ldap_group_filter" value="{{ settings.ldap_group_filter }}"
+                 placeholder="e.g. (member={dn})">
+          <span class="field-hint"><code class="k">{dn}</code> is the user’s DN</span>
+        </label>
+      </div>
+    </fieldset>
+
+    <p class="form-actions"><button type="submit">Save LDAP settings</button></p>
+  </form>
+</section>
+
+<section class="list-panel">
+  <h2>LDAP group → roles</h2>
+  <p class="muted">
+    Map directory groups to roles. Matching groups sync global admin on login.
+  </p>
+  {% if ldap_role_maps %}
+  <div class="table"><table>
+    <thead><tr><th>LDAP group</th><th>Role</th><th></th></tr></thead>
+    <tbody>
+    {% for m in ldap_role_maps %}
+      <tr>
+        <td><code class="k">{{ m.ldap_group }}</code></td>
+        <td><span class="badge" data-variant="secondary">{{ m.role }}</span></td>
+        <td class="acts">
+          <form method="post" class="inline"
+                onsubmit="return confirm('Remove this mapping?')">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="ldap_role_map_delete">
+            <input type="hidden" name="map_id" value="{{ m.id }}">
+            <button type="submit" class="link danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">No role maps yet.</p>
+  {% endif %}
+  <form method="post" class="row mt-1">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="ldap_role_map_add">
+    <label class="flex-2">LDAP directory group (CN or DN)
+      <input type="text" name="ldap_group" required
+             placeholder="e.g. secretstore-admins  or  cn=secretstore-admins,cn=groups,dc=example,dc=com">
+    </label>
+    <label>App role
+      <select name="role">
+        <option value="global_admin">global_admin</option>
+      </select>
+    </label>
+    <button type="submit">Add map</button>
+  </form>
+</section>
+

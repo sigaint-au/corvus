@@ -1,0 +1,78 @@
+<section class="list-panel">
+  <h2>Email (SMTP)</h2>
+  <p class="muted">
+    Outbound mail for password reset links and optional login alerts.
+    When SMTP is disabled or incomplete, password resets still create a token
+    (logged server-side); login alerts are skipped.
+  </p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="smtp">
+    <label class="check-row">
+      <input type="checkbox" name="smtp_enabled" value="1"
+             {% if settings.smtp_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Enable outbound email
+    </label>
+    <label>SMTP host
+      <input type="text" name="smtp_host" value="{{ settings.smtp_host }}"
+             placeholder="smtp.example.com" autocomplete="off">
+    </label>
+    <div class="row">
+      <label>Port
+        <input type="number" name="smtp_port" min="1" max="65535"
+               value="{{ settings.smtp_port or '587' }}" required>
+      </label>
+      <label>Encryption
+        <select name="smtp_encryption">
+          {% set enc = (settings.smtp_encryption or 'starttls')|lower %}
+          <option value="starttls" {% if enc == 'starttls' %}selected{% endif %}>STARTTLS (typical 587)</option>
+          <option value="ssl" {% if enc == 'ssl' %}selected{% endif %}>SSL/TLS (typical 465)</option>
+          <option value="none" {% if enc == 'none' %}selected{% endif %}>None</option>
+        </select>
+      </label>
+    </div>
+    <label>Username <span class="muted">(optional if server allows relay)</span>
+      <input type="text" name="smtp_username" value="{{ settings.smtp_username }}"
+             autocomplete="off">
+    </label>
+    <label>Password
+      <input type="password" name="smtp_password" value="" autocomplete="new-password"
+             placeholder="{% if settings.smtp_password_set %}•••••••• (leave blank to keep){% else %}optional{% endif %}">
+    </label>
+    <div class="row">
+      <label>From email
+        <input type="email" name="smtp_from_email" value="{{ settings.smtp_from_email }}"
+               placeholder="e.g. noreply@example.com">
+      </label>
+      <label>From name
+        <input type="text" name="smtp_from_name"
+               value="{{ settings.smtp_from_name or app_name }}"
+               placeholder="{{ app_name }}">
+      </label>
+    </div>
+    <label class="check-row">
+      <input type="checkbox" name="smtp_login_alerts" value="1"
+             {% if settings.smtp_login_alerts in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Send login alert emails on successful sign-in
+    </label>
+    <p class="muted field-spacer">
+      Password-reset emails send when SMTP is enabled; login alerts need the checkbox above.
+    </p>
+    <p class="form-actions"><button type="submit">Save email settings</button></p>
+  </form>
+</section>
+
+<section class="list-panel">
+  <h2>Send test email</h2>
+  <p class="muted">Uses the saved SMTP settings. Save first if you just changed them.</p>
+  <form method="post" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="smtp_test">
+    <label class="flex-2">Recipient email
+      <input type="email" name="test_email"
+             value="{{ session.email or '' }}"
+             placeholder="e.g. you@example.com" required>
+    </label>
+    <button type="submit">Send test</button>
+  </form>
+</section>

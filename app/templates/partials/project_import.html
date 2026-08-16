@@ -1,0 +1,56 @@
+<section>
+  <h2>Import / Export</h2>
+
+  <h3>Export</h3>
+  <p class="muted">Prefer encrypted JSON for backups; plaintext formats need a confirm.</p>
+  <form class="export-form row" id="export-form" action="#" method="get">
+    <label class="export-format">Format
+      <select id="export-format" name="format" aria-label="Export format">
+        <option value="{{ url_for('export_secrets', project_id=project.id, format='json', mode='enc') }}"
+                data-plain="0" selected>Encrypted JSON</option>
+        <option value="{{ url_for('export_secrets', project_id=project.id, format='env', mode='plain') }}"
+                data-plain="1">.env (plaintext)</option>
+        <option value="{{ url_for('export_secrets', project_id=project.id, format='json', mode='plain') }}"
+                data-plain="1">JSON (plaintext)</option>
+        <option value="{{ url_for('export_secrets', project_id=project.id, format='csv', mode='plain') }}"
+                data-plain="1">CSV (plaintext)</option>
+      </select>
+    </label>
+    <p class="form-actions export-go">
+      <button type="submit">Download</button>
+    </p>
+  </form>
+  <script>
+  (function () {
+    var form = document.getElementById('export-form');
+    var sel = document.getElementById('export-format');
+    if (!form || !sel) return;
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var opt = sel.options[sel.selectedIndex];
+      if (!opt || !opt.value) return;
+      if (opt.getAttribute('data-plain') === '1') {
+        if (!confirm('Download PLAINTEXT secrets for this project?')) return;
+      }
+      window.location.href = opt.value;
+    });
+  })();
+  </script>
+
+  <h3>Import</h3>
+  {% if can_write %}
+  <p class="muted">Import from a <code>.env</code>, CSV (<code>key,value</code>), or JSON file/paste.
+    You will preview creates vs updates before anything is written.</p>
+  <form method="post" action="{{ url_for('import_preview', project_id=project.id) }}"
+        enctype="multipart/form-data" class="import-box">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>File <input type="file" name="file" accept=".env,.txt,.csv,.json,text/*"></label>
+    <label>Or paste
+      <textarea name="payload" rows="12" placeholder="KEY=value&#10;OTHER=secret"></textarea>
+    </label>
+    <button type="submit">Preview import</button>
+  </form>
+  {% else %}
+  <p class="muted">You need write access to import secrets.</p>
+  {% endif %}
+</section>
