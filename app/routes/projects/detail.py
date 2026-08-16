@@ -153,6 +153,8 @@ def project_detail(project_id):
     access_bindings = []
     access_groups = []
     effective_access = []
+    effective_access_pager = None
+    effective_access_q = ""
     role_descriptions = {}
     can_edit_access = False
     default_token_days = None
@@ -340,6 +342,35 @@ def project_detail(project_id):
             except Exception:
                 conn.rollback()
                 effective_access = []
+            effective_access_q = (request.args.get("q") or "").strip()
+            if effective_access_q:
+                needle = effective_access_q.casefold()
+                effective_access = [
+                    row
+                    for row in effective_access
+                    if needle in " ".join(
+                        str(row.get(key) or "")
+                        for key in (
+                            "subject_email",
+                            "subject_name",
+                            "subject_kind",
+                            "role_name",
+                            "scope_label",
+                            "scope_kind",
+                            "grant_kind",
+                            "grant_subject",
+                        )
+                    ).casefold()
+                ]
+            effective_access_pager = paging.page_window(len(effective_access), page)
+            effective_access_pager.update(
+                endpoint="project_detail",
+                project_id=project_id,
+                tab="access",
+                q=effective_access_q or None,
+            )
+            start = (page - 1) * effective_access_pager["per_page"]
+            effective_access = effective_access[start : start + effective_access_pager["per_page"]]
             try:
                 cur.execute(
                     """
@@ -407,6 +438,8 @@ def project_detail(project_id):
         "access_bindings": access_bindings,
         "access_groups": access_groups,
         "effective_access": effective_access,
+        "effective_access_pager": effective_access_pager,
+        "effective_access_q": effective_access_q,
         "can_edit_access": can_edit_access,
         "project_role_dropdown": config.RBAC_PROJECT_ROLE_DROPDOWN,
         "role_descriptions": role_descriptions,

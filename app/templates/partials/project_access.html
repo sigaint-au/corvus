@@ -10,9 +10,22 @@
 {% include "partials/access_bindings_panel.html" %}
 <section>
   <div class="section-head">
-    <h2>Effective access</h2>
+    <div>
+      <h2>Effective access</h2>
+      <p class="muted">Who can access this project and why.</p>
+    </div>
+    <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="access">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ effective_access_q or '' }}"
+               placeholder="Search access" aria-label="Search effective access" autocomplete="off">
+      </fieldset>
+      {% if effective_access_q %}
+      <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='access') }}">Clear</a>
+      {% endif %}
+    </form>
   </div>
-  <p class="muted">Who can access this project and why.</p>
   {% if effective_access %}
   <div class="table">
     <table>
@@ -44,7 +57,10 @@
       </tbody>
     </table>
   </div>
+  {% with pager=effective_access_pager %}
+    {% include "partials/pager.html" %}
+  {% endwith %}
   {% else %}
-  <p class="empty">No access grants found for this project.</p>
+  <p class="empty">{% if effective_access_q %}No access grants match “{{ effective_access_q }}”.{% else %}No access grants found for this project.{% endif %}</p>
   {% endif %}
 </section>
