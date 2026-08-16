@@ -35,9 +35,9 @@ def _write_migrations(tmp_path, files):
 
 
 def test_migrations_ship_in_order():
-    """The fresh-install squash contains only the two bootstrap files."""
+    """The fresh-install squash ships the full committed migration set."""
     files = [p.name for p in migrations._migration_files()]
-    assert files == ["0001_init.sql", "0002_rbac.sql"]
+    assert files == ["0001_init.sql", "0002_rbac.sql", "0003_machine_role_enforcement.sql"]
     assert "no-op" in (migrations.MIGRATIONS_DIR / "0002_rbac.sql").read_text()
     for name in files:
         assert name[:4].isdigit()
