@@ -1,6 +1,18 @@
 <section>
-  <h2>Access activity</h2>
-  <p class="muted">Membership, invites, LDAP maps, and team settings changes.</p>
+  <div class="section-head">
+    <div>
+      <h2>Activity</h2>
+      <p class="muted">Membership, invites, LDAP maps, and team settings changes.</p>
+    </div>
+    <form method="get" action="{{ url_for('team_detail', team_id=team.id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="activity">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ activity_q or '' }}" placeholder="Search activity" aria-label="Search activity">
+      </fieldset>
+      {% if activity_q %}<a class="button ghost small" href="{{ url_for('team_detail', team_id=team.id, tab='activity') }}">Clear</a>{% endif %}
+    </form>
+  </div>
   {% if org_events %}
   <div class="table"><table>
     <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
@@ -14,8 +26,11 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table></div>
+  </table>  </div>
+  {% with pager=activity_pager %}
+    {% include "partials/pager.html" %}
+  {% endwith %}
   {% else %}
-  <p class="empty">No activity yet.</p>
+  <p class="empty">{% if activity_q %}No activity matches “{{ activity_q }}”.{% else %}No activity yet.{% endif %}</p>
   {% endif %}
 </section>

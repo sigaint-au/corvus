@@ -17,6 +17,7 @@ from core import db
 from auth import passwords
 from auth import pats
 from ui import pins
+from ui import paging
 from auth import totp_svc
 from auth import user_sessions
 log = logging.getLogger(__name__)
@@ -165,6 +166,8 @@ def profile():
             log.exception("profile: list PATs failed")
             personal_tokens = []
     teams, projects, pending, pins_list, recent = [], [], [], [], []
+    activity_q = (request.args.get("q") or "").strip() if tab == "activity" else ""
+    recent_pager = None
     secret_count = pin_count = 0
     my_access = []
     try:
@@ -237,7 +240,24 @@ def profile():
 
             if tab == "activity":
                 pins_list = pins.list_pins(cur, uid)
-                recent = pins.list_recent(cur, uid)
+                recent = pins.list_recent(cur, uid, limit=1000)
+                if activity_q:
+                    needle = activity_q.casefold()
+                    recent = [
+                        row
+                        for row in recent
+                        if needle in " ".join(
+                            str(row.get(key) or "")
+                            for key in ("key", "project_name", "team_name", "accessed_at")
+                        ).casefold()
+                    ]
+                page = paging.page_arg("page")
+                recent_pager = paging.page_window(len(recent), page)
+                recent_pager.update(
+                    endpoint="profile", tab="activity", q=activity_q or None
+                )
+                start = (page - 1) * recent_pager["per_page"]
+                recent = recent[start : start + recent_pager["per_page"]]
             if tab == "myaccess":
                 try:
                     cur.execute("SELECT * FROM api.my_access_rows()")
@@ -279,6 +299,8 @@ def profile():
         pending_joins=pending if tab == "teams" else [],
         pins=pins_list,
         recent=recent,
+        activity_q=activity_q,
+        recent_pager=recent_pager,
         active_sessions=active_sessions,
         current_sid=current_sid,
         personal_tokens=personal_tokens,

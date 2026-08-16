@@ -106,6 +106,8 @@ def team_detail(team_id):
     hsm_count = local_count = managed_count = 0
     groups = []
     invites, join_requests, org_events = [], [], []
+    activity_q = q if tab == "activity" else ""
+    activity_pager = None
     access_bindings = []
     access_groups = []
     role_descriptions = {}
@@ -248,9 +250,29 @@ def team_detail(team_id):
                 )
         elif tab == "activity":
             try:
-                org_events = audit.list_org_for_team(cur, team_id)
+                org_events = audit.list_org_for_team(cur, team_id, limit=1000)
             except Exception:
                 org_events = []
+            activity_q = (request.args.get("q") or "").strip()
+            if activity_q:
+                needle = activity_q.casefold()
+                org_events = [
+                    event
+                    for event in org_events
+                    if needle in " ".join(
+                        str(event.get(key) or "")
+                        for key in ("actor_email", "action", "detail")
+                    ).casefold()
+                ]
+            activity_pager = paging.page_window(len(org_events), page)
+            activity_pager.update(
+                endpoint="team_detail",
+                team_id=team_id,
+                tab="activity",
+                q=activity_q or None,
+            )
+            start = (page - 1) * activity_pager["per_page"]
+            org_events = org_events[start : start + activity_pager["per_page"]]
         elif tab == "settings" and is_admin:
             cur.execute(
                 """
@@ -306,6 +328,8 @@ def team_detail(team_id):
         invites=invites,
         join_requests=join_requests,
         org_events=org_events,
+        activity_q=activity_q,
+        activity_pager=activity_pager,
         access_bindings=access_bindings,
         access_groups=access_groups,
         can_edit_access=can_edit_access or is_admin,

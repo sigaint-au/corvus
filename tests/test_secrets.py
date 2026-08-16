@@ -68,7 +68,7 @@ class TestSecrets:
         assert b'prod' in r.data
         assert b'Secrets' in r.data
         assert b'>Access<' in r.data
-        assert b'Audit log' in r.data
+        assert b'Activity' in r.data
 
     def test_project_detail_htmx_returns_panel(self):
         with patch.object(db, 'as_user', return_value=self._project_conn()):

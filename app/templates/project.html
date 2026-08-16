@@ -57,7 +57,7 @@
   {% endif %}
   <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='audit') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
      class="page-subnav-link {% if active_tab == 'audit' %}active{% endif %}"{% if active_tab == 'audit' %} aria-current="page"{% endif %}
-  >Audit log</a>
+  >Activity</a>
   <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}"
      class="page-subnav-link {% if active_tab == 'tokens' %}active{% endif %}"{% if active_tab == 'tokens' %} aria-current="page"{% endif %}
   >Machine accounts</a>

@@ -29,7 +29,20 @@
 </section>
 
 <section>
-  <h2>Recently accessed</h2>
+  <div class="section-head">
+    <div>
+      <h2>Recently accessed</h2>
+      <p class="muted">Secrets you opened recently.</p>
+    </div>
+    <form method="get" action="{{ url_for('profile') }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="activity">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ activity_q or '' }}" placeholder="Search activity" aria-label="Search recent activity">
+      </fieldset>
+      {% if activity_q %}<a class="button ghost small" href="{{ url_for('profile', tab='activity') }}">Clear</a>{% endif %}
+    </form>
+  </div>
   {% if recent %}
   <div class="table"><table>
     <thead>
@@ -54,8 +67,11 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table></div>
+  </table>  </div>
+  {% with pager=recent_pager %}
+    {% include "partials/pager.html" %}
+  {% endwith %}
   {% else %}
-  <p class="empty">No recent secret access yet.</p>
+  <p class="empty">{% if activity_q %}No recent activity matches “{{ activity_q }}”.{% else %}No recent secret access yet.{% endif %}</p>
   {% endif %}
 </section>
