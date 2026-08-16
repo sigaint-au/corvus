@@ -1323,16 +1323,19 @@
       font-weight: 600;
     }
     .settings-subnav .settings-subnav-header {
-      margin: .9rem 0 .15rem;
-      padding: 0 .55rem;
-      color: var(--muted-foreground);
-      font-size: .7rem;
-      font-weight: 600;
+      margin: 1.1rem 0 .25rem;
+      padding: .6rem .55rem .05rem .7rem;
+      color: var(--foreground);
+      font-size: .72rem;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: .06em;
+      letter-spacing: .08em;
+      border-top: 1px solid var(--border);
     }
     .settings-subnav .settings-subnav-header:first-child {
       margin-top: 0;
+      padding-top: 0;
+      border-top: none;
     }
     .settings-panel {
       min-width: 0;
@@ -2643,11 +2646,14 @@
        }
        .settings-subnav .settings-subnav-header {
          flex-basis: 100%;
-         margin: .35rem 0 .1rem;
-         padding: 0 .6rem;
+         margin: .6rem 0 .1rem;
+         padding: .4rem .6rem 0;
+         border-top: 1px solid var(--border);
        }
        .settings-subnav .settings-subnav-header:first-child {
          margin-top: 0;
+         padding-top: 0;
+         border-top: none;
        }
 
       .main { padding: 1rem 1rem 2.5rem; }
