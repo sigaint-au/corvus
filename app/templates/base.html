@@ -1286,6 +1286,45 @@
       font-size: .85rem;
       padding: .5rem 0 .55rem;
     }
+    /* Settings page: two-column layout with a sidebar secondary nav. */
+    .settings-side {
+      display: grid;
+      grid-template-columns: 11rem minmax(0, 1fr);
+      gap: 1.5rem;
+      align-items: start;
+      margin-top: 1.25rem;
+    }
+    .settings-subnav {
+      display: flex;
+      flex-direction: column;
+      gap: .1rem;
+      position: sticky;
+      top: 1rem;
+      font-size: .875rem;
+    }
+    .settings-subnav .settings-subnav-link {
+      display: block;
+      padding: .4rem .55rem .4rem .7rem;
+      color: var(--muted-foreground);
+      text-decoration: none;
+      border: none;
+      border-left: 2px solid transparent;
+      border-radius: 6px;
+      font-weight: 500;
+      transition: background .12s ease, color .12s ease;
+    }
+    .settings-subnav .settings-subnav-link:hover {
+      background: var(--accent);
+      color: var(--foreground);
+    }
+    .settings-subnav .settings-subnav-link.active {
+      border-left-color: var(--foreground);
+      color: var(--foreground);
+      font-weight: 600;
+    }
+    .settings-panel {
+      min-width: 0;
+    }
     .tabs .tab .tab-badge {
       display: inline-block;
       margin-left: 0.35em;
@@ -2570,6 +2609,27 @@
         border: none;
       }
       .sidebar-foot .logout-link { width: auto; }
+
+       .settings-side {
+         grid-template-columns: 1fr;
+         gap: .5rem;
+       }
+       .settings-subnav {
+         position: static;
+         flex-direction: row;
+         flex-wrap: wrap;
+         gap: .25rem .5rem;
+         margin-bottom: .5rem;
+       }
+       .settings-subnav .settings-subnav-link {
+         padding: .3rem .6rem;
+         border-left: none;
+         border-radius: 999px;
+       }
+       .settings-subnav .settings-subnav-link.active {
+         border-left: none;
+         background: var(--accent);
+       }
 
       .main { padding: 1rem 1rem 2.5rem; }
       /* Keep the Key and Actions columns pinned while a wide table scrolls,

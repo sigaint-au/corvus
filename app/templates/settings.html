@@ -12,15 +12,15 @@
   >{{ cat_label }}</a>
   {% endfor %}
 </nav>
-{% if cat_subs|length > 1 %}
-<nav class="tabs sub-tabs" aria-label="Server settings sub-sections">
+<div class="settings-side">
+<nav class="settings-subnav" aria-label="Server settings sub-sections">
   {% for sub_key, sub_label in cat_subs %}
   <a href="{{ url_for('server_settings', tab=sub_key) }}"
-     class="tab {% if active_tab == sub_key %}active{% endif %}"{% if active_tab == sub_key %} aria-current="page"{% endif %}
+     class="settings-subnav-link {% if active_tab == sub_key %}active{% endif %}"{% if active_tab == sub_key %} aria-current="page"{% endif %}
   >{{ sub_label }}</a>
   {% endfor %}
 </nav>
-{% endif %}
+<div class="settings-panel">
 
 {% if active_tab == 'general' %}
 <section>
@@ -1021,4 +1021,6 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   })();
   </script>
 {% endif %}
+</div>
+</div>
 {% endblock %}
