@@ -5,34 +5,22 @@
 <p class="page-desc muted">Global admin only. Changes apply immediately for all users.</p>
 
 <nav class="tabs" aria-label="Server settings sections">
-  <a href="{{ url_for('server_settings', tab='general') }}"
-     class="tab {% if active_tab == 'general' %}active{% endif %}"{% if active_tab == 'general' %} aria-current="page"{% endif %}
->General</a>
-  <a href="{{ url_for('server_settings', tab='branding') }}"
-     class="tab {% if active_tab == 'branding' %}active{% endif %}"{% if active_tab == 'branding' %} aria-current="page"{% endif %}
->Branding</a>
-  <a href="{{ url_for('server_settings', tab='banner') }}"
-     class="tab {% if active_tab == 'banner' %}active{% endif %}"{% if active_tab == 'banner' %} aria-current="page"{% endif %}
->Classification</a>
-  <a href="{{ url_for('server_settings', tab='admins') }}"
-     class="tab {% if active_tab == 'admins' %}active{% endif %}"{% if active_tab == 'admins' %} aria-current="page"{% endif %}
->Admins</a>
-  <a href="{{ url_for('server_settings', tab='users') }}"
-     class="tab {% if active_tab == 'users' %}active{% endif %}"{% if active_tab == 'users' %} aria-current="page"{% endif %}
->Users</a>
-  <a href="{{ url_for('server_settings', tab='ldap') }}"
-     class="tab {% if active_tab == 'ldap' %}active{% endif %}"{% if active_tab == 'ldap' %} aria-current="page"{% endif %}
->LDAP</a>
-  <a href="{{ url_for('server_settings', tab='oidc') }}"
-     class="tab {% if active_tab == 'oidc' %}active{% endif %}"{% if active_tab == 'oidc' %} aria-current="page"{% endif %}
->OIDC / SSO</a>
-  <a href="{{ url_for('server_settings', tab='email') }}"
-     class="tab {% if active_tab == 'email' %}active{% endif %}"{% if active_tab == 'email' %} aria-current="page"{% endif %}
->Email</a>
-  <a href="{{ url_for('server_settings', tab='encryption') }}"
-     class="tab {% if active_tab == 'encryption' %}active{% endif %}"{% if active_tab == 'encryption' %} aria-current="page"{% endif %}
->Encryption</a>
+  {% for cat_key, cat_label, subs in categories %}
+  {% set target = (active_tab if category == cat_key else subs[0][0]) %}
+  <a href="{{ url_for('server_settings', tab=target) }}"
+     class="tab {% if category == cat_key %}active{% endif %}"{% if category == cat_key %} aria-current="page"{% endif %}
+  >{{ cat_label }}</a>
+  {% endfor %}
 </nav>
+{% if cat_subs|length > 1 %}
+<nav class="tabs sub-tabs" aria-label="Server settings sub-sections">
+  {% for sub_key, sub_label in cat_subs %}
+  <a href="{{ url_for('server_settings', tab=sub_key) }}"
+     class="tab {% if active_tab == sub_key %}active{% endif %}"{% if active_tab == sub_key %} aria-current="page"{% endif %}
+  >{{ sub_label }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
 
 {% if active_tab == 'general' %}
 <section>

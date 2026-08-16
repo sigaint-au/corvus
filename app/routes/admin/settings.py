@@ -27,6 +27,15 @@ from auth import user_sessions
 from lib.users import user_email
 log = logging.getLogger(__name__)
 
+SETTINGS_CATEGORIES = [
+    ("system", "System", [("general", "General"), ("branding", "Branding"), ("banner", "Classification")]),
+    ("access", "Access", [("admins", "Admins"), ("users", "Users")]),
+    ("authentication", "Authentication", [("ldap", "LDAP"), ("oidc", "OIDC / SSO")]),
+    ("operations", "Operations", [("email", "Email"), ("encryption", "Encryption")]),
+]
+ALL_TABS = tuple(t for _, _, subs in SETTINGS_CATEGORIES for t, _ in subs)
+TAB_CATEGORY = {t: c for c, _, subs in SETTINGS_CATEGORIES for t, _ in subs}
+
 
 @authz.global_admin_required
 def server_settings():
@@ -107,9 +116,9 @@ def server_settings():
             pat_max = (request.form.get("max_pat_lifetime_days") or "").strip()
             machine_max = (request.form.get("max_machine_token_lifetime_days") or "").strip()
             try:
-                if pat_max and not (1 <= int(pat_max) <= config.MAX_EXPIRY_DAYS):
+                if pat_max and not 1 <= int(pat_max) <= config.MAX_EXPIRY_DAYS:
                     raise ValueError
-                if machine_max and not (1 <= int(machine_max) <= config.MAX_EXPIRY_DAYS):
+                if machine_max and not 1 <= int(machine_max) <= config.MAX_EXPIRY_DAYS:
                     raise ValueError
             except ValueError:
                 flash(f"Max token lifetime must be between 1 and {config.MAX_EXPIRY_DAYS} days", "error")
@@ -557,18 +566,10 @@ def server_settings():
         return redirect(url_for("server_settings", tab=tab))
 
     tab = (request.args.get("tab") or "general").strip().lower()
-    if tab not in (
-        "general",
-        "branding",
-        "banner",
-        "admins",
-        "users",
-        "ldap",
-        "oidc",
-        "email",
-        "encryption",
-    ):
+    if tab not in ALL_TABS:
         tab = "general"
+    category = TAB_CATEGORY[tab]
+    cat_subs = next(subs for c, _, subs in SETTINGS_CATEGORIES if c == category)
     settings = settings_svc.get_settings()
     # never show raw passwords in the form
     settings = dict(settings)
@@ -693,6 +694,9 @@ def server_settings():
         oidc_role_maps=oidc_role_maps,
         classification=settings_svc.classification(),
         active_tab=tab,
+        categories=SETTINGS_CATEGORIES,
+        category=category,
+        cat_subs=cat_subs,
         smtp_encryption_modes=config.SMTP_ENCRYPTION_MODES,
         server_url=server_url,
         oidc_redirect_uri=oidc_redirect_uri,

@@ -61,9 +61,9 @@ class TestSettings:
             r = self.client.get('/settings')
         assert r.status_code == 200
         assert b'?tab=general' in r.data
+        assert b'?tab=branding' in r.data
         assert b'?tab=banner' in r.data
         assert b'?tab=admins' in r.data
-        assert b'?tab=users' in r.data
         assert b'?tab=ldap' in r.data
         assert b'?tab=email' in r.data
         assert b'Account registration' in r.data
