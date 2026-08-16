@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from flask import flash, redirect, render_template, request, session, url_for
 
 from auth import authz
-from core import config
+from core import config, settings_svc
 from core import db
 from ui import nav
 from crypto import sha256_hex
@@ -142,6 +142,7 @@ def create_token(project_id):
 
     expires_at = None
     days_raw = (request.form.get("expires_days") or "").strip()
+    require_expiry, max_days = settings_svc.token_expiry_policy("machine")
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         # Explicit write gate (read-only can list tokens, not create them)
         cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
@@ -160,15 +161,18 @@ def create_token(project_id):
             row = cur.fetchone() or {}
             if row.get("default_token_days"):
                 days_raw = str(row["default_token_days"])
+        if not days_raw and require_expiry:
+            flash("Expires days is required", "error")
+            return _token_redirect()
         if days_raw:
             try:
                 days = int(days_raw)
             except ValueError:
                 flash("Expires days must be a positive integer", "error")
                 return _token_redirect()
-            if days < 1 or days > config.MAX_EXPIRY_DAYS:
+            if days < 1 or days > max_days:
                 flash(
-                    f"Expires days must be between 1 and {config.MAX_EXPIRY_DAYS}",
+                    f"Expires days must be between 1 and {max_days}",
                     "error",
                 )
                 return _token_redirect()

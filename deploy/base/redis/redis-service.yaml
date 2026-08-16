@@ -1,0 +1,72 @@
+# Headless service for the redis StatefulSet — gives each pod a stable
+# DNS name (redis-0, redis-1, redis-2) so Sentinel can talk to them
+# individually regardless of master status.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: secretserver
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: secretserver
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP
+---
+# Service that always points at the current Sentinel-elected master.
+# The selector is patched by the redis-failover-controller on every
+# sentinel-driven failover. Initially selects nothing — first reconciliation
+# sets it to the elected master.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-master
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: secretserver
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: secretserver
+    statefulset.kubernetes.io/pod-name: redis-0   # placeholder, controller patches
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP
+      appProtocol: redis
+  publishNotReadyAddresses: false
+---
+# Client-facing Service. Returns the master ARecord when DNS lookups
+# succeed (headless + sentinel-style). For a sentinel-aware client the
+# REDIS_URL is `redis://redis-sentinel:26379/0`; for a non-aware client
+# the app can use `redis://redis-master:6379/0` (operator-managed).
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: secretserver
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: secretserver
+    redis-role: master   # patched by the failover controller
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP
+      appProtocol: redis

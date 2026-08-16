@@ -1,0 +1,104 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secretserver-app
+  labels:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/part-of: secretserver
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: app
+      app.kubernetes.io/part-of: secretserver
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # From ingress controller / cluster gateway.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gateway-system
+      ports:
+        - port: 8080
+          protocol: TCP
+    # From PostgREST (in-cluster call to POSTGREST_URL).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgrest
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Probe traffic from kubelet on the health ports across private cluster CIDRs.
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    # DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Postgres (CloudNativePG) — auth + admin DSN.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 5432
+          protocol: TCP
+    # Redis master (and sentinels if needed).
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 26379
+          protocol: TCP
+    # PostgREST.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgrest
+              app.kubernetes.io/part-of: secretserver
+      ports:
+        - port: 3000
+          protocol: TCP
+    # External HSM (when using a network-attached PKCS#11 module).
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - port: 1798
+          protocol: TCP

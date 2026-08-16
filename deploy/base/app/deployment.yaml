@@ -1,0 +1,200 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secretserver-app
+  labels:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: secretserver
+spec:
+  # Three replicas — survives a single node / pod loss and stays available
+  # through rolling updates (maxUnavailable: 0).
+  replicas: 3
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app
+      app.kubernetes.io/part-of: secretserver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: app
+        app.kubernetes.io/component: web
+        app.kubernetes.io/part-of: secretserver
+    spec:
+      serviceAccountName: secretserver-app
+      automountServiceAccountToken: false
+      priorityClassName: secretserver-ha
+      enableServiceLinks: false
+      restartPolicy: Always
+      # Image ships non-root (uid 10001) and gunicorn entrypoint — do not
+      # override USER. SecurityContext reinforces it cluster-side.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      # Spread replicas across nodes and zones so a single node / zone loss
+      # does not take the service down.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: app
+              app.kubernetes.io/part-of: secretserver
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: app
+              app.kubernetes.io/part-of: secretserver
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: app
+                    app.kubernetes.io/part-of: secretserver
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      # Slow start: terminationGracePeriodSeconds must exceed gunicorn's
+      # graceful-timeout (30s) + buffer for in-flight DB connections.
+      terminationGracePeriodSeconds: 45
+      dnsPolicy: ClusterFirst
+      containers:
+        - name: app
+          image: ghcr.io/sigaint/secretserver/app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: secretserver-app-env
+          env:
+            # Secrets are projected from operator-managed Secrets into these env vars.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-app-secrets
+                  key: DATABASE_URL
+            - name: DATABASE_ADMIN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-app-secrets
+                  key: DATABASE_ADMIN_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-app-secrets
+                  key: JWT_SECRET
+            - name: MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-app-secrets
+                  key: MASTER_KEY
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-app-secrets
+                  key: SECRET_KEY
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+              ephemeral-storage: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+              ephemeral-storage: "512Mi"
+          startupProbe:
+            # Slow start — schema bootstrap + first request can take >10s
+            # on a cold cache.
+            httpGet:
+              path: /healthz
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12   # 60s total
+          livenessProbe:
+            # /healthz always returns 200 when the process is alive.
+            httpGet:
+              path: /healthz
+              port: http
+              scheme: HTTP
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            # /readyz verifies schema + DB connectivity; gunicorn keeps the
+            # worker alive while we drain on rolling updates.
+            httpGet:
+              path: /readyz
+              port: http
+              scheme: HTTP
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+          # Pre-stop lets gunicorn finish in-flight requests via SIGTERM.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          # Image already runs with /tmp tmpfs; add /home/appuser (writable
+          # for python-pkcs11 sessions to keep state files in).
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /home/appuser
+            - name: hsm
+              mountPath: /hsm
+              readOnly: false
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: home
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        # /hsm is empty in this base (production uses an external PKCS#11
+        # HSM; pin-source files live here only when integrating SoftHSM for
+        # local QA). Operators overlay this with a CSI-backed volume.
+        - name: hsm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi

@@ -192,7 +192,9 @@ def eso_patch_secret(project_ref, key):
             return jsonify({"error": "forbidden"}), 403
         cur.execute(
             """
-            SELECT id, key, value_enc, note, kind, expires_at, created_at, updated_at, crypto_provider
+            SELECT id, key, value_enc, note, kind, expires_at,
+                   rotation_interval_days, rotation_owner, rotation_next_at, rotated_at,
+                   created_at, updated_at, crypto_provider
               FROM api.secrets
              WHERE project_id = %s AND key = %s AND deleted_at IS NULL
             """,
@@ -252,7 +254,9 @@ def eso_patch_secret(project_ref, key):
         )
         cur.execute(
             """
-            SELECT id, key, note, kind, expires_at, created_at, updated_at
+            SELECT id, key, note, kind, expires_at,
+                   rotation_interval_days, rotation_owner, rotation_next_at, rotated_at,
+                   created_at, updated_at
               FROM api.secrets WHERE id = %s
             """,
             (str(sid),),

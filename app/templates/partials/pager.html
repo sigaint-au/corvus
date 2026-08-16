@@ -30,22 +30,17 @@
       </button>
       {% endif %}
     </li>
-    {% for p in range(1, pager.pages + 1) %}
-      {% if p == pager.page %}
-      <li>
-        <a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
-           class="button small" aria-current="page">{{ p }}</a>
-      </li>
-      {% elif p == 1 or p == pager.pages or (p >= pager.page - 2 and p <= pager.page + 2) %}
-      <li>
-        <a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
-           class="button outline small">{{ p }}</a>
-      </li>
-      {% elif p == pager.page - 3 or p == pager.page + 3 %}
+    {% for p in pager.page_numbers %}
+      {% if not loop.first and p > pager.page_numbers[loop.index0 - 1] + 1 %}
       <li>
         <button type="button" class="outline small" disabled aria-hidden="true" tabindex="-1">…</button>
       </li>
       {% endif %}
+      <li>
+        <a href="{{ url_for(pager.endpoint, page=p, **_q) }}"
+           class="button {% if p == pager.page %}small{% else %}outline small{% endif %}"
+           {% if p == pager.page %}aria-current="page"{% endif %}>{{ p }}</a>
+      </li>
     {% endfor %}
     <li>
       {% if pager.has_next %}

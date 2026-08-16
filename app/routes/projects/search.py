@@ -11,7 +11,7 @@ from auth import authz
 from core import config
 from core import db
 from ui import paging
-from secret_svc.secret_kinds import secret_due_status
+from secret_svc.secret_kinds import expires_status, secret_due_status
 
 
 @authz.login_required
@@ -177,6 +177,7 @@ def global_search():
                 cur.execute(
                     f"""
                     SELECT s.id, s.key, s.note, s.kind, s.project_id, s.expires_at,
+                           s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                            p.name AS project_name, t.name AS team_name
                     FROM api.secrets s
                     JOIN api.projects p ON p.id = s.project_id
@@ -190,6 +191,7 @@ def global_search():
                 secrets = cur.fetchall() or []
                 for s in secrets:
                     s["due"] = secret_due_status(s)
+                    s["rotation_due"] = expires_status(s.get("rotation_next_at"))
 
     return render_template(
         "search.html",

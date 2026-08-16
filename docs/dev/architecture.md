@@ -109,8 +109,8 @@ functions key off that value.
 
 Mutable application caches use Redis when `REDIS_URL` is configured:
 project-key rows, HSM slot URLs, and OIDC discovery documents use shared epoch
-keys, so updates invalidate every app replica. JWKS clients and Fernet objects
-are not retained in process memory. If Redis is unavailable, the app bypasses
+keys, so updates invalidate every app replica. JWKS clients are not retained in process memory; Fernet objects
+are cached per process via ``@lru_cache(maxsize=1)`` on ``_fernet()``. If Redis is unavailable, the app bypasses
 caching and reads the source directly; it never uses a process-local stale-key
 cache. If Redis is unavailable during invalidation, an already-populated Redis
 entry can survive until its TTL; use a database-backed generation or

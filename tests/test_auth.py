@@ -8,10 +8,13 @@ import pytest
 
 import app as store
 from auth import authz
+from auth import pats
 from core import config
 from core import db
 from integrations import ldap_auth
+from integrations import oidc_auth
 from core import settings_svc
+from ui import nav
 
 from tests.helpers import REPO_ROOT, mock_conn as _conn
 
@@ -22,7 +25,25 @@ class TestAuth:
     def setup_method(self, method=None):
         store.app.config['TESTING'] = True
         store.app.config['CSRF_TESTING'] = False
+        self._patchers = [
+            patch.object(oidc_auth, 'oidc_cfg', return_value={'oidc_enabled': 'false'}),
+            patch.object(settings_svc, 'setup_notice', return_value=None),
+            patch.object(settings_svc, 'get_settings', return_value={'registration_enabled': 'true'}),
+            patch.object(nav, 'branding', return_value={
+                'app_name': 'Sigaint', 'brand_name': 'Sigaint', 'brand_tagline': ''
+            }),
+            patch.object(nav, 'classification', return_value={
+                'enabled': False, 'text': '', 'color': '#677381', 'fg': '#ffffff'
+            }),
+            patch.object(authz, 'is_account_disabled', return_value=False),
+        ]
+        for patcher in self._patchers:
+            patcher.start()
         self.client = store.app.test_client()
+
+    def teardown_method(self, method=None):
+        for patcher in self._patchers:
+            patcher.stop()
 
     def test_index_anon_to_login(self):
         r = self.client.get('/')
@@ -44,20 +65,20 @@ class TestAuth:
 
     def test_login_bad_creds(self):
         conn, _ = _conn(fetchone=None)
-        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('lockout.record_failure'), patch('lockout.is_locked', return_value=False):
+        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.record_failure'), patch('auth.lockout.is_locked', return_value=False):
             r = self.client.post('/login', data={'email': 'a@b.c', 'password': 'nope'})
         assert r.status_code == 401
         assert b'Invalid' in r.data
 
     def test_login_locked(self):
-        with patch('lockout.is_locked', return_value=True), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}):
+        with patch('auth.lockout.is_locked', return_value=True), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}):
             r = self.client.post('/login', data={'email': 'a@b.c', 'password': 'x'})
         assert r.status_code == 429
 
     def test_login_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'A'})
-        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('lockout.is_locked', return_value=False), patch('lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch.object(settings_svc, 'setup_notice', return_value=None), patch('totp_svc.needs_challenge', return_value=None), patch('mailer.login_alerts_enabled', return_value=False):
+        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch.object(settings_svc, 'setup_notice', return_value=None), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/login', data={'email': 'a@b.c', 'password': 'secret12'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/teams' in r.location
@@ -72,7 +93,7 @@ class TestAuth:
         with self.client.session_transaction() as s:
             s['stale'] = 'should-be-gone'
             s['_csrf'] = 'old'
-        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('lockout.is_locked', return_value=False), patch('lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch.object(settings_svc, 'setup_notice', return_value=None), patch('totp_svc.needs_challenge', return_value=None), patch('mailer.login_alerts_enabled', return_value=False):
+        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch.object(settings_svc, 'setup_notice', return_value=None), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/login', data={'email': 'a@b.c', 'password': 'secret12'}, follow_redirects=False)
         assert r.status_code == 302
         with self.client.session_transaction() as s:
@@ -114,7 +135,7 @@ class TestAuth:
         ldap_user = {'email': 'ldap@ex.com', 'name': 'LDAP User', 'groups': ['CN=secretstore-admins,OU=groups,DC=ex,DC=com']}
         synced = {'id': uid, 'email': 'ldap@ex.com', 'name': 'LDAP User', 'is_global_admin': True}
         conn, _ = _conn(fetchone=None)
-        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'true'}), patch.object(ldap_auth, 'ldap_authenticate', return_value=ldap_user), patch.object(ldap_auth, 'sync_ldap_user', return_value=synced), patch('lockout.is_locked', return_value=False), patch('lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('totp_svc.needs_challenge', return_value=None), patch('mailer.login_alerts_enabled', return_value=False):
+        with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'true'}), patch.object(ldap_auth, 'ldap_authenticate', return_value=ldap_user), patch.object(ldap_auth, 'sync_ldap_user', return_value=synced), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/login', data={'email': 'ldapuser', 'password': 'dir-pass'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/teams' in r.location
@@ -132,7 +153,7 @@ class TestAuth:
     def test_register_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid})
-        with patch.object(db, 'connect', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('totp_svc.needs_challenge', return_value=None), patch('mailer.login_alerts_enabled', return_value=False):
+        with patch.object(db, 'connect', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/register', data={'email': 'new@b.c', 'password': 'password1', 'name': 'N'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/teams' in r.location
@@ -153,7 +174,7 @@ class TestAuth:
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid})
         admin_conn, admin_cur = _conn()
-        with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('routes.auth.helpers.bootstrap_admin_email', return_value='admin@ex.com'), patch.object(authz, 'is_global_admin', return_value=True), patch('totp_svc.needs_challenge', return_value=None), patch('mailer.login_alerts_enabled', return_value=False):
+        with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('routes.auth.helpers.bootstrap_admin_email', return_value='admin@ex.com'), patch.object(authz, 'is_global_admin', return_value=True), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/register', data={'email': 'admin@ex.com', 'password': 'password1', 'name': 'A'}, follow_redirects=False)
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in admin_cur.execute.call_args_list))
@@ -176,7 +197,7 @@ class TestAuth:
         assert b'href="/register"' not in r.data
 
     def test_registration_disabled_without_bootstrap(self):
-        with patch.object(settings_svc, 'has_global_admin', return_value=False), patch('settings_svc.bootstrap_admin_email', return_value=''), patch.object(settings_svc, 'get_settings', return_value={'registration_enabled': 'true'}):
+        with patch.object(settings_svc, 'has_global_admin', return_value=False), patch('core.settings_svc.bootstrap_admin_email', return_value=''), patch.object(settings_svc, 'get_settings', return_value={'registration_enabled': 'true'}):
             assert not settings_svc.registration_enabled()
 
     def test_logout(self):
@@ -200,7 +221,7 @@ class TestAuth:
         assert b'Forgot password' in r.data
 
     def test_forgot_password_post_no_enumeration(self):
-        with patch('passwords.create_reset_token', return_value=None):
+        with patch('auth.passwords.create_reset_token', return_value=None):
             r = self.client.post('/forgot-password', data={'email': 'nobody@ex.com'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/login' in r.location
@@ -215,7 +236,7 @@ class TestAuth:
         with self.client.session_transaction() as s:
             s['user_id'] = uid
             s['sid'] = str(uuid4())
-        with patch('passwords.change_password', return_value=(True, '')), patch('user_sessions.revoke_other_sessions', return_value=2):
+        with patch('auth.passwords.change_password', return_value=(True, '')), patch('auth.user_sessions.revoke_other_sessions', return_value=2):
             r = self.client.post('/profile/password', data={'current_password': 'oldpass12', 'new_password': 'newpass12', 'new_password_confirm': 'newpass12'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/profile' in r.location
@@ -237,7 +258,7 @@ class TestAuth:
         with self.client.session_transaction() as s:
             s['user_id'] = uid
             s['sid'] = sid
-        with patch('user_sessions.revoke_other_sessions', return_value=3) as rev:
+        with patch('auth.user_sessions.revoke_other_sessions', return_value=3) as rev:
             r = self.client.post('/profile/sessions/revoke-others', follow_redirects=False)
         assert r.status_code == 302
         rev.assert_called_once_with(uid, sid)
@@ -247,7 +268,7 @@ class TestAuth:
         assert r.status_code == 400
 
     def test_reset_password_ok(self):
-        with patch('passwords.consume_reset_token', return_value=(True, '')):
+        with patch('auth.passwords.consume_reset_token', return_value=(True, '')):
             r = self.client.post('/reset-password/goodtoken', data={'password': 'newpass12', 'password_confirm': 'newpass12'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/login' in r.location
@@ -345,7 +366,7 @@ class TestAuth:
         user_conn, cur = _conn(fetchone=fetchone)
         cur.execute.side_effect = execute
         cur.fetchall.side_effect = fetchall
-        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn), patch('user_sessions.list_sessions', return_value=[]):
+        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn), patch('auth.user_sessions.list_sessions', return_value=[]):
             r = self.client.get('/profile')
         assert r.status_code == 200
         assert b'My profile' in r.data
@@ -362,7 +383,7 @@ class TestAuth:
         assert b'At a glance' in r.data
         assert b'Change password' not in r.data
         assert b'Active sessions' not in r.data
-        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn), patch('user_sessions.list_sessions', return_value=[]), patch('pats.list_for_user', return_value=[]):
+        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn), patch('auth.user_sessions.list_sessions', return_value=[]), patch('auth.pats.list_for_user', return_value=[]):
             r_sec = self.client.get('/profile?tab=security')
         assert r_sec.status_code == 200
         assert b'Change password' in r_sec.data
@@ -390,7 +411,7 @@ class TestAuth:
             s['is_global_admin'] = True
         admin_conn, _ = _conn(fetchone={'id': uid, 'email': 'admin@ex.com', 'name': 'Admin', 'is_global_admin': True, 'auth_source': 'ldap', 'created_at': '2025-06-01'})
         user_conn, _ = _conn(fetchone={'n': 0}, fetchall=[])
-        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn), patch('user_sessions.list_sessions', return_value=[]), patch('pats.list_for_user', return_value=[]):
+        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn), patch('auth.user_sessions.list_sessions', return_value=[]), patch('auth.pats.list_for_user', return_value=[]):
             r = self.client.get('/profile?tab=account')
             r_sec = self.client.get('/profile?tab=security')
         assert r.status_code == 200

@@ -1,0 +1,45 @@
+# Default-deny NetworkPolicy for the secretserver namespace.
+# Each component policy (app/postgrest/postgres/redis) opens only the
+# minimal cross-component paths needed. This umbrella policy blocks
+# everything not explicitly allowed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secretserver-default-deny
+  labels:
+    app.kubernetes.io/part-of: secretserver
+spec:
+  # Match all pods in the namespace.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  # Empty ingress[] means deny ALL ingress traffic.
+  # Empty egress[] means deny ALL egress traffic.
+---
+# Allow DNS resolution from any pod in the namespace to kube-dns.
+# Component policies already allow DNS; this is a belt-and-braces fallback
+# for any new pod that ships without its own policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secretserver-allow-dns
+  labels:
+    app.kubernetes.io/part-of: secretserver
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

@@ -56,6 +56,9 @@ def create_app():
 
     app.jinja_env.filters["redact_pin"] = _hsm.redact_pkcs11_url
 
+    # ── Schema bootstrap (runs once per process) ───────────────────────
+    _schema_ready = False
+
     # ── Health check endpoints (no auth required) ──────────────────────
     @app.get("/healthz")
     def healthz():
@@ -64,7 +67,9 @@ def create_app():
 
     @app.get("/readyz")
     def readyz():
-        """Readiness probe — checks database connectivity."""
+        """Readiness probe — checks schema initialization and database connectivity."""
+        if not _schema_ready:
+            return jsonify({"status": "not ready"}), 503
         try:
             with db.connect_admin() as conn, conn.cursor() as cur:
                 cur.execute("SELECT 1")
@@ -72,20 +77,22 @@ def create_app():
         except Exception:
             return jsonify({"status": "not ready"}), 503
 
-    # ── Schema bootstrap (runs once per process) ───────────────────────
-    _schema_ready = False
-
     @app.before_request
     def _bootstrap_schema():
         """Ensure the database schema is applied once before handling requests."""
         nonlocal _schema_ready
         if _schema_ready:
-            return
+            return None
         if app.config.get("TESTING"):
             _schema_ready = True
-            return
-        ensure_schema()
+            return None
+        try:
+            ensure_schema()
+        except Exception:
+            log.exception("schema initialization failed")
+            return jsonify({"status": "not ready"}), 503
         _schema_ready = True
+        return None
 
     app.before_request(authz.csrf_protect)
     app.before_request(authz.validate_registered_session)
@@ -214,6 +221,49 @@ def rekey_hsm_kek_command(slot_id):
 
     n = project_keys.rotate_hsm_kek(slot_id)
     click.echo(f"rotated HSM KEK for slot {slot_id} — re-wrapped {n} project key(s)")
+
+
+@app.cli.command("notify-due")
+@click.option("--days", type=int, default=14, help="Due window in days.")
+@click.option("--dry-run", is_flag=True, help="Count recipients without sending email.")
+def notify_due_command(days, dry_run):
+    """Email expiring secrets/tokens and pending approval reminders."""
+    from ops import send_due_notifications
+
+    result = send_due_notifications(days, dry_run=dry_run)
+    click.echo(
+        f"notify-due recipients={result['recipients']} "
+        f"sent={result['sent']} failed={result['failed']}"
+    )
+
+
+@app.cli.command("sync-directory")
+@click.option(
+    "--source",
+    type=click.Choice(["ldap", "oidc", "ldap,oidc"]),
+    default="ldap",
+    help="Directory source to deprovision.",
+)
+@click.option(
+    "--active-email-file",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Newline-delimited active directory emails. Required for OIDC.",
+)
+@click.option("--dry-run", is_flag=True, help="Count affected users without changing data.")
+def sync_directory_command(source, active_email_file, dry_run):
+    """Disable directory users absent from the active directory roster."""
+    from ops import sync_directory
+
+    result = sync_directory(
+        source=source,
+        active_email_file=active_email_file,
+        dry_run=dry_run,
+    )
+    click.echo(
+        f"sync-directory source={result['source']} disabled={result['disabled']} "
+        f"revoked_sessions={result['revoked_sessions']} revoked_tokens={result['revoked_tokens']}"
+    )
 
 
 if __name__ == "__main__":

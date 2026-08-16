@@ -18,8 +18,7 @@
                 data-url="{{ url_for('bulk_trash') }}"
                 data-confirm="Restore {n} selected secret(s)?">Restore</option>
         <option value="purge"
-                data-url="{{ url_for('bulk_trash') }}"
-                data-confirm="Permanently delete {n} secret(s)?">Delete forever</option>
+                data-url="{{ url_for('bulk_trash') }}">Delete forever</option>
       </select>
       <button type="button" id="bulk-apply" class="bulk-apply" disabled>Apply</button>
     </div>
@@ -81,7 +80,7 @@
           <button type="submit" class="link">Restore</button>
         </form>
         <form method="post" action="{{ url_for('purge_secret', secret_id=item.id, q=search_q or none) }}" class="inline"
-                             onsubmit="return confirm({{ ('Permanently delete ' ~ item.key ~ '?')|tojson }}) && confirm('Delete forever - this cannot be undone. Continue?')">
+                             onsubmit="return confirm({{ ('Permanently delete ' ~ item.key ~ '? This cannot be undone.')|tojson }})">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <button type="submit" class="link danger">Delete forever</button>
         </form>

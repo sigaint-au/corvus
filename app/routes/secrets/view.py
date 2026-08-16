@@ -187,6 +187,7 @@ def secret_view(project_id, secret_id):
         cur.execute(
             """
             SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
+                   s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                    s.requires_approval, s.access_mode, s.created_at, s.updated_at,
                    s.last_accessed_at, s.last_accessed_by, s.crypto_provider,
                    p.name AS project_name, p.require_reveal_approval,

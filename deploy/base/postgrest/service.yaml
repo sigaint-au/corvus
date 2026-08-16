@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: secretserver-postgrest
+  labels:
+    app.kubernetes.io/name: postgrest
+    app.kubernetes.io/part-of: secretserver
+spec:
+  type: ClusterIP
+  clusterIP: None  # headless — only in-cluster callers (the app) reach this
+  selector:
+    app.kubernetes.io/name: postgrest
+    app.kubernetes.io/part-of: secretserver
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
+      appProtocol: http

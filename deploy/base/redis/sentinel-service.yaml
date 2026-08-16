@@ -1,0 +1,41 @@
+# Headless service for the sentinel StatefulSet — peer discovery.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-sentinel-headless
+  labels:
+    app.kubernetes.io/name: redis-sentinel
+    app.kubernetes.io/part-of: secretserver
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: redis-sentinel
+    app.kubernetes.io/part-of: secretserver
+  ports:
+    - name: sentinel
+      port: 26379
+      targetPort: sentinel
+      protocol: TCP
+---
+# Client-facing sentinel Service. The app's REDIS_URL points here when
+# using a sentinel-aware redis-py client (`Sentinel([...]).master_for(...)`).
+# Operators can override REDIS_URL to redis-master:6379 for a naive client.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-sentinel
+  labels:
+    app.kubernetes.io/name: redis-sentinel
+    app.kubernetes.io/part-of: secretserver
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis-sentinel
+    app.kubernetes.io/part-of: secretserver
+  ports:
+    - name: sentinel
+      port: 26379
+      targetPort: sentinel
+      protocol: TCP
+      appProtocol: redis

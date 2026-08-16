@@ -61,6 +61,13 @@ class TestProjectCrypto:
         connect.assert_called_once()
         client.setex.assert_called_once()
 
+    def test_slot_url_reads_database_without_redis(self):
+        slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
+        conn, _ = _conn(fetchone={"pkcs11_url": slot_url})
+        with patch.object(crypto.cache, "redis_client", return_value=None), \
+             patch.object(crypto.db, "connect_admin", return_value=conn):
+            assert crypto.slot_url("slot-1") == slot_url
+
     def test_project_key_invalidation_advances_shared_epoch(self):
         client = MagicMock()
         with patch.object(crypto.cache, "redis_client", return_value=client):
@@ -195,7 +202,8 @@ class TestHsmDekContract:
         admin_conn, admin_cur = _project_keys_conn(fetchone=None)
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
              patch.object(project_keys.crypto, "slot_url", return_value="pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"), \
-             patch.object(hsm, "wrap_dek_for_slot", side_effect=capture_wrap):
+             patch.object(hsm, "wrap_dek_for_slot", side_effect=capture_wrap), \
+             patch.object(hsm, "ensure_kek_for_slot"):
             assert project_keys.ensure_project_key(
                 pid, provider="hsm", hsm_slot_id=slot_id
             ) is True

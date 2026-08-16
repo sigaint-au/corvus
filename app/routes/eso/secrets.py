@@ -76,6 +76,7 @@ def eso_get_secret(project_ref, key):
         cur.execute(
             """
             SELECT id, key, value_enc, note, kind, expires_at,
+                   rotation_interval_days, rotation_owner, rotation_next_at, rotated_at,
                    created_at, updated_at, last_accessed_at, crypto_provider
               FROM api.secrets
              WHERE project_id = %s AND key = %s AND deleted_at IS NULL
@@ -257,6 +258,7 @@ def eso_list_secrets(project_ref):
             cur.execute(
                 f"""
                 SELECT s.id, s.key, s.note, s.kind, s.expires_at,
+                       s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                        s.created_at, s.updated_at, s.last_accessed_at,
                        COALESCE(
                          (

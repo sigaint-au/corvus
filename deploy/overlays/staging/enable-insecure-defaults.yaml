@@ -1,0 +1,10 @@
+# WARNING: STAGING / DEVELOPMENT ONLY.
+# NEVER apply this patch to a production environment.
+# ALLOW_INSECURE_DEFAULTS allows starting with empty/default master keys for testing.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: secretserver-app-env
+data:
+  ALLOW_INSECURE_DEFAULTS: "1"
+  FLASK_ENV: "development"

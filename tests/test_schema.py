@@ -25,7 +25,7 @@ class TestEnsureSchema:
 
     def test_uses_advisory_lock(self):
         conn, cur = _conn()
-        with patch.object(schema_mod, 'DATABASE_ADMIN_URL', 'postgres://admin@x/db'), patch.object(db, 'connect_admin', return_value=conn), patch.object(schema_mod, 'bootstrap_admin_email', return_value=''):
+        with patch.object(schema_mod, 'DATABASE_ADMIN_URL', 'postgres://admin@x/db'), patch.object(db, 'connect_admin', return_value=conn), patch.object(schema_mod, 'bootstrap_admin_email', return_value=''), patch.object(migrations_mod, 'apply_pending'):
             schema_mod.ensure_schema()
         sqls = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list if c.args))
         assert 'pg_advisory_lock' in sqls

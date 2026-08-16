@@ -6,8 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from core import config
-from core import db
+from core import config, db, settings_svc
 from ui import nav
 from ui import paging
 from routes.project_tokens import insert_token_scopes, parse_token_scope_lines
@@ -131,7 +130,7 @@ def test_create_token_persists_scopes(client):
         s["user_id"] = uid
         s["email"] = "u@ex.com"
 
-    with patch.object(db, "as_user", return_value=conn):
+    with patch.object(db, "as_user", return_value=conn), patch.object(settings_svc, "token_expiry_policy", return_value=(False, 3650)):
         r = client.post(
             f"/projects/{pid}/tokens",
             data={

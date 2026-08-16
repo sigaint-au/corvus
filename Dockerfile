@@ -29,4 +29,4 @@ USER appuser
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=10s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')" || exit 1
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "-w", "2", "--timeout", "60", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "-w", "2", "--timeout", "60", "--graceful-timeout", "30", "--keep-alive", "5", "app:app"]

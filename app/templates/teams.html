@@ -41,7 +41,15 @@
   </tbody>
 </table></div>
 {% else %}
-<p class="empty">{% if search_q %}No teams match “{{ search_q }}”.{% elif can_create_team %}No teams yet. Create one.{% else %}No teams yet.{% endif %}</p>
+<p class="empty">
+  {% if search_q %}
+  No teams match “{{ search_q }}”.
+  {% elif can_create_team %}
+  No teams yet. <button type="button" class="link" data-open-dialog="create-team-dlg">Create your first team</button>.
+  {% else %}
+  No teams yet. Ask a team administrator to invite you or contact your administrator for access.
+  {% endif %}
+</p>
 {% endif %}
 </section>
 

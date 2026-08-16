@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: secretserver
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: "secretserver.example.com"
+spec:
+  tls:
+    - hosts:
+        - secretserver.example.com
+      secretName: secretserver-tls
+  rules:
+    - host: secretserver.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: secretserver-app
+                port:
+                  name: http

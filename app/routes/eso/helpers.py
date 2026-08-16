@@ -52,6 +52,12 @@ def _meta_item(row: dict, *, value: str | None = None) -> dict:
         or row.get("last_accessed_by")
         or "",
     }
+    for field in ("rotation_interval_days", "rotation_owner"):
+        if field in row:
+            out[field] = row.get(field)
+    for field in ("rotation_next_at", "rotated_at"):
+        if field in row:
+            out[field] = iso_utc(row.get(field))
     meta = row.get("metadata")
     if meta is None and row.get("meta") is not None:
         meta = row.get("meta")
@@ -433,7 +439,9 @@ def _upsert_body(project_ref, key: str, body: dict):
         )
         cur.execute(
             """
-            SELECT id, key, note, kind, expires_at, created_at, updated_at
+            SELECT id, key, note, kind, expires_at,
+                   rotation_interval_days, rotation_owner, rotation_next_at, rotated_at,
+                   created_at, updated_at
               FROM api.secrets WHERE id = %s
             """,
             (str(sid),),

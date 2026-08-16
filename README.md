@@ -18,6 +18,16 @@ ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
 # PostgREST: http://localhost:3000
 ```
 
+To discard local PostgreSQL data, rebuild the images, restart the stack, and
+seed mock data:
+
+```bash
+scripts/reset.sh       # asks for confirmation
+scripts/reset.sh --yes # non-interactive
+```
+
+This removes only `pgdata`; HSM state remains in `hsmdata`.
+
 For production setup (strong secrets, OIDC/LDAP, audit retention) see
 [docs/admin/deploy.md](docs/admin/deploy.md).
 

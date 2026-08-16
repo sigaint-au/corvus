@@ -1,0 +1,101 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: secretserver-notify-due
+  labels:
+    app.kubernetes.io/name: app
+    app.kubernetes.io/component: job
+    app.kubernetes.io/part-of: secretserver
+spec:
+  schedule: "0 8 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 900
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: app
+            app.kubernetes.io/component: job
+            app.kubernetes.io/part-of: secretserver
+        spec:
+          serviceAccountName: secretserver-app
+          automountServiceAccountToken: false
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: notify-due
+              image: ghcr.io/sigaint/secretserver/app:latest
+              imagePullPolicy: IfNotPresent
+              command: ["flask", "--app", "app", "notify-due"]
+              envFrom:
+                - configMapRef:
+                    name: secretserver-app-env
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: secretserver-app-secrets
+                      key: DATABASE_URL
+                - name: DATABASE_ADMIN_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: secretserver-app-secrets
+                      key: DATABASE_ADMIN_URL
+                - name: JWT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: secretserver-app-secrets
+                      key: JWT_SECRET
+                - name: MASTER_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: secretserver-app-secrets
+                      key: MASTER_KEY
+                - name: SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: secretserver-app-secrets
+                      key: SECRET_KEY
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 10001
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: home
+                  mountPath: /home/appuser
+          volumes:
+            - name: tmp
+              emptyDir:
+                medium: Memory
+                sizeLimit: 64Mi
+            - name: home
+              emptyDir:
+                medium: Memory
+                sizeLimit: 16Mi

@@ -1,0 +1,85 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Production overlay — wires the base manifests to real hostnames,
+# real cluster issuers, real storage classes, and bigger resource
+# reservations. Apply with:
+#
+#   kubectl apply -k deploy/overlays/prod
+#
+# Required cluster prerequisites (install once per cluster):
+#   * CloudNativePG operator (cnpg)
+#   * cert-manager (cert-manager.io)
+#   * nginx Ingress Controller
+#   * Prometheus Operator (for PodMonitor CRDs)
+#
+# Bootstrap-time Secrets (DB / Redis / app) are NOT managed by this
+# overlay. Run `scripts/bootstrap-secrets.sh secretserver` once before
+# applying (see deploy/README.md → "Secrets bootstrap").
+#
+# Before applying: replace hostname and issuer email via patches below
+# or by editing this overlay.
+
+namespace: secretserver
+
+resources:
+  - ../../base
+  - resource-quota.yaml
+  - limit-range.yaml
+
+# Pin the prod image to a tagged release. Update via the upgrade procedure
+# documented in the README.
+images:
+  - name: ghcr.io/sigaint/secretserver/app
+    newName: ghcr.io/sigaint/secretserver/app
+    newTag: v1.0.0   # operators bump this for rollouts
+  - name: postgrest/postgrest
+    newName: postgrest/postgrest
+    newTag: v12.2.3
+  - name: bitnami/redis
+    newName: bitnami/redis
+    newTag: 7.2.4
+  - name: bitnami/redis-exporter
+    newName: bitnami/redis-exporter
+    newTag: 1.58.0
+  - name: ghcr.io/cloudnative-pg/postgresql
+    newName: ghcr.io/cloudnative-pg/postgresql
+    newTag: "16"
+  - name: bitnami/kubectl
+    newName: bitnami/kubectl
+    newTag: 1.30.4
+
+# Patches: each entry targets exactly one resource by kind+name. Multi-doc
+# patches need separate entries.
+patches:
+  - path: ingress-patch.yaml
+    target:
+      kind: Ingress
+      name: secretserver
+  - path: certificate-patch.yaml
+    target:
+      kind: Certificate
+      name: secretserver-tls
+  - path: postgres-storage-patch.yaml
+    target:
+      kind: Cluster
+      name: secretserver-postgres
+  - path: redis-storage-patch.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+  - path: redis-resource-patch.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+  - path: redis-maxmemory-patch.yaml
+    target:
+      kind: ConfigMap
+      name: redis-env
+  - path: app-resource-patch.yaml
+    target:
+      kind: Deployment
+      name: secretserver-app
+
+configurations:
+  - kustomize-config.yaml

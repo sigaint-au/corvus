@@ -8,7 +8,8 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
-_SOON_DAYS = 14
+SOON_DAYS = 14  # days-before-due window for "soon" status (secrets + rotation)
+_SOON_DAYS = SOON_DAYS  # private alias, kept for internal `expires_status` default
 _KEY_LINE = re.compile(
     r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*(.*)$"
 )

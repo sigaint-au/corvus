@@ -1,0 +1,135 @@
+# redis-failover-controller — polls Sentinel for the current master
+# address and patches the redis-master / redis Services (selector) and
+# the redis StatefulSet pod labels (redis-role=master/replica) on each
+# failover. This is the kustomize-only equivalent of the spotahome
+# redis-operator. In production, the Spotahome operator or the Bitnami
+# Redis Helm chart can replace this Deployment entirely.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-failover-controller
+  labels:
+    app.kubernetes.io/name: redis-failover-controller
+    app.kubernetes.io/part-of: secretserver
+spec:
+  replicas: 1   # single instance is fine — controller is leader-elected
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis-failover-controller
+      app.kubernetes.io/part-of: secretserver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis-failover-controller
+        app.kubernetes.io/part-of: secretserver
+    spec:
+      serviceAccountName: redis-failover-controller
+      priorityClassName: secretserver-ha
+      enableServiceLinks: false
+      restartPolicy: Always
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532   # nobody
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: redis-failover-controller
+                  app.kubernetes.io/part-of: secretserver
+      containers:
+        - name: controller
+          image: bitnami/kubectl:1.30
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              : > /tmp/leader   # leader-election lock file
+              while :; do
+                IP=$(redis-cli -h redis-sentinel -p 26379 -a "${REDIS_SENTINEL_PASSWORD}" --no-auth-warning \
+                     SENTINEL get-master-addr-by-name secretserver-master 2>/dev/null \
+                     | head -n 1 || true)
+                if [ -n "$IP" ]; then
+                  # Reverse-lookup the StatefulSet pod that owns this IP.
+                  POD=$(getent hosts "$IP" | awk '{print $2}' | cut -d. -f1 || true)
+                  if [ -n "$POD" ]; then
+                    # Demote everyone else, promote the current master.
+                    for p in redis-0 redis-1 redis-2; do
+                      if [ "$p" = "$POD" ]; then
+                        kubectl label pod "$p" -n secretserver redis-role=master --overwrite >/dev/null 2>&1 || true
+                      else
+                        kubectl label pod "$p" -n secretserver redis-role=replica --overwrite >/dev/null 2>&1 || true
+                      fi
+                    done
+                    # Patch the redis-master Service to select the master pod.
+                    kubectl patch svc redis-master -n secretserver \
+                      --type=json \
+                      -p "[{\"op\":\"replace\",\"path\":\"/spec/selector/statefulset.kubernetes.io~1pod-name\",\"value\":\"$POD\"}]" \
+                      >/dev/null 2>&1 || true
+                  fi
+                fi
+                sleep 5
+              done
+          env:
+            - name: REDIS_SENTINEL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-redis-secrets
+                  key: REDIS_SENTINEL_PASSWORD
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-redis-secrets
+                  key: REDIS_PASSWORD
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "test -f /tmp/leader || exit 1"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "pgrep -f redis-cli >/dev/null"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi

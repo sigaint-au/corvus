@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from core import config
 import crypto
 from ui import paging
-from secret_svc.secret_kinds import secret_due_status
+from secret_svc.secret_kinds import expires_status, secret_due_status
 
 
 def _load_secrets_page(cur, project_id, page, q):
@@ -57,6 +57,7 @@ def _load_secrets_page(cur, project_id, page, q):
     cur.execute(
         f"""
         SELECT s.id, s.key, s.note, s.kind, s.created_at, s.updated_at, s.expires_at,
+               s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                s.requires_approval, s.access_mode,
                s.last_accessed_at,
                CASE
@@ -111,6 +112,7 @@ def _load_secrets_page(cur, project_id, page, q):
     is_admin = bool((cur.fetchone() or {}).get("a"))
     for r in rows:
         r["due"] = secret_due_status(r)
+        r["rotation_due"] = expires_status(r.get("rotation_next_at"))
         r["is_pinned"] = str(r["id"]) in pinned
         needs = bool(r.get("needs_approval"))
         r["needs_approval"] = needs
@@ -216,8 +218,9 @@ def _load_team_secrets_page(
     )
     cur.execute(
         f"""
-        SELECT s.id, s.key, s.note, s.kind, s.updated_at, s.expires_at, s.access_mode,
-               p.id AS project_id, p.name AS project_name
+        SELECT s.id, s.key, s.note, s.kind, s.updated_at, s.expires_at,
+               s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
+               s.access_mode, p.id AS project_id, p.name AS project_name
         FROM api.secrets s
         JOIN api.projects p ON p.id = s.project_id
         WHERE {where}
@@ -229,6 +232,7 @@ def _load_team_secrets_page(
     rows = cur.fetchall() or []
     for r in rows:
         r["due"] = secret_due_status(r)
+        r["rotation_due"] = expires_status(r.get("rotation_next_at"))
         mode = (r.get("access_mode") or "inherit").strip() or "inherit"
         r["access_mode"] = mode
         r["access_restricted"] = mode != "inherit"
@@ -279,6 +283,7 @@ def _load_shared_secrets_page(cur, page, q=""):
     rows = all_rows[start:end]
     for r in rows:
         r["due"] = secret_due_status(r)
+        r["rotation_due"] = expires_status(r.get("rotation_next_at"))
         mode = (r.get("access_mode") or "inherit").strip() or "inherit"
         r["access_mode"] = mode
         r["access_restricted"] = mode != "inherit"

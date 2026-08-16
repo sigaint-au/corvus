@@ -91,7 +91,11 @@ INSERT INTO private.server_settings (key, value) VALUES
   ('smtp_from_email', ''),
   ('smtp_from_name', 'Sigaint Secret Server'),
   ('smtp_login_alerts', 'false'),
-  ('totp_enforce_global_admins', 'false')
+  ('totp_enforce_global_admins', 'false'),
+  ('require_pat_expiry', 'false'),
+  ('max_pat_lifetime_days', '3650'),
+  ('require_machine_token_expiry', 'false'),
+  ('max_machine_token_lifetime_days', '3650')
 ON CONFLICT (key) DO NOTHING;
 
 -- LDAP group → server role (global admin only for now)
@@ -225,6 +229,10 @@ CREATE TABLE api.secrets (
   kind text NOT NULL DEFAULT 'plain'
     CHECK (kind IN ('plain', 'database', 'certificate', 'ssh', 'kv')),
   expires_at timestamptz,        -- hard expiry (optional)
+  rotation_interval_days integer CHECK (rotation_interval_days IS NULL OR rotation_interval_days > 0),
+  rotation_owner text,
+  rotation_next_at timestamptz,
+  rotated_at timestamptz,
   -- NULL = inherit project.require_reveal_approval; true/false = override
   requires_approval boolean,
   -- Per-secret access tighter than project membership (see api.can_access_secret)
@@ -2981,7 +2989,11 @@ INSERT INTO private.server_settings (key, value) VALUES
           ('smtp_from_email', ''),
           ('smtp_from_name', 'Sigaint Secret Server'),
           ('smtp_login_alerts', 'false'),
-          ('totp_enforce_global_admins', 'false')
+          ('totp_enforce_global_admins', 'false'),
+          ('require_pat_expiry', 'false'),
+          ('max_pat_lifetime_days', '3650'),
+          ('require_machine_token_expiry', 'false'),
+          ('max_machine_token_lifetime_days', '3650')
         ON CONFLICT (key) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION api.is_global_admin() RETURNS boolean
@@ -4913,12 +4925,15 @@ CREATE OR REPLACE FUNCTION private.machine_list_enc(p_project uuid, p_hash text)
         END;
         $$;
 
+DROP FUNCTION IF EXISTS private.machine_list_meta(uuid, text, text);
 CREATE OR REPLACE FUNCTION private.machine_list_meta(
           p_project uuid, p_hash text, p_q text DEFAULT NULL
         )
         RETURNS TABLE (
           id uuid, key text, note text, kind text,
-          expires_at timestamptz, created_at timestamptz, updated_at timestamptz
+          expires_at timestamptz, rotation_interval_days integer, rotation_owner text,
+          rotation_next_at timestamptz, rotated_at timestamptz,
+          created_at timestamptz, updated_at timestamptz
         )
         LANGUAGE plpgsql STABLE SECURITY DEFINER
         SET search_path = pg_catalog, api
@@ -4929,7 +4944,9 @@ CREATE OR REPLACE FUNCTION private.machine_list_meta(
             RETURN;
           END IF;
           RETURN QUERY
-            SELECT s.id, s.key, s.note, s.kind, s.expires_at, s.created_at, s.updated_at
+            SELECT s.id, s.key, s.note, s.kind, s.expires_at,
+                   s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
+                   s.created_at, s.updated_at
             FROM api.secrets s
             WHERE s.project_id = p_project
               AND s.deleted_at IS NULL
@@ -4947,6 +4964,7 @@ CREATE OR REPLACE FUNCTION private.machine_list_meta(
             ORDER BY s.key;
         END;
         $$;
+GRANT EXECUTE ON FUNCTION private.machine_list_meta TO authenticator;
 
 CREATE OR REPLACE FUNCTION private.machine_delete(
           p_project uuid, p_hash text, p_key text
@@ -5040,6 +5058,10 @@ RETURNS TABLE(
   access_mode text,
   updated_at timestamptz,
   expires_at timestamptz,
+  rotation_interval_days integer,
+  rotation_owner text,
+  rotation_next_at timestamptz,
+  rotated_at timestamptz,
   role_name text
 )
 LANGUAGE sql STABLE SECURITY DEFINER
@@ -5057,6 +5079,10 @@ SET row_security = off AS $$
     s.access_mode,
     s.updated_at,
     s.expires_at,
+    s.rotation_interval_days,
+    s.rotation_owner,
+    s.rotation_next_at,
+    s.rotated_at,
     r.name AS role_name
   FROM api.rbac_subjects(api.current_user_id()) sub
   JOIN rbac.bindings b
@@ -5232,7 +5258,9 @@ DROP FUNCTION IF EXISTS private.machine_get_row(uuid, text, text);
 CREATE OR REPLACE FUNCTION private.machine_get_row(p_project uuid, p_hash text, p_key text)
         RETURNS TABLE (
           id uuid, key text, value_enc text, note text, kind text,
-          expires_at timestamptz, created_at timestamptz, updated_at timestamptz,
+          expires_at timestamptz, rotation_interval_days integer, rotation_owner text,
+          rotation_next_at timestamptz, rotated_at timestamptz,
+          created_at timestamptz, updated_at timestamptz,
           crypto_provider text
         )
         LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -5243,12 +5271,14 @@ CREATE OR REPLACE FUNCTION private.machine_get_row(p_project uuid, p_hash text, 
             RETURN;
           END IF;
           RETURN QUERY
-            SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at, s.created_at, s.updated_at,
-                   s.crypto_provider
+            SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
+                   s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
+                   s.created_at, s.updated_at, s.crypto_provider
             FROM api.secrets s
             WHERE s.project_id = p_project AND s.key = p_key AND s.deleted_at IS NULL;
         END;
         $$;
+GRANT EXECUTE ON FUNCTION private.machine_get_row TO authenticator;
 
 -- Machine bulk value listing also reports per-row provider (return type changed
 -- → drop the old 3-column form first).

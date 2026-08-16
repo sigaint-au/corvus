@@ -6,22 +6,22 @@
 
 <nav class="tabs" aria-label="Profile sections">
   <a href="{{ url_for('profile', tab='account') }}"
-     class="tab {% if active_tab == 'account' %}active{% endif %}"
+     class="tab {% if active_tab == 'account' %}active{% endif %}"{% if active_tab == 'account' %} aria-current="page"{% endif %}
 >Account</a>
   <a href="{{ url_for('profile', tab='security') }}"
-     class="tab {% if active_tab == 'security' %}active{% endif %}"
+     class="tab {% if active_tab == 'security' %}active{% endif %}"{% if active_tab == 'security' %} aria-current="page"{% endif %}
 >Security</a>
   <a href="{{ url_for('profile', tab='myaccess') }}"
-     class="tab {% if active_tab == 'myaccess' %}active{% endif %}"
+     class="tab {% if active_tab == 'myaccess' %}active{% endif %}"{% if active_tab == 'myaccess' %} aria-current="page"{% endif %}
 >My access</a>
   <a href="{{ url_for('profile', tab='teams') }}"
-     class="tab {% if active_tab == 'teams' %}active{% endif %}"
+     class="tab {% if active_tab == 'teams' %}active{% endif %}"{% if active_tab == 'teams' %} aria-current="page"{% endif %}
 >Teams</a>
   <a href="{{ url_for('profile', tab='projects') }}"
-     class="tab {% if active_tab == 'projects' %}active{% endif %}"
+     class="tab {% if active_tab == 'projects' %}active{% endif %}"{% if active_tab == 'projects' %} aria-current="page"{% endif %}
 >Projects</a>
   <a href="{{ url_for('profile', tab='activity') }}"
-     class="tab {% if active_tab == 'activity' %}active{% endif %}"
+     class="tab {% if active_tab == 'activity' %}active{% endif %}"{% if active_tab == 'activity' %} aria-current="page"{% endif %}
 >Activity</a>
 </nav>
 

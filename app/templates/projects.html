@@ -15,12 +15,28 @@
       <a class="button ghost small" href="{{ url_for('projects_list') }}">Clear</a>
       {% endif %}
     </form>
+    {% if can_create_project %}
     <a class="button outline small" href="{{ url_for('new_project_wizard', team_id=team.id) }}">+ Add project</a>
+    {% endif %}
   </div>
   {% endif %}
 </div>
 {% if not team %}
-<p class="empty">Select a team in the sidebar.</p>
+{% if nav_teams %}
+<p class="empty">Select a team to view projects.</p>
+<form method="post" action="{{ url_for('select_team') }}" class="inline">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
+  <select name="team_id" onchange="this.form.submit()" aria-label="Select a team">
+    <option value="" selected disabled>Choose a team…</option>
+    {% for t in nav_teams %}
+    <option value="{{ t.id }}">{{ t.name }}</option>
+    {% endfor %}
+  </select>
+</form>
+{% else %}
+<p class="empty">No teams yet. Ask a team administrator to invite you or contact your administrator for access.</p>
+{% endif %}
 {% else %}
 <p class="page-desc muted">Team: <strong>{{ team.name }}</strong>
   · <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}">Manage access</a>
@@ -58,7 +74,9 @@
   {% endwith %}
   {% else %}
   <p class="empty">
-    {% if search_q %}No projects match “{{ search_q }}”.{% else %}No projects yet.{% endif %}
+    {% if search_q %}No projects match “{{ search_q }}”.
+    {% elif can_create_project %}No projects yet. <a class="link" href="{{ url_for('new_project_wizard', team_id=team.id) }}">Create your first project</a>.
+    {% else %}No projects yet.{% endif %}
   </p>
   {% endif %}
 </section>

@@ -1,0 +1,151 @@
+# Sentinel StatefulSet — 3 sentinels, quorum = 2 (tolerates 1 lost).
+# Sentinels elect/track the redis master and notify the failover
+# controller on promotion events. They are *not* in the data path:
+# clients connect to redis-sentinel:26379 only for service discovery.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-sentinel
+  labels:
+    app.kubernetes.io/name: redis-sentinel
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: secretserver
+spec:
+  serviceName: redis-sentinel-headless
+  replicas: 3
+  revisionHistoryLimit: 5
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis-sentinel
+      app.kubernetes.io/part-of: secretserver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis-sentinel
+        app.kubernetes.io/component: cache
+        app.kubernetes.io/part-of: secretserver
+    spec:
+      automountServiceAccountToken: false
+      priorityClassName: secretserver-ha
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-sentinel
+              app.kubernetes.io/part-of: secretserver
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-sentinel
+              app.kubernetes.io/part-of: secretserver
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: redis-sentinel
+                  app.kubernetes.io/part-of: secretserver
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: sentinel
+          image: bitnami/redis:7.2
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              HOSTNAME=$(hostname)
+              # Generate a sentinel.conf that watches the redis master
+              # via its stable StatefulSet DNS name (redis-0.redis-headless)
+              # then starts sentinel pointing at the local sentinel peer list.
+              cat > /tmp/sentinel.conf <<EOF
+              port 26379
+              dir /tmp
+              sentinel monitor secretserver-master redis-0.redis-headless.secretserver.svc.cluster.local 6379 2
+              sentinel down-after-milliseconds secretserver-master 5000
+              sentinel parallel-syncs secretserver-master 1
+              sentinel failover-timeout secretserver-master 10000
+              sentinel announce-ip $(hostname -i)
+              sentinel auth-pass secretserver-master ${REDIS_PASSWORD}
+              requirepass ${REDIS_SENTINEL_PASSWORD}
+              EOF
+              exec redis-server /tmp/sentinel.conf --sentinel
+          ports:
+            - name: sentinel
+              containerPort: 26379
+              protocol: TCP
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-redis-secrets
+                  key: REDIS_PASSWORD
+            - name: REDIS_SENTINEL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: secretserver-redis-secrets
+                  key: REDIS_SENTINEL_PASSWORD
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          startupProbe:
+            tcpSocket:
+              port: sentinel
+            initialDelaySeconds: 5
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 20
+          livenessProbe:
+            tcpSocket:
+              port: sentinel
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: sentinel
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi

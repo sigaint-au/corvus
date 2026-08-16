@@ -12,7 +12,7 @@ from flask import (
     jsonify,
     request,
 )
-from core import config
+from core import config, settings_svc
 from core import db
 from crypto import sha256_hex
 from .helpers import (
@@ -76,14 +76,18 @@ def mgmt_create_token(project_ref):
     if role not in config.MACHINE_TOKEN_ROLES:
         role = "service-reveal"
     expires_at = None
+    require_expiry, max_days = settings_svc.token_expiry_policy("machine")
     days = body.get("expires_days")
-    if days is not None:
+    if days is None:
+        if require_expiry:
+            return jsonify({"error": "expires_days is required"}), 400
+    else:
         try:
             days = int(days)
         except (TypeError, ValueError):
             return jsonify({"error": "expires_days must be int"}), 400
-        if days < 1 or days > config.MAX_EXPIRY_DAYS:
-            return jsonify({"error": "expires_days out of range"}), 400
+        if days < 1 or days > max_days:
+            return jsonify({"error": f"expires_days must be between 1 and {max_days}"}), 400
         expires_at = datetime.now(timezone.utc) + timedelta(days=days)
     raw = "ss_" + secrets.token_urlsafe(32)
     thash = sha256_hex(raw)

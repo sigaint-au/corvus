@@ -110,6 +110,23 @@ class TestSettings:
         assert 'tab=banner' in r.location
         assert dict(sets) == {'classification_enabled': 'true', 'classification_text': 'OFFICIAL', 'classification_color': '#677381', 'classification_fg': '#ffffff'}
 
+    def test_save_token_policy(self):
+        with self.client.session_transaction() as s:
+            s['user_id'] = self.uid
+            s['email'] = 'admin@ex.com'
+            s['is_global_admin'] = True
+        sets = []
+        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(settings_svc, 'set_setting', side_effect=lambda k, v: sets.append((k, v))), patch.object(db, 'as_user', return_value=_conn(fetchall=[])[0]):
+            r = self.client.post('/settings', data={'action': 'token_policy', 'require_pat_expiry': '1', 'max_pat_lifetime_days': '90', 'require_machine_token_expiry': '1', 'max_machine_token_lifetime_days': '180'}, follow_redirects=False)
+        assert r.status_code == 302
+        assert 'tab=general' in r.location
+        assert dict(sets) == {
+            'require_pat_expiry': 'true',
+            'max_pat_lifetime_days': '90',
+            'require_machine_token_expiry': 'true',
+            'max_machine_token_lifetime_days': '180',
+        }
+
     def test_settings_email_tab(self):
         with self.client.session_transaction() as s:
             s['user_id'] = self.uid
@@ -150,7 +167,7 @@ class TestSettings:
             s['user_id'] = self.uid
             s['email'] = 'admin@ex.com'
             s['is_global_admin'] = True
-        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(db, 'as_user', return_value=_conn(fetchall=[])[0]), patch('mailer.send_test_email', return_value=(True, '')) as send:
+        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(db, 'as_user', return_value=_conn(fetchall=[])[0]), patch('integrations.mailer.send_test_email', return_value=(True, '')) as send:
             r = self.client.post('/settings', data={'action': 'smtp_test', 'test_email': 'admin@ex.com'}, follow_redirects=False)
         assert r.status_code == 302
         assert 'tab=email' in r.location
@@ -181,7 +198,7 @@ class TestSettings:
             s['is_global_admin'] = True
         conn, cur = _conn(fetchone={'email': 'user@ex.com'})
         cur.rowcount = 1
-        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(db, 'as_user', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch('user_sessions.revoke_all_sessions', return_value=2) as rev:
+        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(db, 'as_user', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch('auth.user_sessions.revoke_all_sessions', return_value=2) as rev:
             r = self.client.post('/settings', data={'action': 'user_disable', 'user_id': other}, follow_redirects=False)
         assert r.status_code == 302
         assert 'tab=users' in r.location
@@ -206,7 +223,7 @@ class TestSettings:
             s['email'] = 'admin@ex.com'
             s['is_global_admin'] = True
         conn, _ = _conn(fetchone={'email': 'user@ex.com'})
-        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(db, 'as_user', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch('passwords.create_reset_token_for_user', return_value=('tok123', '')), patch('mailer.smtp_configured', return_value=False), patch('user_sessions.revoke_all_sessions', return_value=0):
+        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(db, 'as_user', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch('auth.passwords.create_reset_token_for_user', return_value=('tok123', '')), patch('integrations.mailer.smtp_configured', return_value=False), patch('auth.user_sessions.revoke_all_sessions', return_value=0):
             r = self.client.post('/settings', data={'action': 'user_reset_password', 'user_id': other}, follow_redirects=False)
         assert r.status_code == 302
         assert 'tab=users' in r.location
@@ -221,7 +238,7 @@ class TestSettings:
             s['email'] = 'admin@ex.com'
             s['is_global_admin'] = True
         conn, _ = _conn(fetchone={'email': 'user@ex.com'})
-        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(db, 'as_user', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch('totp_svc.is_enabled', return_value=True), patch('totp_svc.disable') as dis, patch('user_sessions.revoke_all_sessions', return_value=1):
+        with patch.object(authz, 'is_global_admin', return_value=True), patch.object(db, 'as_user', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch('auth.totp_svc.is_enabled', return_value=True), patch('auth.totp_svc.disable') as dis, patch('auth.user_sessions.revoke_all_sessions', return_value=1):
             r = self.client.post('/settings', data={'action': 'user_reset_2fa', 'user_id': other}, follow_redirects=False)
         assert r.status_code == 302
         assert 'tab=users' in r.location

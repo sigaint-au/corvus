@@ -45,10 +45,11 @@
       <td class="muted">{{ r.created_at }}</td>
       <td class="acts access-acts">
         <div class="access-acts-stack">
-          <form method="post"
-                id="approve-{{ r.id }}"
-                action="{{ url_for('approve_secret_access', project_id=r.project_id, req_id=r.id) }}"
-                class="access-approve-form">
+            <form method="post"
+                  id="approve-{{ r.id }}"
+                  action="{{ url_for('approve_secret_access', project_id=r.project_id, req_id=r.id) }}"
+                  class="access-approve-form"
+                  onsubmit="return setAccessBusy(this, 'Approving…')">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <label class="visually-hidden" for="grant-minutes-{{ r.id }}">Grant duration</label>
             <select name="minutes" id="grant-minutes-{{ r.id }}" class="bulk-action" aria-label="Grant duration">
@@ -62,8 +63,9 @@
           <div class="access-acts-btns">
             <button type="submit" form="approve-{{ r.id }}" class="link">Approve</button>
             <form method="post"
-                  action="{{ url_for('deny_secret_access', project_id=r.project_id, req_id=r.id) }}"
-                  class="inline">
+                   action="{{ url_for('deny_secret_access', project_id=r.project_id, req_id=r.id) }}"
+                   class="inline"
+                   onsubmit="return confirm('Deny this reveal request?') && setAccessBusy(this, 'Denying…')">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">
               <button type="submit" class="link danger">Deny</button>
             </form>

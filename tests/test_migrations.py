@@ -50,6 +50,13 @@ def test_squashed_baseline_contains_all_schema_layers():
     assert "CREATE TABLE IF NOT EXISTS private.project_crypto_keys" in sql
     assert "crypto_provider" in sql
     assert "api.secrets" in sql and "api.secret_versions" in sql
+    for col in (
+        "rotation_interval_days",
+        "rotation_owner",
+        "rotation_next_at",
+        "rotated_at",
+    ):
+        assert col in sql
     assert "machine_upsert_enc" in sql
     assert "REVOKE EXECUTE ON FUNCTION api.list_hsm_slots() FROM anon" in sql
     assert "REVOKE EXECUTE ON FUNCTION api.hsm_slot_url(uuid)" in sql

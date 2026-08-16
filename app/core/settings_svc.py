@@ -1,5 +1,5 @@
 """Server settings and classification banner."""
-from core.config import DEFAULT_SETTINGS, HEX, bootstrap_admin_email
+from core.config import DEFAULT_SETTINGS, HEX, MAX_EXPIRY_DAYS, bootstrap_admin_email
 from core import db
 
 
@@ -47,6 +47,23 @@ def get_settings() -> dict:
     except Exception:
         pass
     return out
+
+def token_expiry_policy(kind: str) -> tuple[bool, int]:
+    settings = get_settings()
+    if kind == "pat":
+        require_key = "require_pat_expiry"
+        max_key = "max_pat_lifetime_days"
+    else:
+        require_key = "require_machine_token_expiry"
+        max_key = "max_machine_token_lifetime_days"
+    raw = (settings.get(max_key) or "").strip()
+    try:
+        max_days = int(raw) if raw else MAX_EXPIRY_DAYS
+    except ValueError:
+        max_days = MAX_EXPIRY_DAYS
+    if max_days < 1 or max_days > MAX_EXPIRY_DAYS:
+        max_days = MAX_EXPIRY_DAYS
+    return truthy(settings.get(require_key)), max_days
 
 
 def set_setting(key: str, value: str):

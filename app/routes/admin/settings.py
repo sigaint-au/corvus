@@ -103,6 +103,28 @@ def server_settings():
                 else "2FA is optional for global admins (users may still enable it)",
                 "ok",
             )
+        elif action == "token_policy":
+            pat_max = (request.form.get("max_pat_lifetime_days") or "").strip()
+            machine_max = (request.form.get("max_machine_token_lifetime_days") or "").strip()
+            try:
+                if pat_max and not (1 <= int(pat_max) <= config.MAX_EXPIRY_DAYS):
+                    raise ValueError
+                if machine_max and not (1 <= int(machine_max) <= config.MAX_EXPIRY_DAYS):
+                    raise ValueError
+            except ValueError:
+                flash(f"Max token lifetime must be between 1 and {config.MAX_EXPIRY_DAYS} days", "error")
+            else:
+                settings_svc.set_setting(
+                    "require_pat_expiry",
+                    "true" if request.form.get("require_pat_expiry") else "false",
+                )
+                settings_svc.set_setting("max_pat_lifetime_days", pat_max)
+                settings_svc.set_setting(
+                    "require_machine_token_expiry",
+                    "true" if request.form.get("require_machine_token_expiry") else "false",
+                )
+                settings_svc.set_setting("max_machine_token_lifetime_days", machine_max)
+                flash("Token expiry policy saved", "ok")
         elif action == "oidc":
             from integrations import oidc_auth
 
@@ -529,6 +551,7 @@ def server_settings():
             "hsm_slot_test": "encryption",
             "hsm_slot_link": "encryption",
             "hsm_slot_rotate": "encryption",
+            "token_policy": "general",
         }
         tab = tab_for.get(action, "general")
         return redirect(url_for("server_settings", tab=tab))

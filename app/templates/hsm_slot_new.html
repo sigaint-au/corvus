@@ -12,8 +12,9 @@
 </div>
 <p class="page-desc muted">{{ 'Update' if slot_id else 'Add a' }} named PKCS#11 slot. The app will open a session against this module/token and store the key-encryption key.</p>
 
-<form method="post" action="{{ url_for('hsm_slot_new_wizard') }}" class="settings-form">
+<form method="post" action="{{ url_for('hsm_slot_new_wizard') }}" class="settings-form" id="hsm-slot-form">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <input type="hidden" id="hsm-slot-action" data-dialog-action value="">
   {% if slot_id %}<input type="hidden" name="slot_id" value="{{ slot_id }}">{% endif %}
 
   <section>
@@ -24,14 +25,15 @@
                placeholder="e.g. prod-hsm" autocomplete="off">
       </label>
       <label class="span-2">PKCS#11 URL
-        <input type="text" name="pkcs11_url" value="{{ pkcs11_url or '' }}"{% if not slot_id %} required{% endif %}
+        <input type="text" name="pkcs11_url" value="{{ pkcs11_url or '' }}"{% if not slot_id %} required{% endif %}{% if slot_id and project_count %} readonly{% endif %}
                placeholder="{{ pkcs11_url_display or 'pkcs11:token=...;object=...?module-path=/path/to/module.so&pin-source=/run/secrets/hsm-pin' }}" autocomplete="off">
+        {% if slot_id and project_count %}
+        <span class="field-hint">Read-only: {{ project_count }} project key(s) use this slot, so its URL cannot be changed.</span>
+        {% else %}
         <span class="field-hint">Format: <code>pkcs11:token=&lt;label&gt;;object=&lt;KEK label&gt;?module-path=&lt;.so&gt;&amp;pin-source=&lt;pin file&gt;</code></span>
         <span class="field-hint">For edits, leave this blank to keep the current URL. Prefer <code>pin-source=</code>; inline PINs are stored in the database.</span>
+        {% endif %}
       </label>
-      {% if slot_id and project_count %}
-      <p class="field-hint span-2">{{ project_count }} project key(s) use this slot. Its URL cannot be changed while those keys are attached.</p>
-      {% endif %}
       <label class="span-2">Description
         <input type="text" name="description" value="{{ description or '' }}" maxlength="200" autocomplete="off">
       </label>
@@ -41,7 +43,7 @@
     </div>
 
     {% if test_result is not none %}
-    <p class="form-actions">
+    <p class="status-row">
       {% if test_result %}
       <span class="badge" data-variant="success">Connection OK</span>
       <span class="muted">{{ test_message or 'Connection OK' }}</span>
@@ -57,12 +59,25 @@
       <button type="submit" name="action" value="test" class="button outline">Test connection</button>
       <button type="submit" name="action" value="create" class="button">{{ 'Save changes' if slot_id else 'Create slot' }}</button>
       {% if test_result is sameas false %}
-      <button type="submit" name="action" value="force_create" class="button outline"
-              onclick="return confirm('Save this slot without a successful connection test? The slot will be created but may not work until the HSM is reachable.')">
+      <button type="button" class="button outline" data-open-dialog="hsm-save-dialog">
         Save without testing
       </button>
       {% endif %}
     </p>
   </section>
 </form>
+{% if test_result is sameas false %}
+<dialog id="hsm-save-dialog" class="access-dlg" closedby="any" aria-labelledby="hsm-save-dialog-title">
+  <form method="dialog">
+    <header>
+      <h3 id="hsm-save-dialog-title">Save without testing?</h3>
+      <p>The slot will be saved even though the HSM connection test failed. It may not work until the HSM is reachable.</p>
+    </header>
+    <footer>
+      <button type="button" class="outline" data-close-dialog="hsm-save-dialog">Cancel</button>
+      <button type="button" data-submit-form="hsm-slot-form" data-submit-action="force_create">Save slot</button>
+    </footer>
+  </form>
+</dialog>
+{% endif %}
 {% endblock %}
