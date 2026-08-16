@@ -1287,14 +1287,14 @@
       padding: .5rem 0 .55rem;
     }
     /* Settings page: two-column layout with a sidebar secondary nav. */
-    .settings-side {
+    .page-side {
       display: grid;
       grid-template-columns: 11rem minmax(0, 1fr);
       gap: 1.5rem;
       align-items: start;
       margin-top: 1.25rem;
     }
-    .settings-subnav {
+    .page-subnav {
       display: flex;
       flex-direction: column;
       gap: .1rem;
@@ -1302,7 +1302,7 @@
       top: 1rem;
       font-size: .875rem;
     }
-    .settings-subnav .settings-subnav-link {
+    .page-subnav .page-subnav-link {
       display: block;
       padding: .4rem .55rem .4rem .7rem;
       color: var(--muted-foreground);
@@ -1312,21 +1312,21 @@
       font-weight: 500;
       transition: background .12s ease, color .12s ease;
     }
-    .settings-subnav .settings-subnav-link:hover {
+    .page-subnav .page-subnav-link:hover {
       background: var(--accent);
       color: var(--foreground);
     }
-    .settings-subnav .settings-subnav-link.active {
+    .page-subnav .page-subnav-link.active {
       background: var(--accent);
       border-left-color: var(--foreground);
       color: var(--foreground);
       font-weight: 600;
     }
-    .settings-subnav-link .tab-badge {
+    .page-subnav-link .tab-badge {
       float: right;
       margin-top: .15rem;
     }
-    .settings-subnav .settings-subnav-header {
+    .page-subnav .page-subnav-header {
       margin: 1.1rem 0 .25rem;
       padding: .6rem .55rem .05rem .7rem;
       color: var(--foreground);
@@ -1336,13 +1336,28 @@
       letter-spacing: .08em;
       border-top: 1px solid var(--border);
     }
-    .settings-subnav .settings-subnav-header:first-child {
+    .page-subnav .page-subnav-header:first-child {
       margin-top: 0;
       padding-top: 0;
       border-top: none;
     }
-    .settings-panel {
+    .page-panel {
       min-width: 0;
+    }
+    .page-subnav-wrap > summary {
+      list-style: none;
+      cursor: pointer;
+      color: var(--muted-foreground);
+      font-size: .85rem;
+      font-weight: 600;
+      padding: .4rem .5rem;
+      margin: 1.25rem 0 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: none;
+    }
+    .page-subnav-wrap > summary::-webkit-details-marker {
+      display: none;
     }
     .tabs .tab .tab-badge {
       display: inline-block;
@@ -2629,32 +2644,39 @@
       }
       .sidebar-foot .logout-link { width: auto; }
 
-       .settings-side {
+       .page-side {
          grid-template-columns: 1fr;
          gap: .5rem;
        }
-       .settings-subnav {
+       .page-subnav-wrap > summary {
+         display: block;
+         margin: 0;
+       }
+       .page-subnav-wrap:not([open]) .page-subnav {
+         display: none;
+       }
+       .page-subnav {
          position: static;
          flex-direction: row;
          flex-wrap: wrap;
          gap: .25rem .5rem;
-         margin-bottom: .5rem;
+         margin: .4rem 0 .5rem;
        }
-       .settings-subnav .settings-subnav-link {
+       .page-subnav .page-subnav-link {
          padding: .3rem .6rem;
          border-left: none;
        }
-       .settings-subnav .settings-subnav-link.active {
+       .page-subnav .page-subnav-link.active {
          border-left: none;
          background: var(--accent);
        }
-       .settings-subnav .settings-subnav-header {
+       .page-subnav .page-subnav-header {
          flex-basis: 100%;
          margin: .6rem 0 .1rem;
          padding: .4rem .6rem 0;
          border-top: 1px solid var(--border);
        }
-       .settings-subnav .settings-subnav-header:first-child {
+       .page-subnav .page-subnav-header:first-child {
          margin-top: 0;
          padding-top: 0;
          border-top: none;
@@ -2868,12 +2890,12 @@
     {% set workspace_eps = (
       'projects_list', 'project_detail', 'create_secret', 'delete_secret',
       'reveal_secret', 'create_token', 'delete_token', 'create_project', 'new_project_wizard',
-      'secrets_list', 'shared_secrets_list', 'machines_list', 'global_search'
+      'secrets_list', 'shared_secrets_list', 'machines_list', 'trash', 'global_search'
     ) %}
     {% set account_eps = (
       'teams', 'create_team', 'team_detail', 'add_team_binding',
       'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team',
-      'delete_project_from_team', 'profile', 'trash'
+      'delete_project_from_team', 'access_requests_inbox'
     ) %}
     {% set access_eps = (
       'access_requests_inbox',
@@ -2890,7 +2912,7 @@
     {% set is_rbac_bindings = ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}
     {% set rbac_scoped = (request.args.get('scope_id') or ''|string)|string %}
     {# Server defaults only used until localStorage preference is set #}
-    {% set workspace_open = ep in workspace_eps or (ep not in account_eps and ep not in access_eps and ep not in admin_eps) %}
+    {% set workspace_open = ep in workspace_eps or (ep != 'profile' and ep not in account_eps and ep not in access_eps and ep not in admin_eps) %}
     {% set account_open = ep in account_eps %}
     {% set access_open = ep in access_eps %}
     {% set admin_open = ep in admin_eps %}
@@ -2906,6 +2928,8 @@
              href="{{ url_for('shared_secrets_list') }}">Shared secrets</a>
           <a class="side-nav-link {% if ep == 'machines_list' %}active{% endif %}{% if ep == 'machines_list' %} aria-current="page"{% endif %}"
              href="{{ url_for('machines_list') }}">Machine accounts</a>
+          <a class="side-nav-link {% if ep == 'trash' %}active{% endif %}{% if ep == 'trash' %} aria-current="page"{% endif %}"
+             href="{{ url_for('trash') }}">Trash</a>
         </div>
       </details>
       <details class="side-group" data-side-group="account"{% if account_open %} open{% endif %}>
@@ -2919,8 +2943,11 @@
            {% endif %}
           <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}{% if ep == 'access_requests_inbox' %} aria-current="page"{% endif %}"
              href="{{ url_for('access_requests_inbox') }}">Access requests{% if nav_access_pending %}<span class="tab-badge" title="{{ nav_access_pending }} pending">{{ nav_access_pending }}</span>{% endif %}</a>
-          <a class="side-nav-link {% if ep == 'trash' %}active{% endif %}{% if ep == 'trash' %} aria-current="page"{% endif %}"
-             href="{{ url_for('trash') }}">Trash</a>
+        </div>
+      </details>
+      <details class="side-group" data-side-group="profile"{% if ep == 'profile' %} open{% endif %}>
+        <summary>Account</summary>
+        <div class="side-group-body">
           <a class="side-nav-link {% if ep == 'profile' %}active{% endif %}{% if ep == 'profile' %} aria-current="page"{% endif %}"
              href="{{ url_for('profile') }}">My profile</a>
         </div>

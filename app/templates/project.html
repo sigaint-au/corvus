@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} - {{ app_name }}{% endblock %}
 {% block body %}
+{% set breadcrumbs = [
+  ('Teams', url_for('teams')),
+  (project.team_name or project.team_id, url_for('team_detail', team_id=project.team_id)),
+  (project.name, none),
+] %}
+{% include "partials/breadcrumb.html" %}
 <div class="page-head"><h1>{{ project.name }}</h1></div>
 {% if project.description %}
 <p class="page-desc">{{ project.description }}</p>
@@ -29,40 +35,43 @@
 </div>
 {% endif %}
 
-<div class="settings-side">
-<nav class="settings-subnav" aria-label="Project sections">
-  <span class="settings-subnav-header">Secrets</span>
+<div class="page-side">
+<details class="page-subnav-wrap" open>
+<summary>Project sections</summary>
+<nav class="page-subnav" aria-label="Project sections">
+  <span class="page-subnav-header">Secrets</span>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}"
-     class="settings-subnav-link {% if active_tab == 'secrets' %}active{% endif %}"{% if active_tab == 'secrets' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'secrets' %}active{% endif %}"{% if active_tab == 'secrets' %} aria-current="page"{% endif %}
   >Secrets</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='requests') }}"
-     class="settings-subnav-link {% if active_tab == 'requests' %}active{% endif %}"{% if active_tab == 'requests' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'requests' %}active{% endif %}"{% if active_tab == 'requests' %} aria-current="page"{% endif %}
   >Requests{% if access_pending_count %}<span class="tab-badge" title="{{ access_pending_count }} pending">{{ access_pending_count }}</span>{% endif %}</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
-     class="settings-subnav-link {% if active_tab == 'import' %}active{% endif %}"{% if active_tab == 'import' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'import' %}active{% endif %}"{% if active_tab == 'import' %} aria-current="page"{% endif %}
   >Import / Export</a>
-  <span class="settings-subnav-header">Administration</span>
+  <span class="page-subnav-header">Administration</span>
   {% if can_admin %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}"
-     class="settings-subnav-link {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
      title="Role bindings for this project">Access</a>
   {% endif %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
-     class="settings-subnav-link {% if active_tab == 'audit' %}active{% endif %}"{% if active_tab == 'audit' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'audit' %}active{% endif %}"{% if active_tab == 'audit' %} aria-current="page"{% endif %}
   >Audit log</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}"
-     class="settings-subnav-link {% if active_tab == 'tokens' %}active{% endif %}"{% if active_tab == 'tokens' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'tokens' %}active{% endif %}"{% if active_tab == 'tokens' %} aria-current="page"{% endif %}
   >Machine accounts</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='integrations') }}"
-     class="settings-subnav-link {% if active_tab == 'integrations' %}active{% endif %}"{% if active_tab == 'integrations' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'integrations' %}active{% endif %}"{% if active_tab == 'integrations' %} aria-current="page"{% endif %}
   >Integrations</a>
   {% if can_settings %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
-     class="settings-subnav-link {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
   >Settings</a>
   {% endif %}
 </nav>
-<div class="settings-panel">
+</details>
+<div class="page-panel">
 
 {% if active_tab == 'secrets' %}
 {% if due_overdue or due_soon or rotation_overdue or rotation_soon %}

@@ -18,7 +18,9 @@ store.app.config["TESTING"] = True
 class TestUIShell:
 
     def test_login_is_auth_layout(self):
-        r = store.app.test_client().get('/login')
+        conn, _ = _conn(fetchall=[])
+        with patch.object(db, 'connect_admin', return_value=conn):
+            r = store.app.test_client().get('/login')
         assert b'class="auth"' in r.data
         assert b'auth-card' in r.data
         assert b'class="sidebar"' not in r.data
@@ -209,7 +211,7 @@ class TestUIShell:
     def test_project_tabs_use_nav_links_not_tablist_role(self):
         # Server-side page navigation is plain links (no fake tablist), so
         # screen readers announce them as links, not broken tabs. Scope the
-        # check to the actual <nav class="settings-subnav"> markup (not the
+        # check to the actual <nav class="page-subnav"> markup (not the
         # shared <style> block, whose `.role-mode-tabs [role=tablist]` selector
         # legitimately contains `role=` text).
         from flask import render_template
@@ -219,11 +221,11 @@ class TestUIShell:
         }
         with store.app.test_request_context('/projects/p?tab=secrets'):
             html = render_template('project.html', project=project, active_tab='secrets')
-        i = html.find('<nav class="settings-subnav"')
+        i = html.find('<nav class="page-subnav"')
         j = html.find('</nav>', i)
         tabs = html[i:j] if i != -1 and j != -1 else ''
         assert 'role="tablist"' not in tabs
         assert 'role="tab"' not in tabs
-        assert 'settings-subnav-link' in tabs
-        assert 'settings-subnav-link active' in tabs
+        assert 'page-subnav-link' in tabs
+        assert 'page-subnav-link active' in tabs
 

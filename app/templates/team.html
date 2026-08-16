@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ team.name }} - {{ app_name }}{% endblock %}
 {% block body %}
+{% set breadcrumbs = [
+  ('Teams', url_for('teams')),
+  (team.name, none),
+] %}
+{% include "partials/breadcrumb.html" %}
 <div class="page-head"><h1>{{ team.name }}</h1></div>
 <p class="page-desc muted">Your role: <span class="badge" data-variant="secondary">{{ my_role }}</span></p>
 
@@ -14,33 +19,36 @@
 </div>
 {% endif %}
 
-<div class="settings-side">
-<nav class="settings-subnav" aria-label="Team sections">
-  <span class="settings-subnav-header">Overview</span>
+<div class="page-side">
+<details class="page-subnav-wrap" open>
+<summary>Team sections</summary>
+<nav class="page-subnav" aria-label="Team sections">
+  <span class="page-subnav-header">Overview</span>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}"
-     class="settings-subnav-link {% if active_tab == 'projects' %}active{% endif %}"{% if active_tab == 'projects' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'projects' %}active{% endif %}"{% if active_tab == 'projects' %} aria-current="page"{% endif %}
   >Projects</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='activity') }}"
-     class="settings-subnav-link {% if active_tab == 'activity' %}active{% endif %}"{% if active_tab == 'activity' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'activity' %}active{% endif %}"{% if active_tab == 'activity' %} aria-current="page"{% endif %}
   >Activity</a>
-  <span class="settings-subnav-header">People</span>
+  <span class="page-subnav-header">People</span>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='members') }}"
-     class="settings-subnav-link {% if active_tab == 'members' %}active{% endif %}"{% if active_tab == 'members' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'members' %}active{% endif %}"{% if active_tab == 'members' %} aria-current="page"{% endif %}
   >Members</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}"
-     class="settings-subnav-link {% if active_tab == 'groups' %}active{% endif %}"{% if active_tab == 'groups' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'groups' %}active{% endif %}"{% if active_tab == 'groups' %} aria-current="page"{% endif %}
   >Groups</a>
   {% if is_admin %}
-  <span class="settings-subnav-header">Administration</span>
+  <span class="page-subnav-header">Administration</span>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}"
-     class="settings-subnav-link {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
      title="Role bindings for this team">Access</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
-     class="settings-subnav-link {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
   >Settings</a>
   {% endif %}
 </nav>
-<div class="settings-panel">
+</details>
+<div class="page-panel">
 
 {% if active_tab == 'projects' %}
 <section>

@@ -4,31 +4,34 @@
 <div class="page-head"><h1>My profile</h1></div>
 <p class="page-desc muted">Your account, security, memberships, and recent activity.</p>
 
-<div class="settings-side">
-<nav class="settings-subnav" aria-label="Profile sections">
-  <span class="settings-subnav-header">Account</span>
+<div class="page-side">
+<details class="page-subnav-wrap" open>
+<summary>Profile sections</summary>
+<nav class="page-subnav" aria-label="Profile sections">
+  <span class="page-subnav-header">Account</span>
   <a href="{{ url_for('profile', tab='account') }}"
-     class="settings-subnav-link {% if active_tab == 'account' %}active{% endif %}"{% if active_tab == 'account' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'account' %}active{% endif %}"{% if active_tab == 'account' %} aria-current="page"{% endif %}
   >Account</a>
   <a href="{{ url_for('profile', tab='security') }}"
-     class="settings-subnav-link {% if active_tab == 'security' %}active{% endif %}"{% if active_tab == 'security' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'security' %}active{% endif %}"{% if active_tab == 'security' %} aria-current="page"{% endif %}
   >Security</a>
-  <span class="settings-subnav-header">Membership</span>
+  <span class="page-subnav-header">Membership</span>
   <a href="{{ url_for('profile', tab='myaccess') }}"
-     class="settings-subnav-link {% if active_tab == 'myaccess' %}active{% endif %}"{% if active_tab == 'myaccess' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'myaccess' %}active{% endif %}"{% if active_tab == 'myaccess' %} aria-current="page"{% endif %}
   >My access</a>
   <a href="{{ url_for('profile', tab='teams') }}"
-     class="settings-subnav-link {% if active_tab == 'teams' %}active{% endif %}"{% if active_tab == 'teams' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'teams' %}active{% endif %}"{% if active_tab == 'teams' %} aria-current="page"{% endif %}
   >Teams</a>
   <a href="{{ url_for('profile', tab='projects') }}"
-     class="settings-subnav-link {% if active_tab == 'projects' %}active{% endif %}"{% if active_tab == 'projects' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'projects' %}active{% endif %}"{% if active_tab == 'projects' %} aria-current="page"{% endif %}
   >Projects</a>
-  <span class="settings-subnav-header">Activity</span>
+  <span class="page-subnav-header">Activity</span>
   <a href="{{ url_for('profile', tab='activity') }}"
-     class="settings-subnav-link {% if active_tab == 'activity' %}active{% endif %}"{% if active_tab == 'activity' %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == 'activity' %}active{% endif %}"{% if active_tab == 'activity' %} aria-current="page"{% endif %}
   >Activity</a>
 </nav>
-<div class="settings-panel">
+</details>
+<div class="page-panel">
 
 {% if active_tab == 'account' %}
 <section>

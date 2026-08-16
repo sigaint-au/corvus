@@ -4,18 +4,21 @@
 <div class="page-head"><h1>Server settings</h1></div>
 <p class="page-desc muted">Global admin only. Changes apply immediately for all users.</p>
 
-<div class="settings-side">
-<nav class="settings-subnav" aria-label="Server settings sections">
+<div class="page-side">
+<details class="page-subnav-wrap" open>
+<summary>Server settings sections</summary>
+<nav class="page-subnav" aria-label="Server settings sections">
   {% for cat_key, cat_label, subs in categories %}
-  <span class="settings-subnav-header">{{ cat_label }}</span>
+  <span class="page-subnav-header">{{ cat_label }}</span>
   {% for sub_key, sub_label in subs %}
   <a href="{{ url_for('server_settings', tab=sub_key) }}"
-     class="settings-subnav-link {% if active_tab == sub_key %}active{% endif %}"{% if active_tab == sub_key %} aria-current="page"{% endif %}
+     class="page-subnav-link {% if active_tab == sub_key %}active{% endif %}"{% if active_tab == sub_key %} aria-current="page"{% endif %}
   >{{ sub_label }}</a>
   {% endfor %}
   {% endfor %}
 </nav>
-<div class="settings-panel">
+</details>
+<div class="page-panel">
 
 {% if active_tab == 'general' %}
 <section>
