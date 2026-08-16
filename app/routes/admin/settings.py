@@ -139,7 +139,6 @@ SETTINGS_CATEGORIES = [
     ("authentication", "Authentication", [("ldap", "LDAP"), ("oidc", "OIDC / SSO")]),
 ]
 ALL_TABS = tuple(t for _, _, subs in SETTINGS_CATEGORIES for t, _ in subs)
-TAB_CATEGORY = {t: c for c, _, subs in SETTINGS_CATEGORIES for t, _ in subs}
 
 
 @authz.global_admin_required
@@ -688,8 +687,6 @@ def server_settings():
     tab = (request.args.get("tab") or "general").strip().lower()
     if tab not in ALL_TABS:
         tab = "general"
-    category = TAB_CATEGORY[tab]
-    cat_subs = next(subs for c, _, subs in SETTINGS_CATEGORIES if c == category)
     settings = settings_svc.get_settings()
     # never show raw passwords in the form
     settings = dict(settings)
@@ -816,8 +813,6 @@ def server_settings():
         classification=settings_svc.classification(),
         active_tab=tab,
         categories=SETTINGS_CATEGORIES,
-        category=category,
-        cat_subs=cat_subs,
         smtp_encryption_modes=config.SMTP_ENCRYPTION_MODES,
         server_url=server_url,
         oidc_redirect_uri=oidc_redirect_uri,

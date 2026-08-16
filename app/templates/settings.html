@@ -4,20 +4,15 @@
 <div class="page-head"><h1>Server settings</h1></div>
 <p class="page-desc muted">Global admin only. Changes apply immediately for all users.</p>
 
-<nav class="tabs" aria-label="Server settings sections">
-  {% for cat_key, cat_label, subs in categories %}
-  {% set target = (active_tab if category == cat_key else subs[0][0]) %}
-  <a href="{{ url_for('server_settings', tab=target) }}"
-     class="tab {% if category == cat_key %}active{% endif %}"{% if category == cat_key %} aria-current="page"{% endif %}
-  >{{ cat_label }}</a>
-  {% endfor %}
-</nav>
 <div class="settings-side">
-<nav class="settings-subnav" aria-label="Server settings sub-sections">
-  {% for sub_key, sub_label in cat_subs %}
+<nav class="settings-subnav" aria-label="Server settings sections">
+  {% for cat_key, cat_label, subs in categories %}
+  <span class="settings-subnav-header">{{ cat_label }}</span>
+  {% for sub_key, sub_label in subs %}
   <a href="{{ url_for('server_settings', tab=sub_key) }}"
      class="settings-subnav-link {% if active_tab == sub_key %}active{% endif %}"{% if active_tab == sub_key %} aria-current="page"{% endif %}
   >{{ sub_label }}</a>
+  {% endfor %}
   {% endfor %}
 </nav>
 <div class="settings-panel">
