@@ -35,10 +35,9 @@ def _write_migrations(tmp_path, files):
 
 
 def test_migrations_ship_in_order():
-    """The fresh-install squash ships the full committed migration set."""
+    """The fresh-install squash ships exactly one baseline migration."""
     files = [p.name for p in migrations._migration_files()]
-    assert files == ["0001_init.sql", "0002_rbac.sql", "0003_machine_role_enforcement.sql"]
-    assert "no-op" in (migrations.MIGRATIONS_DIR / "0002_rbac.sql").read_text()
+    assert files == ["0001_init.sql"]
     for name in files:
         assert name[:4].isdigit()
         assert name[4] == "_"
@@ -136,8 +135,7 @@ class TestApplyPending:
     def test_baseline_seeded_when_schema_exists(self, tmp_path):
         d = _write_migrations(tmp_path, {
             "0001_init.sql": "CREATE TABLE private.users (id int);",
-            "0002_rbac.sql": "CREATE TABLE rbac.roles (id int);",
-            "0003_add.sql": "ALTER TABLE x ADD COLUMN y int;",
+            "0002_add.sql": "ALTER TABLE x ADD COLUMN y int;",
         })
         # empty migrations table, schema already exists (baseline present)
         cur = _cur(fetchone={"ok": True})
@@ -146,7 +144,6 @@ class TestApplyPending:
         sqls = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
         # baseline is seeded, not executed as DDL
         assert "CREATE TABLE private.users" not in sqls
-        assert "CREATE TABLE rbac.roles" not in sqls
         # only the additive migration runs
         assert "ALTER TABLE x ADD COLUMN y int" in sqls
 

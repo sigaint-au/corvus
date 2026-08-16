@@ -1086,10 +1086,13 @@ LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
 SET row_security = off AS $$
 BEGIN
-  IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
-    RETURN;
-  END IF;
-  RETURN QUERY
+          IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
+            RETURN;
+          END IF;
+          IF private.machine_role(p_project, p_hash) = 'service-read' THEN
+            RETURN;
+          END IF;
+          RETURN QUERY
     SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at, s.created_at, s.updated_at
     FROM api.secrets s
     WHERE s.project_id = p_project AND s.key = p_key AND s.deleted_at IS NULL;
@@ -5290,6 +5293,9 @@ CREATE OR REPLACE FUNCTION private.machine_list_enc(p_project uuid, p_hash text)
         SET row_security = off AS $$
         BEGIN
           IF NOT private.auth_machine(p_project, p_hash) THEN
+            RETURN;
+          END IF;
+          IF private.machine_role(p_project, p_hash) = 'service-read' THEN
             RETURN;
           END IF;
           RETURN QUERY
