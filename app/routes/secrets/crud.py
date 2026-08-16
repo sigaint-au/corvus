@@ -47,8 +47,8 @@ def create_secret(project_id):
     Example:
         POST /projects/<project_id>/secrets
     """
-    key = request.form["key"].strip()
-    value = request.form["value"]
+    key = request.form.get("key", "").strip()
+    value = request.form.get("value", "")
     note = request.form.get("note", "").strip()
     kind = normalize_kind(request.form.get("kind"))
     if kind != "plain":

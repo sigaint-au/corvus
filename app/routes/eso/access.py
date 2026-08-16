@@ -10,7 +10,7 @@ from core import config
 from core import db
 from .helpers import (
     _audit,
-    _parse_auth,
+    _require_auth,
     _resolve_project_ref,
 )
 
@@ -22,9 +22,10 @@ def eso_request_secret_access(project_ref, key):
 
     Machine tokens are exempt from approval and should not use this.
     """
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
     if kind != "pat":
         return jsonify({"error": "PAT required"}), 403
     key = (key or "").strip()
@@ -111,9 +112,10 @@ def eso_list_access_requests(project_ref):
 
     Admins see all; others see their own. Query ``status=pending`` optional.
     """
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
     if kind != "pat":
         return jsonify({"error": "PAT required"}), 403
     status = (request.args.get("status") or "").strip().lower()
@@ -150,9 +152,10 @@ def eso_list_access_requests(project_ref):
 
 def eso_approve_access_request(project_ref, req_id):
     """Approve a pending access request (project admin / team owner, PAT)."""
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
     if kind != "pat":
         return jsonify({"error": "PAT required"}), 403
     body = request.get_json(silent=True) or {}
@@ -223,9 +226,10 @@ def eso_approve_access_request(project_ref, req_id):
 
 def eso_deny_access_request(project_ref, req_id):
     """Deny a pending access request (project admin / team owner, PAT)."""
-    kind, ident = _parse_auth()
-    if kind is None:
-        return jsonify({"error": "unauthorized"}), 401
+    auth, err = _require_auth()
+    if err:
+        return err
+    kind, ident = auth
     if kind != "pat":
         return jsonify({"error": "PAT required"}), 403
     with db.as_user(ident) as conn, conn.cursor() as cur:
