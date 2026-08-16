@@ -36,8 +36,6 @@
 {% endif %}
 
 <div class="page-side">
-<details class="page-subnav-wrap" open>
-<summary>Project sections</summary>
 <nav class="page-subnav" aria-label="Project sections">
   <span class="page-subnav-header">Secrets</span>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}"
@@ -70,7 +68,6 @@
   >Settings</a>
   {% endif %}
 </nav>
-</details>
 <div class="page-panel">
 
 {% if active_tab == 'secrets' %}

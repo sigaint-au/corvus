@@ -5,8 +5,6 @@
 <p class="page-desc muted">Global admin only. Changes apply immediately for all users.</p>
 
 <div class="page-side">
-<details class="page-subnav-wrap" open>
-<summary>Server settings sections</summary>
 <nav class="page-subnav" aria-label="Server settings sections">
   {% for cat_key, cat_label, subs in categories %}
   <span class="page-subnav-header">{{ cat_label }}</span>
@@ -17,7 +15,6 @@
   {% endfor %}
   {% endfor %}
 </nav>
-</details>
 <div class="page-panel">
 
 {% if active_tab == 'general' %}

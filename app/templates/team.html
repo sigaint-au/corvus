@@ -20,8 +20,6 @@
 {% endif %}
 
 <div class="page-side">
-<details class="page-subnav-wrap" open>
-<summary>Team sections</summary>
 <nav class="page-subnav" aria-label="Team sections">
   <span class="page-subnav-header">Overview</span>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}"
@@ -47,7 +45,6 @@
   >Settings</a>
   {% endif %}
 </nav>
-</details>
 <div class="page-panel">
 
 {% if active_tab == 'projects' %}

@@ -5,8 +5,6 @@
 <p class="page-desc muted">Your account, security, memberships, and recent activity.</p>
 
 <div class="page-side">
-<details class="page-subnav-wrap" open>
-<summary>Profile sections</summary>
 <nav class="page-subnav" aria-label="Profile sections">
   <span class="page-subnav-header">Account</span>
   <a href="{{ url_for('profile', tab='account') }}"
@@ -30,7 +28,6 @@
      class="page-subnav-link {% if active_tab == 'activity' %}active{% endif %}"{% if active_tab == 'activity' %} aria-current="page"{% endif %}
   >Activity</a>
 </nav>
-</details>
 <div class="page-panel">
 
 {% if active_tab == 'account' %}
