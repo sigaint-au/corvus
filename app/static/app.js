@@ -79,6 +79,20 @@ document.addEventListener('htmx:configRequest', function (e) {
     });
   })();
 
+  /* Page subnav tab active state switcher on HTMX navigation */
+  document.addEventListener('click', function (e) {
+    var link = e.target.closest && e.target.closest('.page-subnav-link');
+    if (!link || !link.hasAttribute('hx-get')) return;
+    var nav = link.closest('.page-subnav');
+    if (!nav) return;
+    nav.querySelectorAll('.page-subnav-link').forEach(function (el) {
+      el.classList.remove('active');
+      el.removeAttribute('aria-current');
+    });
+    link.classList.add('active');
+    link.setAttribute('aria-current', 'page');
+  });
+
   /* User email autocomplete for member fields */
   (function () {
     var list = document.getElementById('user-suggest-list');

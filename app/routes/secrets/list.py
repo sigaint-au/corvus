@@ -211,27 +211,26 @@ def restore_secret(secret_id):
             row = cur.fetchone()
             if not row:
                 flash("Could not restore — missing permission or key already exists", "error")
-                conn.commit()
-                return redirect(url_for("trash", q=request.args.get("q") or None))
-            cur.execute(
-                """
-                UPDATE api.secrets
-                SET deleted_at = NULL
-                WHERE id = %s AND deleted_at IS NOT NULL
-                """,
-                (str(secret_id),),
-            )
-            if cur.rowcount == 0:
-                flash("Could not restore — missing permission or key already exists", "error")
             else:
-                audit.log_secret(
-                    cur,
-                    project_id=row["project_id"],
-                    secret_id=row["id"],
-                    secret_key=row["key"],
-                    action="restored",
+                cur.execute(
+                    """
+                    UPDATE api.secrets
+                    SET deleted_at = NULL
+                    WHERE id = %s AND deleted_at IS NOT NULL
+                    """,
+                    (str(secret_id),),
                 )
-                flash("Secret restored", "ok")
+                if cur.rowcount == 0:
+                    flash("Could not restore — missing permission or key already exists", "error")
+                else:
+                    audit.log_secret(
+                        cur,
+                        project_id=row["project_id"],
+                        secret_id=row["id"],
+                        secret_key=row["key"],
+                        action="restored",
+                    )
+                    flash("Secret restored", "ok")
             conn.commit()
         except Exception as e:
             conn.rollback()
