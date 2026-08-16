@@ -205,7 +205,7 @@ def team_detail(team_id):
                 join_requests = cur.fetchall() or []
         elif tab == "access" and is_admin:
 
-            # All team-scope bindings (users, groups, service accounts)
+            # All team-scope bindings (users, groups, machine accounts)
             access_bindings = rbac_sync.list_scope_bindings(cur, "team", team_id)
             rbac_sync.enrich_binding_emails(access_bindings)
             cur.execute(

@@ -65,7 +65,7 @@ def update_secret_access(project_id, secret_id):
 
 @authz.login_required
 def add_secret_access_binding(project_id, secret_id):
-    """Bind a user, group, or service account to a secret role (project admin).
+    """Bind a user, group, or machine account to a secret role (project admin).
 
     Uses the same subject/role vocabulary as every other binding form:
     ``subject_kind`` + ``subject_email`` / ``subject_group`` / ``subject_sa``

@@ -5,6 +5,6 @@
 {% set form_id_prefix = 'team-access-rbac' %}
 {% set role_dropdown = team_role_dropdown %}
 {% set full_bindings_url = url_for('rbac_bindings', scope='team', scope_id=team.id) %}
-{% set empty_message = 'No team bindings yet. Add a user, group, or service account below.' %}
-{% set help_html = 'Role bindings for this team (users, groups, service accounts). Groups are created under the Groups tab, then bound here as subject kind <strong>Group</strong>.' %}
+{% set empty_message = 'No team bindings yet. Add a user, group, or machine account below.' %}
+{% set help_html = 'Role bindings for this team (users, groups, machine accounts). Groups are created under the Groups tab, then bound here as subject kind <strong>Group</strong>.' %}
 {% include "partials/access_bindings_panel.html" %}

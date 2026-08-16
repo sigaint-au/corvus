@@ -289,7 +289,7 @@ def project_access_binding_create(project_id):
                 subject_id = subject_sa
                 detail_who = f"sa {subject_sa}"
                 if not subject_id:
-                    flash("Service account id required", "error")
+                    flash("Machine account id required", "error")
                     return redirect(dest)
                 rid = rbac_sync.role_id(cur, role_name)
                 if not rid:
