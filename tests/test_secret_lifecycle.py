@@ -89,7 +89,7 @@ class TestSecretLifecycle:
         conn, cur = _conn()
         cur.fetchone.side_effect = [{'w': True}, {'name': 'prod', 'id': self.pid, 'team_name': 'T'}]
         cur.fetchall.return_value = [{'key': 'EXISTING'}]
-        with patch.object(db, 'as_user', return_value=conn), patch('nav.nav_teams', return_value=[]):
+        with patch.object(db, 'as_user', return_value=conn), patch('ui.nav.nav_teams', return_value=[]):
             r = self.client.post(f'/projects/{self.pid}/import/preview', data={'payload': 'NEW_KEY=hello\nEXISTING=updated'}, follow_redirects=False)
         assert r.status_code == 200
         assert b'Import preview' in r.data

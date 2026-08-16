@@ -1,10 +1,9 @@
 {# Full dialog contents after HTMX submit (swapped into dialog). Keep compact. #}
 {% set dlg_id = 'access-dlg-' ~ secret_id %}
-{% set state = state|default('pending') %}
 {% if state == 'pending' %}
 <form method="dialog">
   <header>
-    <h3>Request submitted</h3>
+    <h3 id="{{ dlg_id }}-title">Request submitted</h3>
     <p>Waiting for approval to reveal <code>{{ secret_key }}</code>.</p>
   </header>
   <footer>
@@ -18,7 +17,7 @@
       hx-target="#{{ dlg_id }}"
       hx-swap="innerHTML">
   <header>
-    <h3>Approval required</h3>
+    <h3 id="{{ dlg_id }}-title">Approval required</h3>
     <p>Reveal <code>{{ secret_key }}</code> after an admin approves.</p>
   </header>
   <div>
@@ -27,8 +26,8 @@
     <input type="hidden" name="dialog" value="1">
     <label>
       Why do you need access?
-      <input type="text" name="reason" maxlength="500" required
-             placeholder="e.g. debugging prod auth, ticket #1234"
+      <input type="text" name="reason" maxlength="500"
+             placeholder="e.g. debugging prod auth, ticket #1234 (optional)"
              autocomplete="off">
     </label>
   </div>

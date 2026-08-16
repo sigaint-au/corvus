@@ -11,12 +11,12 @@
 
 <nav class="tabs" aria-label="Roles sections">
   <a href="{{ url_for('rbac_roles', tab='builtin') }}"
-     class="tab {% if active_tab == 'builtin' %}active{% endif %}"
+     class="tab {% if active_tab == 'builtin' %}active{% endif %}"{% if active_tab == 'builtin' %} aria-current="page"{% endif %}
 >Built-in
     <span class="tab-badge">{{ builtin_roles|length }}</span>
   </a>
   <a href="{{ url_for('rbac_roles', tab='custom') }}"
-     class="tab {% if active_tab == 'custom' %}active{% endif %}"
+     class="tab {% if active_tab == 'custom' %}active{% endif %}"{% if active_tab == 'custom' %} aria-current="page"{% endif %}
 >Custom
     <span class="tab-badge">{{ custom_roles|length }}</span>
   </a>
@@ -137,9 +137,9 @@
     <ot-tabs>
       <div role="tablist" class="tabs role-mode-tabs">
         <button type="button" class="tab active" data-mode="form" id="mode-form-btn"
-                role="tab" aria-selected="true">Form</button>
+                role="tab" aria-selected="true" aria-controls="mode-form-panel">Form</button>
         <button type="button" class="tab" data-mode="yaml" id="mode-yaml-btn"
-                role="tab" aria-selected="false">YAML</button>
+                role="tab" aria-selected="false" aria-controls="mode-yaml-panel">YAML</button>
       </div>
 
       <div id="mode-form-panel" class="role-create-panel" role="tabpanel" aria-labelledby="mode-form-btn">

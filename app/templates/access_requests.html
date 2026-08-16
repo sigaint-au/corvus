@@ -49,7 +49,7 @@
                   id="approve-{{ r.id }}"
                   action="{{ url_for('approve_secret_access', project_id=r.project_id, req_id=r.id) }}"
                   class="access-approve-form"
-                  onsubmit="this.querySelector('select').disabled=true;">
+                  onsubmit="return setAccessBusy(this, 'Approving…')">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <label class="visually-hidden" for="grant-minutes-{{ r.id }}">Grant duration</label>
             <select name="minutes" id="grant-minutes-{{ r.id }}" class="bulk-action" aria-label="Grant duration">
@@ -61,12 +61,11 @@
             </select>
           </form>
           <div class="access-acts-btns">
-            <button type="submit" form="approve-{{ r.id }}" class="link"
-                    onclick="this.disabled=true; this.textContent='Approving…';">Approve</button>
+            <button type="submit" form="approve-{{ r.id }}" class="link">Approve</button>
             <form method="post"
                    action="{{ url_for('deny_secret_access', project_id=r.project_id, req_id=r.id) }}"
                    class="inline"
-                   onsubmit="return confirm('Deny this reveal request?') && (this.querySelector('button').disabled=true);">
+                   onsubmit="return confirm('Deny this reveal request?') && setAccessBusy(this, 'Denying…')">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">
               <button type="submit" class="link danger">Deny</button>
             </form>

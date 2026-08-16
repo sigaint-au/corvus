@@ -31,31 +31,31 @@
 
 <nav class="tabs" aria-label="Project sections">
   <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}"
-     class="tab {% if active_tab == 'secrets' %}active{% endif %}"
+     class="tab {% if active_tab == 'secrets' %}active{% endif %}"{% if active_tab == 'secrets' %} aria-current="page"{% endif %}
 >Secrets</a>
   {% if can_admin %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}"
-     class="tab {% if active_tab == 'access' %}active{% endif %}"
+     class="tab {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
      title="Role bindings for this project">Access</a>
   {% endif %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='requests') }}"
-     class="tab {% if active_tab == 'requests' %}active{% endif %}"
+     class="tab {% if active_tab == 'requests' %}active{% endif %}"{% if active_tab == 'requests' %} aria-current="page"{% endif %}
 >Requests{% if access_pending_count %}<span class="tab-badge" title="{{ access_pending_count }} pending">{{ access_pending_count }}</span>{% endif %}</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
-     class="tab {% if active_tab == 'audit' %}active{% endif %}"
+     class="tab {% if active_tab == 'audit' %}active{% endif %}"{% if active_tab == 'audit' %} aria-current="page"{% endif %}
 >Audit log</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}"
-     class="tab {% if active_tab == 'tokens' %}active{% endif %}"
+     class="tab {% if active_tab == 'tokens' %}active{% endif %}"{% if active_tab == 'tokens' %} aria-current="page"{% endif %}
 >Machine accounts</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
-     class="tab {% if active_tab == 'import' %}active{% endif %}"
+     class="tab {% if active_tab == 'import' %}active{% endif %}"{% if active_tab == 'import' %} aria-current="page"{% endif %}
 >Import / Export</a>
   <a href="{{ url_for('project_detail', project_id=project.id, tab='integrations') }}"
-     class="tab {% if active_tab == 'integrations' %}active{% endif %}"
+     class="tab {% if active_tab == 'integrations' %}active{% endif %}"{% if active_tab == 'integrations' %} aria-current="page"{% endif %}
 >Integrations</a>
   {% if can_settings %}
   <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
-     class="tab {% if active_tab == 'settings' %}active{% endif %}"
+     class="tab {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
 >Settings</a>
   {% endif %}
 </nav>
@@ -107,7 +107,7 @@
     {% endfor %}
     {% for s in due_soon %}
       <tr>
-        <td><code class="k">{{ s.key }}</code> <span class="badge" data-variant="warning">soon</span></td>
+        <td><code class="k">{{ s.key }}</code> <span class="badge" data-variant="warning">expiring soon</span></td>
         <td class="muted">Within {{ soon_days }} days</td>
         <td class="muted"{% if s.expires_at %} title="{{ s.expires_at|time_when }}"{% endif %}>
           {% if s.expires_at %}{{ s.expires_at|expires }}{% else %}-{% endif %}
@@ -355,7 +355,7 @@
                   id="approve-{{ r.id }}"
                   action="{{ url_for('approve_secret_access', project_id=project.id, req_id=r.id) }}"
                   class="access-approve-form"
-                  onsubmit="var s=this.querySelector('#grant-minutes-{{ r.id }}');var m=parseInt(s?s.value:'0',10);var lab=m<60?m+' minutes':(m===60?'1 hour':(m===1440?'1 day':(m/60)+' hours'));return confirm('Approve reveal for '+lab+'?');">
+                  onsubmit="var s=this.querySelector('#grant-minutes-{{ r.id }}');var m=parseInt(s?s.value:'0',10);var lab=m<60?m+' minutes':(m===60?'1 hour':(m===1440?'1 day':(m/60)+' hours'));return confirm('Approve reveal for '+lab+'?') && setAccessBusy(this,'Approving…');">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">
               <label class="visually-hidden" for="grant-minutes-{{ r.id }}">Grant duration</label>
               <select name="minutes" id="grant-minutes-{{ r.id }}" class="bulk-action" aria-label="Grant duration">
@@ -370,7 +370,8 @@
               <button type="submit" form="approve-{{ r.id }}" class="link">Approve</button>
               <form method="post"
                     action="{{ url_for('deny_secret_access', project_id=project.id, req_id=r.id) }}"
-                    class="inline">
+                    class="inline"
+                    onsubmit="return confirm('Deny this reveal request?') && setAccessBusy(this, 'Denying…')">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 <button type="submit" class="link danger">Deny</button>
               </form>
@@ -717,7 +718,7 @@
 <section>
   <div class="section-head">
     <h2>General</h2>
-    <p class="muted" style="margin:0">Settings applied when new secrets are created in this project.</p>
+    <p class="muted section-head-desc">Applied when new secrets are created in this project.</p>
   </div>
   <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="settings-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -770,21 +771,6 @@
 <section class="crypto-panel">
   <div class="section-head">
     <h2>Encryption</h2>
-    {% if can_manage_keys and project_crypto and project_master_rows %}
-    <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
-          class="inline"
-          onsubmit="return confirm('Re-encrypt {{ project_master_rows }} secret(s) with the project key?');">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <input type="hidden" name="action" value="adopt">
-      <input type="hidden" name="provider" value="{{ project_crypto.key_provider or 'local' }}">
-      {% if project_crypto.key_provider == 'hsm' and project_crypto.hsm_slot_id %}
-      <input type="hidden" name="hsm_slot" value="{{ project_crypto.hsm_slot_id }}">
-      {% endif %}
-      <button type="submit" class="button outline small">
-        Re-encrypt {{ project_master_rows }}
-      </button>
-    </form>
-    {% endif %}
   </div>
 
   <div class="crypto-status">
@@ -793,7 +779,7 @@
       <span class="badge" data-variant="success">Project key</span>
       <span class="muted">
         {% if project_crypto.key_provider == 'hsm' %}
-          HSM{% if project_crypto.hsm_slot_name %} · {{ project_crypto.hsm_slot_name }}{% elif project_crypto.hsm_slot_id is none %} · ⚠ No slot{% endif %}{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
+          HSM{% if project_crypto.hsm_slot_name %} · {{ project_crypto.hsm_slot_name }}{% elif project_crypto.hsm_slot_id is none %} · <span class="badge" data-variant="warning">no slot</span>{% endif %}{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
         {% else %}
           Local
         {% endif %}
@@ -822,22 +808,41 @@
   <p class="field-hint">All secrets are encrypted with the project key. No action needed.</p>
   {% endif %}
 
-  {% if can_manage_keys and hsm_available and project_crypto and project_crypto.key_provider == 'local' %}
-  <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
-        class="inline"
-        onsubmit="return confirm('Migrate this project to an HSM-wrapped key? All secrets will be re-encrypted. The HSM must remain available for all future access.');">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="action" value="migrate">
-    <input type="hidden" name="provider" value="hsm">
-    {% if hsm_slots %}
-    <select name="target_slot" aria-label="HSM slot">
-      {% for s in hsm_slots %}
-      <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
-      {% endfor %}
-    </select>
+  {% if can_manage_keys and project_crypto %}
+  <div class="crypto-actions">
+    {% if project_master_rows %}
+    <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
+          class="inline"
+          onsubmit="return confirm('Re-encrypt {{ project_master_rows }} secret(s) with the project key?');">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="adopt">
+      <input type="hidden" name="provider" value="{{ project_crypto.key_provider or 'local' }}">
+      {% if project_crypto.key_provider == 'hsm' and project_crypto.hsm_slot_id %}
+      <input type="hidden" name="hsm_slot" value="{{ project_crypto.hsm_slot_id }}">
+      {% endif %}
+      <button type="submit" class="button outline small">Re-encrypt {{ project_master_rows }}</button>
+    </form>
     {% endif %}
-    <button type="submit" class="button outline small">Migrate to HSM</button>
-  </form>
+    {% if hsm_available and project_crypto.key_provider == 'local' %}
+    <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
+          class="inline"
+          onsubmit="return confirm('Migrate this project to an HSM-wrapped key? All secrets will be re-encrypted. The HSM must remain available for all future access.');">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="migrate">
+      <input type="hidden" name="provider" value="hsm">
+      {% if hsm_slots %}
+      <label>HSM slot
+        <select name="target_slot">
+          {% for s in hsm_slots %}
+          <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <button type="submit" class="button outline small">Migrate to HSM</button>
+    </form>
+    {% endif %}
+  </div>
   {% endif %}
 
   {% if can_manage_keys and not project_crypto %}
@@ -866,7 +871,7 @@
       {% endif %}
     </fieldset>
     {% if hsm_slots %}
-    <label>HSM slot
+    <label class="crypto-hsm-slot" data-hsm-slot hidden>HSM slot
       <select name="hsm_slot">
         {% for s in hsm_slots %}
         <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
@@ -875,15 +880,31 @@
     </label>
     {% endif %}
     <p class="form-actions">
-      <button type="submit" class="button outline small">Adopt project key</button>
+      <button type="submit" class="button">Adopt project key</button>
     </p>
   </form>
+  <script>
+  (function () {
+    var form = document.querySelector('.crypto-adopt');
+    if (!form) return;
+    var slot = form.querySelector('[data-hsm-slot]');
+    var radios = form.querySelectorAll('input[name="provider"]');
+    function sync() {
+      var hsm = form.querySelector('input[name="provider"]:checked');
+      if (slot) slot.hidden = !(hsm && hsm.value === 'hsm');
+    }
+    radios.forEach(function (r) { r.addEventListener('change', sync); });
+    sync();
+  })();
+  </script>
   {% endif %}
 </section>
 {% endif %}
 {% if can_delete %}
 <section>
-  <h2>Danger zone</h2>
+  <div class="section-head">
+    <h2>Danger zone</h2>
+  </div>
   <p class="muted">Delete this project and all secrets, audit history, and machine tokens. Irreversible.</p>
   <form method="post" action="{{ url_for('delete_project', project_id=project.id) }}"
         onsubmit="return confirm('Delete project “{{ project.name }}” and all its data? This cannot be undone.')">

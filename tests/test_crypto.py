@@ -202,7 +202,8 @@ class TestHsmDekContract:
         admin_conn, admin_cur = _project_keys_conn(fetchone=None)
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn), \
              patch.object(project_keys.crypto, "slot_url", return_value="pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"), \
-             patch.object(hsm, "wrap_dek_for_slot", side_effect=capture_wrap):
+             patch.object(hsm, "wrap_dek_for_slot", side_effect=capture_wrap), \
+             patch.object(hsm, "ensure_kek_for_slot"):
             assert project_keys.ensure_project_key(
                 pid, provider="hsm", hsm_slot_id=slot_id
             ) is True

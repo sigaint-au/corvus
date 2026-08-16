@@ -183,6 +183,12 @@
     @keyframes secrets-spin {
       to { transform: rotate(360deg); }
     }
+    /* Non-HTMX GET search/filter forms: dim while submitting */
+    form.submitting {
+      opacity: .55;
+      pointer-events: none;
+      transition: opacity .12s ease;
+    }
     .row > label.full-width {
       flex: 1 1 100%;
       min-width: 100%;
@@ -689,6 +695,33 @@
     .crypto-panel .field-hint {
       margin: .65rem 0 0;
     }
+    .section-head-desc { margin: 0; }
+    .crypto-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: .65rem .85rem;
+      margin: .85rem 0 0;
+    }
+    .crypto-actions form.inline {
+      display: inline-flex;
+      align-items: end;
+      gap: .5rem;
+    }
+    .crypto-actions label {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      margin: 0;
+      font-size: .85rem;
+      color: var(--muted-foreground);
+    }
+    .crypto-actions label select { margin: 0; }
+    .crypto-hsm-slot {
+      display: block;
+      margin: .6rem 0 0;
+    }
+    .crypto-hsm-slot[hidden] { display: none; }
     .crypto-choice {
       display: flex;
       flex-direction: column;
@@ -729,6 +762,52 @@
     .radio-card-body strong {
       font-weight: 600;
       font-size: .925rem;
+    }
+    .token-policy-grid {
+      gap: .75rem;
+    }
+    .policy-card {
+      display: flex;
+      flex-direction: column;
+      gap: .7rem;
+      margin: 0;
+      padding: .85rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--background);
+    }
+    .policy-card:has(input[type="checkbox"]:checked) {
+      border-color: var(--ring);
+      background: var(--muted);
+    }
+    .policy-card .check-row {
+      margin: 0;
+      font-weight: 600;
+    }
+    .policy-card .field-hint {
+      margin: .15rem 0 0 1.5rem;
+    }
+    .policy-card-limit {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+      padding-top: .65rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted-foreground);
+      font-size: .8rem;
+    }
+    .policy-card-limit input {
+      width: 7rem;
+      margin: 0;
+    }
+    .policy-card-limit input.lifetime-dim {
+      opacity: .5;
+    }
+    @media (max-width: 600px) {
+      .token-policy-grid {
+        grid-template-columns: 1fr;
+      }
     }
     .create-actions {
       display: flex;
@@ -1088,6 +1167,15 @@
       gap: .5rem .65rem;
       margin-top: 1rem;
     }
+    /* Connection/status row: flexible, but visually distinct from the
+       action-button row below (use for non-interactive status lines). */
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .5rem .65rem;
+      margin-top: 1rem;
+    }
     .form-actions-tight { margin-top: .35rem; }
     .field-spacer { margin-top: .5rem; }
     .mt-0 { margin-top: 0 !important; }
@@ -1199,18 +1287,37 @@
       font-weight: 600;
       line-height: 1.3;
       vertical-align: middle;
-      background: #fff;
-      color: #000;
-      border: 1px solid color-mix(in srgb, #000 18%, transparent);
+      background: var(--accent);
+      color: var(--muted-foreground);
+      border: 1px solid var(--border);
     }
     .reveal-access {
       padding: 0.65rem 0.75rem;
       border: 1px solid var(--border, #333);
       border-radius: 6px;
-      background: var(--surface-2, transparent);
+      background: var(--secondary);
       max-width: 36rem;
     }
     .reveal-access-msg { margin: 0 0 0.5rem; }
+    /* Reveal cells: loading cue while the mask blob / toggle fetches the value */
+    .secret-masked.htmx-request,
+    .reveal-toggle.htmx-request {
+      opacity: .5;
+      pointer-events: none;
+    }
+    .secret-masked.htmx-request::after,
+    .reveal-toggle.htmx-request::after {
+      content: "";
+      display: inline-block;
+      width: .9em;
+      height: .9em;
+      margin-left: .3em;
+      vertical-align: -.15em;
+      border: 2px solid var(--border, #ccc);
+      border-top-color: var(--foreground, #333);
+      border-radius: 50%;
+      animation: secrets-spin .6s linear infinite;
+    }
     .reveal-access-hint { margin: 0; font-size: 0.9em; }
     .reveal-access-form {
       display: flex;
@@ -1264,7 +1371,7 @@
       align-items: center;
     }
     .access-status-pending { color: var(--warning, #ca8a04); }
-    .access-status-approved { color: var(--ok, #16a34a); }
+    .access-status-approved { color: var(--success, #16a34a); }
     .access-status-denied { color: var(--danger, #dc2626); }
     .lock-badge { margin-left: 0.25em; font-size: 0.9em; opacity: 0.9; }
     .lock-badge.lock-granted { opacity: 0.75; }
@@ -1283,9 +1390,9 @@
       font-size: 0.75em;
       font-weight: 600;
       text-align: center;
-      background: #fff;
-      color: #000;
-      border: 1px solid color-mix(in srgb, #000 18%, transparent);
+      background: var(--side-ink);
+      color: var(--side-bg);
+      border: 1px solid var(--side-border);
     }
     .checkbox-label {
       display: flex;
@@ -2693,30 +2800,30 @@
       <details class="side-group" data-side-group="workspace"{% if workspace_open %} open{% endif %}>
         <summary>Workspace</summary>
         <div class="side-group-body">
-          <a class="side-nav-link {% if ep in ('projects_list', 'project_detail', 'create_secret', 'delete_secret', 'reveal_secret', 'create_token', 'delete_token', 'create_project', 'new_project_wizard') %}active{% endif %}"
+          <a class="side-nav-link {% if ep in ('projects_list', 'project_detail', 'create_secret', 'delete_secret', 'reveal_secret', 'create_token', 'delete_token', 'create_project', 'new_project_wizard') %}active{% endif %}{% if ep in ('projects_list', 'project_detail', 'create_secret', 'delete_secret', 'reveal_secret', 'create_token', 'delete_token', 'create_project', 'new_project_wizard') %} aria-current="page"{% endif %}"
              href="{{ url_for('projects_list') }}">Projects</a>
-          <a class="side-nav-link {% if ep == 'secrets_list' %}active{% endif %}"
+          <a class="side-nav-link {% if ep == 'secrets_list' %}active{% endif %}{% if ep == 'secrets_list' %} aria-current="page"{% endif %}"
              href="{{ url_for('secrets_list') }}">Secrets</a>
-          <a class="side-nav-link {% if ep == 'shared_secrets_list' %}active{% endif %}"
+          <a class="side-nav-link {% if ep == 'shared_secrets_list' %}active{% endif %}{% if ep == 'shared_secrets_list' %} aria-current="page"{% endif %}"
              href="{{ url_for('shared_secrets_list') }}">Shared secrets</a>
-          <a class="side-nav-link {% if ep == 'machines_list' %}active{% endif %}"
+          <a class="side-nav-link {% if ep == 'machines_list' %}active{% endif %}{% if ep == 'machines_list' %} aria-current="page"{% endif %}"
              href="{{ url_for('machines_list') }}">Machine accounts</a>
         </div>
       </details>
       <details class="side-group" data-side-group="account"{% if account_open %} open{% endif %}>
         <summary>Organisation</summary>
         <div class="side-group-body">
-           <a class="side-nav-link {% if ep in ('teams', 'create_team', 'team_detail', 'add_team_binding', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}"
+           <a class="side-nav-link {% if ep in ('teams', 'create_team', 'team_detail', 'add_team_binding', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %}active{% endif %}{% if ep in ('teams', 'create_team', 'team_detail', 'add_team_binding', 'add_team_ldap_map', 'delete_team_ldap_map', 'delete_team', 'delete_project_from_team') %} aria-current="page"{% endif %}"
               href="{{ url_for('teams') }}">Teams</a>
            {% if not is_global_admin and session.get('team_id') %}
-           <a class="side-nav-link {% if is_rbac_bindings and rbac_scoped %}active{% endif %}"
+           <a class="side-nav-link {% if is_rbac_bindings and rbac_scoped %}active{% endif %}{% if is_rbac_bindings and rbac_scoped %} aria-current="page"{% endif %}"
               href="{{ url_for('rbac_bindings', scope='team', scope_id=session.get('team_id')) }}">Role bindings</a>
            {% endif %}
-          <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}"
+          <a class="side-nav-link {% if ep == 'access_requests_inbox' %}active{% endif %}{% if ep == 'access_requests_inbox' %} aria-current="page"{% endif %}"
              href="{{ url_for('access_requests_inbox') }}">Access requests{% if nav_access_pending %}<span class="tab-badge" title="{{ nav_access_pending }} pending">{{ nav_access_pending }}</span>{% endif %}</a>
-          <a class="side-nav-link {% if ep == 'trash' %}active{% endif %}"
+          <a class="side-nav-link {% if ep == 'trash' %}active{% endif %}{% if ep == 'trash' %} aria-current="page"{% endif %}"
              href="{{ url_for('trash') }}">Trash</a>
-          <a class="side-nav-link {% if ep == 'profile' %}active{% endif %}"
+          <a class="side-nav-link {% if ep == 'profile' %}active{% endif %}{% if ep == 'profile' %} aria-current="page"{% endif %}"
              href="{{ url_for('profile') }}">My profile</a>
         </div>
       </details>
@@ -2724,15 +2831,15 @@
       <details class="side-group" data-side-group="administration"{% if admin_open %} open{% endif %}>
         <summary>Administration</summary>
         <div class="side-group-body">
-          <a class="side-nav-link {% if is_rbac_bindings and not rbac_scoped %}active{% endif %}"
+          <a class="side-nav-link {% if is_rbac_bindings and not rbac_scoped %}active{% endif %}{% if is_rbac_bindings and not rbac_scoped %} aria-current="page"{% endif %}"
              href="{{ url_for('rbac_bindings', scope='team') }}">Role bindings</a>
-          <a class="side-nav-link {% if ep in ('rbac_roles', 'rbac_roles_create', 'rbac_roles_delete') %}active{% endif %}"
+          <a class="side-nav-link {% if ep in ('rbac_roles', 'rbac_roles_create', 'rbac_roles_delete') %}active{% endif %}{% if ep in ('rbac_roles', 'rbac_roles_create', 'rbac_roles_delete') %} aria-current="page"{% endif %}"
              href="{{ url_for('rbac_roles') }}">Roles</a>
-          <a class="side-nav-link {% if ep == 'rbac_access_review' %}active{% endif %}"
+          <a class="side-nav-link {% if ep == 'rbac_access_review' %}active{% endif %}{% if ep == 'rbac_access_review' %} aria-current="page"{% endif %}"
              href="{{ url_for('rbac_access_review') }}">Access review</a>
-          <a class="side-nav-link {% if ep in ('admin_audit', 'admin_audit_access_export', 'admin_audit_export') %}active{% endif %}"
+          <a class="side-nav-link {% if ep in ('admin_audit', 'admin_audit_access_export', 'admin_audit_export') %}active{% endif %}{% if ep in ('admin_audit', 'admin_audit_access_export', 'admin_audit_export') %} aria-current="page"{% endif %}"
              href="{{ url_for('admin_audit') }}">Auditing</a>
-          <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}"
+          <a class="side-nav-link {% if ep == 'server_settings' %}active{% endif %}{% if ep == 'server_settings' %} aria-current="page"{% endif %}"
              href="{{ url_for('server_settings') }}">Server settings</a>
 
         </div>
@@ -2990,6 +3097,13 @@
   })();
   </script>
   <script>
+  /* Dim search/filter forms immediately on submit (full-page GET). */
+  document.addEventListener('submit', function (e) {
+    var f = e.target && e.target.closest ? e.target.closest('form[method="get"]') : null;
+    if (f) f.classList.add('submitting');
+  }, true);
+  </script>
+  <script>
   (function () {
     var clearTimer = null;
     var lastCopied = null;
@@ -3208,16 +3322,56 @@
       if (!dlg) return;
       if (typeof dlg.close === 'function') dlg.close();
       else dlg.removeAttribute('open');
+      var opener = dlg._opener;
+      dlg._opener = null;
+      if (opener && opener.isConnected && !opener.disabled) opener.focus();
     }
     window.oatOpenDialog = oatOpenDialog;
     window.oatCloseDialog = oatCloseDialog;
+    /* Access approve/deny: disable + relabel the submit button for consistent
+       busy feedback (approve buttons live outside their form via form=). */
+    function setAccessBusy(form, label) {
+      var btn = form.querySelector('button[type="submit"]')
+        || (form.id && document.querySelector('button[form="' + form.id + '"]'));
+      if (btn) { btn.disabled = true; btn.textContent = label; }
+      return true;
+    }
+    window.setAccessBusy = setAccessBusy;
+    /* Shared duplicate-submit guard for non-HTMX, non-dialog POST forms:
+       disable the submit button(s) and dim the form while the request is in
+       flight so a double-click cannot submit twice. Dialog and HTMX forms
+       manage their own request state. Runs in the bubble phase (after inline
+       onsubmit) so a canceled confirm (defaultPrevented) leaves the form
+       untouched. */
+    document.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (e.defaultPrevented || !form || form.tagName !== 'FORM') return;
+      var method = (form.getAttribute('method') || '').toLowerCase();
+      if (method !== 'post') return;
+      if (form.closest('dialog')) return;
+      var attrs = form.attributes, i;
+      for (i = 0; i < attrs.length; i += 1) {
+        if (String(attrs[i].name).indexOf('hx-') === 0) return;
+      }
+      form.classList.add('submitting');
+      var sub = form.querySelectorAll('button[type="submit"]');
+      for (i = 0; i < sub.length; i += 1) {
+        if (!sub[i].disabled) {
+          if (sub[i].dataset.busy) sub[i].textContent = sub[i].dataset.busy;
+          sub[i].disabled = true;
+        }
+      }
+    });
     document.addEventListener('click', function (e) {
       var openBtn = e.target.closest && e.target.closest('[data-open-dialog]');
       if (openBtn) {
         e.preventDefault();
         var id = openBtn.getAttribute('data-open-dialog');
         var dlg = id ? document.getElementById(id) : null;
-        if (dlg) oatOpenDialog(dlg);
+        if (dlg) {
+          dlg._opener = openBtn;
+          oatOpenDialog(dlg);
+        }
         return;
       }
       var closeBtn = e.target.closest && e.target.closest('[data-close-dialog]');
@@ -3341,7 +3495,7 @@
           confirmMsg = String(confirmMsg).replace(/\{n\}/g, String(n));
           if (!window.confirm(confirmMsg)) return;
         }
-        // Extra confirm for permanent delete (count-aware)
+        // Single irreversible confirm for permanent bulk delete (count-aware)
         if (action.value === 'purge'
             && !window.confirm(
                  'Permanently delete ' + n + (n === 1 ? ' secret' : ' secrets')
@@ -3360,7 +3514,6 @@
       });
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', syncBulkToolbar);
-      } else {
         syncBulkToolbar();
       }
     })();

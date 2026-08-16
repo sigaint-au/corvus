@@ -16,23 +16,23 @@
 
 <nav class="tabs" aria-label="Team sections">
   <a href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}"
-     class="tab {% if active_tab == 'projects' %}active{% endif %}"
+     class="tab {% if active_tab == 'projects' %}active{% endif %}"{% if active_tab == 'projects' %} aria-current="page"{% endif %}
 >Projects</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='members') }}"
-     class="tab {% if active_tab == 'members' %}active{% endif %}"
+     class="tab {% if active_tab == 'members' %}active{% endif %}"{% if active_tab == 'members' %} aria-current="page"{% endif %}
 >Members</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='groups') }}"
-     class="tab {% if active_tab == 'groups' %}active{% endif %}"
+     class="tab {% if active_tab == 'groups' %}active{% endif %}"{% if active_tab == 'groups' %} aria-current="page"{% endif %}
 >Groups</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='activity') }}"
-     class="tab {% if active_tab == 'activity' %}active{% endif %}"
+     class="tab {% if active_tab == 'activity' %}active{% endif %}"{% if active_tab == 'activity' %} aria-current="page"{% endif %}
 >Activity</a>
   {% if is_admin %}
   <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}"
-     class="tab {% if active_tab == 'access' %}active{% endif %}"
+     class="tab {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
      title="Role bindings for this team">Access</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
-     class="tab {% if active_tab == 'settings' %}active{% endif %}"
+     class="tab {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
 >Settings</a>
   {% endif %}
 </nav>

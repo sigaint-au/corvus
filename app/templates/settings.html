@@ -6,31 +6,31 @@
 
 <nav class="tabs" aria-label="Server settings sections">
   <a href="{{ url_for('server_settings', tab='general') }}"
-     class="tab {% if active_tab == 'general' %}active{% endif %}"
+     class="tab {% if active_tab == 'general' %}active{% endif %}"{% if active_tab == 'general' %} aria-current="page"{% endif %}
 >General</a>
   <a href="{{ url_for('server_settings', tab='branding') }}"
-     class="tab {% if active_tab == 'branding' %}active{% endif %}"
+     class="tab {% if active_tab == 'branding' %}active{% endif %}"{% if active_tab == 'branding' %} aria-current="page"{% endif %}
 >Branding</a>
   <a href="{{ url_for('server_settings', tab='banner') }}"
-     class="tab {% if active_tab == 'banner' %}active{% endif %}"
+     class="tab {% if active_tab == 'banner' %}active{% endif %}"{% if active_tab == 'banner' %} aria-current="page"{% endif %}
 >Classification</a>
   <a href="{{ url_for('server_settings', tab='admins') }}"
-     class="tab {% if active_tab == 'admins' %}active{% endif %}"
+     class="tab {% if active_tab == 'admins' %}active{% endif %}"{% if active_tab == 'admins' %} aria-current="page"{% endif %}
 >Admins</a>
   <a href="{{ url_for('server_settings', tab='users') }}"
-     class="tab {% if active_tab == 'users' %}active{% endif %}"
+     class="tab {% if active_tab == 'users' %}active{% endif %}"{% if active_tab == 'users' %} aria-current="page"{% endif %}
 >Users</a>
   <a href="{{ url_for('server_settings', tab='ldap') }}"
-     class="tab {% if active_tab == 'ldap' %}active{% endif %}"
+     class="tab {% if active_tab == 'ldap' %}active{% endif %}"{% if active_tab == 'ldap' %} aria-current="page"{% endif %}
 >LDAP</a>
   <a href="{{ url_for('server_settings', tab='oidc') }}"
-     class="tab {% if active_tab == 'oidc' %}active{% endif %}"
+     class="tab {% if active_tab == 'oidc' %}active{% endif %}"{% if active_tab == 'oidc' %} aria-current="page"{% endif %}
 >OIDC / SSO</a>
   <a href="{{ url_for('server_settings', tab='email') }}"
-     class="tab {% if active_tab == 'email' %}active{% endif %}"
+     class="tab {% if active_tab == 'email' %}active{% endif %}"{% if active_tab == 'email' %} aria-current="page"{% endif %}
 >Email</a>
   <a href="{{ url_for('server_settings', tab='encryption') }}"
-     class="tab {% if active_tab == 'encryption' %}active{% endif %}"
+     class="tab {% if active_tab == 'encryption' %}active{% endif %}"{% if active_tab == 'encryption' %} aria-current="page"{% endif %}
 >Encryption</a>
 </nav>
 
@@ -104,31 +104,46 @@
   </form>
 </section>
 
-<section>
-  <h2>Token expiry policy</h2>
-  <p class="muted">Optional expiry requirements for personal access tokens and machine accounts.</p>
-  <form method="post">
+<section class="token-policy-section">
+  <div class="section-head">
+    <div>
+      <h2>Token expiry policy</h2>
+      <p class="muted">Set expiry requirements for newly issued personal access and machine tokens.</p>
+    </div>
+  </div>
+  <form method="post" aria-describedby="token-policy-help">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="token_policy">
-    <div class="field-grid">
-      <label class="check-row">
-        <input type="checkbox" name="require_pat_expiry" value="1"
-               {% if settings.require_pat_expiry in ('true', '1', 'yes', 'on') %}checked{% endif %}>
-        Require personal access token expiry
-      </label>
-      <label>Max PAT lifetime (days)
-        <input type="number" name="max_pat_lifetime_days" min="1" max="3650"
-               value="{{ settings.max_pat_lifetime_days or '' }}" placeholder="3650">
-      </label>
-      <label class="check-row">
-        <input type="checkbox" name="require_machine_token_expiry" value="1"
-               {% if settings.require_machine_token_expiry in ('true', '1', 'yes', 'on') %}checked{% endif %}>
-        Require machine token expiry
-      </label>
-      <label>Max machine token lifetime (days)
-        <input type="number" name="max_machine_token_lifetime_days" min="1" max="3650"
-               value="{{ settings.max_machine_token_lifetime_days or '' }}" placeholder="3650">
-      </label>
+    <p id="token-policy-help" class="field-hint">Maximum lifetime is measured in days and applies when an expiry is required. Lifetime fields are enabled only while the matching expiry requirement is on.</p>
+    <div class="field-grid token-policy-grid">
+      <fieldset class="policy-card">
+        <legend class="sr-only">Personal access tokens</legend>
+        <label class="check-row">
+          <input type="checkbox" name="require_pat_expiry" id="require-pat-expiry" value="1"
+                 {% if settings.require_pat_expiry in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+          Require personal access token expiry
+        </label>
+        <span class="field-hint">Prevent personal tokens from remaining valid indefinitely.</span>
+        <label class="policy-card-limit">Maximum lifetime
+          <input type="number" name="max_pat_lifetime_days" id="max-pat-lifetime" min="1" max="3650"
+                 value="{{ settings.max_pat_lifetime_days or '' }}" placeholder="3650"
+                 aria-label="Maximum personal access token lifetime in days">
+        </label>
+      </fieldset>
+      <fieldset class="policy-card">
+        <legend class="sr-only">Machine tokens</legend>
+        <label class="check-row">
+          <input type="checkbox" name="require_machine_token_expiry" id="require-machine-token-expiry" value="1"
+                 {% if settings.require_machine_token_expiry in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+          Require machine token expiry
+        </label>
+        <span class="field-hint">Limit service credentials to a defined lifetime.</span>
+        <label class="policy-card-limit">Maximum lifetime
+          <input type="number" name="max_machine_token_lifetime_days" id="max-machine-token-lifetime" min="1" max="3650"
+                 value="{{ settings.max_machine_token_lifetime_days or '' }}" placeholder="3650"
+                 aria-label="Maximum machine token lifetime in days">
+        </label>
+      </fieldset>
     </div>
     <p class="form-actions"><button type="submit">Save token policy</button></p>
   </form>
@@ -993,5 +1008,29 @@ document.querySelector('[name=classification_text]').addEventListener('input', u
   </p>
   {% endif %}
 </section>
+  <script>
+  /* Token-policy: lifetime inputs editable only while the matching expiry
+     requirement is checked. readonly (not disabled) so saved values survive. */
+  (function () {
+    function sync(cb, input) {
+      var on = !!cb.checked;
+      if (on) input.removeAttribute('readonly');
+      else input.setAttribute('readonly', '');
+      input.toggleAttribute('aria-readonly', !on);
+      input.classList.toggle('lifetime-dim', !on);
+    }
+    var pairs = [
+      ['require-pat-expiry', 'max-pat-lifetime'],
+      ['require-machine-token-expiry', 'max-machine-token-lifetime']
+    ];
+    pairs.forEach(function (p) {
+      var cb = document.getElementById(p[0]);
+      var input = document.getElementById(p[1]);
+      if (!cb || !input) return;
+      cb.addEventListener('change', function () { sync(cb, input); });
+      sync(cb, input);
+    });
+  })();
+  </script>
 {% endif %}
 {% endblock %}

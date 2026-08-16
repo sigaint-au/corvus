@@ -6,13 +6,13 @@
 
 <nav class="tabs" aria-label="Auditing sections">
   <a href="{{ url_for('admin_audit', tab='access') }}"
-     class="tab {% if active_tab == 'access' %}active{% endif %}"
+     class="tab {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
 >Access review</a>
   <a href="{{ url_for('admin_audit', tab='roles') }}"
-     class="tab {% if active_tab == 'roles' %}active{% endif %}"
+     class="tab {% if active_tab == 'roles' %}active{% endif %}"{% if active_tab == 'roles' %} aria-current="page"{% endif %}
 >Role changes</a>
   <a href="{{ url_for('admin_audit', tab='export') }}"
-     class="tab {% if active_tab == 'export' %}active{% endif %}"
+     class="tab {% if active_tab == 'export' %}active{% endif %}"{% if active_tab == 'export' %} aria-current="page"{% endif %}
 >Export &amp; retention</a>
 </nav>
 
@@ -41,7 +41,6 @@
         <th>Project</th>
         <th>Project role</th>
         <th>Via</th>
-        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -59,7 +58,6 @@
         <td>{{ r.project or '-' }}</td>
         <td>{% if r.project_role %}<span class="badge" data-variant="secondary">{{ r.project_role }}</span>{% else %}-{% endif %}</td>
         <td class="muted"><code class="k">{{ r.access_via }}</code></td>
-        <td></td>
       </tr>
     {% endfor %}
     </tbody>

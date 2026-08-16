@@ -19,6 +19,14 @@ os.environ.setdefault("ALLOW_INSECURE_DEFAULTS", "1")
 from tests.helpers import mock_conn as make_conn  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def close_db_pool():
+    yield
+    from core import db
+
+    db.close_pools()
+
+
 @pytest.fixture
 def app():
     """Flask application with TESTING enabled (no real schema bootstrap)."""

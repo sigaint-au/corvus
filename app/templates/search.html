@@ -10,9 +10,8 @@
     {% include "partials/search_icon.html" %}
     <input type="search" name="q" value="{{ search_q or '' }}"
            placeholder="Search" autocomplete="off"
-           autofocus aria-label="Global search">
+           aria-label="Global search">
   </fieldset>
-  {% if scope == 'secrets' or not scope %}
   {% if scope == 'secrets' %}
   <label>
     <span class="field-label">Kind</span>
@@ -32,7 +31,6 @@
       <option value="none" {% if filter_due == 'none' %}selected{% endif %}>No expiry</option>
     </select>
   </label>
-  {% endif %}
   {% endif %}
   {% if search_q or scope %}
   <div class="audit-filter-actions">
@@ -97,7 +95,7 @@
               <code class="k">{{ s.key }}</code>
             </a>
             {% if s.due == 'overdue' %}<span class="badge" data-variant="danger">overdue</span>
-            {% elif s.due == 'soon' %}<span class="badge" data-variant="warning">soon</span>{% endif %}
+            {% elif s.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
             {% if s.rotation_due == 'overdue' %}<span class="badge" data-variant="danger">rotation overdue</span>
             {% elif s.rotation_due == 'soon' %}<span class="badge" data-variant="warning">rotation soon</span>{% endif %}
           </td>
@@ -192,7 +190,7 @@
             <code class="k">{{ s.key }}</code>
           </a>
           {% if s.due == 'overdue' %}<span class="badge" data-variant="danger">overdue</span>
-          {% elif s.due == 'soon' %}<span class="badge" data-variant="warning">soon</span>{% endif %}
+          {% elif s.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
           {% if s.rotation_due == 'overdue' %}<span class="badge" data-variant="danger">rotation overdue</span>
           {% elif s.rotation_due == 'soon' %}<span class="badge" data-variant="warning">rotation soon</span>{% endif %}
         </td>
