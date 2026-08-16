@@ -1735,19 +1735,20 @@
       gap: .45rem;
       margin: 0;
     }
-    .secret-title .copy-btn {
-      padding: .15rem 0;
-      color: var(--muted-foreground);
-      display: inline-flex;
-      align-items: center;
-      border-radius: 0;
-      font-size: .85rem;
+    .secret-title .copy-primary {
+      color: var(--foreground);
+      background: var(--background);
+      border: 1px solid var(--border);
+      padding: .35rem .65rem;
+      font-size: .8rem;
       font-weight: 400;
+      text-decoration: none;
       vertical-align: middle;
     }
-    .secret-title .copy-btn:hover {
+    .secret-title .copy-primary:hover {
       color: var(--foreground);
       background: var(--accent);
+      border-color: var(--ring);
     }
     .secret-summary-card {
       border: 1px solid var(--border);
@@ -1842,6 +1843,20 @@
     .secret-view-form .form-actions .copy-btn:hover {
       color: var(--foreground);
       text-decoration: underline;
+    }
+    .secret-view .section-head .copy-primary {
+      color: var(--foreground);
+      background: var(--background);
+      border: 1px solid var(--border);
+      padding: .35rem .65rem;
+      font-size: .8rem;
+      font-weight: 400;
+      text-decoration: none;
+    }
+    .secret-view .section-head .copy-primary:hover {
+      background: var(--accent);
+      border-color: var(--ring);
+      text-decoration: none;
     }
     .value-field > input,
     .value-field > textarea,
