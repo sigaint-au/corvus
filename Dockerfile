@@ -1,4 +1,4 @@
-FROM docker.io/library/python:3.12-slim-bookworm
+FROM docker.io/library/python:3.14-slim-bookworm
 
 # Non-root runtime user
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
