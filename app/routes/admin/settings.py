@@ -307,7 +307,7 @@ def server_settings():
                         )
                         flash("OIDC role mapping saved", "ok")
                     except Exception as e:
-                        flash(str(e), "error")
+                        flash("Could not save the setting. Try again.", "error")
         elif action == "oidc_role_map_delete":
             mid = (request.form.get("map_id") or "").strip()
             with db.connect_admin() as conn, conn.cursor() as cur:
@@ -438,7 +438,7 @@ def server_settings():
                         )
                         flash("LDAP role mapping saved", "ok")
                     except Exception as e:
-                        flash(str(e), "error")
+                        flash("Could not save the setting. Try again.", "error")
         elif action == "ldap_role_map_delete":
             mid = (request.form.get("map_id") or "").strip()
             with db.connect_admin() as conn, conn.cursor() as cur:
@@ -447,7 +447,7 @@ def server_settings():
         elif action == "promote":
             email = (request.form.get("email") or "").strip().lower()
             if not email:
-                flash("Email required", "error")
+                flash("Enter an email address.", "error")
             else:
                 with db.connect_admin() as conn, conn.cursor() as cur:
                     cur.execute(
@@ -576,7 +576,7 @@ def server_settings():
                         conn.commit()
                     flash(f"Migrated {n} local project key(s) to HSM", "ok")
                 except Exception as e:
-                    flash(f"Bulk migration failed: {e}", "error")
+                    flash("Could not migrate all project keys. Try again.", "error")
         elif action == "hsm_slot_delete":
             slot_id = (request.form.get("slot_id") or "").strip()
             if not slot_id:
@@ -591,7 +591,7 @@ def server_settings():
                         conn.commit()
                     flash("HSM slot deleted", "ok")
                 except Exception as e:
-                    flash(f"HSM slot delete failed: {e}", "error")
+                    flash("Could not delete the HSM slot. Try again.", "error")
         elif action == "hsm_slot_test":
             slot_id = (request.form.get("slot_id") or "").strip()
             slot_url = None
@@ -619,7 +619,7 @@ def server_settings():
                 else:
                     flash(f"Linked {n} legacy HSM project(s) to this slot", "ok")
             except Exception as e:
-                flash(f"Slot link failed: {e}", "error")
+                flash("Could not link the HSM slot. Try again.", "error")
         elif action == "hsm_slot_rotate":
             slot_id = (request.form.get("slot_id") or "").strip()
             if not slot_id:
@@ -636,7 +636,7 @@ def server_settings():
                         conn.commit()
                     flash(f"HSM KEK rotated — re-wrapped {n} project key(s)", "ok")
                 except Exception as e:
-                    flash(f"HSM KEK rotation failed: {e}", "error")
+                    flash("Could not rotate the HSM key. Try again.", "error")
         elif action in ("health_test_postgres", "health_test_redis", "health_test_hsm"):
             probe = _health_probe()
             if action == "health_test_postgres":
@@ -909,7 +909,7 @@ def hsm_slot_new_wizard():
                 flash(msg, "ok")
                 return redirect(url_for("server_settings", tab="encryption"))
             except Exception as e:
-                flash(f"HSM slot save failed: {e}", "error")
+                flash("Could not save the HSM slot. Try again.", "error")
                 return redirect(url_for("server_settings", tab="encryption"))
         return render_template(
             "hsm_slot_new.html",

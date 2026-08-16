@@ -201,7 +201,7 @@ def rbac_roles_create():
                 raise ValueError("Select at least one resource and one verb")
             rules = [(resources, verbs)]
     except ValueError as e:
-        flash(str(e), "error")
+        flash("Could not update roles or bindings. Try again.", "error")
         return redirect(url_for("rbac_roles", tab="create"))
 
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name):
@@ -246,7 +246,7 @@ def rbac_roles_create():
             flash(f"Role “{name}” created", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update roles or bindings. Try again.", "error")
             return redirect(url_for("rbac_roles", tab="create"))
     return redirect(
         url_for(
@@ -278,7 +278,7 @@ def rbac_roles_delete(role_id):
                 flash("Cannot delete built-in roles or permission denied", "error")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update roles or bindings. Try again.", "error")
     return redirect(
         url_for(
             "rbac_roles",
@@ -545,7 +545,7 @@ def rbac_bindings_create():
             return redirect(url_for("rbac_bindings", scope="team"))
         scope_id = None
     elif not scope_id:
-        flash("Scope id required", "error")
+        flash("Select a scope.", "error")
         return redirect(url_for("rbac_bindings", scope=scope_kind))
 
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
@@ -698,7 +698,7 @@ def rbac_bindings_create():
                 flash("Binding created", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update roles or bindings. Try again.", "error")
     return redirect(
         url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id or "")
     )
@@ -740,7 +740,7 @@ def rbac_bindings_delete(binding_id):
                 flash("Permission denied or binding not found", "error")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update roles or bindings. Try again.", "error")
     return redirect(url_for("rbac_bindings", scope=scope, scope_id=scope_id))
 
 @authz.login_required

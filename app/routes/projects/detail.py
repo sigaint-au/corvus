@@ -639,7 +639,7 @@ def project_crypto_action(project_id):
                 project_id, provider=provider, hsm_slot_id=hsm_slot
             )
         except Exception as e:
-            flash(f"Key adoption failed: {e}", "error")
+            flash("Could not adopt the project key. Try again.", "error")
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")
             )
@@ -653,7 +653,7 @@ def project_crypto_action(project_id):
                 + (" (key created)" if created else ""),
             )
             conn.commit()
-        flash(f"Project key adopted — re-encrypted {n} secret row(s)", "ok")
+        flash(f"Project key adopted. Re-encrypted {n} secrets.", "ok")
     elif action == "migrate":
         from crypto import project_keys
 
@@ -671,7 +671,7 @@ def project_crypto_action(project_id):
                 project_id, new_provider, target_slot_id=target_slot
             )
         except Exception as e:
-            flash(f"Key migration failed: {e}", "error")
+            flash("Could not migrate the project key. Try again.", "error")
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")
             )
@@ -684,7 +684,7 @@ def project_crypto_action(project_id):
                 detail=f"to={new_provider} re-encrypted={n}",
             )
             conn.commit()
-        flash(f"Project key migrated to {new_provider} — re-encrypted {n} row(s)", "ok")
+        flash(f"Project key migrated to {new_provider}. Re-encrypted {n} secrets.", "ok")
     else:
         flash("Unknown encryption action", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="settings"))

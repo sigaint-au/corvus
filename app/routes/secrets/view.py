@@ -347,7 +347,7 @@ def secret_view(project_id, secret_id):
             try:
                 expires_at = _parse_expires_at(request.form, allow_clear=True)
             except (ValueError, TypeError) as e:
-                flash(str(e), "error")
+                flash("Could not load or save this secret. Try again.", "error")
                 body, code = _render_secret_view(
                     project_id=project_id,
                     secret_id=secret_id,
@@ -450,7 +450,7 @@ def secret_view(project_id, secret_id):
             plaintext = crypto.decrypt_for_project(project_id, value_enc, crypto_provider)
         except ValueError as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not load or save this secret. Try again.", "error")
             body, code = _render_secret_view(
                 project_id=project_id,
                 secret_id=secret_id,

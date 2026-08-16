@@ -89,7 +89,7 @@ def mgmt_add_secret_binding(project_ref, key):
     subject = (body.get("subject_id") or body.get("subject") or "").strip()
     role_name = (body.get("role") or body.get("role_name") or "secret-reveal").strip()
     if not subject:
-        return jsonify({"error": "subject_id required"}), 400
+        return jsonify({"error": "subject_id is required"}), 400
     if subject_kind == "User":
         subject = subject.lower()
 

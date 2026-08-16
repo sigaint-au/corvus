@@ -124,7 +124,7 @@ def create_team_group(team_id):
             return redirect(_group_detail_url(team_id, gid))
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update the group. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
 
 
@@ -166,7 +166,7 @@ def update_team_group(team_id, group_id):
                 flash("Group updated", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update the group. Try again.", "error")
     return redirect(_group_detail_url(team_id, group_id))
 
 
@@ -203,7 +203,7 @@ def add_group_member(team_id, group_id):
     """Add a manual member to a group."""
     email = (request.form.get("email") or "").strip().lower()
     if not email:
-        flash("Email required", "error")
+        flash("Enter an email address.", "error")
         return redirect(_group_detail_url(team_id, group_id))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
@@ -238,7 +238,7 @@ def add_group_member(team_id, group_id):
             flash(f"Added {email}", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update the group. Try again.", "error")
     return redirect(_group_detail_url(team_id, group_id))
 
 

@@ -75,7 +75,7 @@ def admin_audit():
             flash(
                 f"Purged {result['secret_audit']} secret audit, "
                 f"{result['org_audit']} org audit, and "
-                f"{result.get('login_failures', 0)} login-failure row(s) "
+                f"{result.get('login_failures', 0)} login failures "
                 f"older than {days} days",
                 "ok",
             )

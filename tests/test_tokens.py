@@ -75,7 +75,7 @@ class TestTokens:
         assert inserts == []
         with self.client.session_transaction() as s:
             flashes = s.get('_flashes') or []
-        assert any(('Expires days is required' in msg for _cat, msg in flashes))
+        assert any(('Enter an expiry period.' in msg for _cat, msg in flashes))
 
     def test_create_token_uses_policy_max(self):
         conn, cur = _conn(fetchone={'w': True})

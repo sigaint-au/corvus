@@ -19,6 +19,7 @@ from core import db
 from integrations import ldap_auth
 from auth import rbac_sync
 from core import settings_svc
+from ui import paging
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +103,7 @@ def team_detail(team_id):
     if tab not in ("projects", "members", "groups", "activity", "access", "settings"):
         tab = "projects"
     q = (request.args.get("q") or "").strip()
+    page = paging.page_arg("page")
     members, projects, ldap_maps, oidc_maps = [], [], [], []
     hsm_count = local_count = managed_count = 0
     groups = []
@@ -441,7 +443,7 @@ def update_team_settings(team_id):
                 conn.commit()
                 flash("Team settings saved", "ok")
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not update the team. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
 
@@ -474,7 +476,7 @@ def delete_team(team_id):
         except Exception as e:
             conn.rollback()
             log.exception("delete_team failed")
-            flash(str(e), "error")
+            flash("Could not update the team. Try again.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     if session.get("team_id") == str(team_id):
         session.pop("team_id", None)

@@ -162,17 +162,17 @@ def create_token(project_id):
             if row.get("default_token_days"):
                 days_raw = str(row["default_token_days"])
         if not days_raw and require_expiry:
-            flash("Expires days is required", "error")
+            flash("Enter an expiry period.", "error")
             return _token_redirect()
         if days_raw:
             try:
                 days = int(days_raw)
             except ValueError:
-                flash("Expires days must be a positive integer", "error")
+                flash("Expiry must be a positive number of days.", "error")
                 return _token_redirect()
             if days < 1 or days > max_days:
                 flash(
-                    f"Expires days must be between 1 and {max_days}",
+                    f"Expiry must be between 1 and {max_days} days",
                     "error",
                 )
                 return _token_redirect()
@@ -200,7 +200,7 @@ def create_token(project_id):
                 insert_token_scopes(cur, str(row["id"]), scopes)
             conn.commit()
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not complete the request. Try again.", "error")
             return _token_redirect()
     session["new_token"] = raw  # shown once
     scope_note = (

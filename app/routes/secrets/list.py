@@ -234,7 +234,7 @@ def restore_secret(secret_id):
             conn.commit()
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update the trash. Try again.", "error")
     q = request.args.get("q") or ""
     if authz.htmx():
         tid = nav.ensure_active_team(session["user_id"])

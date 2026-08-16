@@ -86,7 +86,7 @@
     </div>
     <div class="crypto-sync">
       <span class="badge" data-variant="{% if project_crypto and not project_master_rows %}success{% elif project_master_rows %}warning{% else %}secondary{% endif %}">
-        {% if project_crypto and not project_master_rows %}In sync{% elif project_master_rows %}{{ project_master_rows }} pending{% else %}Managed{% endif %}
+        {% if project_crypto and not project_master_rows %}In sync{% elif project_master_rows %}{{ project_master_rows }} pending{% else %}Server key{% endif %}
       </span>
       {% if can_manage_keys and project_crypto and project_master_rows %}
       <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"

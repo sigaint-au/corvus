@@ -56,7 +56,7 @@ def register_page():
             flash("Email already registered", "error")
             return render_template("register.html", setup_notice=notice), 400
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not create your account. Try again.", "error")
             return render_template("register.html", setup_notice=notice), 400
         _maybe_promote_bootstrap_admin(email.lower(), uid)
         is_admin = authz.is_global_admin(str(uid))

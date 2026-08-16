@@ -225,7 +225,7 @@ def import_preview(project_id):
     try:
         pairs = parse_secret_pairs(raw)
     except Exception as e:
-        flash(f"Parse error: {e}", "error")
+        flash("Import data has an invalid format.", "error")
         return redirect(back)
     if not pairs:
         flash("No key/value pairs found", "error")
@@ -378,7 +378,7 @@ def import_commit(project_id):
             conn.commit()
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not process the import or export. Try again.", "error")
             return redirect(back)
     flash(f"Imported {n_ok} secret(s)", "ok")
     return redirect(back)

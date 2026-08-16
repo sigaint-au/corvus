@@ -79,7 +79,7 @@ def totp_setup_confirm():
         recovery = totp_svc.enable(uid, secret)
     except Exception as e:
         log.exception("totp enable failed")
-        flash(str(e), "error")
+        flash("Could not update two-factor authentication. Try again.", "error")
         return redirect(url_for("totp_setup"))
     session.pop("pending_totp_secret", None)
     session.pop("totp_setup_required", None)

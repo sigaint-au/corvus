@@ -2,7 +2,7 @@
 {% block title %}Auditing - {{ app_name }}{% endblock %}
 {% block body %}
 <div class="page-head"><h1>Auditing</h1></div>
-<p class="page-desc muted">Global admin only. Access reviews, role-change history, and audit export / retention.</p>
+<p class="page-desc muted">Global admins only. Review access, role changes, and audit records.</p>
 
 <nav class="tabs" aria-label="Auditing sections">
   <a href="{{ url_for('admin_audit', tab='access') }}"
@@ -30,7 +30,7 @@
     Use for periodic reviews and SOC2 evidence.
   </p>
   {% if access_rows %}
-  <p class="muted">{{ access_rows|length }} grant row(s).</p>
+  <p class="muted">{{ access_rows|length }} access grants.</p>
   <div class="table"><table>
     <thead>
       <tr>

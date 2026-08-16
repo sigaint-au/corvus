@@ -35,17 +35,17 @@ def create_personal_token():
         try:
             expires_days = int(days_raw)
         except ValueError:
-            flash("Expires days must be a positive integer", "error")
+            flash("Expiry must be a positive number of days.", "error")
             return redirect(url_for("profile", tab="security"))
     try:
         raw = pats.create(session["user_id"], name, expires_days=expires_days)
         session["new_pat"] = raw
         flash("Personal access token created — copy it now; it is shown once", "ok")
     except ValueError as e:
-        flash(str(e), "error")
+        flash("Could not update your token. Try again.", "error")
     except Exception as e:
         log.exception("create PAT failed")
-        flash(str(e), "error")
+        flash("Could not update your token. Try again.", "error")
     return redirect(url_for("profile", tab="security"))
 
 
