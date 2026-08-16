@@ -7,11 +7,9 @@
   </div>
 
   {% if can_write %}
-  <section class="eso-token-create">
     {% with form_id='eso-token-form', default_name='eso', return_tab='integrations', compact=true %}
       {% include "partials/token_create_form.html" %}
     {% endwith %}
-  </section>
   {% else %}
   <p class="muted">You need write access to create a machine account. Paste an existing token below to generate manifests.</p>
   {% endif %}
