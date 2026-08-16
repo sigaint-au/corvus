@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from flask import jsonify
+from flask import jsonify, request
+
 import audit
 from core import db
+
 from .helpers import (
     _require_pat,
     _resolve_project,
@@ -101,3 +103,85 @@ def mgmt_purge_trash(project_ref, secret_id):
         )
         conn.commit()
     return jsonify({"ok": True, "id": str(row["id"]), "key": row["key"]})
+
+
+def mgmt_bulk_trash(project_ref):
+    """Bulk restore or purge soft-deleted secrets.
+
+    Body: ``{"action": "restore|purge", "ids": [uuid…]}``. Empty ``ids`` acts
+    on all trashed secrets in the project. Returns counts.
+    """
+    uid, err = _require_pat()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip().lower()
+    if action not in ("restore", "purge"):
+        return jsonify({"error": "action must be restore or purge"}), 400
+    ids = [str(x) for x in (body.get("ids") or []) if str(x).strip()]
+    with db.as_user(uid) as conn, conn.cursor() as cur:
+        pid = _resolve_project(cur, project_ref)
+        if not pid:
+            return jsonify({"error": "not found"}), 404
+        if action == "restore":
+            if ids:
+                cur.execute(
+                    """
+                    UPDATE api.secrets SET deleted_at = NULL
+                     WHERE project_id = %s::uuid AND deleted_at IS NOT NULL
+                       AND id = ANY(%s::uuid[])
+                    RETURNING id, key
+                    """,
+                    (pid, ids),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE api.secrets SET deleted_at = NULL
+                     WHERE project_id = %s::uuid AND deleted_at IS NOT NULL
+                    RETURNING id, key
+                    """,
+                    (pid,),
+                )
+            rows = cur.fetchall() or []
+            for r in rows:
+                audit.log_secret(
+                    cur,
+                    project_id=pid,
+                    secret_id=str(r["id"]),
+                    secret_key=r["key"],
+                    action="restored",
+                )
+        else:
+            if ids:
+                cur.execute(
+                    """
+                    SELECT id, key FROM api.secrets
+                     WHERE project_id = %s::uuid AND deleted_at IS NOT NULL
+                       AND id = ANY(%s::uuid[])
+                    """,
+                    (pid, ids),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, key FROM api.secrets
+                     WHERE project_id = %s::uuid AND deleted_at IS NOT NULL
+                    """,
+                    (pid,),
+                )
+            rows = cur.fetchall() or []
+            for r in rows:
+                cur.execute(
+                    "DELETE FROM api.secrets WHERE id = %s::uuid",
+                    (str(r["id"]),),
+                )
+                audit.log_secret(
+                    cur,
+                    project_id=pid,
+                    secret_id=str(r["id"]),
+                    secret_key=r["key"],
+                    action="purged",
+                )
+        conn.commit()
+    return jsonify({"ok": True, "action": action, "count": len(rows)})

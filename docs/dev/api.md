@@ -575,15 +575,31 @@ Auth: `Authorization: Bearer pat_…`. Team/project refs: UUID or unique name.
 | `POST` | `/api/v1/manage/projects/{ref}/tokens` | Create token (raw `ss_…` once) |
 | `DELETE` | `/api/v1/manage/projects/{ref}/tokens/{id}` | Revoke token |
 | `GET` | `/api/v1/manage/projects/{ref}/trash` | Soft-deleted secrets |
-| `POST` | `/api/v1/manage/projects/{ref}/trash/{id}/restore` | Restore |
+| `POST` | `/api/v1/manage/projects/{ref}/trash/{id}/restore` | Restore one |
+| `POST` | `/api/v1/manage/projects/{ref}/trash/restore` | Bulk `{"action":"restore\|purge","ids":[uuid…]}` (empty ids = all) |
 | `DELETE` | `/api/v1/manage/projects/{ref}/trash/{id}` | Purge permanently |
+| `PATCH` | `/api/v1/manage/projects/{ref}` | Project settings: `require_reveal_approval`, `description`, `default_access_mode` (admin) |
+| `GET` | `/api/v1/manage/projects/{ref}/export` | Export secrets (`?mode=plain\|enc`); audited |
+| `POST` | `/api/v1/manage/projects/{ref}/secrets/{key}/bindings` | Bind subject to secret role (project admin); sets restricted |
+| `DELETE` | `/api/v1/manage/projects/{ref}/secrets/{key}/bindings/{binding_id}` | Remove secret binding |
+| `PATCH` | `/api/v1/manage/projects/{ref}/secrets/{key}` | Secret `access_mode` / `requires_approval` (project admin) |
 | `GET` | `/api/v1/manage/projects/{ref}/secrets/{key}/history` | Version history (no plaintext) |
+| `PATCH` | `/api/v1/manage/projects/{ref}/secrets/{key}/meta` | Upsert one custom metadata field `{"key","value"}` (writers) |
+| `DELETE` | `/api/v1/manage/projects/{ref}/secrets/{key}/meta/{meta_key}` | Remove a custom metadata field (writers) |
 | `GET` | `/api/v1/manage/projects/{ref}/audit` | Project secret audit |
+| `GET` | `/api/v1/manage/teams/{ref}/groups` | Group list |
+| `POST` | `/api/v1/manage/teams/{ref}/groups` | Create group `{"name","source","external_key"}` |
+| `DELETE` | `/api/v1/manage/teams/{ref}/groups/{group}` | Delete group (cascades memberships/grants) |
+| `POST` | `/api/v1/manage/teams/{ref}/groups/{group}/members` | Add member `{"email"}` |
+| `DELETE` | `/api/v1/manage/teams/{ref}/groups/{group}/members/{member}` | Remove member |
 | `GET` | `/api/v1/manage/admin/users` | Global admin: user list (`?q=`) |
 | `GET` | `/api/v1/manage/admin/audit` | Global admin: org / secret / access audit |
 
-**Groups, secret role bindings, and custom metadata** are managed in the **browser UI**
-today (Team → Groups, Secret → Permissions / Metadata).
+**Secret role bindings** are writable via the management API (`…/bindings`); the
+Web UI (Secret → Permissions) is one way, not the only way. **Custom metadata**
+is writable via `PATCH/DELETE …/meta`. Group→project/team role grants remain a
+browser-UI + RBAC-binding concern; team/secret scope bindings come through the
+management API above, project-scope Group grants still go through the Web UI.
 
 ### Management CLI examples
 
@@ -600,6 +616,18 @@ secretserver restore trash <secret-uuid>
 secretserver get history API_KEY
 secretserver get users -l alice                            # global admin
 secretserver get audit --source org                        # global admin
+secretserver apply secret API_KEY --meta owner=team --meta env=prod   # custom metadata (PAT)
+secretserver apply secret API_KEY --delete-meta env
+secretserver apply secret API_KEY --access-mode restricted --requires-approval on
+secretserver grant secret API_KEY --to alice@example.com --role secret-reveal
+secretserver unbind secret API_KEY <binding-id>
+secretserver settings --require-reveal-approval on --default-access-mode inherit
+secretserver export -o env
+secretserver restore trash --all            # bulk restore
+secretserver delete trash --all             # bulk purge
+secretserver get groups --team Platform
+secretserver create group admins --team Platform
+secretserver create group-member bob@example.com --team Platform --group admins
 ```
 
 ---

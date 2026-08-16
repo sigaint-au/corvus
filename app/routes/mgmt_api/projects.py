@@ -6,11 +6,12 @@ from flask import (
     jsonify,
     request,
 )
+
 import audit
-from core import config
-from core import db
 from auth import rbac_sync
+from core import config, db
 from lib.users import lookup_user_id
+
 from .helpers import (
     _require_pat,
     _resolve_project,
@@ -230,3 +231,61 @@ def mgmt_remove_project_binding(project_ref, member_ref):
         )
         conn.commit()
     return jsonify({"ok": True})
+
+
+def mgmt_update_project_settings(project_ref):
+    """Update project reveal-approval default, description, default access mode.
+
+    Body: ``{"require_reveal_approval": bool, "description": str,
+             "default_access_mode": "inherit|restricted"}`` (all optional;
+    omitted fields are left unchanged). Mirrors UI ``update_project_settings``.
+    """
+    uid, err = _require_pat()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    with db.as_user(uid) as conn, conn.cursor() as cur:
+        pid = _resolve_project(cur, project_ref)
+        if not pid:
+            return jsonify({"error": "not found"}), 404
+        cur.execute("SELECT api.can_admin_project(%s) AS a", (pid,))
+        if not (cur.fetchone() or {}).get("a"):
+            return jsonify({"error": "forbidden"}), 403
+
+        sets, args, audit_parts = [], [], []
+        if "require_reveal_approval" in body:
+            req = bool(body["require_reveal_approval"])
+            sets.append("require_reveal_approval = %s")
+            args.append(req)
+            audit_parts.append(f"require_reveal_approval={req}")
+        if "description" in body:
+            desc = (body["description"] or "")[:500]
+            sets.append("description = %s")
+            args.append(desc)
+        if "default_access_mode" in body:
+            mode = (body["default_access_mode"] or "inherit").strip().lower()
+            if mode not in ("inherit", "restricted"):
+                mode = "inherit"
+            sets.append("default_access_mode = %s")
+            args.append(mode)
+            audit_parts.append(f"default_access_mode={mode}")
+        if not sets:
+            return jsonify({"error": "no update fields"}), 400
+        args.append(pid)
+        cur.execute(
+            f"UPDATE api.projects SET {', '.join(sets)} WHERE id = %s::uuid",
+            tuple(args),
+        )
+        if cur.rowcount == 0:
+            return jsonify({"error": "not found"}), 404
+        cur.execute("SELECT team_id FROM api.projects WHERE id = %s::uuid", (pid,))
+        proj = cur.fetchone()
+        audit.log_org(
+            cur,
+            team_id=str(proj["team_id"]) if proj and proj.get("team_id") else None,
+            project_id=pid,
+            action="project_settings",
+            detail=", ".join(audit_parts),
+        )
+        conn.commit()
+    return jsonify({"ok": True, "project": pid})

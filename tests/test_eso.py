@@ -317,6 +317,86 @@ class TestESO:
         assert status == 400
         assert resp.get_json()['error'] == 'expires_days is required'
 
+    def test_mgmt_upsert_meta_ok(self):
+        uid = str(uuid4())
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_project
+            {'id': str(sid)},  # _resolve_secret
+            {'w': True},       # can_access_secret(write)
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.patch(
+                f'/api/v1/manage/projects/{self.pid}/secrets/API_KEY/meta',
+                json={'key': 'owner', 'value': 'team'},
+                headers={'Authorization': 'Bearer pat_metatesttoken'},
+            )
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body['ok'] is True
+        assert body['meta_key'] == 'owner'
+        assert body['value'] == 'team'
+        ins = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.secret_meta' in str(c.args[0])]
+        assert ins and ins[0].args[1][:2] == (str(sid), 'owner')
+        assert any('audit_secret' in str(c.args[0]) for c in cur.execute.call_args_list)
+
+    def test_mgmt_upsert_meta_requires_write(self):
+        uid = str(uuid4())
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_project
+            {'id': str(uuid4())},  # _resolve_secret
+            {'w': False},      # can_access_secret(write) denied
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.patch(
+                f'/api/v1/manage/projects/{self.pid}/secrets/API/meta',
+                json={'key': 'owner', 'value': 'team'},
+                headers={'Authorization': 'Bearer pat_metatoken'},
+            )
+        assert r.status_code == 403
+
+    def test_mgmt_upsert_meta_bad_key(self):
+        uid = str(uuid4())
+        conn, _ = _conn()
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.patch(
+                f'/api/v1/manage/projects/{self.pid}/secrets/API/meta',
+                json={'key': 'bad key!', 'value': 'v'},
+                headers={'Authorization': 'Bearer pat_metatoken'},
+            )
+        assert r.status_code == 400
+
+    def test_mgmt_meta_requires_pat(self):
+        r = self.client.patch(
+            f'/api/v1/manage/projects/{self.pid}/secrets/API/meta',
+            json={'key': 'owner', 'value': 'v'},
+            headers={'Authorization': 'Bearer ss_machine'},
+        )
+        assert r.status_code == 401
+
+    def test_mgmt_delete_meta_ok(self):
+        uid = str(uuid4())
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_project
+            {'id': str(sid)},  # _resolve_secret
+            {'w': True},       # can_access_secret(write)
+            {'1': 1},          # metadata row exists
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.delete(
+                f'/api/v1/manage/projects/{self.pid}/secrets/API/meta/owner',
+                headers={'Authorization': 'Bearer pat_metatoken'},
+            )
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body['ok'] is True and body['meta_key'] == 'owner'
+        dels = [c for c in cur.execute.call_args_list if c.args and 'DELETE FROM api.secret_meta' in str(c.args[0])]
+        assert dels and dels[0].args[1][1] == 'owner'
+
     def test_machine_token_roles_config(self):
         assert 'service-reveal' in config.MACHINE_TOKEN_ROLES
         assert 'service-write' in config.MACHINE_TOKEN_ROLES
@@ -349,3 +429,127 @@ class TestESO:
                 flashes = s.get('_flashes') or []
             assert any(('large' in msg.lower() for _c, msg in flashes))
 
+
+    def test_mgmt_update_secret_access_ok(self):
+        uid, sid = str(uuid4()), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_project
+            {'a': True},       # can_admin_project
+            {'id': str(sid), 'key': 'API'},  # _resolve_secret
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.patch(
+                f'/api/v1/manage/projects/{self.pid}/secrets/API',
+                json={'access_mode': 'restricted', 'requires_approval': True},
+                headers={'Authorization': 'Bearer pat_acctok'},
+            )
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body['access_mode'] == 'restricted' and body['requires_approval'] is True
+        upd = [c for c in cur.execute.call_args_list if c.args and 'access_mode' in str(c.args[0])]
+        assert upd
+
+    def test_mgmt_update_secret_access_forbidden(self):
+        uid = str(uuid4())
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_project
+            {'a': False},      # not a project admin
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.patch(
+                f'/api/v1/manage/projects/{self.pid}/secrets/API',
+                json={'access_mode': 'restricted'},
+                headers={'Authorization': 'Bearer pat_acctok'},
+            )
+        assert r.status_code == 403
+
+    def test_mgmt_add_secret_binding_ok(self):
+        uid, sid = str(uuid4()), uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_project
+            {'a': True},       # can_admin_project
+            {'id': str(sid), 'key': 'API'},  # _resolve_secret -> sid,_skey
+            {'id': str(sid), 'key': 'API', 'access_mode': 'inherit', 'team_id': self.pid},  # join row
+            {'id': uuid4()},   # role
+            {'id': uid},       # lookup_user_id
+            {'m': True},       # can('list',...) member
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/api/v1/manage/projects/{self.pid}/secrets/API/bindings',
+                json={'subject_kind': 'User', 'subject_id': 'bob@x.com', 'role': 'secret-reveal'},
+                headers={'Authorization': 'Bearer pat_acctok'},
+            )
+        assert r.status_code == 200
+        assert r.get_json()['subject'] == 'bob@x.com'
+        ins = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO rbac.bindings' in str(c.args[0])]
+        assert ins and ins[0].args[1][3] == str(sid)  # scope_id
+
+    def test_mgmt_update_project_settings_ok(self):
+        uid = str(uuid4())
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_project
+            {'a': True},       # can_admin_project
+            {'team_id': self.pid},  # project team
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.patch(
+                f'/api/v1/manage/projects/{self.pid}',
+                json={'require_reveal_approval': True, 'default_access_mode': 'restricted'},
+                headers={'Authorization': 'Bearer pat_acctok'},
+            )
+        assert r.status_code == 200 and r.get_json()['ok'] is True
+        upd = [c for c in cur.execute.call_args_list if c.args and 'UPDATE api.projects' in str(c.args[0])]
+        assert upd and upd[0].args[1][0] is True
+
+    def test_mgmt_bulk_trash_restore(self):
+        uid = str(uuid4())
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_project
+        ]
+        cur.fetchall.return_value = [{'id': uuid4(), 'key': 'K1'}]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/api/v1/manage/projects/{self.pid}/trash/restore',
+                json={'action': 'restore', 'ids': [str(uuid4())]},
+                headers={'Authorization': 'Bearer pat_acctok'},
+            )
+        assert r.status_code == 200
+        assert r.get_json()['count'] == 1
+
+    def test_mgmt_list_groups(self):
+        uid = str(uuid4())
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_team
+        ]
+        cur.fetchall.return_value = [{'id': uuid4(), 'name': 'admins', 'source': 'manual'}]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(
+                f'/api/v1/manage/teams/{self.pid}/groups',
+                headers={'Authorization': 'Bearer pat_acctok'},
+            )
+        assert r.status_code == 200
+        assert r.get_json()['items'][0]['name'] == 'admins'
+
+    def test_mgmt_export_project_plain(self):
+        enc = crypto.encrypt('v1')
+        uid = str(uuid4())
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': self.pid},  # _resolve_project
+            {'r': True},       # can_read_project
+        ]
+        cur.fetchall.return_value = [{'key': 'A', 'value_enc': enc, 'note': 'n', 'crypto_provider': 'master'}]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(
+                f'/api/v1/manage/projects/{self.pid}/export?mode=plain',
+                headers={'Authorization': 'Bearer pat_acctok'},
+            )
+        assert r.status_code == 200
+        assert r.get_json()['items'][0]['value'] == 'v1'
