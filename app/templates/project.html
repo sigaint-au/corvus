@@ -40,47 +40,38 @@
 <div class="page-side">
 <nav class="page-subnav" aria-label="Project sections">
   <span class="page-subnav-header">Secrets</span>
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}"
+  <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='secrets') }}"
      class="page-subnav-link {% if active_tab == 'secrets' %}active{% endif %}"{% if active_tab == 'secrets' %} aria-current="page"{% endif %}
   >Secrets</a>
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='requests') }}"
+  <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='requests') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='requests') }}"
      class="page-subnav-link {% if active_tab == 'requests' %}active{% endif %}"{% if active_tab == 'requests' %} aria-current="page"{% endif %}
   >Requests{% if access_pending_count %}<span class="tab-badge" title="{{ access_pending_count }} pending">{{ access_pending_count }}</span>{% endif %}</a>
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
+  <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='import') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='import') }}"
      class="page-subnav-link {% if active_tab == 'import' %}active{% endif %}"{% if active_tab == 'import' %} aria-current="page"{% endif %}
   >Import / Export</a>
   <span class="page-subnav-header">Administration</span>
   {% if can_admin %}
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='access') }}"
+  <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='access') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='access') }}"
      class="page-subnav-link {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
      title="Role bindings for this project">Access</a>
   {% endif %}
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
+  <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='audit') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
      class="page-subnav-link {% if active_tab == 'audit' %}active{% endif %}"{% if active_tab == 'audit' %} aria-current="page"{% endif %}
   >Audit log</a>
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}"
+  <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='tokens') }}"
      class="page-subnav-link {% if active_tab == 'tokens' %}active{% endif %}"{% if active_tab == 'tokens' %} aria-current="page"{% endif %}
   >Machine accounts</a>
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='integrations') }}"
+  <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='integrations') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='integrations') }}"
      class="page-subnav-link {% if active_tab == 'integrations' %}active{% endif %}"{% if active_tab == 'integrations' %} aria-current="page"{% endif %}
   >Integrations</a>
   {% if can_settings %}
-  <a href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
+  <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='settings') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
      class="page-subnav-link {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
   >Settings</a>
   {% endif %}
 </nav>
-<div class="page-panel">
-
-{% if active_tab == 'secrets' %}{% include "partials/project_secrets.html" %}
-{% elif active_tab == 'import' %}{% include "partials/project_import.html" %}
-{% elif active_tab == 'access' and can_admin %}{% include "partials/project_access.html" %}
-{% elif active_tab == 'requests' %}{% include "partials/project_requests.html" %}
-{% elif active_tab == 'audit' %}{% include "partials/project_audit.html" %}
-{% elif active_tab == 'tokens' %}{% include "partials/project_tokens.html" %}
-{% elif active_tab == 'integrations' %}{% include "partials/project_integrations.html" %}
-{% elif active_tab == 'settings' and can_settings %}{% include "partials/project_settings.html" %}
-{% endif %}
+<div class="page-panel" id="project-panel">
+{% include "partials/project_content.html" %}
 </div>
 </div>
 {% endblock %}
