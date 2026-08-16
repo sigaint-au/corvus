@@ -207,11 +207,11 @@ class TestUIShell:
         assert 'class="table"' in html    # machine table is scrollable/responsive
 
     def test_project_tabs_use_nav_links_not_tablist_role(self):
-        # Server-side page tabs are plain navigation links (no fake tablist),
-        # so screen readers announce them as links, not broken tabs. Scope the
-        # check to the actual <nav class="tabs"> markup (not the shared <style>
-        # block, whose `.role-mode-tabs [role=tablist]` selector legitimately
-        # contains `role=` text).
+        # Server-side page navigation is plain links (no fake tablist), so
+        # screen readers announce them as links, not broken tabs. Scope the
+        # check to the actual <nav class="settings-subnav"> markup (not the
+        # shared <style> block, whose `.role-mode-tabs [role=tablist]` selector
+        # legitimately contains `role=` text).
         from flask import render_template
         project = {
             'id': str(uuid4()), 'name': 'App', 'team_id': str(uuid4()),
@@ -219,11 +219,11 @@ class TestUIShell:
         }
         with store.app.test_request_context('/projects/p?tab=secrets'):
             html = render_template('project.html', project=project, active_tab='secrets')
-        i = html.find('<nav class="tabs"')
+        i = html.find('<nav class="settings-subnav"')
         j = html.find('</nav>', i)
         tabs = html[i:j] if i != -1 and j != -1 else ''
         assert 'role="tablist"' not in tabs
         assert 'role="tab"' not in tabs
-        assert 'class="tab ' in tabs
-        assert 'tab active' in tabs
+        assert 'settings-subnav-link' in tabs
+        assert 'settings-subnav-link active' in tabs
 
