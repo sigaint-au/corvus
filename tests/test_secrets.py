@@ -11,6 +11,7 @@ from auth import authz
 from core import config
 import crypto
 from core import db
+from core import settings_svc
 
 from tests.helpers import mock_conn as _conn
 
@@ -23,9 +24,15 @@ class TestSecrets:
         self.client = store.app.test_client()
         self.uid = str(uuid4())
         self.pid = uuid4()
+        self._settings_patch = patch.object(settings_svc, 'get_settings', return_value={})
+        self._settings_patch.start()
         with self.client.session_transaction() as s:
             s['user_id'] = self.uid
             s['email'] = 'u@ex.com'
+            s['is_global_admin'] = False
+
+    def teardown_method(self, method=None):
+        self._settings_patch.stop()
 
     def _project_conn(self, tab='secrets', can_write=True, can_admin=None, team_role='team-owner', secrets=None, tokens=None, audit_log=None, access_requests=None, total=None, pending_count=0):
         """as_user used by project_detail (tab-scoped queries)."""
@@ -35,7 +42,7 @@ class TestSecrets:
         rows = secrets or [] if tab == 'secrets' else audit_log or [] if tab == 'audit' else tokens or []
         if total is None:
             total = len(rows)
-        fo = [project, {'w': can_write}, {'a': can_admin}, {'r': team_role}]
+        fo = [project, {'w': can_write}, {'a': can_admin}, {'r': team_role}, {'g': False}]
         if tab in ('secrets', 'audit'):
             fo.append({'n': total})
         if tab == 'secrets':
