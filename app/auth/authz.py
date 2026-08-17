@@ -1,4 +1,5 @@
 """Auth decorators, admin checks, CSRF."""
+import hmac
 import logging
 import secrets
 from functools import wraps
@@ -328,7 +329,7 @@ def csrf_protect():
         return
     want = session.get("_csrf")
     got = request.form.get("_csrf") or request.headers.get("X-CSRF-Token")
-    if not want or got != want:
+    if not want or not got or not hmac.compare_digest(str(got), str(want)):
         abort(400, description="CSRF token missing or invalid")
 
 

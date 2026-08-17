@@ -71,7 +71,7 @@ def login():
                     )
                 except Exception as e:
                     log.exception("LDAP user sync failed")
-                    flash(f"LDAP login succeeded but account sync failed: {e}", "error")
+                    flash("LDAP sign-in succeeded, but account setup failed. Try again.", "error")
                     return _login_page(), 500
         if not user:
             lockout.record_failure(email)
@@ -112,7 +112,7 @@ def login_oidc():
         return redirect(url)
     except Exception as e:
         log.exception("OIDC start failed")
-        flash(f"SSO start failed: {e}", "error")
+        flash("Could not start SSO sign-in. Try again.", "error")
         return redirect(url_for("login"))
 
 
@@ -158,7 +158,7 @@ def login_oidc_callback():
         )
     except Exception as e:
         log.exception("OIDC callback failed")
-        flash(f"SSO login failed: {e}", "error")
+        flash("SSO sign-in failed. Try again.", "error")
         return redirect(url_for("login"))
     if authz.is_account_disabled(str(user["id"])):
         flash("This account has been disabled. Contact an administrator.", "error")
@@ -270,7 +270,7 @@ def forgot_password():
                 "true",
                 "yes",
             ):
-                flash(f"Dev reset link (ALLOW_INSECURE_DEFAULTS): {link}", "ok")
+                flash(f"Development reset link: {link}", "ok")
                 log.warning("password reset token issued for %s (dev mode)", email)
             else:
                 flash(msg, "ok")

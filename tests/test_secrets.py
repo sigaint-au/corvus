@@ -11,6 +11,7 @@ from auth import authz
 from core import config
 import crypto
 from core import db
+from core import settings_svc
 
 from tests.helpers import mock_conn as _conn
 
@@ -23,9 +24,15 @@ class TestSecrets:
         self.client = store.app.test_client()
         self.uid = str(uuid4())
         self.pid = uuid4()
+        self._settings_patch = patch.object(settings_svc, 'get_settings', return_value={})
+        self._settings_patch.start()
         with self.client.session_transaction() as s:
             s['user_id'] = self.uid
             s['email'] = 'u@ex.com'
+            s['is_global_admin'] = False
+
+    def teardown_method(self, method=None):
+        self._settings_patch.stop()
 
     def _project_conn(self, tab='secrets', can_write=True, can_admin=None, team_role='team-owner', secrets=None, tokens=None, audit_log=None, access_requests=None, total=None, pending_count=0):
         """as_user used by project_detail (tab-scoped queries)."""
@@ -35,7 +42,7 @@ class TestSecrets:
         rows = secrets or [] if tab == 'secrets' else audit_log or [] if tab == 'audit' else tokens or []
         if total is None:
             total = len(rows)
-        fo = [project, {'w': can_write}, {'a': can_admin}, {'r': team_role}]
+        fo = [project, {'w': can_write}, {'a': can_admin}, {'r': team_role}, {'g': False}]
         if tab in ('secrets', 'audit'):
             fo.append({'n': total})
         if tab == 'secrets':
@@ -61,7 +68,18 @@ class TestSecrets:
         assert b'prod' in r.data
         assert b'Secrets' in r.data
         assert b'>Access<' in r.data
-        assert b'Audit log' in r.data
+        assert b'Activity' in r.data
+
+    def test_project_detail_htmx_returns_panel(self):
+        with patch.object(db, 'as_user', return_value=self._project_conn()):
+            r = self.client.get(
+                f'/projects/{self.pid}?tab=secrets',
+                headers={'HX-Request': 'true'},
+            )
+        assert r.status_code == 200
+        assert b'project-panel' not in r.data
+        assert b'Projects' not in r.data
+        assert b'Add secret' in r.data
 
     def test_project_access_tab(self):
         reqs = [{'id': uuid4(), 'secret_id': uuid4(), 'secret_key': 'API_KEY', 'user_id': self.uid, 'email': 'u@ex.com', 'name': 'User', 'status': 'pending', 'reason': 'debug prod', 'created_at': '2026-01-01', 'resolved_at': None, 'approved_until': None, 'resolver_email': ''}]
@@ -190,7 +208,7 @@ class TestSecrets:
         sid = uuid4()
         enc = crypto.encrypt('super-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'expires_at': None}, {'ok': True}, {'a': True}, {'w': True}]
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'expires_at': None}, {'ok': True}, {'a': True}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': True}]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
         assert r.status_code == 200
@@ -227,7 +245,7 @@ class TestSecrets:
         sid = uuid4()
         enc = crypto.encrypt('open-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'FEATURE_FLAG', 'value_enc': enc, 'expires_at': None}, {'ok': True}, {'a': False}, {'r': False}, {'w': False}]
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'FEATURE_FLAG', 'expires_at': None}, {'ok': True}, {'a': False}, {'r': False}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': False}]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
         assert r.status_code == 200
@@ -237,7 +255,7 @@ class TestSecrets:
         sid = uuid4()
         enc = crypto.encrypt('granted-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'expires_at': None}, {'ok': True}, {'a': False}, {'r': True}, {'id': uuid4(), 'status': 'approved', 'approved_until': '2099-01-01', 'created_at': '2026-01-01', 'reason': ''}, {'w': False}]
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'expires_at': None}, {'ok': True}, {'a': False}, {'r': True}, {'id': uuid4(), 'status': 'approved', 'approved_until': '2099-01-01', 'created_at': '2026-01-01', 'reason': ''}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': False}]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
         assert r.status_code == 200
@@ -304,8 +322,11 @@ class TestSecrets:
             'project_name': 'prod', 'require_reveal_approval': False,
         }
         # as_user cursor fetchone order:
-        #   [secret row, can_write, can_reveal_acl, helper can_admin_project, can_admin]
-        cur.fetchone.side_effect = [row, {'w': True}, {'r': True}, {'a': True}, {'a': True}]
+        #   [secret row, can_write, can_reveal_acl, helper can_admin, can_admin, secret_enc]
+        cur.fetchone.side_effect = [
+            row, {'w': True}, {'r': True}, {'a': True}, {'a': True},
+            {'value_enc': enc, 'crypto_provider': 'master'},
+        ]
         bindings = [{'id': sid, 'subject_kind': 'User', 'subject_id': binder_uid,
                      'created_at': '2026-01-01', 'role_name': 'secret-reveal', 'group_name': None}]
         # fetchall order: custom_meta, secret_bindings, team_groups
@@ -340,7 +361,10 @@ class TestSecrets:
             'last_accessed_at': None, 'last_accessed_by': None,
             'project_name': 'prod', 'require_reveal_approval': False,
         }
-        cur.fetchone.side_effect = [row, {'w': True}, {'r': True}, {'a': True}, {'a': False}]
+        cur.fetchone.side_effect = [
+            row, {'w': True}, {'r': True}, {'a': True}, {'a': False},
+            {'value_enc': enc, 'crypto_provider': 'master'},
+        ]
         cur.fetchall.side_effect = [[], [], []]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/view')

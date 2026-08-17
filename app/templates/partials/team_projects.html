@@ -29,7 +29,7 @@
         <td class="muted">
           {% if p.key_provider == 'hsm' %}HSM
           {% elif p.key_provider == 'local' %}Local
-          {% else %}Managed{% endif %}
+          {% else %}Server key{% endif %}
         </td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
         {% if my_role in ('team-owner', 'team-admin') %}

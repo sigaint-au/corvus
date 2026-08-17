@@ -145,7 +145,7 @@ def create_token(project_id):
     require_expiry, max_days = settings_svc.token_expiry_policy("machine")
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         # Explicit write gate (read-only can list tokens, not create them)
-        cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+        cur.execute("SELECT api.can_admin_project(%s) AS w", (str(project_id),))
         if not cur.fetchone()["w"]:
             flash("You don't have permission to do that", "error")
             return _token_redirect()
@@ -162,17 +162,17 @@ def create_token(project_id):
             if row.get("default_token_days"):
                 days_raw = str(row["default_token_days"])
         if not days_raw and require_expiry:
-            flash("Expires days is required", "error")
+            flash("Enter an expiry period.", "error")
             return _token_redirect()
         if days_raw:
             try:
                 days = int(days_raw)
             except ValueError:
-                flash("Expires days must be a positive integer", "error")
+                flash("Expiry must be a positive number of days.", "error")
                 return _token_redirect()
             if days < 1 or days > max_days:
                 flash(
-                    f"Expires days must be between 1 and {max_days}",
+                    f"Expiry must be between 1 and {max_days} days",
                     "error",
                 )
                 return _token_redirect()
@@ -200,7 +200,7 @@ def create_token(project_id):
                 insert_token_scopes(cur, str(row["id"]), scopes)
             conn.commit()
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not complete the request. Try again.", "error")
             return _token_redirect()
     session["new_token"] = raw  # shown once
     scope_note = (
@@ -230,7 +230,7 @@ def delete_token(project_id, token_id):
         POST /projects/<project_id>/tokens/<token_id>/delete
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+        cur.execute("SELECT api.can_admin_project(%s) AS w", (str(project_id),))
         if not cur.fetchone()["w"]:
             flash("You don't have permission to do that", "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))

@@ -65,7 +65,7 @@ def mgmt_create_team():
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip()
     if not name:
-        return jsonify({"error": "name required"}), 400
+        return jsonify({"error": "name is required"}), 400
     with db.connect(autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT private.create_team(%s::uuid, %s) AS id",
@@ -160,7 +160,7 @@ def mgmt_add_team_binding(team_ref):
     if role not in role_names:
         role = "team-member"
     if not email:
-        return jsonify({"error": "email required"}), 400
+        return jsonify({"error": "email is required"}), 400
     with db.as_user(uid) as conn, conn.cursor() as cur:
         tid = _resolve_team(cur, team_ref)
         if not tid:
@@ -250,7 +250,7 @@ def mgmt_transfer_team(team_ref):
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
     if not email:
-        return jsonify({"error": "email required"}), 400
+        return jsonify({"error": "email is required"}), 400
     with db.as_user(uid) as conn, conn.cursor() as cur:
         tid = _resolve_team(cur, team_ref)
         if not tid:

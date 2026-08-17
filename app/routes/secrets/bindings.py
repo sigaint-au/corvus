@@ -65,7 +65,7 @@ def update_secret_access(project_id, secret_id):
 
 @authz.login_required
 def add_secret_access_binding(project_id, secret_id):
-    """Bind a user, group, or service account to a secret role (project admin).
+    """Bind a user, group, or machine account to a secret role (project admin).
 
     Uses the same subject/role vocabulary as every other binding form:
     ``subject_kind`` + ``subject_email`` / ``subject_group`` / ``subject_sa``
@@ -87,13 +87,13 @@ def add_secret_access_binding(project_id, secret_id):
         tab="access",
     )
     if subject_kind == "User" and not email:
-        flash("User email required", "error")
+        flash("Enter an email address.", "error")
         return redirect(access_url)
     if subject_kind == "Group" and not group_id:
         flash("Select a group", "error")
         return redirect(access_url)
     if subject_kind == "ServiceAccount" and not sa_id:
-        flash("Enter a machine account ID", "error")
+        flash("Enter a machine account ID.", "error")
         return redirect(access_url)
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
@@ -234,7 +234,7 @@ def add_secret_access_binding(project_id, secret_id):
                 flash(f"Bound {who} as {role_name}", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update secret access. Try again.", "error")
     return redirect(access_url)
 
 

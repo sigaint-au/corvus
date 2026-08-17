@@ -41,7 +41,9 @@ class TestHealth:
 
     def test_security_headers(self):
         conn, _ = _conn()
-        with patch.object(db, 'connect', return_value=conn):
+        with patch.object(db, 'connect', return_value=conn), patch.dict(
+            os.environ, {"COOKIE_SECURE": "0", "FLASK_ENV": "development"}, clear=False
+        ):
             r = store.app.test_client().get('/health')
         assert r.headers.get('X-Content-Type-Options') == 'nosniff'
         assert r.headers.get('X-Frame-Options') == 'DENY'

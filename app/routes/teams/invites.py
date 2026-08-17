@@ -78,7 +78,7 @@ def create_team_invite(team_id):
             )
             conn.commit()
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not update the invitation. Try again.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="members"))
     session["new_invite_url"] = url_for("redeem_invite", token=raw, _external=True)
     flash("Invite link created — copy it now (shown once)", "ok")
@@ -195,7 +195,7 @@ def redeem_invite(token):
             )
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update the invitation. Try again.", "error")
     return redirect(url_for("teams"))
 
 
@@ -265,7 +265,7 @@ def approve_join_request(team_id, req_id):
             flash("Join request approved", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update the invitation. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 

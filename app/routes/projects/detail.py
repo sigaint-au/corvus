@@ -153,6 +153,8 @@ def project_detail(project_id):
     access_bindings = []
     access_groups = []
     effective_access = []
+    effective_access_pager = None
+    effective_access_q = ""
     role_descriptions = {}
     can_edit_access = False
     default_token_days = None
@@ -340,6 +342,35 @@ def project_detail(project_id):
             except Exception:
                 conn.rollback()
                 effective_access = []
+            effective_access_q = (request.args.get("q") or "").strip()
+            if effective_access_q:
+                needle = effective_access_q.casefold()
+                effective_access = [
+                    row
+                    for row in effective_access
+                    if needle in " ".join(
+                        str(row.get(key) or "")
+                        for key in (
+                            "subject_email",
+                            "subject_name",
+                            "subject_kind",
+                            "role_name",
+                            "scope_label",
+                            "scope_kind",
+                            "grant_kind",
+                            "grant_subject",
+                        )
+                    ).casefold()
+                ]
+            effective_access_pager = paging.page_window(len(effective_access), page)
+            effective_access_pager.update(
+                endpoint="project_detail",
+                project_id=project_id,
+                tab="access",
+                q=effective_access_q or None,
+            )
+            start = (page - 1) * effective_access_pager["per_page"]
+            effective_access = effective_access[start : start + effective_access_pager["per_page"]]
             try:
                 cur.execute(
                     """
@@ -395,62 +426,65 @@ def project_detail(project_id):
     from core import settings_svc
 
     public_base = settings_svc.public_base_url(request.url_root or "")
-    return render_template(
-        "project.html",
-        project=project,
-        project_id=project_id,
-        secrets=secret_rows,
-        tokens=tokens,
-        project_secret_keys=project_secret_keys,
-        audit_log=audit_rows,
-        access_requests=access_requests,
-        access_pending_count=access_pending_count,
-        access_bindings=access_bindings,
-        access_groups=access_groups,
-        effective_access=effective_access,
-        can_edit_access=can_edit_access,
-        project_role_dropdown=config.RBAC_PROJECT_ROLE_DROPDOWN,
-        role_descriptions=role_descriptions,
-        subject_kinds=config.RBAC_SUBJECT_KINDS,
-        secrets_pager=secrets_pager,
-        audit_pager=audit_pager,
+    ctx = {
+        "project": project,
+        "project_id": project_id,
+        "secrets": secret_rows,
+        "tokens": tokens,
+        "project_secret_keys": project_secret_keys,
+        "audit_log": audit_rows,
+        "access_requests": access_requests,
+        "access_pending_count": access_pending_count,
+        "access_bindings": access_bindings,
+        "access_groups": access_groups,
+        "effective_access": effective_access,
+        "effective_access_pager": effective_access_pager,
+        "effective_access_q": effective_access_q,
+        "can_edit_access": can_edit_access,
+        "project_role_dropdown": config.RBAC_PROJECT_ROLE_DROPDOWN,
+        "role_descriptions": role_descriptions,
+        "subject_kinds": config.RBAC_SUBJECT_KINDS,
+        "secrets_pager": secrets_pager,
+        "audit_pager": audit_pager,
 
-        team_groups=team_groups,
-        default_token_days=default_token_days,
-        can_write=can_write,
-        can_admin=can_admin,
-        can_delete=can_delete,
-        can_settings=can_settings,
-        can_manage_keys=can_manage_keys,
-        active_tab=tab,
-        search_q=q,
-        audit_actor=audit_actor,
-        audit_action=audit_action,
-        audit_since=audit_since,
-        audit_until=audit_until,
-        audit_actions=audit.ACTIONS,
-        new_token=session.pop("new_token", None),
-        due_overdue=due_overdue if tab == "secrets" else [],
-        soon_days=SOON_DAYS,
-        due_soon=due_soon if tab == "secrets" else [],
-        rotation_overdue=rotation_overdue if tab == "secrets" else [],
-        rotation_soon=rotation_soon if tab == "secrets" else [],
-        public_base_url=public_base,
-        max_expiry_days=config.MAX_EXPIRY_DAYS,
-        grant_minutes=config.REVEAL_ACCESS_GRANT_MINUTES,
-        grant_choices=config.REVEAL_ACCESS_GRANT_CHOICES,
-        require_reveal_approval=bool(
+        "team_groups": team_groups,
+        "default_token_days": default_token_days,
+        "can_write": can_write,
+        "can_admin": can_admin,
+        "can_delete": can_delete,
+        "can_settings": can_settings,
+        "can_manage_keys": can_manage_keys,
+        "active_tab": tab,
+        "search_q": q,
+        "audit_actor": audit_actor,
+        "audit_action": audit_action,
+        "audit_since": audit_since,
+        "audit_until": audit_until,
+        "audit_actions": audit.ACTIONS,
+        "new_token": session.pop("new_token", None),
+        "due_overdue": due_overdue if tab == "secrets" else [],
+        "soon_days": SOON_DAYS,
+        "due_soon": due_soon if tab == "secrets" else [],
+        "rotation_overdue": rotation_overdue if tab == "secrets" else [],
+        "rotation_soon": rotation_soon if tab == "secrets" else [],
+        "public_base_url": public_base,
+        "max_expiry_days": config.MAX_EXPIRY_DAYS,
+        "grant_minutes": config.REVEAL_ACCESS_GRANT_MINUTES,
+        "grant_choices": config.REVEAL_ACCESS_GRANT_CHOICES,
+        "require_reveal_approval": bool(
             project.get("require_reveal_approval")
         )
         if project
         else False,
-        access_modes=config.ACCESS_MODES,
-        access_mode_labels=config.ACCESS_MODE_LABELS,
-        project_crypto=project_crypto,
-        project_master_rows=project_master_rows,
-        hsm_slots=hsm_slots,
-        hsm_available=bool(hsm_slots),
-    )
+        "access_modes": config.ACCESS_MODES,
+        "access_mode_labels": config.ACCESS_MODE_LABELS,
+        "project_crypto": project_crypto,
+        "project_master_rows": project_master_rows,
+        "hsm_slots": hsm_slots,
+        "hsm_available": bool(hsm_slots),
+    }
+    template = "partials/project_content.html" if authz.htmx() else "project.html"
+    return render_template(template, **ctx)
 
 
 @authz.login_required
@@ -605,7 +639,7 @@ def project_crypto_action(project_id):
                 project_id, provider=provider, hsm_slot_id=hsm_slot
             )
         except Exception as e:
-            flash(f"Key adoption failed: {e}", "error")
+            flash("Could not adopt the project key. Try again.", "error")
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")
             )
@@ -619,7 +653,7 @@ def project_crypto_action(project_id):
                 + (" (key created)" if created else ""),
             )
             conn.commit()
-        flash(f"Project key adopted — re-encrypted {n} secret row(s)", "ok")
+        flash(f"Project key adopted. Re-encrypted {n} secrets.", "ok")
     elif action == "migrate":
         from crypto import project_keys
 
@@ -637,7 +671,7 @@ def project_crypto_action(project_id):
                 project_id, new_provider, target_slot_id=target_slot
             )
         except Exception as e:
-            flash(f"Key migration failed: {e}", "error")
+            flash("Could not migrate the project key. Try again.", "error")
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")
             )
@@ -650,7 +684,7 @@ def project_crypto_action(project_id):
                 detail=f"to={new_provider} re-encrypted={n}",
             )
             conn.commit()
-        flash(f"Project key migrated to {new_provider} — re-encrypted {n} row(s)", "ok")
+        flash(f"Project key migrated to {new_provider}. Re-encrypted {n} secrets.", "ok")
     else:
         flash("Unknown encryption action", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="settings"))

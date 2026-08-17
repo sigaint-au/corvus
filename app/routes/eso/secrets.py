@@ -6,6 +6,7 @@ from flask import jsonify
 import crypto
 from core import db
 from lib.validate import is_uuid
+from secret_svc.secret_ops import fetch_project_reveal_enc_rows, fetch_secret_enc
 from .helpers import (
     _audit,
     _machine_actor,
@@ -84,7 +85,7 @@ def eso_get_secret(project_ref, key):
             return jsonify({"error": "not found"}), 404
         cur.execute(
             """
-            SELECT id, key, value_enc, note, kind, expires_at,
+            SELECT id, key, note, kind, expires_at,
                    rotation_interval_days, rotation_owner, rotation_next_at, rotated_at,
                    created_at, updated_at, last_accessed_at, crypto_provider
               FROM api.secrets
@@ -160,8 +161,11 @@ def eso_get_secret(project_ref, key):
             )
         except Exception:
             pass
+        enc = fetch_secret_enc(cur, row["id"])
+        if not enc:
+            return jsonify({"error": "forbidden"}), 403
         value = crypto.decrypt_for_project(
-            pid, row["value_enc"], row.get("crypto_provider") or "master"
+            pid, enc["value_enc"], enc.get("crypto_provider") or "master"
         )
         _audit(
             cur,
@@ -312,16 +316,7 @@ def eso_list_secrets(project_ref):
             conn.commit()
             return jsonify({"items": items})
         # PAT bulk values: only secrets the caller may reveal (ACL + approval)
-        cur.execute(
-            """
-            SELECT key, value_enc, crypto_provider FROM api.secrets
-             WHERE project_id = %s AND deleted_at IS NULL
-               AND api.can_access_secret(id, 'reveal')
-               AND api.can_reveal_secret(id)
-            """,
-            (pid,),
-        )
-        rows = cur.fetchall() or []
+        rows = fetch_project_reveal_enc_rows(cur, pid)
         data = {}
         for r in rows:
             try:

@@ -63,8 +63,11 @@ def secrets_list():
                     due=due,
                     access_mode=access_mode,
                 )
+    template = (
+        "partials/secrets_results.html" if authz.htmx() else "secrets.html"
+    )
     return render_template(
-        "secrets.html",
+        template,
         team=team,
         secrets=secrets,
         search_q=q,
@@ -101,12 +104,56 @@ def shared_secrets_list():
             flash("Could not load shared secrets", "error")
             secrets, secrets_pager = [], paging.page_window(0, page)
             secrets_pager.update(endpoint="shared_secrets_list", q=q or None)
+    template = (
+        "partials/shared_results.html" if authz.htmx() else "shared_secrets.html"
+    )
     return render_template(
-        "shared_secrets.html",
+        template,
         secrets=secrets,
         search_q=q,
         secrets_pager=secrets_pager,
     )
+
+
+def _trash_items(tid, q):
+    """Return trash items (with search) for the given team id."""
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
+        team = cur.fetchone()
+        if not team:
+            return team, []
+        if q:
+            like = f"%{q}%"
+            cur.execute(
+                """
+                SELECT s.id, s.key, s.note, s.deleted_at, s.project_id,
+                       p.name AS project_name,
+                       api.can_write_project(s.project_id) AS can_write
+                FROM api.secrets s
+                JOIN api.projects p ON p.id = s.project_id
+                WHERE p.team_id = %s AND s.deleted_at IS NOT NULL
+                  AND (
+                    s.key ILIKE %s OR s.note ILIKE %s
+                    OR p.name ILIKE %s
+                  )
+                ORDER BY s.deleted_at DESC
+                """,
+                (tid, like, like, like),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT s.id, s.key, s.note, s.deleted_at, s.project_id,
+                       p.name AS project_name,
+                       api.can_write_project(s.project_id) AS can_write
+                FROM api.secrets s
+                JOIN api.projects p ON p.id = s.project_id
+                WHERE p.team_id = %s AND s.deleted_at IS NOT NULL
+                ORDER BY s.deleted_at DESC
+                """,
+                (tid,),
+            )
+        return team, cur.fetchall()
 
 
 @authz.login_required
@@ -127,42 +174,11 @@ def trash():
     team, items = None, []
     q = (request.args.get("q") or "").strip()
     if tid:
-        with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
-            team = cur.fetchone()
-            if team:
-                if q:
-                    like = f"%{q}%"
-                    cur.execute(
-                        """
-                        SELECT s.id, s.key, s.note, s.deleted_at, s.project_id,
-                               p.name AS project_name,
-                               api.can_write_project(s.project_id) AS can_write
-                        FROM api.secrets s
-                        JOIN api.projects p ON p.id = s.project_id
-                        WHERE p.team_id = %s AND s.deleted_at IS NOT NULL
-                          AND (
-                            s.key ILIKE %s OR s.note ILIKE %s
-                            OR p.name ILIKE %s
-                          )
-                        ORDER BY s.deleted_at DESC
-                        """,
-                        (tid, like, like, like),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT s.id, s.key, s.note, s.deleted_at, s.project_id,
-                               p.name AS project_name,
-                               api.can_write_project(s.project_id) AS can_write
-                        FROM api.secrets s
-                        JOIN api.projects p ON p.id = s.project_id
-                        WHERE p.team_id = %s AND s.deleted_at IS NOT NULL
-                        ORDER BY s.deleted_at DESC
-                        """,
-                        (tid,),
-                    )
-                items = cur.fetchall()
+        team, items = _trash_items(tid, q)
+    if authz.htmx():
+        return render_template(
+            "partials/trash_results.html", team=team, items=items, search_q=q
+        )
     return render_template(
         "trash.html", team=team, items=items, search_q=q
     )
@@ -195,32 +211,38 @@ def restore_secret(secret_id):
             row = cur.fetchone()
             if not row:
                 flash("Could not restore — missing permission or key already exists", "error")
-                conn.commit()
-                return redirect(url_for("trash", q=request.args.get("q") or None))
-            cur.execute(
-                """
-                UPDATE api.secrets
-                SET deleted_at = NULL
-                WHERE id = %s AND deleted_at IS NOT NULL
-                """,
-                (str(secret_id),),
-            )
-            if cur.rowcount == 0:
-                flash("Could not restore — missing permission or key already exists", "error")
             else:
-                audit.log_secret(
-                    cur,
-                    project_id=row["project_id"],
-                    secret_id=row["id"],
-                    secret_key=row["key"],
-                    action="restored",
+                cur.execute(
+                    """
+                    UPDATE api.secrets
+                    SET deleted_at = NULL
+                    WHERE id = %s AND deleted_at IS NOT NULL
+                    """,
+                    (str(secret_id),),
                 )
-                flash("Secret restored", "ok")
+                if cur.rowcount == 0:
+                    flash("Could not restore — missing permission or key already exists", "error")
+                else:
+                    audit.log_secret(
+                        cur,
+                        project_id=row["project_id"],
+                        secret_id=row["id"],
+                        secret_key=row["key"],
+                        action="restored",
+                    )
+                    flash("Secret restored", "ok")
             conn.commit()
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
-    return redirect(url_for("trash", q=request.args.get("q") or None))
+            flash("Could not update the trash. Try again.", "error")
+    q = request.args.get("q") or ""
+    if authz.htmx():
+        tid = nav.ensure_active_team(session["user_id"])
+        team, items = _trash_items(tid, q) if tid else (None, [])
+        return render_template(
+            "partials/trash_results.html", team=team, items=items, search_q=q
+        )
+    return redirect(url_for("trash", q=q or None))
 
 
 @authz.login_required
@@ -263,7 +285,14 @@ def purge_secret(secret_id):
                 (str(secret_id),),
             )
         conn.commit()
-    return redirect(url_for("trash", q=request.args.get("q") or None))
+    q = request.args.get("q") or ""
+    if authz.htmx():
+        tid = nav.ensure_active_team(session["user_id"])
+        team, items = _trash_items(tid, q) if tid else (None, [])
+        return render_template(
+            "partials/trash_results.html", team=team, items=items, search_q=q
+        )
+    return redirect(url_for("trash", q=q or None))
 
 
 @authz.login_required

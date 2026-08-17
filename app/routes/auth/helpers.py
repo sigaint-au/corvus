@@ -47,10 +47,16 @@ def _maybe_promote_bootstrap_admin(email: str, user_id) -> bool:
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
-                "UPDATE private.users SET is_global_admin = true WHERE id = %s::uuid",
+                """
+                UPDATE private.users SET is_global_admin = true
+                WHERE id = %s::uuid
+                  AND NOT EXISTS (
+                    SELECT 1 FROM private.users u WHERE u.is_global_admin
+                  )
+                """,
                 (str(user_id),),
             )
-        return True
+        return authz.is_global_admin(str(user_id))
     except Exception:
         log.exception("bootstrap admin promote failed")
         return authz.is_global_admin(str(user_id))

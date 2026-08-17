@@ -35,9 +35,9 @@ def _write_migrations(tmp_path, files):
 
 
 def test_migrations_ship_in_order():
-    """The fresh-install squash ships exactly one baseline migration."""
+    """Baseline plus additive hardening migrations ship in order."""
     files = [p.name for p in migrations._migration_files()]
-    assert files == ["0001_init.sql"]
+    assert files == ["0001_init.sql", "0002_rls_authz_hardening.sql"]
     for name in files:
         assert name[:4].isdigit()
         assert name[4] == "_"
@@ -74,6 +74,19 @@ def test_squashed_baseline_contains_all_schema_layers():
     assert "ALTER DEFAULT PRIVILEGES IN SCHEMA api" in sql
     assert "ALTER DEFAULT PRIVILEGES IN SCHEMA rbac" in sql
     assert "private.squashed_baseline_marker" in sql
+
+
+def test_authz_hardening_migration():
+    sql = (migrations.MIGRATIONS_DIR / "0002_rls_authz_hardening.sql").read_text()
+    assert "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA private FROM PUBLIC" in sql
+    assert "only a team owner can assign team-owner" in sql
+    assert "only a team owner can map team-owner" in sql
+    assert "secret identity fields cannot be changed" in sql
+    assert "project team_id cannot be changed" in sql
+    assert "REVOKE SELECT (value_enc) ON api.secrets FROM authenticated" in sql
+    assert "private.secret_enc" in sql
+    assert "can_admin_project(project_id)" in sql
+    assert "OR api.can('update', 'secrets', 'secret', sid)" not in sql.split("WHEN need = 'reveal'")[1].split("ELSE")[0]
 
 
 class TestPendingMigrations:

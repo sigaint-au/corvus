@@ -15,6 +15,13 @@ from core import config
 from core import db
 
 
+def _can_assign_team_owner(cur, team_id) -> bool:
+    cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+    return (cur.fetchone() or {}).get("r") == "team-owner" or authz.is_global_admin(
+        session["user_id"]
+    )
+
+
 @authz.login_required
 def add_team_ldap_map(team_id):
     """Add or update an LDAP group to team role mapping.
@@ -38,6 +45,9 @@ def add_team_ldap_map(team_id):
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
+            if role == "team-owner" and not _can_assign_team_owner(cur, team_id):
+                flash("Only a team owner can map the owner role", "error")
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             cur.execute(
                 """
                 INSERT INTO api.team_ldap_maps (team_id, ldap_group, role)
@@ -55,7 +65,7 @@ def add_team_ldap_map(team_id):
             conn.commit()
             flash("LDAP group mapping saved — applies on next LDAP login", "ok")
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not update the directory mapping. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
 
@@ -112,6 +122,9 @@ def add_team_oidc_map(team_id):
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
+            if role == "team-owner" and not _can_assign_team_owner(cur, team_id):
+                flash("Only a team owner can map the owner role", "error")
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             cur.execute(
                 """
                 INSERT INTO api.team_oidc_maps (team_id, oidc_group, role)
@@ -129,7 +142,7 @@ def add_team_oidc_map(team_id):
             conn.commit()
             flash("OIDC group mapping saved — applies on next SSO login", "ok")
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not update the directory mapping. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
 

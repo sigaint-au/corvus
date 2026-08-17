@@ -91,7 +91,7 @@ def create_project(team_id):
             pid = row["id"]
             conn.commit()
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not update the project. Try again.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
     if encryption in ("byok", "project", "hsm"):
         from crypto import project_keys
@@ -104,7 +104,7 @@ def create_project(team_id):
             except Exception:
                 pass
             flash(
-                "External HSM requires a named slot; choose Managed or Project key, "
+                "External HSM requires a named slot; choose Server key or Project key, "
                 "or configure an HSM slot first.",
                 "error",
             )

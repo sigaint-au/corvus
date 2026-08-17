@@ -62,7 +62,7 @@ def create_secret(project_id):
     try:
         expires_at = _parse_expires_at(request.form)
     except (ValueError, TypeError) as e:
-        flash(str(e), "error")
+        flash("Could not save the secret. Try again.", "error")
         return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
@@ -92,7 +92,7 @@ def create_secret(project_id):
                 )
                 conn.commit()
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not save the secret. Try again.", "error")
     if authz.htmx():
         return _secrets_partial(project_id)
     return redirect(
@@ -223,7 +223,7 @@ def upsert_secret_meta(project_id, secret_id):
             flash(f"Metadata “{key}” saved", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not save the secret. Try again.", "error")
     return redirect(meta_url)
 
 
@@ -297,7 +297,7 @@ def update_secret_value(project_id, secret_id):
     except (ValueError, TypeError) as e:
         if authz.htmx():
             return str(e), 400
-        flash(str(e), "error")
+        flash("Could not save the secret. Try again.", "error")
         return redirect(
             url_for("project_detail", project_id=project_id, tab="secrets")
         )
@@ -508,7 +508,7 @@ def secret_new(project_id):
     try:
         expires_at = _parse_expires_at(request.form)
     except (ValueError, TypeError) as e:
-        flash(str(e), "error")
+        flash("Could not save the secret. Try again.", "error")
         return render_template(
             "secret_new.html",
             **_new_ctx(
@@ -552,7 +552,7 @@ def secret_new(project_id):
                     "ok",
                 )
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not save the secret. Try again.", "error")
             return render_template(
                 "secret_new.html",
                 **_new_ctx(

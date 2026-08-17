@@ -33,7 +33,7 @@ def add_project_binding(project_id):
         role = "project-read"
     dest = _project_access_url(project_id)
     if not email:
-        flash("Email required", "error")
+        flash("Enter an email address.", "error")
         return redirect(dest)
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
@@ -75,7 +75,7 @@ def add_project_binding(project_id):
             flash(f"Bound {email} as project-{role}", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update project access. Try again.", "error")
     return redirect(dest)
 
 
@@ -112,7 +112,7 @@ def remove_project_binding(project_id, user_id):
             flash("Project binding removed", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update project access. Try again.", "error")
     return redirect(dest)
 
 
@@ -126,7 +126,7 @@ def add_project_group_role(project_id):
         role = "project-read"
     dest = _project_access_url(project_id)
     if not group_id:
-        flash("Group required", "error")
+        flash("Select a group.", "error")
         return redirect(dest)
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
@@ -170,7 +170,7 @@ def add_project_group_role(project_id):
             flash(f"Bound group “{row['name']}” as project-{role}", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update project access. Try again.", "error")
     return redirect(dest)
 
 
@@ -211,7 +211,7 @@ def remove_project_group_role(project_id, group_id):
             flash("Group project binding removed", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update project access. Try again.", "error")
     return redirect(dest)
 
 
@@ -289,7 +289,7 @@ def project_access_binding_create(project_id):
                 subject_id = subject_sa
                 detail_who = f"sa {subject_sa}"
                 if not subject_id:
-                    flash("Service account id required", "error")
+                    flash("Enter a machine account ID.", "error")
                     return redirect(dest)
                 rid = rbac_sync.role_id(cur, role_name)
                 if not rid:
@@ -324,7 +324,7 @@ def project_access_binding_create(project_id):
             flash("Binding created", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update project access. Try again.", "error")
     return redirect(dest)
 
 
@@ -371,5 +371,5 @@ def project_access_binding_delete(project_id, binding_id):
                 flash("Binding removed", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update project access. Try again.", "error")
     return redirect(dest)

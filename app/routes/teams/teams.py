@@ -19,6 +19,7 @@ from core import db
 from integrations import ldap_auth
 from auth import rbac_sync
 from core import settings_svc
+from ui import paging
 
 log = logging.getLogger(__name__)
 
@@ -102,10 +103,13 @@ def team_detail(team_id):
     if tab not in ("projects", "members", "groups", "activity", "access", "settings"):
         tab = "projects"
     q = (request.args.get("q") or "").strip()
+    page = paging.page_arg("page")
     members, projects, ldap_maps, oidc_maps = [], [], [], []
     hsm_count = local_count = managed_count = 0
     groups = []
     invites, join_requests, org_events = [], [], []
+    activity_q = q if tab == "activity" else ""
+    activity_pager = None
     access_bindings = []
     access_groups = []
     role_descriptions = {}
@@ -205,7 +209,7 @@ def team_detail(team_id):
                 join_requests = cur.fetchall() or []
         elif tab == "access" and is_admin:
 
-            # All team-scope bindings (users, groups, service accounts)
+            # All team-scope bindings (users, groups, machine accounts)
             access_bindings = rbac_sync.list_scope_bindings(cur, "team", team_id)
             rbac_sync.enrich_binding_emails(access_bindings)
             cur.execute(
@@ -248,9 +252,29 @@ def team_detail(team_id):
                 )
         elif tab == "activity":
             try:
-                org_events = audit.list_org_for_team(cur, team_id)
+                org_events = audit.list_org_for_team(cur, team_id, limit=1000)
             except Exception:
                 org_events = []
+            activity_q = (request.args.get("q") or "").strip()
+            if activity_q:
+                needle = activity_q.casefold()
+                org_events = [
+                    event
+                    for event in org_events
+                    if needle in " ".join(
+                        str(event.get(key) or "")
+                        for key in ("actor_email", "action", "detail")
+                    ).casefold()
+                ]
+            activity_pager = paging.page_window(len(org_events), page)
+            activity_pager.update(
+                endpoint="team_detail",
+                team_id=team_id,
+                tab="activity",
+                q=activity_q or None,
+            )
+            start = (page - 1) * activity_pager["per_page"]
+            org_events = org_events[start : start + activity_pager["per_page"]]
         elif tab == "settings" and is_admin:
             cur.execute(
                 """
@@ -306,6 +330,8 @@ def team_detail(team_id):
         invites=invites,
         join_requests=join_requests,
         org_events=org_events,
+        activity_q=activity_q,
+        activity_pager=activity_pager,
         access_bindings=access_bindings,
         access_groups=access_groups,
         can_edit_access=can_edit_access or is_admin,
@@ -417,7 +443,7 @@ def update_team_settings(team_id):
                 conn.commit()
                 flash("Team settings saved", "ok")
         except Exception as e:
-            flash(str(e), "error")
+            flash("Could not update the team. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
 
@@ -450,7 +476,7 @@ def delete_team(team_id):
         except Exception as e:
             conn.rollback()
             log.exception("delete_team failed")
-            flash(str(e), "error")
+            flash("Could not update the team. Try again.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     if session.get("team_id") == str(team_id):
         session.pop("team_id", None)

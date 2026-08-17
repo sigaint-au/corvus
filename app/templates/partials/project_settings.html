@@ -55,67 +55,70 @@
 <section class="crypto-panel">
   <div class="section-head">
     <h2>Encryption</h2>
+    <p class="muted section-head-desc">Which key protects this project's secrets at rest.</p>
   </div>
 
-  <div class="crypto-status">
-    <div class="crypto-status-row">
-      {% if project_crypto %}
-      <span class="badge" data-variant="success">Project key</span>
-      <span class="muted">
-        {% if project_crypto.key_provider == 'hsm' %}
-          HSM{% if project_crypto.hsm_slot_name %} · {{ project_crypto.hsm_slot_name }}{% elif project_crypto.hsm_slot_id is none %} · <span class="badge" data-variant="warning">no slot</span>{% endif %}{% if project_crypto.kms_key_ref %} · {{ project_crypto.kms_key_ref }}{% endif %}
-        {% else %}
-          Local
-        {% endif %}
-        {% if project_crypto.created_at %} · {{ project_crypto.created_at.strftime('%Y-%m-%d') }}{% endif %}
-        {% if project_crypto.key_id %} · key <code class="k">{{ project_crypto.key_id|string|truncate(8, True, '') }}</code>{% endif %}
+  <div class="crypto-overview">
+    <div class="crypto-summary">
+      <div class="crypto-summary-body">
+        <strong>
+          {% if project_crypto %}
+            {% if project_crypto.key_provider == 'hsm' %}
+              HSM-wrapped key{% if project_crypto.hsm_slot_name %} · {{ project_crypto.hsm_slot_name }}{% endif %}
+            {% else %}
+              Project-local key
+            {% endif %}
+          {% else %}
+            Server-wide key
+          {% endif %}
+        </strong>
+        <span class="muted">
+          {% if project_crypto %}
+            {% if project_crypto.hsm_slot_id is none and project_crypto.key_provider == 'hsm' %}no slot assigned · {% endif %}
+            {% if project_crypto.kms_key_ref %}{{ project_crypto.kms_key_ref }} · {% endif %}
+            {% if project_crypto.key_id %}key id <code class="k">{{ project_crypto.key_id|string|truncate(8, True, '') }}</code> · {% endif %}
+            {% if project_crypto.created_at %}adopted {{ project_crypto.created_at.strftime('%Y-%m-%d') }}{% endif %}
+          {% else %}
+            New secrets use the server-wide key until you adopt a project key
+          {% endif %}
+        </span>
+      </div>
+    </div>
+    <div class="crypto-sync">
+      <span class="badge" data-variant="{% if project_crypto and not project_master_rows %}success{% elif project_master_rows %}warning{% else %}secondary{% endif %}">
+        {% if project_crypto and not project_master_rows %}In sync{% elif project_master_rows %}{{ project_master_rows }} pending{% else %}Server key{% endif %}
       </span>
-      {% else %}
-      <span class="badge" data-variant="secondary">Managed</span>
-      <span class="muted">Server-wide key</span>
-      {% endif %}
-    </div>
-    <div class="crypto-status-row">
-      {% if project_crypto and not project_master_rows %}
-      <span class="badge" data-variant="success">In sync</span>
-      <span class="muted">All secrets use the project key</span>
-      {% elif project_master_rows %}
-      <span class="badge" data-variant="warning">{{ project_master_rows }} pending</span>
-      <span class="muted">Still on the server-wide key</span>
-      {% else %}
-      <span class="muted">New secrets use the server-wide key until you adopt a project key</span>
+      {% if can_manage_keys and project_crypto and project_master_rows %}
+      <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
+            class="inline"
+            onsubmit="return confirm('Re-encrypt {{ project_master_rows }} secret(s) with the project key?');">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="adopt">
+        <input type="hidden" name="provider" value="{{ project_crypto.key_provider or 'local' }}">
+        {% if project_crypto.key_provider == 'hsm' and project_crypto.hsm_slot_id %}
+        <input type="hidden" name="hsm_slot" value="{{ project_crypto.hsm_slot_id }}">
+        {% endif %}
+        <button type="submit" class="button small">Re-encrypt {{ project_master_rows }}</button>
+      </form>
       {% endif %}
     </div>
   </div>
 
-  {% if project_crypto and not project_master_rows %}
-  <p class="field-hint">All secrets are encrypted with the project key. No action needed.</p>
-  {% endif %}
-
-  {% if can_manage_keys and project_crypto %}
-  <div class="crypto-actions">
-    {% if project_master_rows %}
+  {% if hsm_available and project_crypto and project_crypto.key_provider == 'local' and can_manage_keys %}
+  <div class="crypto-migrate-card">
+    <div class="crypto-migrate-header">
+      <strong>Upgrade to hardware security (HSM)</strong>
+      <p class="muted">Re-wraps this project's key with an external PKCS#11 HSM token. All secrets will be re-encrypted under the new HSM KEK.</p>
+    </div>
     <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
-          class="inline"
-          onsubmit="return confirm('Re-encrypt {{ project_master_rows }} secret(s) with the project key?');">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <input type="hidden" name="action" value="adopt">
-      <input type="hidden" name="provider" value="{{ project_crypto.key_provider or 'local' }}">
-      {% if project_crypto.key_provider == 'hsm' and project_crypto.hsm_slot_id %}
-      <input type="hidden" name="hsm_slot" value="{{ project_crypto.hsm_slot_id }}">
-      {% endif %}
-      <button type="submit" class="button outline small">Re-encrypt {{ project_master_rows }}</button>
-    </form>
-    {% endif %}
-    {% if hsm_available and project_crypto.key_provider == 'local' %}
-    <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
-          class="inline"
+          class="crypto-migrate-form"
           onsubmit="return confirm('Migrate this project to an HSM-wrapped key? All secrets will be re-encrypted. The HSM must remain available for all future access.');">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="action" value="migrate">
       <input type="hidden" name="provider" value="hsm">
       {% if hsm_slots %}
-      <label>HSM slot
+      <label class="crypto-migrate-select">
+        <span class="field-label">Target slot</span>
         <select name="target_slot">
           {% for s in hsm_slots %}
           <option value="{{ s.id }}" {% if s.is_default %}selected{% endif %} title="{{ s.description or '' }}">{{ s.name }}</option>
@@ -125,7 +128,6 @@
       {% endif %}
       <button type="submit" class="button outline small">Migrate to HSM</button>
     </form>
-    {% endif %}
   </div>
   {% endif %}
 
@@ -136,12 +138,12 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="adopt">
     <fieldset class="crypto-choice">
-      <legend class="sr-only">Key provider</legend>
+      <legend>Key provider</legend>
       <label class="radio-card">
         <input type="radio" name="provider" value="local" checked>
         <span class="radio-card-body">
           <strong>Local</strong>
-          <span class="muted">Project key wrapped by the server</span>
+          <span class="muted">Wrapped by the server; portable across instances</span>
         </span>
       </label>
       {% if hsm_available %}
@@ -149,7 +151,7 @@
         <input type="radio" name="provider" value="hsm">
         <span class="radio-card-body">
           <strong>HSM</strong>
-          <span class="muted">Project key wrapped by the HSM</span>
+          <span class="muted">Wrapped by hardware; stronger separation of keys</span>
         </span>
       </label>
       {% endif %}

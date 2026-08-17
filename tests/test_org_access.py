@@ -229,10 +229,9 @@ class TestOrgAccess:
         assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in src
         from pathlib import Path
         src = (APP_ROOT / 'routes' / 'project_io.py').read_text()
-        assert "can_access_secret(id, 'reveal')" in src
-        assert 'can_reveal_secret(id)' in src
+        assert 'fetch_project_reveal_enc_rows' in src
         bulk = src[src.index('def bulk_export'):]
-        assert "can_access_secret(id, 'reveal')" in bulk
+        assert 'fetch_project_reveal_enc_rows' in bulk
 
     def test_acl_management_routes_exist(self):
         """Secret ACL mode/grant routes registered and gated to admins."""
@@ -261,8 +260,7 @@ class TestOrgAccess:
         start = src.index('def eso_list_secrets')
         body = src[start:start + 8000]
         assert 'cli/values' in body
-        assert "can_access_secret(id, 'reveal')" in body
-        assert 'can_reveal_secret(id)' in body
+        assert 'fetch_project_reveal_enc_rows' in body
         assert not re.search('SELECT key, value_enc FROM api\\.secrets\\s+WHERE project_id = %s AND deleted_at IS NULL\\s*\\"\\"\\"', body)
 
     def test_group_team_roles_config(self):

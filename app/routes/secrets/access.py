@@ -154,7 +154,7 @@ def request_secret_access(project_id, secret_id):
         except Exception as e:
             conn.rollback()
             log.exception("access request failed")
-            flash(str(e), "error")
+            flash("Could not update access. Try again.", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
 
 
@@ -257,7 +257,7 @@ def approve_secret_access(project_id, req_id):
                 )
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update access. Try again.", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
 
 
@@ -331,5 +331,5 @@ def deny_secret_access(project_id, req_id):
                 )
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update access. Try again.", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="requests"))

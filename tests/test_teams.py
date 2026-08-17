@@ -184,7 +184,7 @@ class TestTeams:
         conn.rollback.assert_called()
         with self.client.session_transaction() as s:
             flashes = s.get('_flashes') or []
-        assert any('row-level security' in msg for _cat, msg in flashes)
+        assert any('Could not update team membership. Try again.' in msg for _cat, msg in flashes)
 
     def test_tm_insert_policy_forbids_self_join(self):
         """RBAC bindings write policy must require can_manage_rbac — no self-join escape hatch."""

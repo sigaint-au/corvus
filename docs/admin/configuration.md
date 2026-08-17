@@ -26,7 +26,7 @@ All environment variables and server settings for Sigaint Secret Server.
 | `GLOBAL_ADMIN_EMAIL` | — | Promote this email to global admin on first login |
 | `BOOTSTRAP_ADMIN_EMAIL` | — | Same as `GLOBAL_ADMIN_EMAIL` if unset |
 | `ALLOW_INSECURE_DEFAULTS` | `0` | `1` only for local dev defaults |
-| `COOKIE_SECURE` | `0` | `1` = Secure session cookie + HSTS |
+| `COOKIE_SECURE` | on in production | `0` disables; off when `FLASK_ENV=development` or `ALLOW_INSECURE_DEFAULTS` |
 | `CLIPBOARD_CLEAR_SECONDS` | `30` | UI clipboard auto-clear; `0` disables |
 | `REVEAL_AUTO_HIDE_SECONDS` | `30` | Auto-hide revealed values; `0` disables |
 | `REVEAL_ACCESS_GRANT_MINUTES` | `15` | Default approved-reveal grant duration (minutes) |

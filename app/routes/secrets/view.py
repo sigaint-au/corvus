@@ -25,6 +25,8 @@ from secret_svc.secret_kinds import (
 from secret_svc.secret_ops import (
     _parse_expires_at,
     compose_secret_value,
+    fetch_secret_enc,
+    fetch_secret_version_enc,
 )
 from .helpers import (
     _render_reveal_access_panel,
@@ -57,7 +59,7 @@ def reveal_secret(project_id, secret_id):
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, key, value_enc, note, kind, expires_at, crypto_provider
+            SELECT id, key, note, kind, expires_at, crypto_provider
             FROM api.secrets
             WHERE id = %s AND project_id = %s AND deleted_at IS NULL
             """,
@@ -91,6 +93,19 @@ def reveal_secret(project_id, secret_id):
                 request_row=access_row,
                 cell=cell,
             )
+        enc = fetch_secret_enc(cur, secret_id)
+        if not enc:
+            return render_template(
+                "partials/reveal_access.html",
+                project_id=project_id,
+                secret_id=secret_id,
+                secret_key=row["key"],
+                state="denied",
+                cell=cell,
+            ), 403
+        row = dict(row)
+        row["value_enc"] = enc["value_enc"]
+        row["crypto_provider"] = enc.get("crypto_provider") or row.get("crypto_provider")
         cur.execute(
             "SELECT api.can_access_secret(%s, 'write') AS w",
             (str(secret_id),),
@@ -186,7 +201,7 @@ def secret_view(project_id, secret_id):
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
+            SELECT s.id, s.key, s.note, s.kind, s.expires_at,
                    s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                    s.requires_approval, s.access_mode, s.created_at, s.updated_at,
                    s.last_accessed_at, s.last_accessed_by, s.crypto_provider,
@@ -211,18 +226,11 @@ def secret_view(project_id, secret_id):
                 row["last_accessed_by_email"] = user_email(
                     acur, str(row["last_accessed_by"])
                 )
-        value_enc = row["value_enc"]
+        value_enc = None
         crypto_provider = row.get("crypto_provider") or "master"
         is_version = False
         if version_id:
-            cur.execute(
-                """
-                SELECT value_enc, crypto_provider FROM api.secret_versions
-                WHERE id = %s::uuid AND secret_id = %s::uuid
-                """,
-                (version_id, str(secret_id)),
-            )
-            ver = cur.fetchone()
+            ver = fetch_secret_version_enc(cur, version_id, secret_id)
             if not ver:
                 return "Not found", 404
             value_enc = ver["value_enc"]
@@ -330,13 +338,18 @@ def secret_view(project_id, secret_id):
             row_view["access_mode"] = access_mode
             if not value:
                 flash("Value is required", "error")
+                enc = fetch_secret_enc(cur, secret_id) or {}
                 body, code = _render_secret_view(
                     project_id=project_id,
                     secret_id=secret_id,
                     row=row_view,
                     plaintext=crypto.decrypt_for_project(
-                        project_id, row["value_enc"], row.get("crypto_provider") or "master"
-                    ),
+                        project_id,
+                        enc.get("value_enc") or "",
+                        enc.get("crypto_provider") or "master",
+                    )
+                    if enc.get("value_enc")
+                    else "",
                     kind=kind,
                     can_write=True,
                     status=400,
@@ -347,7 +360,7 @@ def secret_view(project_id, secret_id):
             try:
                 expires_at = _parse_expires_at(request.form, allow_clear=True)
             except (ValueError, TypeError) as e:
-                flash(str(e), "error")
+                flash("Could not load or save this secret. Try again.", "error")
                 body, code = _render_secret_view(
                     project_id=project_id,
                     secret_id=secret_id,
@@ -446,11 +459,17 @@ def secret_view(project_id, secret_id):
             )
             return body, code
 
+        if value_enc is None:
+            enc = fetch_secret_enc(cur, secret_id)
+            if not enc:
+                return "Not found", 404
+            value_enc = enc["value_enc"]
+            crypto_provider = enc.get("crypto_provider") or "master"
         try:
             plaintext = crypto.decrypt_for_project(project_id, value_enc, crypto_provider)
         except ValueError as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not load or save this secret. Try again.", "error")
             body, code = _render_secret_view(
                 project_id=project_id,
                 secret_id=secret_id,

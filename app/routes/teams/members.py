@@ -85,7 +85,7 @@ def team_access_binding_create(team_id):
             flash("Binding created", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update team membership. Try again.", "error")
     return redirect(access_url)
 
 
@@ -119,7 +119,7 @@ def team_access_binding_delete(team_id, binding_id):
                 flash("Binding not found or not permitted", "error")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update team membership. Try again.", "error")
     return redirect(access_url)
 
 
@@ -189,7 +189,7 @@ def add_team_binding(team_id):
             flash(f"Bound {email} as {role}", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update team membership. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
@@ -238,7 +238,7 @@ def remove_team_binding(team_id, user_id):
             flash("Member removed", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update team membership. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
@@ -257,7 +257,7 @@ def transfer_team_ownership(team_id):
     """
     email = (request.form.get("email") or "").strip().lower()
     if not email:
-        flash("Email required", "error")
+        flash("Enter an email address.", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
@@ -297,5 +297,5 @@ def transfer_team_ownership(team_id):
             flash(f"Ownership transferred to {email}", "ok")
         except Exception as e:
             conn.rollback()
-            flash(str(e), "error")
+            flash("Could not update team membership. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))

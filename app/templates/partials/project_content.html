@@ -1,0 +1,9 @@
+{% if active_tab == 'secrets' %}{% include "partials/project_secrets.html" %}
+{% elif active_tab == 'import' %}{% include "partials/project_import.html" %}
+{% elif active_tab == 'access' and can_admin %}{% include "partials/project_access.html" %}
+{% elif active_tab == 'requests' %}{% include "partials/project_requests.html" %}
+{% elif active_tab == 'audit' %}{% include "partials/project_audit.html" %}
+{% elif active_tab == 'tokens' %}{% include "partials/project_tokens.html" %}
+{% elif active_tab == 'integrations' %}{% include "partials/project_integrations.html" %}
+{% elif active_tab == 'settings' and can_settings %}{% include "partials/project_settings.html" %}
+{% endif %}

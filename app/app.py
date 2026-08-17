@@ -38,7 +38,7 @@ def create_app():
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
+        SESSION_COOKIE_SECURE=config.session_cookie_secure(),
         MAX_CONTENT_LENGTH=config.MAX_CONTENT_LENGTH,
     )
 
@@ -113,7 +113,7 @@ def create_app():
             "base-uri 'none'; "
             "frame-ancestors 'none'"
         )
-        if os.environ.get("COOKIE_SECURE") == "1":
+        if config.session_cookie_secure():
             resp.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"
             )

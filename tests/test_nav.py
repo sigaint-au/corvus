@@ -140,7 +140,7 @@ class TestNav:
         assert b'Delete forever' in r.data
         assert b'Permanently delete' in r.data
         assert b'This cannot be undone' in r.data
-        assert b'confirm(' in r.data
+        assert b'hx-confirm' in r.data
 
     def test_restore_secret(self):
         conn, cur = _conn()
@@ -149,6 +149,19 @@ class TestNav:
             r = self.client.post(f'/trash/secrets/{uuid4()}/restore', follow_redirects=False)
         assert r.status_code == 302
         assert '/trash' in r.location
+
+    def test_trash_htmx_returns_results_partial(self):
+        tid = uuid4()
+        conn, _ = _conn(fetchone={'id': tid, 'name': 'Ops'}, fetchall=[])
+        with self.client.session_transaction() as s:
+            s['team_id'] = str(tid)
+        with patch.object(db, 'as_user', return_value=conn), patch.object(
+            nav, 'ensure_active_team', return_value=str(tid)
+        ):
+            r = self.client.get('/trash?q=x', headers={'HX-Request': 'true'})
+        assert r.status_code == 200
+        assert b'trash-results' in r.data
+        assert b'No trash items match' in r.data
 
     def test_restore_secret_denied(self):
         conn, _ = _conn(fetchone=None)
