@@ -9,7 +9,7 @@ from flask import flash, redirect, render_template, request, session, url_for
 from auth import authz
 from core import config, settings_svc
 from core import db
-from ui import nav
+from ui import nav, paging
 from crypto import sha256_hex
 from secret_svc.secret_kinds import annotate_token_expiry
 
@@ -70,33 +70,60 @@ def register(app):
 def machines_list():
     """List machine tokens for all projects under the session team.
 
-    Returns:
-        Rendered machines list template for the active team.
+    Supports search (``q``) and pagination (``page``). Renders the full page
+    for browser loads and the results partial for HTMX swaps.
 
     Example:
-        GET /machines
+        GET /machines?q=prod&page=2
     """
     tid = nav.ensure_active_team(session["user_id"])
+    q = paging.list_state_q()
+    page = paging.page_arg()
     team, tokens = None, []
+    machines_pager = None
     if tid:
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
             team = cur.fetchone()
             if team:
+                where = "p.team_id = %s"
+                params: list = [tid]
+                if q:
+                    like = f"%{q}%"
+                    where += (
+                        " AND (mt.name ILIKE %s OR p.name ILIKE %s OR mt.token_prefix ILIKE %s)"
+                    )
+                    params.extend([like, like, like])
                 cur.execute(
-                    """
+                    f"""
+                    SELECT count(*) AS n
+                      FROM api.machine_tokens mt
+                      JOIN api.projects p ON p.id = mt.project_id
+                     WHERE {where}
+                    """,
+                    params,
+                )
+                total = int((cur.fetchone() or {}).get("n") or 0)
+                machines_pager = paging.page_window(total, page)
+                machines_pager.update(endpoint="machines_list", q=q or None)
+                cur.execute(
+                    f"""
                     SELECT mt.id, mt.name, mt.token_prefix, mt.role,
                            mt.created_at, mt.expires_at, mt.last_used_at,
                            p.id AS project_id, p.name AS project_name
-                    FROM api.machine_tokens mt
-                    JOIN api.projects p ON p.id = mt.project_id
-                    WHERE p.team_id = %s
-                    ORDER BY p.name, mt.name
+                      FROM api.machine_tokens mt
+                      JOIN api.projects p ON p.id = mt.project_id
+                     WHERE {where}
+                     ORDER BY p.name, mt.name
+                     LIMIT %s OFFSET %s
                     """,
-                    (tid,),
+                    (*params, machines_pager["limit"], machines_pager["offset"]),
                 )
                 tokens = annotate_token_expiry(cur.fetchall())
-    return render_template("machines.html", team=team, tokens=tokens)
+    template = "partials/machines_results.html" if authz.htmx() else "machines.html"
+    return render_template(
+        template, team=team, tokens=tokens, machines_pager=machines_pager, q=q
+    )
 
 
 @authz.login_required

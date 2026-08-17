@@ -90,6 +90,38 @@ class TestNav:
         assert b'eso' in r.data
         assert b'Machine accounts' in r.data
 
+    def test_machines_pagination(self):
+        """Pager renders when there is more than one page of machine accounts."""
+        tokens = [
+            {"id": str(uuid4()), "name": f"tok{i}", "token_prefix": "ss_ab",
+             "role": "service-reveal", "created_at": "2026-01-01",
+             "expires_at": None, "last_used_at": None,
+             "project_id": str(uuid4()), "project_name": "api"}
+            for i in range(30)
+        ]
+        conn, cur = _conn(fetchall=tokens)
+        cur.fetchone.side_effect = [
+            {"id": self.tid, "name": "Ops"},
+            {"n": len(tokens)},
+        ]
+        with patch.object(db, 'as_user', return_value=conn), \
+             patch.object(nav, 'ensure_active_team', return_value=str(self.tid)):
+            r = self.client.get('/machines')
+        assert r.status_code == 200
+        assert b'Pagination' in r.data
+        assert b'Showing 1' in r.data
+        assert b'Machine accounts' in r.data
+
+    def test_machines_search_input(self):
+        """Search box reflects the q parameter (filters are applied in SQL)."""
+        conn, _ = _conn(fetchone={'id': self.tid, 'name': 'Ops'}, fetchall=[])
+        with patch.object(db, 'as_user', return_value=conn), \
+             patch.object(nav, 'ensure_active_team', return_value=str(self.tid)):
+            r = self.client.get('/machines?q=prod')
+        assert r.status_code == 200
+        assert b'value="prod"' in r.data
+        assert b'No machine accounts match' in r.data
+
     def test_trash_empty_no_team(self):
         conn, _ = _conn(fetchall=[])
         with patch.object(db, 'as_user', return_value=conn):
