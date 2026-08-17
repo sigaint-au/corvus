@@ -1135,8 +1135,23 @@
         grid-template-columns: 1fr;
         width: min(100% - 2rem, 22rem);
         justify-content: center;
+        padding-bottom: 5rem;
       }
-      .login-note { max-width: none; }
+      .login-note {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-width: none;
+        padding: .6rem 1rem;
+        background: #fff;
+        border-top: 1px solid var(--border);
+        z-index: 10;
+        font-size: .82rem;
+        line-height: 1.4;
+      }
+      .login-note-text { margin: 0; }
+      .login-note-link { margin-top: .25rem; }
     }
     .auth-card form {
       display: flex;
@@ -1223,6 +1238,40 @@
       color: var(--muted-foreground);
       font-size: .9em;
     }
+    /* Modern empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: .4rem;
+      padding: 2.5rem 1rem;
+      margin: .5rem 0;
+    }
+    .empty-state-art {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(160deg, var(--border), rgba(0,0,0,.02));
+      color: var(--muted-foreground);
+      margin-bottom: .55rem;
+    }
+    .empty-state-title {
+      margin: 0;
+      font-weight: 650;
+      font-size: 1.04rem;
+      color: var(--foreground);
+    }
+    .empty-state-text {
+      margin: 0;
+      max-width: 30rem;
+      color: var(--muted-foreground);
+      font-size: .9rem;
+      line-height: 1.5;
+    }
+    .empty-state-action { margin: .85rem 0 0; }
     /* Error pages */
     .err-page {
       margin: 0;
