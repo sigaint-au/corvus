@@ -2,45 +2,45 @@
 
 from __future__ import annotations
 
-from .teams import (
-    teams,
-    create_team,
-    team_detail,
-    update_team_settings,
-    delete_team,
-)
-from .members import (
-    team_access_binding_create,
-    team_access_binding_delete,
-    add_team_binding,
-    remove_team_binding,
-    transfer_team_ownership,
-)
-from .invites import (
-    create_team_invite,
-    revoke_team_invite,
-    redeem_invite,
-    approve_join_request,
-    reject_join_request,
-)
 from .dir_maps import (
     add_team_ldap_map,
-    delete_team_ldap_map,
     add_team_oidc_map,
+    delete_team_ldap_map,
     delete_team_oidc_map,
+)
+from .groups import (
+    add_group_member,
+    create_team_group,
+    delete_team_group,
+    remove_group_member,
+    team_group_detail,
+    update_team_group,
+)
+from .invites import (
+    approve_join_request,
+    create_team_invite,
+    redeem_invite,
+    reject_join_request,
+    revoke_team_invite,
+)
+from .members import (
+    add_team_binding,
+    remove_team_binding,
+    team_access_binding_create,
+    team_access_binding_delete,
+    transfer_team_ownership,
 )
 from .projects import (
     create_project,
     delete_project_from_team,
     new_project_wizard,
 )
-from .groups import (
-    team_group_detail,
-    create_team_group,
-    update_team_group,
-    delete_team_group,
-    add_group_member,
-    remove_group_member,
+from .teams import (
+    create_team,
+    delete_team,
+    team_detail,
+    teams,
+    update_team_settings,
 )
 
 

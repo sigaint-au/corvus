@@ -4,17 +4,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import pytest
-
 import app as store
-from auth import authz
-from core import config
-from core import db
+from auth import authz, lockout, user_sessions
+from core import db, settings_svc
 from integrations import ldap_auth
-from auth import lockout
-from core import settings_svc
-from auth import user_sessions
-
 from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True

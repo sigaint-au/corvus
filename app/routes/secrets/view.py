@@ -10,13 +10,13 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
-from auth import authz
-from core import config
 import crypto
-from core import db
-from ui import pins
+from auth import authz
+from core import config, db
 from lib.users import user_email
+from secret_svc.queries import get_secret_brief, get_secret_detail
 from secret_svc.secret_kinds import (
     STRUCTURED_VIEW_KINDS,
     as_utc,
@@ -28,6 +28,8 @@ from secret_svc.secret_ops import (
     fetch_secret_enc,
     fetch_secret_version_enc,
 )
+from ui import pins
+
 from .helpers import (
     _render_reveal_access_panel,
     _render_secret_view,
@@ -57,15 +59,7 @@ def reveal_secret(project_id, secret_id):
     """
     cell = (request.args.get("cell") or "").strip() or None
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, key, note, kind, expires_at, crypto_provider
-            FROM api.secrets
-            WHERE id = %s AND project_id = %s AND deleted_at IS NULL
-            """,
-            (str(secret_id), str(project_id)),
-        )
-        row = cur.fetchone()
+        row = get_secret_brief(cur, secret_id, project_id)
         if not row:
             return "Not found", 404
         cur.execute(
@@ -199,23 +193,7 @@ def secret_view(project_id, secret_id):
     if active_tab not in ("secret", "meta", "access"):
         active_tab = "secret"
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT s.id, s.key, s.note, s.kind, s.expires_at,
-                   s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
-                   s.requires_approval, s.access_mode, s.created_at, s.updated_at,
-                   s.last_accessed_at, s.last_accessed_by, s.crypto_provider,
-                   p.name AS project_name, p.require_reveal_approval,
-                   p.team_id, t.name AS team_name,
-                   api.is_team_member(p.team_id) AS is_team_member
-            FROM api.secrets s
-            JOIN api.projects p ON p.id = s.project_id
-            LEFT JOIN api.teams t ON t.id = p.team_id
-            WHERE s.id = %s AND s.project_id = %s AND s.deleted_at IS NULL
-            """,
-            (str(secret_id), str(project_id)),
-        )
-        row = cur.fetchone()
+        row = get_secret_detail(cur, secret_id, project_id)
         if not row:
             return "Not found", 404
         row = dict(row)
@@ -359,7 +337,7 @@ def secret_view(project_id, secret_id):
                 return body, code
             try:
                 expires_at = _parse_expires_at(request.form, allow_clear=True)
-            except (ValueError, TypeError) as e:
+            except (ValueError, TypeError):
                 flash("Could not load or save this secret. Try again.", "error")
                 body, code = _render_secret_view(
                     project_id=project_id,
@@ -467,7 +445,7 @@ def secret_view(project_id, secret_id):
             crypto_provider = enc.get("crypto_provider") or "master"
         try:
             plaintext = crypto.decrypt_for_project(project_id, value_enc, crypto_provider)
-        except ValueError as e:
+        except ValueError:
             conn.rollback()
             flash("Could not load or save this secret. Try again.", "error")
             body, code = _render_secret_view(

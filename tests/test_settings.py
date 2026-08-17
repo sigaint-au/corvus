@@ -1,19 +1,13 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
-import pytest
-
 import app as store
-from auth import authz
-from core import cache
-from core import config
 import crypto
-from core import db
-from core import settings_svc
-
+from auth import authz
+from core import cache, config, db, settings_svc
 from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True

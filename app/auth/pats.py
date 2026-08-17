@@ -123,7 +123,7 @@ def create(user_id: str, name: str, expires_days: int | None = None) -> str:
         try:
             days = int(expires_days)
         except (TypeError, ValueError):
-            raise ValueError("Expires days must be a positive integer")
+            raise ValueError("Expires days must be a positive integer") from None
         if days < 1 or days > max_days:
             raise ValueError(f"Expires days must be between 1 and {max_days}")
         expires_at = datetime.now(timezone.utc) + timedelta(days=days)

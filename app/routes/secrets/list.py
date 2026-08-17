@@ -12,13 +12,12 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
 from auth import authz
-from core import config
-from core import db
-from ui import nav
-from ui import paging
+from core import config, db
 from secret_svc.secret_ops import _load_shared_secrets_page, _load_team_secrets_page
+from ui import nav, paging
 
 log = logging.getLogger(__name__)
 
@@ -232,7 +231,7 @@ def restore_secret(secret_id):
                     )
                     flash("Secret restored", "ok")
             conn.commit()
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update the trash. Try again.", "error")
     q = request.args.get("q") or ""

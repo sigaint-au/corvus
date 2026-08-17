@@ -7,11 +7,11 @@ from flask import (
     request,
     session,
 )
+
 from auth import authz
-from core import config
-from core import db
-from ui import paging
+from core import config, db
 from secret_svc.secret_kinds import expires_status, secret_due_status
+from ui import paging
 
 
 @authz.login_required

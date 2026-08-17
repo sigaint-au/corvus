@@ -10,11 +10,10 @@ import os
 from flask import Flask, jsonify, render_template, request
 
 from auth import authz
-from core import config
-from core import db
-from ui.nav import inject_nav
+from core import config, db
 from core.schema import ensure_schema
 from routes import register_all
+from ui.nav import inject_nav
 
 log = logging.getLogger(__name__)
 
@@ -186,6 +185,7 @@ app = create_app()
 
 # ── CLI commands ───────────────────────────────────────────────────────
 import click  # noqa: E402
+
 from core import settings_svc  # noqa: E402
 
 

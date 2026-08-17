@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+
 from flask import (
     flash,
     redirect,
@@ -11,8 +12,9 @@ from flask import (
     session,
     url_for,
 )
-from auth import authz
-from auth import totp_svc
+
+from auth import authz, totp_svc
+
 log = logging.getLogger(__name__)
 
 
@@ -77,7 +79,7 @@ def totp_setup_confirm():
         return redirect(url_for("totp_setup"))
     try:
         recovery = totp_svc.enable(uid, secret)
-    except Exception as e:
+    except Exception:
         log.exception("totp enable failed")
         flash("Could not update two-factor authentication. Try again.", "error")
         return redirect(url_for("totp_setup"))

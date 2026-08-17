@@ -9,16 +9,17 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
-from auth import authz
-from core import config
 import crypto
-from core import db
+from auth import authz
+from core import config, db
 from secret_svc.secret_kinds import (
     STRUCTURED_VIEW_KINDS,
     normalize_kind,
 )
 from secret_svc.secret_ops import fetch_secret_version_enc
+
 from .helpers import (
     _render_reveal_access_panel,
     _reveal_access_state,

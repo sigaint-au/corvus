@@ -9,8 +9,7 @@ from flask import flash, redirect, render_template, request, session, url_for
 
 import audit
 from auth import authz
-from core import config
-from core import db
+from core import config, db
 from lib.users import lookup_user_id
 from lib.validate import is_uuid
 
@@ -200,7 +199,7 @@ def rbac_roles_create():
             if not resources or not verbs:
                 raise ValueError("Select at least one resource and one verb")
             rules = [(resources, verbs)]
-    except ValueError as e:
+    except ValueError:
         flash("Could not update roles or bindings. Try again.", "error")
         return redirect(url_for("rbac_roles", tab="create"))
 
@@ -244,7 +243,7 @@ def rbac_roles_create():
             )
             conn.commit()
             flash(f"Role “{name}” created", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update roles or bindings. Try again.", "error")
             return redirect(url_for("rbac_roles", tab="create"))
@@ -276,7 +275,7 @@ def rbac_roles_delete(role_id):
             else:
                 conn.rollback()
                 flash("Cannot delete built-in roles or permission denied", "error")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update roles or bindings. Try again.", "error")
     return redirect(
@@ -705,7 +704,7 @@ def rbac_bindings_create():
                 )
                 conn.commit()
                 flash("Binding created", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update roles or bindings. Try again.", "error")
     return redirect(
@@ -747,7 +746,7 @@ def rbac_bindings_delete(binding_id):
             else:
                 conn.rollback()
                 flash("Permission denied or binding not found", "error")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update roles or bindings. Try again.", "error")
     return redirect(url_for("rbac_bindings", scope=scope, scope_id=scope_id))

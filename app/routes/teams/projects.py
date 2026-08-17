@@ -10,9 +10,10 @@ from flask import (
     session,
     url_for,
 )
+
+import audit
 from auth import authz
 from core import db
-import audit
 
 
 @authz.login_required
@@ -90,7 +91,7 @@ def create_project(team_id):
                 return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
             pid = row["id"]
             conn.commit()
-        except Exception as e:
+        except Exception:
             flash("Could not update the project. Try again.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
     if encryption in ("byok", "project", "hsm"):

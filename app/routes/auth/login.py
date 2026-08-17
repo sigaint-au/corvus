@@ -8,6 +8,7 @@ from datetime import (
     datetime,
     timezone,
 )
+
 from flask import (
     flash,
     redirect,
@@ -16,22 +17,18 @@ from flask import (
     session,
     url_for,
 )
-from auth import authz
-from core import db
-from integrations import ldap_auth
-from auth import lockout
-from integrations import mailer
-from integrations import oidc_auth
-from auth import passwords
-from core import settings_svc
-from auth import totp_svc
-from auth import user_sessions
+
+from auth import authz, lockout, passwords, totp_svc, user_sessions
+from core import db, settings_svc
+from integrations import ldap_auth, mailer, oidc_auth
+
 from .helpers import (
     _establish_session,
     _finish_login_redirect,
     _login_page,
     _post_password_login,
 )
+
 log = logging.getLogger(__name__)
 
 
@@ -69,7 +66,7 @@ def login():
                         ldap_user.get("name") or "",
                         ldap_user.get("groups") or [],
                     )
-                except Exception as e:
+                except Exception:
                     log.exception("LDAP user sync failed")
                     flash("LDAP sign-in succeeded, but account setup failed. Try again.", "error")
                     return _login_page(), 500
@@ -110,7 +107,7 @@ def login_oidc():
             redirect_uri=redirect_uri, state=state, nonce=nonce
         )
         return redirect(url)
-    except Exception as e:
+    except Exception:
         log.exception("OIDC start failed")
         flash("Could not start SSO sign-in. Try again.", "error")
         return redirect(url_for("login"))
@@ -156,7 +153,7 @@ def login_oidc_callback():
         user = oidc_auth.sync_oidc_user(
             ident["email"], ident["name"], ident.get("groups") or []
         )
-    except Exception as e:
+    except Exception:
         log.exception("OIDC callback failed")
         flash("SSO sign-in failed. Try again.", "error")
         return redirect(url_for("login"))

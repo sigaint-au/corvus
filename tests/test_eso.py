@@ -1,17 +1,16 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 
 import app as store
-from core import config, db, settings_svc
 import crypto
 from auth import pats
+from core import config, db, settings_svc
 from routes import eso as eso_routes
-
 from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True
@@ -43,10 +42,10 @@ class TestESO:
         assert body['note'] == 'n'
         assert body['kind'] == 'plain'
         conn.commit.assert_called()
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'audit_secret' in sql
         audit_params = [c.args[1] for c in cur.execute.call_args_list if c.args and 'audit_secret' in str(c.args[0])]
-        assert any(('revealed' in p for p in audit_params))
+        assert any('revealed' in p for p in audit_params)
 
     def test_get_secret_not_found(self):
         fo = [{'ok': True}, {'role': 'service-reveal'}, None]
@@ -92,11 +91,11 @@ class TestESO:
         assert r.status_code == 200
         assert r.get_json()['secrets'] == {'A': 'v1'}
         conn.commit.assert_called()
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'audit_secret' in sql
         audit_params = [c.args[1] for c in cur.execute.call_args_list if c.args and 'audit_secret' in str(c.args[0])]
-        assert any(('exported' in p for p in audit_params))
-        assert any((any((isinstance(x, str) and 'machine/values' in x for x in p)) for p in audit_params))
+        assert any('exported' in p for p in audit_params)
+        assert any(any(isinstance(x, str) and 'machine/values' in x for x in p) for p in audit_params)
 
     def test_list_meta_ok(self):
         sid = uuid4()
@@ -111,12 +110,12 @@ class TestESO:
         assert items[0]['key'] == 'API_KEY'
         assert items[0]['id'] == str(sid)
         assert 'value' not in items[0]
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'machine_list_meta' in sql
         assert 'audit_secret' in sql
         audit_params = [c.args[1] for c in cur.execute.call_args_list if c.args and 'audit_secret' in str(c.args[0])]
-        assert any(('exported' in p for p in audit_params))
-        assert any((any((isinstance(x, str) and 'machine/meta' in x for x in p)) for p in audit_params))
+        assert any('exported' in p for p in audit_params)
+        assert any(any(isinstance(x, str) and 'machine/meta' in x for x in p) for p in audit_params)
         conn.commit.assert_called()
 
     def test_bearer_hash_none(self):
@@ -146,7 +145,7 @@ class TestESO:
         assert body['key'] == 'K'
         assert body['value'] == 'secret'
         conn.commit.assert_called()
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'audit_secret' in sql
         assert 'machine_upsert' in sql
 
@@ -160,7 +159,7 @@ class TestESO:
         assert r.status_code == 200
         assert r.get_json()['key'] == 'API_KEY'
         assert r.get_json()['value'] == 'new'
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'machine_upsert' in sql
 
     def test_patch_secret_not_found(self):
@@ -184,11 +183,11 @@ class TestESO:
         assert body['ok']
         assert body['key'] == 'K'
         assert body['id'] == str(sid)
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'machine_delete' in sql
         assert 'audit_secret' in sql
         audit_params = [c.args[1] for c in cur.execute.call_args_list if c.args and 'audit_secret' in str(c.args[0])]
-        assert any(('deleted' in p for p in audit_params))
+        assert any('deleted' in p for p in audit_params)
         conn.commit.assert_called()
 
     def test_delete_read_forbidden(self):
@@ -447,9 +446,11 @@ class TestESO:
         assert store.app.config.get('MAX_CONTENT_LENGTH') == config.MAX_CONTENT_LENGTH
 
     def test_parse_expires_at_capped(self):
-        from secret_svc.secret_ops import _parse_expires_at
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
+
         from werkzeug.datastructures import MultiDict
+
+        from secret_svc.secret_ops import _parse_expires_at
         far = (datetime.now(timezone.utc) + timedelta(days=config.MAX_EXPIRY_DAYS + 30)).date().isoformat()
         with pytest.raises(ValueError):
             _parse_expires_at(MultiDict({'expires_at': far}))

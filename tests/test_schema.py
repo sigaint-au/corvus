@@ -1,16 +1,14 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 import app as store
-from core import config
 from core import db
 from core import migrations as migrations_mod
 from core import schema as schema_mod
-
 from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True
@@ -27,7 +25,7 @@ class TestEnsureSchema:
         conn, cur = _conn()
         with patch.object(schema_mod, 'DATABASE_ADMIN_URL', 'postgres://admin@x/db'), patch.object(db, 'connect_admin', return_value=conn), patch.object(schema_mod, 'bootstrap_admin_email', return_value=''), patch.object(migrations_mod, 'apply_pending'):
             schema_mod.ensure_schema()
-        sqls = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list if c.args))
+        sqls = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
         assert 'pg_advisory_lock' in sqls
         assert 'pg_advisory_unlock' in sqls
 
@@ -39,7 +37,7 @@ class TestEnsureSchema:
              patch.object(migrations_mod, 'apply_pending') as apply_pending:
             schema_mod.ensure_schema()
         apply_pending.assert_called_once()
-        sqls = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list if c.args))
+        sqls = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
         assert 'is_global_admin = true' in sqls
         assert 'admin@ex.com' in str(cur.execute.call_args_list)
 

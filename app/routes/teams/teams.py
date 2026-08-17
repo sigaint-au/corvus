@@ -12,13 +12,11 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
-from auth import authz
-from core import config
-from core import db
+from auth import authz, rbac_sync
+from core import config, db, settings_svc
 from integrations import ldap_auth
-from auth import rbac_sync
-from core import settings_svc
 from ui import paging
 
 log = logging.getLogger(__name__)
@@ -442,7 +440,7 @@ def update_team_settings(team_id):
                 )
                 conn.commit()
                 flash("Team settings saved", "ok")
-        except Exception as e:
+        except Exception:
             flash("Could not update the team. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
@@ -473,7 +471,7 @@ def delete_team(team_id):
                 conn.rollback()
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             conn.commit()
-        except Exception as e:
+        except Exception:
             conn.rollback()
             log.exception("delete_team failed")
             flash("Could not update the team. Try again.", "error")

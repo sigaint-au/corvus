@@ -3,25 +3,29 @@
 from __future__ import annotations
 
 import logging
+
 from flask import (
     jsonify,
     request,
 )
-from core import config
+
 import crypto
-from core import db
+from core import config, db
+from secret_svc.commands import delete_secret_command
 from secret_svc.secret_ops import _upsert_secret, fetch_secret_enc
+
 from .helpers import (
     _audit,
     _machine_actor,
     _meta_item,
-    _require_auth,
     _parse_expires_from_body,
     _pat_can_write,
+    _require_auth,
     _require_machine_write,
     _resolve_project_ref,
     _upsert_body,
 )
+
 log = logging.getLogger(__name__)
 
 
@@ -340,29 +344,18 @@ def eso_delete_secret(project_ref, key):
             return jsonify({"error": "forbidden"}), 403
         cur.execute(
             """
-            SELECT id, key FROM api.secrets
+            SELECT id FROM api.secrets
              WHERE project_id = %s AND key = %s AND deleted_at IS NULL
             """,
             (pid, key),
         )
-        row = cur.fetchone()
-        if not row:
+        existing = cur.fetchone()
+        if not existing:
             return jsonify({"error": "not found"}), 404
-        cur.execute(
-            """
-            UPDATE api.secrets SET deleted_at = now()
-             WHERE id = %s AND project_id = %s AND deleted_at IS NULL
-            """,
-            (str(row["id"]), pid),
+        result = delete_secret_command(
+            cur, project_id=pid, secret_id=existing["id"], actor_email="machine"
         )
-        if cur.rowcount == 0:
+        if not result.ok:
             return jsonify({"error": "forbidden"}), 403
-        _audit(
-            cur,
-            project_id=pid,
-            action="deleted",
-            secret_key=row["key"],
-            secret_id=row["id"],
-        )
         conn.commit()
-    return jsonify({"ok": True, "id": str(row["id"]), "key": row["key"]}), 200
+    return jsonify({"ok": True, "id": result.secret_id, "key": key}), 200

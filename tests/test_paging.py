@@ -4,13 +4,11 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import pytest
-
 from core import config, db, settings_svc
-from ui import nav
-from ui import paging
 from routes.project_tokens import insert_token_scopes, parse_token_scope_lines
 from secret_svc.secret_ops import _load_team_secrets_page
+from ui import nav, paging
+
 
 def test_page_window_basic():
     w = paging.page_window(100, 2, per_page=25)

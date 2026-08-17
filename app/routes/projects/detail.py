@@ -10,12 +10,10 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
 from auth import authz
-from core import config
-from core import db
-from ui import nav
-from ui import paging
+from core import config, db
 from secret_svc.secret_kinds import (
     SOON_DAYS,
     annotate_token_expiry,
@@ -23,6 +21,7 @@ from secret_svc.secret_kinds import (
     secret_due_status,
 )
 from secret_svc.secret_ops import _load_secrets_page
+from ui import nav, paging
 
 
 @authz.login_required
@@ -638,7 +637,7 @@ def project_crypto_action(project_id):
             n = project_keys.adopt_project_key(
                 project_id, provider=provider, hsm_slot_id=hsm_slot
             )
-        except Exception as e:
+        except Exception:
             flash("Could not adopt the project key. Try again.", "error")
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")
@@ -670,7 +669,7 @@ def project_crypto_action(project_id):
             n = project_keys.migrate_project_key(
                 project_id, new_provider, target_slot_id=target_slot
             )
-        except Exception as e:
+        except Exception:
             flash("Could not migrate the project key. Try again.", "error")
             return redirect(
                 url_for("project_detail", project_id=project_id, tab="settings")

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from core import config
 import crypto
-from ui import paging
+from core import config
 from secret_svc.secret_kinds import expires_status, secret_due_status
+from ui import paging
 
 
 def fetch_secret_enc(cur, secret_id):

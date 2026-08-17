@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+
 from flask import (
     flash,
     redirect,
@@ -10,8 +11,9 @@ from flask import (
     session,
     url_for,
 )
-from auth import authz
-from auth import pats
+
+from auth import authz, pats
+
 log = logging.getLogger(__name__)
 
 
@@ -41,9 +43,9 @@ def create_personal_token():
         raw = pats.create(session["user_id"], name, expires_days=expires_days)
         session["new_pat"] = raw
         flash("Personal access token created — copy it now; it is shown once", "ok")
-    except ValueError as e:
+    except ValueError:
         flash("Could not update your token. Try again.", "error")
-    except Exception as e:
+    except Exception:
         log.exception("create PAT failed")
         flash("Could not update your token. Try again.", "error")
     return redirect(url_for("profile", tab="security"))

@@ -55,8 +55,13 @@ def ensure_project_key(project_id, provider: str = "local", hsm_slot_id=None) ->
                   (project_id, key_enc, key_provider, kms_key_ref, hsm_slot_id)
                 VALUES (%s, %s, %s, %s, %s)
                 """,
-                (str(project_id), key_enc, provider, kms_ref,
-                 str(hsm_slot_id) if hsm_slot_id is not None else None),
+                (
+                    str(project_id),
+                    key_enc,
+                    provider,
+                    kms_ref,
+                    str(hsm_slot_id) if hsm_slot_id is not None else None,
+                ),
             )
             created = True
     crypto.clear_project_key_cache()
@@ -165,8 +170,7 @@ def adopt_project_key(project_id, provider: str = "local", hsm_slot_id=None) -> 
             except Exception:
                 continue
             cur.execute(
-                "UPDATE api.secrets SET value_enc = %s, crypto_provider = 'project' "
-                "WHERE id = %s",
+                "UPDATE api.secrets SET value_enc = %s, crypto_provider = 'project' WHERE id = %s",
                 (new_enc, str(row["id"])),
             )
             re_encrypted += 1
@@ -233,7 +237,7 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
             raise RuntimeError("project key exists but its DEK could not be resolved")
         from crypto import hsm
 
-        new_enc, new_ref = hsm.wrap_dek_for_slot(slot_url, old_dek)
+        mw_enc, mw_ref = hsm.wrap_dek_for_slot(slot_url, old_dek)
         with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -241,7 +245,7 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
                 SET key_enc = %s, kms_key_ref = %s, hsm_slot_id = %s, updated_at = now()
                 WHERE project_id = %s
                 """,
-                (new_enc, new_ref, str(target_slot_id), str(project_id)),
+                (mw_enc, mw_ref, str(target_slot_id), str(project_id)),
             )
             conn.commit()
         crypto.clear_project_key_cache()
@@ -254,6 +258,7 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
     old_fernet = Fernet(old_dek)
 
     new_raw = crypto.generate_project_key()
+    new_ref: str | None = None
     if new_provider == "hsm":
         from crypto import hsm
 
@@ -315,15 +320,17 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
             SET key_enc = %s, key_provider = %s, kms_key_ref = %s, hsm_slot_id = %s, updated_at = now()
             WHERE project_id = %s
             """,
-            (new_enc, new_provider, new_ref,
-             str(target_slot_id) if target_slot_id is not None else None,
-             str(project_id)),
+            (
+                new_enc,
+                new_provider,
+                new_ref,
+                str(target_slot_id) if target_slot_id is not None else None,
+                str(project_id),
+            ),
         )
         conn.commit()
     crypto.clear_project_key_cache()
-    log.info(
-        "project key migrated to %s: %s row(s) re-encrypted", new_provider, re_encrypted
-    )
+    log.info("project key migrated to %s: %s row(s) re-encrypted", new_provider, re_encrypted)
     return re_encrypted
 
 
@@ -342,9 +349,7 @@ def rewrap_project_keys(old_master_key: str) -> int:
     old = crypto.fernet_for(old_master_key)
     re_wrapped = 0
     with db.connect_admin() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT project_id, key_enc, key_provider FROM private.project_crypto_keys"
-        )
+        cur.execute("SELECT project_id, key_enc, key_provider FROM private.project_crypto_keys")
         for row in cur.fetchall() or []:
             if (row.get("key_provider") or "local") != "local":
                 # HSM-wrapped DEKs don't depend on MASTER_KEY — nothing to do.
@@ -396,9 +401,7 @@ def rotate_hsm_kek(slot_id) -> int:
         )
         for row in cur.fetchall() or []:
             try:
-                raw = hsm.unwrap_dek_for_slot(
-                    slot_url, row["key_enc"], row.get("kms_key_ref")
-                )
+                raw = hsm.unwrap_dek_for_slot(slot_url, row["key_enc"], row.get("kms_key_ref"))
                 new_enc = hsm.wrap_dek_with_label(slot_url, raw, new_label)
             except Exception:
                 continue
@@ -449,7 +452,7 @@ def encryption_summary() -> dict:
     counts = {"managed": 0, "local": 0, "hsm": 0}
     projects = []
     for r in rows:
-        provider = (r.get("key_provider") or "managed")
+        provider = r.get("key_provider") or "managed"
         if provider not in ("local", "hsm"):
             provider = "managed"
         counts[provider] = counts.get(provider, 0) + 1

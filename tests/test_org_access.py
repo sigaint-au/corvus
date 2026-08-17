@@ -2,16 +2,13 @@
 from __future__ import annotations
 
 import re
-from unittest.mock import MagicMock, patch
-from uuid import uuid4
 from pathlib import Path
-
-import pytest
+from unittest.mock import MagicMock
+from uuid import uuid4
 
 import app as store
 import audit
 from core import config
-
 from tests.helpers import APP_ROOT, REPO_ROOT, migrations_src, routes_module_src
 
 store.app.config["TESTING"] = True
@@ -21,7 +18,6 @@ class TestOrgAccess:
     """Project members, invites, org audit schema (no live DB)."""
 
     def test_schema_has_invites_and_org_audit(self):
-        from pathlib import Path
         root = REPO_ROOT
         init = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE TABLE api.team_invites' in init
@@ -67,7 +63,6 @@ class TestOrgAccess:
         assert not hasattr(config, 'TEAM_ROLES')
 
     def test_secret_meta_schema(self):
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE TABLE api.secret_meta' in init
         assert 'last_accessed_at' in init
@@ -84,7 +79,6 @@ class TestOrgAccess:
 
     def test_machine_token_scope_schema(self):
         """Per-token key allow-list (exact + glob) is in schema and helpers."""
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         src = migrations_src()
         assert 'CREATE TABLE api.machine_token_scope' in init
@@ -98,7 +92,6 @@ class TestOrgAccess:
 
     def test_security_hardening_policies(self):
         """H1/M1/L1/L2/L5: projects_update, owner assignment, versions, ACL team, FORCE RLS."""
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         src = migrations_src()
         rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
@@ -117,7 +110,6 @@ class TestOrgAccess:
         assert 'FORCE ROW LEVEL SECURITY' in src
 
     def test_secret_acl_schema_and_config(self):
-        from pathlib import Path
         assert 'inherit' in config.ACCESS_MODES
         assert 'restricted' in config.ACCESS_MODES
         assert set(config.ACCESS_MODE_LABELS) == {'inherit', 'restricted'}
@@ -149,7 +141,6 @@ class TestOrgAccess:
 
     def test_can_access_secret_row_modes_in_sql(self):
         """rbac.sql defines can_access_secret_row with mode branches and k8s bindings."""
-        from pathlib import Path
         rbac = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         start = rbac.index('FUNCTION api.can_access_secret_row')
         body = rbac[start:start + 2500]
@@ -165,7 +156,6 @@ class TestOrgAccess:
     def test_effective_access_functions_defined(self):
         """Self-service (my access) and resource-level (effective access)
         helpers exist in rbac.sql with the grants they need."""
-        from pathlib import Path
         sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'FUNCTION api.my_access_rows()' in sql
         assert 'FUNCTION api.effective_access_rows(' in sql
@@ -214,7 +204,6 @@ class TestOrgAccess:
         WITH CHECK (not the implicit USING default) gated on write access, and
         SELECT must expose trash rows to writers. Regression for
         'new row violates row-level security policy for table secrets'."""
-        from pathlib import Path
         rbac = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         upd = rbac[rbac.index('CREATE POLICY secrets_update ON api.secrets'):]
         upd = upd[:upd.index(';')]
@@ -227,7 +216,6 @@ class TestOrgAccess:
         assert 'deleted_at IS NOT NULL' in delf
         src = migrations_src()
         assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in src
-        from pathlib import Path
         src = (APP_ROOT / 'routes' / 'project_io.py').read_text()
         assert 'fetch_project_reveal_enc_rows' in src
         bulk = src[src.index('def bulk_export'):]
@@ -235,7 +223,6 @@ class TestOrgAccess:
 
     def test_acl_management_routes_exist(self):
         """Secret ACL mode/grant routes registered and gated to admins."""
-        from pathlib import Path
         src = routes_module_src('secrets')
         assert 'def update_secret_access' in src
         assert 'def add_secret_access_binding' in src
@@ -245,7 +232,6 @@ class TestOrgAccess:
 
     def test_eso_pat_checks_acl_before_reveal(self):
         """ESO/PAT get-secret must check can_access_secret reveal before approval."""
-        from pathlib import Path
         src = (APP_ROOT / 'routes' / 'eso' / 'secrets.py').read_text()
         i_acl = src.index("can_access_secret(%s, 'reveal')")
         i_rev = src.index('can_reveal_secret(%s)')
@@ -255,7 +241,6 @@ class TestOrgAccess:
 
     def test_eso_pat_bulk_export_filters_reveal_acl(self):
         """PAT bulk list-with-values must filter by can_access_secret(reveal)."""
-        from pathlib import Path
         src = (APP_ROOT / 'routes' / 'eso' / 'secrets.py').read_text()
         start = src.index('def eso_list_secrets')
         body = src[start:start + 8000]
@@ -268,7 +253,6 @@ class TestOrgAccess:
         team_role column."""
         assert [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN][0] == 'team-owner'
         assert not hasattr(config, 'GROUP_TEAM_ROLES')
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         gstart = init.index('CREATE TABLE api.groups')
         gend = init.index('CREATE TABLE api.group_members')
@@ -295,7 +279,7 @@ class TestOrgAccess:
             if mode == 'restricted':
                 grants = grants or []
                 need_r = perm_rank[need]
-                return any((perm_rank.get(g, 0) >= need_r for g in grants))
+                return any(perm_rank.get(g, 0) >= need_r for g in grants)
             return False
         assert row_access(mode='inherit', need='read', can_read=True)
         assert row_access(mode='inherit', need='reveal', can_read=True)
@@ -310,7 +294,6 @@ class TestOrgAccess:
 
     def test_org_groups_rbac_schema(self):
         """Groups tables and group-aware RBAC helpers."""
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'CREATE TABLE api.groups' in init
         assert 'CREATE TABLE api.group_members' in init
@@ -340,6 +323,7 @@ class TestOrgAccess:
     def test_dir_sync_group_membership_maps(self):
         """Directory sync upserts/removes group_members for external_key matches."""
         from unittest.mock import MagicMock
+
         from integrations import dir_sync
         uid = str(uuid4())
         gid_match = str(uuid4())
@@ -348,7 +332,7 @@ class TestOrgAccess:
         cur.fetchall.return_value = [{'id': gid_match, 'external_key': 'cn=ops,ou=groups'}, {'id': gid_other, 'external_key': 'cn=other,ou=groups'}]
         cur.fetchone.return_value = None
         dir_sync.apply_group_membership_maps(cur, uid, ['cn=ops,ou=groups', 'cn=unrelated'], source='ldap')
-        executed = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
+        executed = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
         assert 'delete from api.group_members' in executed
         assert 'insert into api.group_members' in executed
         insert_calls = [c for c in cur.execute.call_args_list if 'INSERT INTO api.group_members' in str(c.args[0])]

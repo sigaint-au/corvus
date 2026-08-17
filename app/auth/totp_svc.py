@@ -12,13 +12,14 @@ import re
 import secrets
 import struct
 import time
+
 import qrcode
 import qrcode.image.svg
 
-from core.config import APP_NAME, SECRET_KEY
-from crypto import decrypt, encrypt
 from core import db
+from core.config import APP_NAME, SECRET_KEY
 from core.settings_svc import branding, get_settings, truthy
+from crypto import decrypt, encrypt
 
 log = logging.getLogger(__name__)
 

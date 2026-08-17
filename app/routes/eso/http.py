@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from flask import request
+
 from crypto import sha256_hex
 
 

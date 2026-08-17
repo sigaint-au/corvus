@@ -10,10 +10,10 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
-from auth import authz
+from auth import authz, rbac_sync
 from core import db
-from auth import rbac_sync
 from lib.users import lookup_user_id
 
 
@@ -122,7 +122,7 @@ def create_team_group(team_id):
                 "ok",
             )
             return redirect(_group_detail_url(team_id, gid))
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update the group. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
@@ -164,7 +164,7 @@ def update_team_group(team_id, group_id):
                 )
                 conn.commit()
                 flash("Group updated", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update the group. Try again.", "error")
     return redirect(_group_detail_url(team_id, group_id))
@@ -236,7 +236,7 @@ def add_group_member(team_id, group_id):
             )
             conn.commit()
             flash(f"Added {email}", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update the group. Try again.", "error")
     return redirect(_group_detail_url(team_id, group_id))

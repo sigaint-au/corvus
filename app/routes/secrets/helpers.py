@@ -8,9 +8,8 @@ from flask import (
     session,
     url_for,
 )
-from core import config
-from core import db
-from ui import paging
+
+from core import config, db
 from secret_svc.secret_kinds import (
     as_utc,
     parse_database_url,
@@ -19,6 +18,7 @@ from secret_svc.secret_kinds import (
     split_cert_and_key,
 )
 from secret_svc.secret_ops import _load_secrets_page
+from ui import paging
 
 
 def _secret_requires_approval(cur, secret_id) -> bool:

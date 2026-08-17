@@ -2,10 +2,10 @@
 import logging
 import ssl
 
-from core.config import DEFAULT_SETTINGS, LDAP_SETTING_KEYS
-from crypto import decrypt
 from core import db
+from core.config import DEFAULT_SETTINGS, LDAP_SETTING_KEYS
 from core.settings_svc import get_settings, truthy
+from crypto import decrypt
 
 log = logging.getLogger(__name__)
 

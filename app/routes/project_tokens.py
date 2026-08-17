@@ -7,11 +7,10 @@ from datetime import datetime, timedelta, timezone
 from flask import flash, redirect, render_template, request, session, url_for
 
 from auth import authz
-from core import config, settings_svc
-from core import db
-from ui import nav, paging
+from core import config, db, settings_svc
 from crypto import sha256_hex
 from secret_svc.secret_kinds import annotate_token_expiry
+from ui import nav, paging
 
 log = logging.getLogger(__name__)
 
@@ -226,7 +225,7 @@ def create_token(project_id):
             if scopes:
                 insert_token_scopes(cur, str(row["id"]), scopes)
             conn.commit()
-        except Exception as e:
+        except Exception:
             flash("Could not complete the request. Try again.", "error")
             return _token_redirect()
     session["new_token"] = raw  # shown once

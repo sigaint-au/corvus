@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+
 from flask import (
     flash,
     redirect,
@@ -11,15 +12,11 @@ from flask import (
     session,
     url_for,
 )
-from auth import authz
-from core import config
-from core import db
-from auth import passwords
-from auth import pats
-from ui import pins
-from ui import paging
-from auth import totp_svc
-from auth import user_sessions
+
+from auth import authz, passwords, pats, totp_svc, user_sessions
+from core import config, db
+from ui import paging, pins
+
 log = logging.getLogger(__name__)
 
 PROFILE_TABS = ("account", "security", "myaccess", "teams", "projects", "activity")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import psycopg
 from flask import (
     flash,
     redirect,
@@ -10,11 +11,10 @@ from flask import (
     session,
     url_for,
 )
-from auth import authz
-from core import db
-import psycopg
-from core import settings_svc
-from auth import totp_svc
+
+from auth import authz, totp_svc
+from core import db, settings_svc
+
 from .helpers import (
     _establish_session,
     _finish_login_redirect,
@@ -55,7 +55,7 @@ def register_page():
         except psycopg.errors.UniqueViolation:
             flash("Email already registered", "error")
             return render_template("register.html", setup_notice=notice), 400
-        except Exception as e:
+        except Exception:
             flash("Could not create your account. Try again.", "error")
             return render_template("register.html", setup_notice=notice), 400
         _maybe_promote_bootstrap_admin(email.lower(), uid)

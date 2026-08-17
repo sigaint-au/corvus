@@ -1,16 +1,12 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
-import pytest
-
 import app as store
-from core import config
 import crypto
 from core import db
-
 from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True
@@ -50,6 +46,7 @@ class TestSecretLifecycle:
 
     def test_due_status(self):
         from datetime import datetime, timedelta, timezone
+
         from routes.projects import expires_status, secret_due_status
         now = datetime.now(timezone.utc)
         assert secret_due_status({'expires_at': now - timedelta(days=1)}) == 'overdue'
@@ -81,7 +78,7 @@ class TestSecretLifecycle:
         assert r.status_code == 200
         assert b'K=secret-val' in r.data
         conn.commit.assert_called()
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'audit_secret' in sql
         assert 'exported' in str(cur.execute.call_args_list)
 

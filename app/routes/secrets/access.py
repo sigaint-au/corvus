@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+
 from flask import (
     flash,
     redirect,
@@ -10,14 +11,16 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
 from auth import authz
-from core import config
-from core import db
+from core import config, db
+
 from .helpers import (
     _render_reveal_access_panel,
     _reveal_access_state,
 )
+
 log = logging.getLogger(__name__)
 
 
@@ -151,7 +154,7 @@ def request_secret_access(project_id, secret_id):
                 "A project admin or team owner must approve it.",
                 "ok",
             )
-        except Exception as e:
+        except Exception:
             conn.rollback()
             log.exception("access request failed")
             flash("Could not update access. Try again.", "error")
@@ -255,7 +258,7 @@ def approve_secret_access(project_id, req_id):
                     ),
                     "ok",
                 )
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update access. Try again.", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
@@ -329,7 +332,7 @@ def deny_secret_access(project_id, req_id):
                     + (f" for “{req['secret_key']}”" if req.get("secret_key") else ""),
                     "ok",
                 )
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update access. Try again.", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="requests"))

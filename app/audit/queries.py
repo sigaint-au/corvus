@@ -35,6 +35,52 @@ def list_org_for_team(cur, team_id, limit=40):
     return cur.fetchall()
 
 
+def _org_audit_where(
+    *,
+    actions: tuple[str, ...] | None = None,
+    q: str = "",
+    actor: str = "",
+    since: str = "",
+    until: str = "",
+) -> tuple[str, list]:
+    """Build the shared WHERE clause + params for org_audit list/count queries.
+
+    Used by both :func:`list_org_audit` and :func:`count_org_audit` so the
+    filter logic lives in one place. Returns a full ``WHERE ...`` fragment
+    (starting with ``WHERE 1=1``) and the bound parameter list.
+    """
+    parts = [" WHERE 1=1 "]
+    params: list = []
+    if actions:
+        parts.append(" AND a.action = ANY(%s) ")
+        params.append(list(actions))
+    q = (q or "").strip()
+    if q:
+        like = f"%{q}%"
+        parts.append(
+            """
+            AND (
+              a.action ILIKE %s OR a.detail ILIKE %s OR a.actor_email ILIKE %s
+              OR t.name ILIKE %s OR p.name ILIKE %s
+            )
+            """
+        )
+        params.extend([like, like, like, like, like])
+    actor = (actor or "").strip()
+    if actor:
+        parts.append(" AND a.actor_email ILIKE %s ")
+        params.append(f"%{actor}%")
+    since_dt = _parse_day(since, end=False)
+    if since_dt:
+        parts.append(" AND a.created_at >= %s ")
+        params.append(since_dt)
+    until_dt = _parse_day(until, end=True)
+    if until_dt:
+        parts.append(" AND a.created_at <= %s ")
+        params.append(until_dt)
+    return "".join(parts), params
+
+
 def list_org_audit(
     cur,
     *,
@@ -69,36 +115,9 @@ def list_org_audit(
         >>> "when_display" in rows[0]
         True
     """
-    parts = [" WHERE 1=1 "]
-    params: list = []
-    if actions:
-        parts.append(" AND a.action = ANY(%s) ")
-        params.append(list(actions))
-    q = (q or "").strip()
-    if q:
-        like = f"%{q}%"
-        parts.append(
-            """
-            AND (
-              a.action ILIKE %s OR a.detail ILIKE %s OR a.actor_email ILIKE %s
-              OR t.name ILIKE %s OR p.name ILIKE %s
-            )
-            """
-        )
-        params.extend([like, like, like, like, like])
-    actor = (actor or "").strip()
-    if actor:
-        parts.append(" AND a.actor_email ILIKE %s ")
-        params.append(f"%{actor}%")
-    since_dt = _parse_day(since, end=False)
-    if since_dt:
-        parts.append(" AND a.created_at >= %s ")
-        params.append(since_dt)
-    until_dt = _parse_day(until, end=True)
-    if until_dt:
-        parts.append(" AND a.created_at <= %s ")
-        params.append(until_dt)
-    where = "".join(parts)
+    where, params = _org_audit_where(
+        actions=actions, q=q, actor=actor, since=since, until=until
+    )
     cur.execute(
         f"""
         SELECT a.id, a.team_id, a.project_id, a.action, a.detail,
@@ -146,36 +165,9 @@ def count_org_audit(
         >>> isinstance(n, int)
         True
     """
-    parts = [" WHERE 1=1 "]
-    params: list = []
-    if actions:
-        parts.append(" AND a.action = ANY(%s) ")
-        params.append(list(actions))
-    q = (q or "").strip()
-    if q:
-        like = f"%{q}%"
-        parts.append(
-            """
-            AND (
-              a.action ILIKE %s OR a.detail ILIKE %s OR a.actor_email ILIKE %s
-              OR t.name ILIKE %s OR p.name ILIKE %s
-            )
-            """
-        )
-        params.extend([like, like, like, like, like])
-    actor = (actor or "").strip()
-    if actor:
-        parts.append(" AND a.actor_email ILIKE %s ")
-        params.append(f"%{actor}%")
-    since_dt = _parse_day(since, end=False)
-    if since_dt:
-        parts.append(" AND a.created_at >= %s ")
-        params.append(since_dt)
-    until_dt = _parse_day(until, end=True)
-    if until_dt:
-        parts.append(" AND a.created_at <= %s ")
-        params.append(until_dt)
-    where = "".join(parts)
+    where, params = _org_audit_where(
+        actions=actions, q=q, actor=actor, since=since, until=until
+    )
     cur.execute(
         f"""
         SELECT count(*) AS n

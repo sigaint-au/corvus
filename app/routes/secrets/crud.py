@@ -10,12 +10,16 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
 from auth import authz
-from core import config
-import crypto
-from core import db
-from ui import paging
+from core import config, db
+from secret_svc.commands import (
+    delete_secret_command,
+    update_secret_value_command,
+    upsert_secret_command,
+)
+from secret_svc.exceptions import SecretOperationError
 from secret_svc.secret_kinds import (
     normalize_kind,
     parse_kv_lines,
@@ -24,9 +28,10 @@ from secret_svc.secret_ops import (
     _parse_access_mode,
     _parse_expires_at,
     _parse_requires_approval,
-    _upsert_secret,
     compose_secret_value,
 )
+from ui import paging
+
 from .helpers import (
     _reveal_toggle_html,
     _secrets_partial,
@@ -61,16 +66,16 @@ def create_secret(project_id):
         return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
     try:
         expires_at = _parse_expires_at(request.form)
-    except (ValueError, TypeError) as e:
+    except (ValueError, TypeError):
         flash("Could not save the secret. Try again.", "error")
         return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
-            sid, was_new = _upsert_secret(
+            result = upsert_secret_command(
                 cur,
-                project_id,
-                key,
-                value,
+                project_id=project_id,
+                key=key,
+                value=value,
                 note=note,
                 expires_at=expires_at,
                 kind=kind,
@@ -79,19 +84,12 @@ def create_secret(project_id):
                 access_mode=access_mode,
                 set_access_mode=True,
             )
-            if not sid:
-                flash("You don't have permission to do that", "error")
-                conn.rollback()
-            else:
-                audit.log_secret(
-                    cur,
-                    project_id=project_id,
-                    secret_id=sid,
-                    secret_key=key,
-                    action="created" if was_new else "updated",
-                )
+            if result.ok:
                 conn.commit()
-        except Exception as e:
+            else:
+                conn.rollback()
+                flash(result.error, "error")
+        except SecretOperationError:
             flash("Could not save the secret. Try again.", "error")
     if authz.htmx():
         return _secrets_partial(project_id)
@@ -122,37 +120,12 @@ def delete_secret(project_id, secret_id):
         POST /projects/<project_id>/secrets/<secret_id>/delete
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, key FROM api.secrets
-            WHERE id = %s AND project_id = %s AND deleted_at IS NULL
-            """,
-            (str(secret_id), str(project_id)),
-        )
-        row = cur.fetchone()
-        if not row:
-            flash("Secret not found", "error")
+        result = delete_secret_command(cur, project_id=project_id, secret_id=secret_id)
+        if result.ok:
+            conn.commit()
         else:
-            cur.execute(
-                """
-                UPDATE api.secrets SET deleted_at = now()
-                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
-                """,
-                (str(secret_id), str(project_id)),
-            )
-            if cur.rowcount == 0:
-                # SELECT allowed (read), UPDATE blocked (write) — e.g. read-only role
-                flash("You don't have permission to do that", "error")
-                conn.rollback()
-            else:
-                audit.log_secret(
-                    cur,
-                    project_id=project_id,
-                    secret_id=row["id"],
-                    secret_key=row["key"],
-                    action="deleted",
-                )
-                conn.commit()
+            conn.rollback()
+            flash(result.error, "error")
     if authz.htmx():
         return _secrets_partial(project_id)
     return redirect(
@@ -221,7 +194,7 @@ def upsert_secret_meta(project_id, secret_id):
                 )
             conn.commit()
             flash(f"Metadata “{key}” saved", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not save the secret. Try again.", "error")
     return redirect(meta_url)
@@ -302,54 +275,18 @@ def update_secret_value(project_id, secret_id):
             url_for("project_detail", project_id=project_id, tab="secrets")
         )
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
-        if not cur.fetchone()["w"]:
-            return "Forbidden", 403
-        cur.execute(
-            """
-            SELECT id, key FROM api.secrets
-            WHERE id = %s AND project_id = %s AND deleted_at IS NULL
-            """,
-            (str(secret_id), str(project_id)),
-        )
-        row = cur.fetchone()
-        if not row:
-            return "Not found", 404
-        if set_expires:
-            cur.execute(
-                """
-                UPDATE api.secrets SET value_enc = %s, expires_at = %s, crypto_provider = %s
-                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
-                """,
-                (
-                    *crypto.encrypt_for_project(project_id, value),
-                    expires_at,
-                    str(secret_id),
-                    str(project_id),
-                ),
-            )
-        else:
-            cur.execute(
-                """
-                UPDATE api.secrets SET value_enc = %s, crypto_provider = %s
-                WHERE id = %s AND project_id = %s AND deleted_at IS NULL
-                """,
-                (
-                    *crypto.encrypt_for_project(project_id, value),
-                    str(secret_id),
-                    str(project_id),
-                ),
-            )
-        if cur.rowcount == 0:
-            conn.rollback()
-            return "Forbidden", 403
-        audit.log_secret(
+        result = update_secret_value_command(
             cur,
             project_id=project_id,
-            secret_id=row["id"],
-            secret_key=row["key"],
-            action="updated",
+            secret_id=secret_id,
+            value=value,
+            expires_at=expires_at,
+            set_expires=set_expires,
         )
+        if not result.ok:
+            if result.status == 403:
+                conn.rollback()
+            return result.error, result.status
         conn.commit()
     if authz.htmx():
         # Hide value again; show brief confirmation and restore Reveal control
@@ -507,7 +444,7 @@ def secret_new(project_id):
         ), 400
     try:
         expires_at = _parse_expires_at(request.form)
-    except (ValueError, TypeError) as e:
+    except (ValueError, TypeError):
         flash("Could not save the secret. Try again.", "error")
         return render_template(
             "secret_new.html",
@@ -522,11 +459,11 @@ def secret_new(project_id):
         ), 400
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
-            sid, was_new = _upsert_secret(
+            result = upsert_secret_command(
                 cur,
-                project_id,
-                key,
-                value,
+                project_id=project_id,
+                key=key,
+                value=value,
                 note=note,
                 expires_at=expires_at,
                 kind=kind,
@@ -535,23 +472,13 @@ def secret_new(project_id):
                 access_mode=_parse_access_mode(request.form),
                 set_access_mode=True,
             )
-            if not sid:
-                flash("You don't have permission to do that", "error")
-                conn.rollback()
-            else:
-                audit.log_secret(
-                    cur,
-                    project_id=project_id,
-                    secret_id=sid,
-                    secret_key=key,
-                    action="created" if was_new else "updated",
-                )
+            if result.ok:
                 conn.commit()
-                flash(
-                    "Secret created" if was_new else "Secret updated",
-                    "ok",
-                )
-        except Exception as e:
+                flash("Secret created" if result.was_new else "Secret updated", "ok")
+            else:
+                conn.rollback()
+                flash(result.error, "error")
+        except SecretOperationError:
             flash("Could not save the secret. Try again.", "error")
             return render_template(
                 "secret_new.html",

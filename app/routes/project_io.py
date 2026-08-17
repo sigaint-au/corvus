@@ -8,10 +8,9 @@ import logging
 from flask import Response, flash, redirect, render_template, request, session, url_for
 
 import audit
-from auth import authz
-from core import config
 import crypto
-from core import db
+from auth import authz
+from core import config, db
 from secret_svc.secret_kinds import detect_secret_kind, normalize_kind, parse_secret_pairs
 from secret_svc.secret_ops import _upsert_secret, fetch_project_reveal_enc_rows
 
@@ -203,7 +202,7 @@ def import_preview(project_id):
         return redirect(back)
     try:
         pairs = parse_secret_pairs(raw)
-    except Exception as e:
+    except Exception:
         flash("Import data has an invalid format.", "error")
         return redirect(back)
     if not pairs:
@@ -355,7 +354,7 @@ def import_commit(project_id):
                     )
                     n_ok += 1
             conn.commit()
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not process the import or export. Try again.", "error")
             return redirect(back)
@@ -428,7 +427,7 @@ def bulk_export(project_id):
     ]
     if fmt == "json":
         body = json.dumps({k: v for k, v in pairs}, indent=2)
-        mime, name = "application/json", f"secrets-selected.json"
+        mime, name = "application/json", "secrets-selected.json"
     elif fmt == "csv":
         buf = io.StringIO()
         w = csv.writer(buf)

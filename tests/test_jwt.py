@@ -3,12 +3,10 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import pytest
-
 import jwt as pyjwt
+
 import app as store
-from core import config
-from core import db
+from core import config, db
 
 store.app.config["TESTING"] = True
 

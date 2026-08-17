@@ -6,13 +6,12 @@ from flask import (
     jsonify,
     request,
 )
+
 import audit
-from auth import authz
-from core import config
-from core import db
-from auth import rbac_sync
-from core import settings_svc
+from auth import authz, rbac_sync
+from core import config, db, settings_svc
 from lib.users import lookup_user_id
+
 from .helpers import (
     _require_pat,
     _resolve_team,

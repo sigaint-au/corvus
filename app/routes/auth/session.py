@@ -8,9 +8,9 @@ from flask import (
     session,
     url_for,
 )
-from auth import authz
+
+from auth import authz, user_sessions
 from ui import nav
-from auth import user_sessions
 
 
 def index():

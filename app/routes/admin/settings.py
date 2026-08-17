@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+
 from flask import (
     flash,
     redirect,
@@ -12,21 +13,15 @@ from flask import (
     session,
     url_for,
 )
-from auth import authz
+
 import audit
-from core import cache
-from core import config
 import crypto
-from core import db
-from crypto import hsm
-from integrations import ldap_auth
-from integrations import mailer
-from auth import passwords
-from crypto import project_keys
-from core import settings_svc
-from auth import totp_svc
-from auth import user_sessions
+from auth import authz, passwords, totp_svc, user_sessions
+from core import cache, config, db, settings_svc
+from crypto import hsm, project_keys
+from integrations import ldap_auth, mailer
 from lib.users import user_email
+
 log = logging.getLogger(__name__)
 
 _PROCESS_START = time.time()
@@ -53,14 +48,9 @@ def _db_probe() -> dict:
     """Probe the Postgres admin connection and report version/database."""
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT version() AS v, current_database() AS db, current_user AS usr"
-            )
+            cur.execute("SELECT version() AS v, current_database() AS db, current_user AS usr")
             row = cur.fetchone() or {}
-        detail = (
-            f"{row.get('v', 'n/a')} — database {row.get('db', '?')} "
-            f"as {row.get('usr', '?')}"
-        )
+        detail = f"{row.get('v', 'n/a')} — database {row.get('db', '?')} as {row.get('usr', '?')}"
         return {"ok": True, "detail": detail}
     except Exception as e:
         return {"ok": False, "detail": str(e)}
@@ -81,7 +71,7 @@ def _redis_probe() -> dict:
 
 def _hsm_probe() -> tuple[list, dict]:
     """Probe every configured HSM slot; returns ``(slots, summary)``."""
-    slots = []
+    slots: list = []
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM private.hsm_slots ORDER BY is_default DESC, name")
@@ -97,7 +87,8 @@ def _hsm_probe() -> tuple[list, dict]:
                 "name": slot["name"],
                 "is_default": slot.get("is_default", False),
                 "ok": status.get("available") and not status.get("error"),
-                "detail": status.get("error") or (
+                "detail": status.get("error")
+                or (
                     "connected, KEK present"
                     if status.get("kek_exists")
                     else "connected, KEK not present (created on first use)"
@@ -106,8 +97,10 @@ def _hsm_probe() -> tuple[list, dict]:
         )
     ok = bool(slots) and all(r["ok"] for r in results)
     detail = (
-        f"{len(slots)} slot(s), all reachable" if ok and slots
-        else f"{len(slots)} slot(s), some unreachable" if slots
+        f"{len(slots)} slot(s), all reachable"
+        if ok and slots
+        else f"{len(slots)} slot(s), some unreachable"
+        if slots
         else "no slots configured"
     )
     return results, {"ok": ok, "detail": detail, "count": len(slots)}
@@ -133,8 +126,20 @@ def _health_probe() -> dict:
         "hsm": {**hsm, "slots": slots},
     }
 
+
 SETTINGS_CATEGORIES = [
-    ("system", "System", [("general", "General"), ("branding", "Branding"), ("banner", "Classification"), ("email", "Email"), ("encryption", "Encryption"), ("health", "Health")]),
+    (
+        "system",
+        "System",
+        [
+            ("general", "General"),
+            ("branding", "Branding"),
+            ("banner", "Classification"),
+            ("email", "Email"),
+            ("encryption", "Encryption"),
+            ("health", "Health"),
+        ],
+    ),
     ("access", "Access", [("admins", "Admins"), ("users", "Users")]),
     ("authentication", "Authentication", [("ldap", "LDAP"), ("oidc", "OIDC / SSO")]),
 ]
@@ -158,9 +163,7 @@ def server_settings():
         action = request.form.get("action") or "classification"
         if action == "server_url":
             raw = (request.form.get("server_url") or "").strip().rstrip("/")
-            if raw and not (
-                raw.startswith("https://") or raw.startswith("http://")
-            ):
+            if raw and not (raw.startswith("https://") or raw.startswith("http://")):
                 flash("Server URL must start with http:// or https://", "error")
             else:
                 settings_svc.set_setting("server_url", raw)
@@ -196,9 +199,7 @@ def server_settings():
             link_url = (request.form.get("login_banner_link_url") or "").strip()[:500]
             if enabled == "true" and not text:
                 flash("Banner text is required when the login banner is enabled", "error")
-            elif link_url and not (
-                link_url.startswith(("/", "http://", "https://"))
-            ):
+            elif link_url and not (link_url.startswith(("/", "http://", "https://"))):
                 flash("Policy link must be an http(s) URL or a relative path", "error")
             else:
                 settings_svc.set_setting("login_banner_enabled", enabled)
@@ -210,7 +211,9 @@ def server_settings():
             enabled = "true" if request.form.get("registration_enabled") else "false"
             settings_svc.set_setting("registration_enabled", enabled)
             flash(
-                "Account registration enabled" if enabled == "true" else "Account registration disabled",
+                "Account registration enabled"
+                if enabled == "true"
+                else "Account registration disabled",
                 "ok",
             )
         elif action == "team_creation":
@@ -223,9 +226,7 @@ def server_settings():
                 "ok",
             )
         elif action == "totp_enforce":
-            enabled = (
-                "true" if request.form.get("totp_enforce_global_admins") else "false"
-            )
+            enabled = "true" if request.form.get("totp_enforce_global_admins") else "false"
             settings_svc.set_setting("totp_enforce_global_admins", enabled)
             flash(
                 "Global admins must use two-factor authentication"
@@ -242,7 +243,10 @@ def server_settings():
                 if machine_max and not 1 <= int(machine_max) <= config.MAX_EXPIRY_DAYS:
                     raise ValueError
             except ValueError:
-                flash(f"Max token lifetime must be between 1 and {config.MAX_EXPIRY_DAYS} days", "error")
+                flash(
+                    f"Max token lifetime must be between 1 and {config.MAX_EXPIRY_DAYS} days",
+                    "error",
+                )
             else:
                 settings_svc.set_setting(
                     "require_pat_expiry",
@@ -275,27 +279,13 @@ def server_settings():
                 settings_svc.set_setting("oidc_enabled", enabled)
                 settings_svc.set_setting("oidc_issuer", issuer)
                 settings_svc.set_setting("oidc_client_id", client_id)
-                settings_svc.set_setting(
-                    "oidc_scopes", scopes or "openid email profile"
-                )
-                settings_svc.set_setting(
-                    "oidc_button_label", label or "Sign in with SSO"
-                )
-                uclaim = (
-                    request.form.get("oidc_username_claim") or "preferred_username"
-                ).strip()
-                settings_svc.set_setting(
-                    "oidc_username_claim", uclaim or "preferred_username"
-                )
+                settings_svc.set_setting("oidc_scopes", scopes or "openid email profile")
+                settings_svc.set_setting("oidc_button_label", label or "Sign in with SSO")
+                uclaim = (request.form.get("oidc_username_claim") or "preferred_username").strip()
+                settings_svc.set_setting("oidc_username_claim", uclaim or "preferred_username")
                 gclaim = (request.form.get("oidc_groups_claim") or "groups").strip()
-                settings_svc.set_setting(
-                    "oidc_groups_claim", gclaim or "groups"
-                )
-                require_ev = (
-                    "true"
-                    if request.form.get("oidc_require_email_verified")
-                    else "false"
-                )
+                settings_svc.set_setting("oidc_groups_claim", gclaim or "groups")
+                require_ev = "true" if request.form.get("oidc_require_email_verified") else "false"
                 settings_svc.set_setting("oidc_require_email_verified", require_ev)
                 new_secret = request.form.get("oidc_client_secret") or ""
                 if new_secret.strip():
@@ -323,7 +313,7 @@ def server_settings():
                             (oidc_group, role),
                         )
                         flash("OIDC role mapping saved", "ok")
-                    except Exception as e:
+                    except Exception:
                         flash("Could not save the setting. Try again.", "error")
         elif action == "oidc_role_map_delete":
             mid = (request.form.get("map_id") or "").strip()
@@ -337,8 +327,10 @@ def server_settings():
             enabled = "true" if request.form.get("ldap_enabled") else "false"
             ldap_url = (request.form.get("ldap_url") or "").strip()
             start_tls = bool(request.form.get("ldap_start_tls"))
-            if enabled == "true" and ldap_url and not ldap_auth.ldap_tls_required_ok(
-                ldap_url, start_tls
+            if (
+                enabled == "true"
+                and ldap_url
+                and not ldap_auth.ldap_tls_required_ok(ldap_url, start_tls)
             ):
                 flash(
                     "LDAP over cleartext is not allowed. Use ldaps:// or enable StartTLS.",
@@ -356,9 +348,7 @@ def server_settings():
                 )
                 new_pw = request.form.get("ldap_bind_password") or ""
                 if new_pw.strip():
-                    settings_svc.set_setting(
-                        "ldap_bind_password", crypto.encrypt(new_pw.strip())
-                    )
+                    settings_svc.set_setting("ldap_bind_password", crypto.encrypt(new_pw.strip()))
                 settings_svc.set_setting(
                     "ldap_user_base",
                     (request.form.get("ldap_user_base") or "").strip(),
@@ -374,8 +364,7 @@ def server_settings():
                 )
                 settings_svc.set_setting(
                     "ldap_name_attr",
-                    (request.form.get("ldap_name_attr") or "displayName").strip()
-                    or "displayName",
+                    (request.form.get("ldap_name_attr") or "displayName").strip() or "displayName",
                 )
                 settings_svc.set_setting(
                     "ldap_group_base",
@@ -416,9 +405,7 @@ def server_settings():
                 settings_svc.set_setting("smtp_username", username)
                 new_pw = request.form.get("smtp_password") or ""
                 if new_pw.strip():
-                    settings_svc.set_setting(
-                        "smtp_password", crypto.encrypt(new_pw.strip())
-                    )
+                    settings_svc.set_setting("smtp_password", crypto.encrypt(new_pw.strip()))
                 settings_svc.set_setting("smtp_from_email", from_email)
                 settings_svc.set_setting("smtp_from_name", from_name)
                 settings_svc.set_setting("smtp_login_alerts", login_alerts)
@@ -454,7 +441,7 @@ def server_settings():
                             (ldap_group, role),
                         )
                         flash("LDAP role mapping saved", "ok")
-                    except Exception as e:
+                    except Exception:
                         flash("Could not save the setting. Try again.", "error")
         elif action == "ldap_role_map_delete":
             mid = (request.form.get("map_id") or "").strip()
@@ -592,7 +579,7 @@ def server_settings():
                         )
                         conn.commit()
                     flash(f"Migrated {n} local project key(s) to HSM", "ok")
-                except Exception as e:
+                except Exception:
                     flash("Could not migrate all project keys. Try again.", "error")
         elif action == "hsm_slot_delete":
             slot_id = (request.form.get("slot_id") or "").strip()
@@ -607,7 +594,7 @@ def server_settings():
                         audit.log_org(cur, action="hsm_slot_deleted", detail=f"slot_id={slot_id}")
                         conn.commit()
                     flash("HSM slot deleted", "ok")
-                except Exception as e:
+                except Exception:
                     flash("Could not delete the HSM slot. Try again.", "error")
         elif action == "hsm_slot_test":
             slot_id = (request.form.get("slot_id") or "").strip()
@@ -629,13 +616,15 @@ def server_settings():
             try:
                 n = project_keys.link_legacy_to_slot(slot_id)
                 with db.connect_admin() as conn, conn.cursor() as cur:
-                    audit.log_org(cur, action="hsm_slot_linked", detail=f"slot_id={slot_id} linked={n}")
+                    audit.log_org(
+                        cur, action="hsm_slot_linked", detail=f"slot_id={slot_id} linked={n}"
+                    )
                     conn.commit()
                 if n == 0:
                     flash("No legacy projects matched this slot's KEK label", "ok")
                 else:
                     flash(f"Linked {n} legacy HSM project(s) to this slot", "ok")
-            except Exception as e:
+            except Exception:
                 flash("Could not link the HSM slot. Try again.", "error")
         elif action == "hsm_slot_rotate":
             slot_id = (request.form.get("slot_id") or "").strip()
@@ -652,7 +641,7 @@ def server_settings():
                         )
                         conn.commit()
                     flash(f"HSM KEK rotated — re-wrapped {n} project key(s)", "ok")
-                except Exception as e:
+                except Exception:
                     flash("Could not rotate the HSM key. Try again.", "error")
         elif action in ("health_test_postgres", "health_test_redis", "health_test_hsm"):
             probe = _health_probe()
@@ -711,9 +700,7 @@ def server_settings():
     settings["ldap_bind_password"] = ""
     settings["smtp_password_set"] = bool((settings.get("smtp_password") or "").strip())
     settings["smtp_password"] = ""
-    settings["oidc_client_secret_set"] = bool(
-        (settings.get("oidc_client_secret") or "").strip()
-    )
+    settings["oidc_client_secret_set"] = bool((settings.get("oidc_client_secret") or "").strip())
     settings["oidc_client_secret"] = ""
     users, all_users, ldap_role_maps, oidc_role_maps = [], [], [], []
     with db.connect_admin() as conn, conn.cursor() as cur:
@@ -750,9 +737,7 @@ def server_settings():
             )
             oidc_role_maps = cur.fetchall() or []
     server_url = settings_svc.public_base_url()
-    oidc_redirect_uri = (
-        (server_url + "/login/oidc/callback") if server_url else ""
-    )
+    oidc_redirect_uri = (server_url + "/login/oidc/callback") if server_url else ""
     encryption = None
     encryption_q = ""
     encryption_page = 1
@@ -778,6 +763,7 @@ def server_settings():
                 or qn in (p.get("hsm_slot_name") or "").lower()
             ]
         from ui import paging
+
         per_page = 25
         total = len(all_projects)
         projects_pager = paging.page_window(total, encryption_page, per_page)
@@ -785,7 +771,7 @@ def server_settings():
         projects_pager["tab"] = "encryption"
         projects_pager["q"] = encryption_q or None
         offset = (encryption_page - 1) * per_page
-        sliced = all_projects[offset:offset + per_page]
+        sliced = all_projects[offset : offset + per_page]
         summary = {
             "counts": summary["counts"],
             "projects": sliced,
@@ -925,7 +911,7 @@ def hsm_slot_new_wizard():
                     msg += " (warning: inline PIN stored in database)"
                 flash(msg, "ok")
                 return redirect(url_for("server_settings", tab="encryption"))
-            except Exception as e:
+            except Exception:
                 flash("Could not save the HSM slot. Try again.", "error")
                 return redirect(url_for("server_settings", tab="encryption"))
         return render_template(

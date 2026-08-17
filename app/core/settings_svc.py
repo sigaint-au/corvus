@@ -1,6 +1,6 @@
 """Server settings and classification banner."""
-from core.config import DEFAULT_SETTINGS, HEX, MAX_EXPIRY_DAYS, bootstrap_admin_email
 from core import db
+from core.config import DEFAULT_SETTINGS, HEX, MAX_EXPIRY_DAYS, bootstrap_admin_email
 
 
 def truthy(val) -> bool:

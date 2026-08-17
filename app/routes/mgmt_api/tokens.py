@@ -8,13 +8,15 @@ from datetime import (
     timedelta,
     timezone,
 )
+
 from flask import (
     jsonify,
     request,
 )
-from core import config, settings_svc
-from core import db
+
+from core import config, db, settings_svc
 from crypto import sha256_hex
+
 from .helpers import (
     _require_pat,
     _resolve_project,

@@ -8,20 +8,23 @@ from datetime import (
     timedelta,
     timezone,
 )
+
 from flask import (
     jsonify,
     request,
 )
+
 import audit
-from core import cache
-from core import config
 import crypto
-from core import db
+from core import cache, config, db
 from lib.auth_tokens import classify_token
 from lib.datetime_utils import iso_utc
 from lib.validate import is_uuid
-from secret_svc.secret_ops import _upsert_secret
+from secret_svc.commands import upsert_secret_command
+from secret_svc.exceptions import SecretOperationError
+
 from .http import bearer_raw
+
 log = logging.getLogger(__name__)
 
 
@@ -49,9 +52,7 @@ def _meta_item(row: dict, *, value: str | None = None) -> dict:
         "created_at": iso_utc(row.get("created_at")),
         "updated_at": iso_utc(row.get("updated_at")),
         "last_accessed_at": iso_utc(row.get("last_accessed_at")),
-        "last_accessed_by": row.get("last_accessed_by_email")
-        or row.get("last_accessed_by")
-        or "",
+        "last_accessed_by": row.get("last_accessed_by_email") or row.get("last_accessed_by") or "",
     }
     for field in ("rotation_interval_days", "rotation_owner"):
         if field in row:
@@ -207,8 +208,11 @@ def _parse_expires_from_body(body: dict) -> tuple[datetime | None, bool, str | N
         return None, False, None
 
     if has_days:
+        days_value = body.get("expires_days")
+        if days_value is None:
+            return None, False, "expires_days must be an integer"
         try:
-            days = int(body.get("expires_days"))
+            days = int(days_value)
         except (TypeError, ValueError):
             return None, False, "expires_days must be an integer"
         if days < 1 or days > config.MAX_EXPIRY_DAYS:
@@ -380,9 +384,7 @@ def _upsert_body(project_ref, key: str, body: dict):
         note = str(note).strip()
     kind_s = (body.get("kind") or "plain").strip().lower()
     if kind_s not in config.SECRET_KINDS:
-        return jsonify(
-            {"error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"}
-        ), 400
+        return jsonify({"error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"}), 400
     if not key or value is None:
         return jsonify({"error": "key and value required"}), 400
 
@@ -448,21 +450,21 @@ def _upsert_body(project_ref, key: str, body: dict):
         if not _pat_can_write(cur, pid):
             return jsonify({"error": "forbidden"}), 403
         try:
-            sid, _ = _upsert_secret(
-                cur, pid, key, str(value), note=note, expires_at=exp, kind=kind_s
+            result = upsert_secret_command(
+                cur,
+                project_id=pid,
+                key=key,
+                value=str(value),
+                note=note,
+                expires_at=exp,
+                kind=kind_s,
+                audit_action="machine_upsert",
+                actor_email=ident,
             )
-        except Exception as e:
-            log.exception("pat upsert failed")
-            return jsonify({"error": str(e) or "forbidden"}), 403
-        if not sid:
+        except SecretOperationError:
             return jsonify({"error": "forbidden"}), 403
-        _audit(
-            cur,
-            project_id=pid,
-            action="machine_upsert",
-            secret_key=key,
-            secret_id=sid,
-        )
+        if not result.ok:
+            return jsonify({"error": "forbidden"}), 403
         cur.execute(
             """
             SELECT id, key, note, kind, expires_at,
@@ -470,9 +472,9 @@ def _upsert_body(project_ref, key: str, body: dict):
                    created_at, updated_at
               FROM api.secrets WHERE id = %s
             """,
-            (str(sid),),
+            (str(result.secret_id),),
         )
-        row = cur.fetchone() or {"id": sid, "key": key}
+        row = cur.fetchone() or {"id": result.secret_id, "key": key}
         conn.commit()
     item = _meta_item(row, value=str(value))
     item["ok"] = True
