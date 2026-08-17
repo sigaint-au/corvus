@@ -23,6 +23,19 @@ document.addEventListener('htmx:configRequest', function (e) {
         el.open = !!state[id];
       });
     }
+    /* Remember sections the server opened so a later page cannot collapse them
+       just because its endpoint default is different (toggle still wins). */
+    function seedOpen(root) {
+      var state = load();
+      var changed = false;
+      (root || document).querySelectorAll('[data-side-group]').forEach(function (el) {
+        var id = el.getAttribute('data-side-group');
+        if (!id || !el.open || Object.prototype.hasOwnProperty.call(state, id)) return;
+        state[id] = true;
+        changed = true;
+      });
+      if (changed) save(state);
+    }
     function bind(root) {
       (root || document).querySelectorAll('[data-side-group]').forEach(function (el) {
         if (el.dataset.sideBound === '1') return;
@@ -38,6 +51,7 @@ document.addEventListener('htmx:configRequest', function (e) {
     }
     function sync(root) {
       apply(root);
+      seedOpen(root);
       bind(root);
     }
     sync(document);

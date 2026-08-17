@@ -181,6 +181,106 @@ class TestUIShell:
         assert r2.status_code == 200
         assert r2.data.count(b'>Role bindings</a>') == 1
 
+    def test_non_admin_role_bindings_keeps_organisation_open(self):
+        # Members reach Role bindings from Organisation. That endpoint used to
+        # be classified as Administration, so the Organisation <details> closed
+        # and nothing replaced it (Administration is hidden for non-admins).
+        tid = str(uuid4())
+        team = {'id': tid, 'name': 'Acme', 'classification_enabled': None,
+                'classification_text': '', 'classification_color': '',
+                'classification_fg': ''}
+        conn, cur = _conn()
+        last_sql = {'s': ''}
+
+        def execute(sql, params=None):
+            last_sql['s'] = ' '.join(str(sql).lower().split())
+
+        def fetchone():
+            s = last_sql['s']
+            if 'can_manage_rbac' in s:
+                return {'ok': True}
+            if 'count(*)' in s:
+                return {'n': 0}
+            return {'id': tid, 'name': 'Acme'}
+
+        def fetchall():
+            s = last_sql['s']
+            if 'from api.teams' in s:
+                return [team]
+            return []
+
+        cur.execute.side_effect = execute
+        cur.fetchone.side_effect = fetchone
+        cur.fetchall.side_effect = fetchall
+        c = store.app.test_client()
+        with c.session_transaction() as s:
+            s['user_id'] = str(uuid4())
+            s['email'] = 'u@x.y'
+            s['team_id'] = tid
+            s['is_global_admin'] = False
+        with patch.object(db, 'as_user', return_value=conn), patch.object(
+            authz, 'is_global_admin', return_value=False
+        ):
+            r = c.get(f'/rbac/bindings?scope=team&scope_id={tid}')
+        assert r.status_code == 200
+        assert b'data-side-group="account" open' in r.data
+        assert b'data-side-group="administration"' not in r.data
+        # Same default as other Organisation pages (e.g. Teams).
+        teams = store.app.test_client()
+        with teams.session_transaction() as s:
+            s['user_id'] = str(uuid4())
+            s['email'] = 'u@x.y'
+            s['team_id'] = tid
+            s['is_global_admin'] = False
+        with patch.object(db, 'as_user', return_value=conn), patch.object(
+            authz, 'is_global_admin', return_value=False
+        ):
+            r_teams = teams.get('/teams')
+        assert r_teams.status_code == 200
+        assert b'data-side-group="account" open' in r_teams.data
+
+    def test_global_admin_role_bindings_keeps_administration_open(self):
+        tid = str(uuid4())
+        team = {'id': tid, 'name': 'Acme', 'classification_enabled': None,
+                'classification_text': '', 'classification_color': '',
+                'classification_fg': ''}
+        conn, cur = _conn()
+        last_sql = {'s': ''}
+
+        def execute(sql, params=None):
+            last_sql['s'] = ' '.join(str(sql).lower().split())
+
+        def fetchone():
+            s = last_sql['s']
+            if 'can_manage_rbac' in s:
+                return {'ok': True}
+            if 'count(*)' in s:
+                return {'n': 0}
+            return {'id': tid, 'name': 'Acme'}
+
+        def fetchall():
+            s = last_sql['s']
+            if 'from api.teams' in s:
+                return [team]
+            return []
+
+        cur.execute.side_effect = execute
+        cur.fetchone.side_effect = fetchone
+        cur.fetchall.side_effect = fetchall
+        c = store.app.test_client()
+        with c.session_transaction() as s:
+            s['user_id'] = str(uuid4())
+            s['email'] = 'admin@x.y'
+            s['team_id'] = tid
+            s['is_global_admin'] = True
+        with patch.object(db, 'as_user', return_value=conn), patch.object(
+            authz, 'is_global_admin', return_value=True
+        ):
+            r = c.get('/rbac/bindings?scope=team')
+        assert r.status_code == 200
+        assert b'data-side-group="administration" open' in r.data
+        assert b'data-side-group="account" open' not in r.data
+
     def test_app_has_skip_link_and_responsive_table_css(self):
         c = store.app.test_client()
         with c.session_transaction() as s:

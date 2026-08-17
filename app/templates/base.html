@@ -89,11 +89,13 @@
        Administration item is the general (scope-less) view. Highlight exactly one. #}
     {% set is_rbac_bindings = ep in ('rbac_bindings', 'rbac_bindings_create', 'rbac_bindings_delete') %}
     {% set rbac_scoped = (request.args.get('scope_id') or ''|string)|string %}
+    {# Members: Role bindings lives under Organisation, so open that group. #}
+    {% set rbac_in_org = is_rbac_bindings and not is_global_admin %}
     {# Server defaults only used until localStorage preference is set #}
     {% set workspace_open = ep in workspace_eps or (ep != 'profile' and ep not in account_eps and ep not in access_eps and ep not in admin_eps) %}
-    {% set account_open = ep in account_eps %}
+    {% set account_open = ep in account_eps or rbac_in_org %}
     {% set access_open = ep in access_eps %}
-    {% set admin_open = ep in admin_eps %}
+    {% set admin_open = ep in admin_eps and not rbac_in_org %}
     <nav aria-label="Main">
       <details class="side-group" data-side-group="workspace"{% if workspace_open %} open{% endif %}>
         <summary>Workspace</summary>
