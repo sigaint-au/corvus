@@ -270,3 +270,75 @@ class TestSettings:
         assert 'tab=users' in r.location
         dis.assert_called_once_with(other)
 
+
+
+class TestLoginBanner:
+
+    def setup_method(self, method=None):
+        store.app.config['TESTING'] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s['user_id'] = self.uid
+            s['email'] = 'admin@ex.com'
+            s['is_global_admin'] = True
+
+    def test_save(self):
+        with patch.object(authz, 'is_global_admin', return_value=True), \
+             patch.object(settings_svc, 'set_setting') as set_setting:
+            r = self.client.post('/settings', data={
+                'action': 'login_banner',
+                'login_banner_enabled': '1',
+                'login_banner_text': 'Authorized use only.\nAll activity is monitored.',
+                'login_banner_link_text': 'Acceptable Use Policy',
+                'login_banner_link_url': 'https://example.com/policy',
+            }, follow_redirects=False)
+        assert r.status_code == 302
+        calls = {c.args[0]: c.args[1] for c in set_setting.call_args_list}
+        assert calls['login_banner_enabled'] == 'true'
+        assert calls['login_banner_text'] == 'Authorized use only.\nAll activity is monitored.'
+        assert calls['login_banner_link_text'] == 'Acceptable Use Policy'
+        assert calls['login_banner_link_url'] == 'https://example.com/policy'
+
+    def test_requires_text_when_enabled(self):
+        with patch.object(authz, 'is_global_admin', return_value=True), \
+             patch.object(settings_svc, 'set_setting') as set_setting:
+            r = self.client.post('/settings', data={
+                'action': 'login_banner',
+                'login_banner_enabled': '1',
+                'login_banner_text': '',
+            }, follow_redirects=False)
+        assert r.status_code == 302
+        assert not set_setting.called
+
+    def test_rejects_bad_link_url(self):
+        with patch.object(authz, 'is_global_admin', return_value=True), \
+             patch.object(settings_svc, 'set_setting') as set_setting:
+            r = self.client.post('/settings', data={
+                'action': 'login_banner',
+                'login_banner_enabled': '1',
+                'login_banner_text': 'No.',
+                'login_banner_link_url': 'javascript:alert(1)',
+            }, follow_redirects=False)
+        assert r.status_code == 302
+        assert not set_setting.called
+
+    def test_shown_on_login_page(self):
+        with patch.object(settings_svc, 'get_settings', return_value=dict(
+            config.DEFAULT_SETTINGS,
+            login_banner_enabled='true',
+            login_banner_text='Authorized use only',
+            login_banner_link_text='Acceptable Use Policy',
+            login_banner_link_url='/policy',
+        )):
+            r = store.app.test_client().get('/login')
+        assert r.status_code == 200
+        assert b'login-banner' in r.data
+        assert b'Authorized use only' in r.data
+        assert b'/policy' in r.data
+
+    def test_hidden_when_disabled(self):
+        with patch.object(settings_svc, 'get_settings', return_value=dict(config.DEFAULT_SETTINGS)):
+            r = store.app.test_client().get('/login')
+        assert r.status_code == 200
+        assert b'login-banner' not in r.data

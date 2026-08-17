@@ -189,6 +189,23 @@ def server_settings():
                 settings_svc.set_setting("classification_color", color)
                 settings_svc.set_setting("classification_fg", fg)
                 flash("Classification banner saved", "ok")
+        elif action == "login_banner":
+            enabled = "true" if request.form.get("login_banner_enabled") else "false"
+            text = (request.form.get("login_banner_text") or "").strip()[:1000]
+            link_text = (request.form.get("login_banner_link_text") or "").strip()[:80]
+            link_url = (request.form.get("login_banner_link_url") or "").strip()[:500]
+            if enabled == "true" and not text:
+                flash("Banner text is required when the login banner is enabled", "error")
+            elif link_url and not (
+                link_url.startswith(("/", "http://", "https://"))
+            ):
+                flash("Policy link must be an http(s) URL or a relative path", "error")
+            else:
+                settings_svc.set_setting("login_banner_enabled", enabled)
+                settings_svc.set_setting("login_banner_text", text)
+                settings_svc.set_setting("login_banner_link_text", link_text)
+                settings_svc.set_setting("login_banner_link_url", link_url)
+                flash("Login banner saved", "ok")
         elif action == "registration":
             enabled = "true" if request.form.get("registration_enabled") else "false"
             settings_svc.set_setting("registration_enabled", enabled)
