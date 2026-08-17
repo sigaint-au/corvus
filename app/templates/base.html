@@ -179,18 +179,8 @@
   
   <div class="main" id="main-content">
   {% else %}
-  <div class="auth-wrap">
+  <div class="auth-wrap{% if login_banner and login_banner.enabled %} auth-split{% endif %}">
   <div class="auth-card">
-    {% if login_banner and login_banner.enabled %}
-    <div class="login-banner" role="status">
-      <p class="login-banner-text">{{ login_banner.text }}</p>
-      {% if login_banner.link_url %}
-      <p class="login-banner-link">
-        <a href="{{ login_banner.link_url }}" rel="noopener noreferrer">{{ login_banner.link_text }}</a>
-      </p>
-      {% endif %}
-    </div>
-    {% endif %}
     <a class="auth-brand" href="{{ url_for('login') }}">
       {{ brand_name or 'Sigaint' }}
       {% if brand_tagline %}<span class="brand-sub">{{ brand_tagline }}</span>{% endif %}
@@ -208,6 +198,16 @@
 
     {% block body %}{% endblock %}
   </div>
+  {% if login_banner and login_banner.enabled %}
+  <aside class="login-note" role="status">
+    <p class="login-note-text">{{ login_banner.text }}</p>
+    {% if login_banner.link_url %}
+    <p class="login-note-link">
+      <a href="{{ login_banner.link_url }}" rel="noopener noreferrer">{{ login_banner.link_text }}</a>
+    </p>
+    {% endif %}
+  </aside>
+  {% endif %}
   {% if session.get('user_id') %}
   </div>
   {% else %}

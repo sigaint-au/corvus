@@ -333,7 +333,7 @@ class TestLoginBanner:
         )):
             r = store.app.test_client().get('/login')
         assert r.status_code == 200
-        assert b'login-banner' in r.data
+        assert b'login-note' in r.data
         assert b'Authorized use only' in r.data
         assert b'/policy' in r.data
 
@@ -341,4 +341,4 @@ class TestLoginBanner:
         with patch.object(settings_svc, 'get_settings', return_value=dict(config.DEFAULT_SETTINGS)):
             r = store.app.test_client().get('/login')
         assert r.status_code == 200
-        assert b'login-banner' not in r.data
+        assert b'login-note' not in r.data
