@@ -16,6 +16,38 @@
 </section>
 
 <section class="list-panel">
+  <h2>Login banner</h2>
+  <p class="muted">
+    Add the required disclosure notice and an optional link to your system-use policy.
+  </p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="login_banner">
+    <label class="check-row">
+      <input type="checkbox" name="login_banner_enabled" value="1"
+             {% if settings.login_banner_enabled in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Show login banner
+    </label>
+    <label>Banner text
+      <textarea name="login_banner_text" rows="4" maxlength="1000"
+                placeholder="You are accessing an authorized US Government system…"
+                autocomplete="off">{{ settings.login_banner_text or '' }}</textarea>
+    </label>
+    <label>Policy link text
+      <input type="text" name="login_banner_link_text" maxlength="80"
+             value="{{ settings.login_banner_link_text or '' }}"
+             placeholder="Acceptable Use Policy" autocomplete="off">
+    </label>
+    <label>Policy link URL
+      <input type="text" name="login_banner_link_url" maxlength="500"
+             value="{{ settings.login_banner_link_url or '' }}"
+             placeholder="https://… or /policy" autocomplete="off">
+    </label>
+    <p class="form-actions"><button type="submit">Save login banner</button></p>
+  </form>
+</section>
+
+<section class="list-panel">
   <h2>Account registration</h2>
   <p class="muted">
     Control whether new local accounts can be created at <code>/register</code>.

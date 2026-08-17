@@ -1093,6 +1093,9 @@
       justify-content: center;
       padding: 1.5rem;
       width: 100%;
+      background-image: radial-gradient(circle at 1px 1px, rgba(0, 0, 0, .08) 1px, transparent 0);
+      background-size: 26px 26px;
+      background-size: 22px 22px;
     }
     .auth-card {
       width: 100%;
@@ -1105,6 +1108,52 @@
       box-shadow: 0 1px 3px rgba(0,0,0,.06);
     }
     .auth-card h1 { margin-top: 0; font-size: 1.35rem; }
+    /* Sign-in split view: login card on the left, plain-text disclosure right. */
+    body.auth .auth-wrap.auth-split {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: clamp(1.5rem, 5vw, 4.5rem);
+      width: min(100% - 3rem, 1000px);
+      margin-inline: auto;
+      align-items: center;
+      justify-self: center;
+    }
+    .login-note {
+      color: var(--foreground);
+      max-width: 34rem;
+    }
+    .login-note-text {
+      white-space: pre-line;
+      font-size: .92rem;
+      line-height: 1.55;
+      color: var(--muted-foreground);
+      margin: 0 0 .6rem;
+    }
+    .login-note-link { margin: 0; }
+    .login-note-link a { font-weight: 600; }
+    @media (max-width: 720px) {
+      body.auth .auth-wrap.auth-split {
+        grid-template-columns: 1fr;
+        width: min(100% - 2rem, 22rem);
+        justify-content: center;
+        padding-bottom: 5rem;
+      }
+      .login-note {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-width: none;
+        padding: .6rem 1rem;
+        background: #fff;
+        border-top: 1px solid var(--border);
+        z-index: 10;
+        font-size: .82rem;
+        line-height: 1.4;
+      }
+      .login-note-text { margin: 0; }
+      .login-note-link { margin-top: .25rem; }
+    }
     .auth-card form {
       display: flex;
       flex-direction: column;
@@ -1190,16 +1239,67 @@
       color: var(--muted-foreground);
       font-size: .9em;
     }
+    /* Modern empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: .4rem;
+      padding: 2.5rem 1rem;
+      margin: .5rem 0;
+    }
+    .empty-state-art {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(160deg, var(--border), rgba(0,0,0,.02));
+      color: var(--muted-foreground);
+      margin-bottom: .55rem;
+    }
+    .empty-state-title {
+      margin: 0;
+      font-weight: 650;
+      font-size: 1.04rem;
+      color: var(--foreground);
+    }
+    .empty-state-text {
+      margin: 0;
+      max-width: 30rem;
+      color: var(--muted-foreground);
+      font-size: .9rem;
+      line-height: 1.5;
+    }
+    .empty-state-action { margin: .85rem 0 0; }
     /* Error pages */
-    .error-panel { text-align: center; }
+    .err-page {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+    .error-standalone {
+      text-align: center;
+      padding: 2rem;
+    }
+    .error-brand {
+      margin: 0 0 1rem;
+      font-weight: 600;
+      color: var(--muted-foreground);
+    }
     .error-code {
-      font-size: 3rem;
+      font-size: 5rem;
       font-weight: 700;
       line-height: 1;
       color: var(--muted-foreground);
-      margin: .25rem 0 .5rem;
+      margin: 0 0 .5rem;
     }
-    .error-panel .form-actions { justify-content: center; }
+    .error-title {
+      margin: 0;
+      color: var(--foreground);
+    }
     .list-panel,
     .crypto-panel {
       background: var(--card);

@@ -47,13 +47,14 @@
   {% include "partials/pager.html" %}
 {% endwith %}
 {% else %}
-<p class="empty">
-  {% if search_q %}
-  No shared secrets match these filters.
-  {% else %}
-  No secrets are shared with you outside your teams.
-  {% endif %}
-</p>
+{% if search_q %}
+<p class="empty">No shared secrets match these filters.</p>
+{% else %}
+{% set icon = 'key' %}
+{% set title = 'No shared secrets' %}
+{% set text = 'Secrets shared with you across teams appear here.' %}
+{% include "partials/empty_state.html" %}
+{% endif %}
 {% endif %}
 </section>
 </div>

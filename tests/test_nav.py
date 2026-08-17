@@ -140,7 +140,7 @@ class TestNav:
         ):
             r = self.client.get('/trash')
         assert r.status_code == 200
-        assert b'Nothing in trash' in r.data
+        assert b'Trash is empty' in r.data
 
     def test_trash_with_items(self):
         tid = uuid4()

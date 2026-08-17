@@ -271,6 +271,39 @@ def team_classification(row) -> dict:
     }
 
 
+def login_banner() -> dict:
+    """Build login-banner display settings (DoD / policy compliance banner).
+
+    Shown on the sign-in screen: disclosure text plus an optional link to a
+    system-use policy. ``enabled`` is True only when the setting is truthy
+    and text is non-empty; plain text is rendered with line breaks preserved.
+
+    Args:
+        None.
+
+    Returns:
+        Dict with keys ``enabled`` (bool), ``text`` (str), ``link_text``
+        (str), ``link_url`` (str), and ``has_link`` (bool).
+
+    Example:
+        >>> b = login_banner()
+        >>> set(b) >= {"enabled", "text", "link_text", "link_url", "has_link"}
+        True
+    """
+    s = get_settings()
+    enabled = truthy(s.get("login_banner_enabled"))
+    text = (s.get("login_banner_text") or "").strip()
+    link_text = (s.get("login_banner_link_text") or "").strip() or "Policy"
+    link_url = (s.get("login_banner_link_url") or "").strip()
+    return {
+        "enabled": enabled and bool(text),
+        "text": text,
+        "link_text": link_text,
+        "link_url": link_url,
+        "has_link": bool(link_url),
+    }
+
+
 def classification():
     """Build classification banner display settings.
 

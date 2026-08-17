@@ -46,7 +46,12 @@
     {% elif q %}
     <p class="empty">No machine accounts match “{{ q }}”.</p>
     {% else %}
-    <p class="empty">No machine accounts. <a href="{{ url_for('projects_list') }}">Create one on a project page</a>.</p>
+    {% set icon = 'key' %}
+    {% set title = 'No machine accounts' %}
+    {% set text = 'Machine accounts are service credentials scoped to a project for automation and CI use.' %}
+    {% set action = 'Create one on a project page' %}
+    {% set action_href = url_for('projects_list') %}
+    {% include "partials/empty_state.html" %}
     {% endif %}
   </section>
   {% with pager=machines_pager %}

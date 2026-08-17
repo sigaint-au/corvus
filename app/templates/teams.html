@@ -41,15 +41,20 @@
   </tbody>
 </table></div>
 {% else %}
-<p class="empty">
-  {% if search_q %}
-  No teams match “{{ search_q }}”.
-  {% elif can_create_team %}
-  No teams yet. <button type="button" class="link" data-open-dialog="create-team-dlg">Create your first team</button>.
-  {% else %}
-  No teams yet. Ask a team administrator to invite you or contact your administrator for access.
-  {% endif %}
-</p>
+{% if search_q %}
+<p class="empty">No teams match “{{ search_q }}”.</p>
+{% else %}
+{% set icon = 'teams' %}
+{% set title = 'No teams yet' %}
+{% if can_create_team %}
+{% set text = 'Teams own projects and define access boundaries. Create your first team to get started.' %}
+{% set action = 'Create your first team' %}
+{% set action_dialog = 'create-team-dlg' %}
+{% else %}
+{% set text = 'Ask a team administrator to invite you, or contact your administrator for access.' %}
+{% endif %}
+{% include "partials/empty_state.html" %}
+{% endif %}
 {% endif %}
 </section>
 

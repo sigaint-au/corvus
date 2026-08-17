@@ -12,7 +12,7 @@ from core.config import (
 )
 from core import db
 from ui import pins
-from core.settings_svc import branding, classification, team_classification
+from core.settings_svc import branding, classification, login_banner, team_classification
 
 
 def nav_teams(user_id: str):
@@ -222,6 +222,7 @@ def inject_nav():
         "brand_name": brand["brand_name"],
         "brand_tagline": brand["brand_tagline"],
         "classification": banner,
+        "login_banner": login_banner(),
         "is_global_admin": bool(session.get("is_global_admin")),
         "nav_teams": [],
         "nav_team_id": session.get("team_id"),

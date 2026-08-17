@@ -1,0 +1,37 @@
+{# Modern empty state: soft icon + title + description + optional CTA.
+   Set (or leave unset): icon, title, text, action, action_href / action_dialog. #}
+<div class="empty-state">
+  <div class="empty-state-art" aria-hidden="true">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      {% if icon == 'folder' %}
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
+      <path d="M3 11h18"/>
+      {% elif icon == 'teams' %}
+      <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="3"/>
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13A4 4 0 0 1 16 11"/>
+      {% elif icon == 'key' %}
+      <path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L19 4"/>
+      <path d="M15.9 7.6l3.5 3.5"/><circle cx="16.5" cy="5.5" r="1.6"/>
+      {% elif icon == 'search' %}
+      <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+      {% elif icon == 'inbox' %}
+      <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+      <path d="M5.45 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.6 4H7.4a2 2 0 0 0-1.8 1Z"/>
+      {% else %}
+      <path d="M12 19c-4 0-8-3-8-7s4-7 8-7 8 3 8 7-4 7-8 7Z"/><circle cx="12" cy="12" r="2.6"/>
+      {% endif %}
+    </svg>
+  </div>
+  <p class="empty-state-title">{{ title or 'Nothing here yet' }}</p>
+  {% if text %}<p class="empty-state-text">{{ text }}</p>{% endif %}
+  {% if action %}
+  <p class="empty-state-action">
+    {% if action_href %}
+    <a class="button" href="{{ action_href }}">{{ action }}</a>
+    {% else %}
+    <button type="button" class="button" data-open-dialog="{{ action_dialog }}">{{ action }}</button>
+    {% endif %}
+  </p>
+  {% endif %}
+</div>

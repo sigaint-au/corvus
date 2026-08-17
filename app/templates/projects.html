@@ -72,13 +72,22 @@
   {% with pager=projects_pager %}
     {% include "partials/pager.html" %}
   {% endwith %}
-  {% else %}
-  <p class="empty">
-    {% if search_q %}No projects match “{{ search_q }}”.
-    {% elif can_create_project %}No projects yet. <a class="link" href="{{ url_for('new_project_wizard', team_id=team.id) }}">Create your first project</a>.
-    {% else %}No projects yet.{% endif %}
-  </p>
-  {% endif %}
+{% else %}
+{% if search_q %}
+<p class="empty">No projects match “{{ search_q }}”.</p>
+{% else %}
+{% set icon = 'folder' %}
+{% set title = 'No projects yet' %}
+{% if can_create_project %}
+{% set text = 'Projects hold your secrets and machine accounts. Create a project to keep things organised.' %}
+{% set action = 'Create a project' %}
+{% set action_href = url_for('new_project_wizard', team_id=team.id) %}
+{% else %}
+{% set text = 'Projects appear here once your team creates them.' %}
+{% endif %}
+{% include "partials/empty_state.html" %}
+{% endif %}
+{% endif %}
 </section>
 
 {% endif %}

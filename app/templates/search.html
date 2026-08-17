@@ -209,7 +209,10 @@
   </p>
   {% endif %}
   {% else %}
-  <p class="empty">No secrets match.</p>
+  {% set icon = 'search' %}
+  {% set title = 'No matching secrets' %}
+  {% set text = 'Nothing matched “' + (search_q or '') + '”. Check the spelling or try a different term.' %}
+  {% include "partials/empty_state.html" %}
   {% endif %}
 </section>
 

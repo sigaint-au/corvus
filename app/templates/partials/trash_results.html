@@ -65,8 +65,13 @@
 </div>
 </section>
 {% else %}
-<p class="empty">
-  {% if search_q %}No trash items match “{{ search_q }}”.{% else %}Nothing in trash.{% endif %}
-</p>
+{% if search_q %}
+<p class="empty">No trash items match “{{ search_q }}”.</p>
+{% else %}
+{% set icon = 'inbox' %}
+{% set title = 'Trash is empty' %}
+{% set text = 'Soft-deleted secrets land here and can be restored or permanently purged.' %}
+{% include "partials/empty_state.html" %}
+{% endif %}
 {% endif %}
 </div>
