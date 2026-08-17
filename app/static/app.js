@@ -144,8 +144,7 @@ document.addEventListener('htmx:configRequest', function (e) {
       }, 200);
     });
   })();
-  </script>
-  <script>
+
   /* Machine token create: scope chips (ot-taginput) + restrict toggle */
   (function () {
     function tagsOf(el) {
@@ -225,15 +224,13 @@ document.addEventListener('htmx:configRequest', function (e) {
       boot(e && e.target ? e.target : document);
     });
   })();
-  </script>
-  <script>
+
   /* Dim search/filter forms immediately on submit (full-page GET). */
   document.addEventListener('submit', function (e) {
     var f = e.target && e.target.closest ? e.target.closest('form[method="get"]') : null;
     if (f) f.classList.add('submitting');
   }, true);
-  </script>
-  <script>
+
   (function () {
     var clearTimer = null;
     var lastCopied = null;

@@ -35,6 +35,16 @@ class TestUIShell:
             rb'<script\s+src="[^"]*htmx\.min\.js"[^>]*></script>', r.data
         )
 
+    def test_app_js_is_plain_javascript(self):
+        # Leftover HTML <script> wrappers from the base.html extraction make
+        # the whole file a SyntaxError, so sidebar group persistence never runs
+        # and clicking a nav item collapses every other <details> menu.
+        r = store.app.test_client().get('/static/app.js')
+        assert r.status_code == 200
+        assert b'<script>' not in r.data
+        assert b'</script>' not in r.data
+        assert b'secretstore.sidebar.groups' in r.data
+
     def test_app_has_sidebar(self):
         c = store.app.test_client()
         with c.session_transaction() as s:
