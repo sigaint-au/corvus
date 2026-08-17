@@ -17,8 +17,8 @@ Secret server: self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.i
 ## DB / RLS / RBAC / migrations (hard-earned)
 
 - **Migrations are the sole source of truth for DDL.** The fresh-install baseline lives in `db/migrations/0001_init.sql`. Existing databases are not supported by this squashed baseline.
-- **Keep the squashed baseline ordered** — RBAC definitions live inside `db/migrations/0001_init.sql`; do not create a second baseline definition.
-- **Adding a migration:** create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it idempotent where possible, and run `pytest` + `tox -e lint`. Never edit an already-released migration file — its checksum is recorded.
+- **Adding migrations is allowed and is the preferred way to change the schema — do it when a change needs one.** Create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it idempotent where possible, and run `pytest` + `tox -e lint`. Never edit an already-released migration file whose checksum is recorded — add a new `NNNN_` migration instead.
+- **Keep the squashed baseline ordered** — RBAC definitions live inside `db/migrations/0001_init.sql`; do not create a second baseline definition. Do not edit the baseline unless the change is part of an unreleased fresh-install revision (and then recreate the database).
 - Machine-token `role` column uses `service-read`/`service-reveal`/`service-write`.
 
 Roles in the UI are **RBAC names** (`team-owner/team-admin/...` and project-role & secret roles). Machine-token `role` column uses `service-read`/`service-reveal`/`service-write`.
@@ -34,7 +34,7 @@ Roles in the UI are **RBAC names** (`team-owner/team-admin/...` and project-role
 
 ## Gotchas
 
-- `MASTER_KEY` encrypts secret values; `crypto/__init__.py`. Schema changes are a **migration story** — add a new `db/migrations/NNNN_slug.sql` file, never edit the baseline.
+- `MASTER_KEY` encrypts secret values; `crypto/__init__.py`. Schema changes are a **migration story** — add a new `db/migrations/NNNN_slug.sql` file when a change needs DDL (allowed when necessary), never edit the baseline.
 - Per-project BYOK: a project may have its own data-encryption key (`private.project_crypto_keys`, DEK wrapped by `MASTER_KEY`). Secret rows record `crypto_provider` (`master`/`project`); server settings always use `MASTER_KEY`. Management lives in `app/crypto/project_keys.py`; onboarding is the new-project wizard page (`routes/teams/projects.py`).
 - `ALLOW_INSECURE_DEFAULTS=1` only for local dev; `refuse_insecure_defaults()` otherwise errors.
 - Don't add `pyotp`/TOTP libs — the stdlib TOTP (hmac/hashlib/struct/time) is the chosen one.

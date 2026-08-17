@@ -1190,6 +1190,16 @@
       color: var(--muted-foreground);
       font-size: .9em;
     }
+    /* Error pages */
+    .error-panel { text-align: center; }
+    .error-code {
+      font-size: 3rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--muted-foreground);
+      margin: .25rem 0 .5rem;
+    }
+    .error-panel .form-actions { justify-content: center; }
     .list-panel,
     .crypto-panel {
       background: var(--card);

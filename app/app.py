@@ -7,7 +7,7 @@ with ``gunicorn app:app`` and ``import app as store`` in tests.
 import logging
 import os
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template, request
 
 from auth import authz
 from core import config
@@ -19,6 +19,63 @@ from routes import register_all
 log = logging.getLogger(__name__)
 
 config.refuse_insecure_defaults()
+
+
+# User-facing messages for HTTP errors rendered as WebUI pages.
+_ERROR_MESSAGES = {
+    400: ("Bad request", "The request was not understood."),
+    403: ("Forbidden", "You don’t have permission to view this."),
+    404: ("Not found", "That page doesn’t exist."),
+    405: ("Method not allowed", "This URL doesn’t accept that method."),
+    413: ("Request too large", "The upload or request exceeded the size limit."),
+    429: ("Too many requests", "Please slow down and try again shortly."),
+    500: ("Something went wrong", "An unexpected error occurred."),
+    502: ("Bad gateway", "An upstream service returned an invalid response."),
+    503: ("Service unavailable", "The service is temporarily unavailable."),
+}
+
+
+def _error_wants_json() -> bool:
+    """Return True for API/ESO/HTMX callers that want JSON, not an HTML page.
+
+    Browser page loads (including an HTTP error) get the themed error page;
+    anything asking for JSON or doing an HTMX/XHR swap gets a JSON body so it
+    does not inject a full HTML page into an HTMX target.
+    """
+    path = request.path
+    accept = request.headers.get("Accept") or ""
+    return (
+        path.startswith(("/api/", "/eso/", "/mgmt/"))
+        or "application/json" in accept
+        or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    )
+
+
+def _register_error_handlers(app) -> None:
+    """Attach themed HTML error pages (JSON for API/HTMX callers)."""
+    for _code, (_title, _fallback) in _ERROR_MESSAGES.items():
+
+        def _handler(_exc, _c=_code, _t=_title, _m=_fallback):
+            if _error_wants_json():
+                return jsonify({"error": _t, "status": _c}), _c
+            return render_template("error.html", code=_c, title=_t, message=_m), _c
+
+        app.register_error_handler(_code, _handler)
+
+    @app.errorhandler(Exception)
+    def _unhandled(e):
+        log.exception("Unhandled exception", exc_info=e)
+        if _error_wants_json():
+            return jsonify({"error": "Internal Server Error", "status": 500}), 500
+        return (
+            render_template(
+                "error.html",
+                code=500,
+                title="Something went wrong",
+                message="An unexpected error occurred.",
+            ),
+            500,
+        )
 
 
 def create_app():
@@ -44,6 +101,7 @@ def create_app():
 
     app.context_processor(inject_nav)
     register_all(app)
+    _register_error_handlers(app)
 
     # ── Jinja filters ──────────────────────────────────────────────────
     import audit as _audit  # noqa: E402

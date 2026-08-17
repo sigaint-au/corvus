@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · {{ app_name }}{% endblock %}
+{% block body %}
+<div class="page-head">
+  <h1>{{ title }}</h1>
+</div>
+<div class="list-panel error-panel">
+  <p class="error-code" role="status">{{ code }}</p>
+  {% if code == 404 %}
+  <p class="empty">The page “<span class="muted">{{ request.path }}</span>” was moved or doesn’t exist.</p>
+  {% else %}
+  <p class="empty">{{ message }}</p>
+  {% endif %}
+  <p class="form-actions">
+    {% if session.get('user_id') %}
+    <a class="button" href="{{ url_for('projects_list') }}">Back to Projects</a>
+    <a class="button ghost" href="{{ url_for('secrets_list') }}">Secrets</a>
+    <a class="button ghost" href="{{ url_for('teams') }}">Teams</a>
+    {% else %}
+    <a class="button" href="{{ url_for('login') }}">Sign in</a>
+    {% endif %}
+  </p>
+</div>
+{% endblock %}
