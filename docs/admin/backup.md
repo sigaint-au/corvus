@@ -26,23 +26,23 @@ the database backup.
 
 ```bash
 # Dump the whole database
-pg_dump -h <db-host> -U <admin-user> -d secretstore \
-  -Fc -f secretstore.dump
+pg_dump -h <db-host> -U <admin-user> -d secretserver \
+  -Fc -f secretserver.dump
 
 # Or plain SQL
-pg_dump -h <db-host> -U <admin-user> -d secretstore -f secretstore.sql
+pg_dump -h <db-host> -U <admin-user> -d secretserver -f secretserver.sql
 ```
 
 ### In-container (Compose)
 
 ```bash
-podman exec <db-container> pg_dump -U postgres secretstore -Fc > secretstore.dump
+podman exec <db-container> pg_dump -U postgres secretserver -Fc > secretserver.dump
 ```
 
 ### Scheduled
 
 ```cron
-0 2 * * * pg_dump -h db -U postgres -Fc secretstore > /backups/secretstore-$(date +\%F).dump
+0 2 * * * pg_dump -h db -U postgres -Fc secretserver > /backups/secretserver-$(date +\%F).dump
 ```
 
 Keep a retention policy (e.g. 30 daily, 12 monthly) and test restores
@@ -54,23 +54,23 @@ periodically.
 
 ```bash
 # Create the database if needed
-createdb -h <db-host> -U <admin-user> secretstore
+createdb -h <db-host> -U <admin-user> secretserver
 
 # Restore custom-format dump
-pg_restore -h <db-host> -U <admin-user> -d secretstore --clean --if-exists secretstore.dump
+pg_restore -h <db-host> -U <admin-user> -d secretserver --clean --if-exists secretserver.dump
 
 # Or restore plain SQL
-psql -h <db-host> -U <admin-user> -d secretstore -f secretstore.sql
+psql -h <db-host> -U <admin-user> -d secretserver -f secretserver.sql
 ```
 
 After restoring, set the same `MASTER_KEY`, `JWT_SECRET`, and `SECRET_KEY` in
 the app environment so existing ciphertext and tokens remain valid.
 
-> `0001_init.sql` / `0002_rbac.sql` are only for a **first** database init.
+> `0001_init.sql` / `0002_rls_authz_hardening.sql` are for a **first** database init and fresh installs only.
 > This branch uses a fresh-install-only squashed baseline; recreate the database
 > before applying it and do not use it as an upgrade script for an existing DB.
-> Existing databases are upgraded by `migrations.apply_pending()` at app
-> startup — do **not** re-run the baseline migrations over a restored database.
+> This branch is **fresh-install-only squash** — existing databases must be
+> recreated; do **not** re-run the baseline migrations over a restored database.
 
 ---
 

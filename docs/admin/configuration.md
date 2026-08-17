@@ -13,8 +13,8 @@ All environment variables and server settings for Sigaint Secret Server.
 | `JWT_SECRET` | Flask ↔ PostgREST JWT signing (HS256) | 64 hex chars |
 | `MASTER_KEY` | Fernet key for secret values | 64 hex chars |
 | `SECRET_KEY` | Flask session cookie (+ TOTP recovery HMAC) | 64 hex chars |
-| `DATABASE_URL` | App role (`authenticator`); RLS applies | `postgres://authenticator:…@db:5432/secretstore` |
-| `DATABASE_ADMIN_URL` | Superuser DSN for schema upgrades (**required**) | `postgres://postgres:…@db:5432/secretstore` |
+| `DATABASE_URL` | App role (`authenticator`); RLS applies | `postgres://authenticator:…@db:5432/secretserver` |
+| `DATABASE_ADMIN_URL` | Superuser DSN for schema upgrades (**required**) | `postgres://postgres:…@db:5432/secretserver` |
 
 ### Optional
 
@@ -117,7 +117,7 @@ Configured under **Administration → Server settings**. Stored in
 | `ACCESS_MODES` | `inherit, restricted` | Secret access modes |
 | `ACCESS_MODE_LABELS` | `inherit → "Inherit project access"`, `restricted → "Restricted (role bindings only)"` | Access mode labels |
 | `RBAC_VERBS` | `get, list, create, update, delete, reveal, admin, *` | RBAC verbs |
-| `RBAC_RESOURCES` | `teams, projects, secrets, bindings, roles, audit` | RBAC resources |
+| `RBAC_RESOURCES` | `teams, projects, secrets, bindings, roles, groups, machine_tokens, audit, users, *` | RBAC resources |
 | `RBAC_SCOPE_KINDS` | `cluster, team, project, secret` | RBAC scope kinds |
 | `RBAC_SUBJECT_KINDS` | `User, Group, ServiceAccount` | RBAC subject kinds |
 | `RBAC_BUILTIN_ROLES` | (see `core/config.py`) | All built-in role names |

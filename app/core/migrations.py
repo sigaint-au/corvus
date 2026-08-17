@@ -169,7 +169,7 @@ def pending_migrations(cur) -> list[tuple[str, str]]:
 def apply_pending(cur) -> None:
     """Apply all pending migrations, recording each version after it succeeds.
 
-    The baseline (``0001_init``, ``0002_rbac``) is seeded as applied after the
+    The baseline (``0001_init``) is seeded as applied after the
     Docker bootstrap leaves the tracking table empty. A pre-squash schema without
     the baseline marker is rejected. Every migration is applied via
     :func:`_split_sql_statements` (dollar-quote aware) and its checksum is

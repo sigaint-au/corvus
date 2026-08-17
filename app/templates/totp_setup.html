@@ -18,7 +18,10 @@
   </p>
   {% endif %}
   <p class="muted">Or enter this key manually:</p>
-  <p><code class="k totp-secret">{{ secret }}</code></p>
+  <p>
+    <code class="k totp-secret" id="totp-secret-code">{{ secret }}</code>
+    <button type="button" class="link copy-btn" data-copy-target="totp-secret-code">Copy</button>
+  </p>
 </section>
 
 <section>

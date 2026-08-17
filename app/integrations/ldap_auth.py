@@ -1,5 +1,6 @@
 """LDAP authentication and group membership sync."""
 import logging
+import ssl
 
 from core.config import DEFAULT_SETTINGS, LDAP_SETTING_KEYS
 from crypto import decrypt
@@ -277,11 +278,18 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
     # StartTLS only applies to plain ldap://; ldaps:// is already TLS
     want_tls = start_tls_cfg and not url.lower().startswith("ldaps://")
 
+    # Transport is always TLS here (ldaps:// or ldap:// + StartTLS);
+    # verify the server certificate against the system trust store so
+    # credentials and directory data cannot be MITM'd by a forged server.
     try:
-        from ldap3 import ALL, SUBTREE, Server
+        from ldap3 import ALL, SUBTREE, Server, Tls
     except ImportError:
         log.error("ldap3 not installed")
         return None
+    try:
+        tls = Tls(validate=ssl.CERT_REQUIRED)
+    except TypeError:  # ldap3 < 2.9.1 doesn't accept validate/ca_certs
+        tls = None
 
     user_filter = (cfg.get("ldap_user_filter") or "(mail={login})").replace(
         "{login}", ldap_escape(login)
@@ -293,7 +301,7 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
     group_filter_tmpl = (cfg.get("ldap_group_filter") or "(member={dn})").strip()
 
     try:
-        server = Server(url, get_info=ALL, connect_timeout=8)
+        server = Server(url, get_info=ALL, connect_timeout=8, tls=tls)
         bind_dn = (cfg.get("ldap_bind_dn") or "").strip()
         bind_pw = ldap_password_plain(cfg)
         if bind_dn:

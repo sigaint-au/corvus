@@ -43,7 +43,7 @@ Dockerfile      # App image
    mock the DB — no live Postgres needed.
 2. **Schema changes update the fresh-install baseline.** This branch uses a
    fresh-install-only squash: update the ordered content in
-   `db/migrations/0001_init.sql`, keep `0002_rbac.sql` as the no-op marker, and
+   `db/migrations/0001_init.sql` and recreate the database volume
    recreate the database volume. Existing databases are not supported by this
    baseline.
 3. **Run the full suite and lint** before submitting:

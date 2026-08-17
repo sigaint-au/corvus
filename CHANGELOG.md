@@ -40,7 +40,6 @@ tagged releases.
   project description / ACL / last_accessed columns, new `api.can_*` RPCs
 - `can_*` / `team_role` / `project_role` helpers evaluate RBAC bindings (legacy
   tables retained but not used for authorization on this branch)
-
 - CI workflows (Forgejo/GitHub Actions): unit tests + pylint
 - `SECURITY.md`, `CONTRIBUTING.md`, and this changelog
 - Machine token key allow-list (exact keys + `*` / `?` globs)
@@ -54,6 +53,9 @@ tagged releases.
 - UI modernisation (oat.ink components, machine accounts table layout)
 - Project access helpers simplified (`api.team_role` / `api.project_role`)
 - Unit tests moved out of `app/` so the container image stays deploy-only
+- Vendor `oat` + `htmx` under `app/static/vendor` and reference them self-hosted
+- API JWTs shortened to a 1-hour lifetime (was 24h) so revoked/disabled users
+  lose API access within an hour; `/api/token` reflects `expires_in: 3600`
 
 ### Fixed
 
@@ -62,6 +64,8 @@ tagged releases.
 - Team switch from another project’s secrets view no longer no-ops
 - Pager controls and various mobile / label UX issues
 - Screenshot filename: `login-classification-banner.png`
+- LDAP authentication now verifies the server TLS certificate (no MITM-prone
+  blind TLS); permanent trash purge requires project admin
 
 ## [0.1.0] - 2026-01-01
 

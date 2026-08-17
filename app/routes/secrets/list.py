@@ -264,7 +264,7 @@ def purge_secret(secret_id):
             """
             SELECT id, project_id, key FROM api.secrets
             WHERE id = %s AND deleted_at IS NOT NULL
-              AND api.can_write_project(project_id)
+              AND api.can_admin_project(project_id)
             """,
             (str(secret_id),),
         )
@@ -330,9 +330,15 @@ def bulk_trash():
             if not row:
                 continue
             cur.execute(
-                "SELECT api.can_write_project(%s) AS w", (str(row["project_id"]),)
+                """
+                SELECT api.can_write_project(%s) AS w,
+                       api.can_admin_project(%s) AS a
+                """,
+                (str(row["project_id"]), str(row["project_id"])),
             )
-            if not (cur.fetchone() or {}).get("w"):
+            allowed = cur.fetchone() or {}
+            needed = "w" if action == "restore" else "a"  # purge is irreversible
+            if not allowed.get(needed):
                 continue
             if action == "restore":
                 cur.execute(

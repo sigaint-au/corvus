@@ -134,12 +134,15 @@ def as_user(user_id: str):
     return conn
 
 
-def make_jwt(user_id: str, hours=24) -> str:
+def make_jwt(user_id: str, hours=1) -> str:
     """Create an HS256 JWT for PostgREST / API clients.
+
+    Short default TTL so a disabled/revoked user loses API access within
+    at most one hour (a stateless JWT cannot be revoked server-side).
 
     Args:
         user_id: UUID string placed in the ``sub`` claim.
-        hours: Token lifetime in hours. Defaults to 24.
+        hours: Token lifetime in hours. Defaults to 1.
 
     Returns:
         Encoded JWT string (``HS256`` with ``JWT_SECRET``).

@@ -55,7 +55,7 @@ Accept: application/json
 {
   "access_token": "<jwt>",
   "token_type": "bearer",
-  "expires_in": 86400,
+  "expires_in": 3600,
   "postgrest": "http://localhost:3000"
 }
 ```
@@ -66,7 +66,7 @@ expired.
 ### 3. Short-lived JWT (PostgREST)
 
 Issued by `GET /api/token` (session or PAT). Signed with `JWT_SECRET`, role
-claim `authenticated`. Lifetime: **24 hours**.
+claim `authenticated`. Lifetime: **1 hour**.
 
 ```bash
 JWT=$(curl -s -H "Authorization: Bearer pat_…" \
@@ -122,7 +122,7 @@ Mint a PostgREST JWT.
 {
   "access_token": "eyJ…",
   "token_type": "bearer",
-  "expires_in": 86400,
+  "expires_in": 3600,
   "postgrest": "http://postgrest:3000"
 }
 ```

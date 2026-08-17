@@ -188,12 +188,10 @@ The staging overlay inherits these schedules under its own namespace.
 ### Initial admin promotion (one-time)
 
 ```bash
-# 1. Set the email in the overlay configmap or pass via CLI:
-kubectl -n secretserver exec deploy/secretserver-app -- \
-  flask --app app:app promote-admin --email=ops@example.com
-
-# 2. Or set GLOBAL_ADMIN_EMAIL in deploy/base/app/configmap.yaml and rollout restart:
+# Admin is bootstrapped from the GLOBAL_ADMIN_EMAIL env var, not a CLI command.
+# Set it in deploy/base/app/configmap.yaml (or as a pod env var) and restart:
 kubectl -n secretserver rollout restart deploy/secretserver-app
+# The email is promoted to global admin on startup when no admin exists yet.
 ```
 
 ### Rotate MASTER_KEY
@@ -209,7 +207,7 @@ kubectl -n secretserver rollout restart deploy/secretserver-app
 
 # 3. After pods come back, re-wrap project DEKs:
 kubectl -n secretserver exec deploy/secretserver-app -- \
-  flask rekey-project-keys --old-master-key "$OLD_MASTER_KEY"
+  flask --app app rekey-project-keys --old-master-key "$OLD_MASTER_KEY"
 ```
 
 ### Rotate DB password

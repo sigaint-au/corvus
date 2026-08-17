@@ -160,6 +160,16 @@
       animation: secrets-spin .6s linear infinite;
       z-index: 2;
     }
+    /* Generic in-flight feedback for any button/link that triggers HTMX */
+    button.htmx-request,
+    a.htmx-request,
+    .icon-btn.htmx-request,
+    input[type="submit"].htmx-request {
+      opacity: .55;
+      pointer-events: none;
+      cursor: wait;
+      transition: opacity .12s ease;
+    }
     @keyframes secrets-spin {
       to { transform: rotate(360deg); }
     }

@@ -93,26 +93,3 @@ warn_unused_configs = true
 ignore_missing_imports = true
 check_untyped_defs = false
 files = ["app"]
-
-# ── Pylint (supplements .pylintrc) ─────────────────────────────────────
-[tool.pylint.main]
-jobs = 0
-py-version = "3.12"
-ignore-paths = ["tests"]
-
-[tool.pylint.format]
-max-line-length = 100
-
-[tool.pylint.design]
-max-args = 12
-max-locals = 40
-max-branches = 30
-max-statements = 100
-
-[tool.pylint.reports]
-score = true
-fail-under = 9.5
-output-format = "colorized"
-
-[tool.pylint.typecheck]
-ignored-modules = ["ldap3", "qrcode", "pyotp"]

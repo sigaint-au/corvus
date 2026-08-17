@@ -105,8 +105,8 @@ def create_app():
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' https://unpkg.com 'unsafe-inline'; "
-            "style-src 'self' https://unpkg.com 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; "
             "connect-src 'self'; "
             "object-src 'none'; "

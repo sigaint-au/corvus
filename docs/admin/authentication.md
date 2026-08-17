@@ -110,12 +110,12 @@ Response:
 {
   "access_token": "eyJ...",
   "token_type": "bearer",
-  "expires_in": 86400,
+  "expires_in": 3600,
   "postgrest": "http://localhost:3000"
 }
 ```
 
-The JWT acts as **that user** under RLS for 24 hours. Invalid / revoked /
+The JWT acts as **that user** under RLS for at most 1 hour. Invalid / revoked /
 expired PATs return `401 {"error":"unauthorized"}`.
 
 ### Use the JWT against PostgREST
@@ -260,7 +260,7 @@ curl -s -X DELETE "${AUTH[@]}" \
 
 The JWT is the bridge between the app and PostgREST. Minted by `GET /api/token`
 from a session or PAT, signed with `JWT_SECRET` (HS256), carrying `sub`
-(user id), `role: authenticated`, and a 24h `exp`.
+(user id), `role: authenticated`, and a 1h `exp`.
 
 PostgREST maps the JWT `role` to the DB role `authenticated` and reads the `sub`
 claim from `request.jwt.claims` for RLS. **RLS is the access-control plane** —
@@ -378,7 +378,7 @@ for any local user from **Administration → Users**.
 |-------|----------|-------------|------------|-----------------|
 | Session | 14 days idle / sliding | n/a | Per-session revoke, "sign out all", password change, admin disable | Server-side `private.user_sessions` + signed cookie |
 | PAT | Optional 1–3650 days | yes | Revoke in UI | SHA-256 hash |
-| JWT | 24 hours | n/a | Not revocable (short-lived) | Not stored |
+| JWT | 1 hour | n/a | Not revocable (short-lived) | Not stored |
 | Machine (`ss_`) | Optional 1–3650 days | yes | Delete in UI | SHA-256 hash |
 | Invite link | 1–90 days | yes | Revoke in UI | SHA-256 hash |
 | Password reset | 1 hour | yes | n/a | SHA-256 hash |

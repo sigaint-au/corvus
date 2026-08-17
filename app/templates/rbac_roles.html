@@ -226,6 +226,16 @@ verbs: *
   }
   formBtn.addEventListener('click', function () { setMode('form'); });
   yamlBtn.addEventListener('click', function () { setMode('yaml'); });
+  var tablist = document.querySelector('.role-mode-tabs');
+  if (tablist) {
+    tablist.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      var next = (e.key === 'ArrowRight') ? yamlBtn : formBtn;
+      next.focus();
+      next.click();
+    });
+  }
   setMode('form');
 })();
 </script>

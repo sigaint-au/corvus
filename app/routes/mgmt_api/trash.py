@@ -77,17 +77,22 @@ def mgmt_purge_trash(project_ref, secret_id):
         pid = _resolve_project(cur, project_ref)
         if not pid:
             return jsonify({"error": "not found"}), 404
+        row = None
         cur.execute(
             """
-            SELECT id, key FROM api.secrets
+            SELECT id, key, api.can_admin_project(project_id) AS is_admin
+              FROM api.secrets
              WHERE id = %s::uuid AND project_id = %s::uuid
                AND deleted_at IS NOT NULL
             """,
             (secret_id, pid),
         )
-        row = cur.fetchone()
+        found = cur.fetchone()
+        # Purging permanently deletes a secret — require project admin, not writer.
+        if found and found.get("is_admin"):
+            row = found
         if not row:
-            return jsonify({"error": "not found"}), 404
+            return jsonify({"error": "not found or forbidden"}), 404
         cur.execute(
             "DELETE FROM api.secrets WHERE id = %s::uuid",
             (str(row["id"]),),
@@ -158,6 +163,7 @@ def mgmt_bulk_trash(project_ref):
                     """
                     SELECT id, key FROM api.secrets
                      WHERE project_id = %s::uuid AND deleted_at IS NOT NULL
+                       AND api.can_admin_project(project_id)
                        AND id = ANY(%s::uuid[])
                     """,
                     (pid, ids),
@@ -167,6 +173,7 @@ def mgmt_bulk_trash(project_ref):
                     """
                     SELECT id, key FROM api.secrets
                      WHERE project_id = %s::uuid AND deleted_at IS NOT NULL
+                       AND api.can_admin_project(project_id)
                     """,
                     (pid,),
                 )

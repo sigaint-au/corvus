@@ -16,7 +16,8 @@
   </label>
   <button type="submit">Verify</button>
 </form>
-<p class="muted mt-1">
-  <a href="{{ url_for('logout_get') }}">Back to sign in</a>
-</p>
+<form method="post" action="{{ url_for('logout') }}" class="inline">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <button type="submit" class="link muted">Back to sign in</button>
+</form>
 {% endblock %}

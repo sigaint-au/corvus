@@ -82,14 +82,15 @@ app/
 
 ```
 db/migrations/
-  0001_init.sql     # Complete squashed schema/security baseline (01-init.sql)
-  0002_rbac.sql     # No-op bootstrap/version marker (02-rbac.sql)
+  0001_init.sql                  # Complete squashed schema/security baseline (01-init.sql)
+  0002_rls_authz_hardening.sql   # Additive RLS/authz hardening (applied by apply_pending)
 ```
 
-On fresh databases, `docker-entrypoint-initdb.d` runs the two baseline
-migrations (`0001_init.sql`, `0002_rbac.sql`). On every startup the app checks
-the two baseline versions via `migrations.apply_pending()`, recording their
-versions and checksums in `private.schema_migrations`.
+On fresh databases, `docker-entrypoint-initdb.d` runs the `0001_init.sql`
+baseline. On every startup the app checks migrations via
+`migrations.apply_pending()`, seeding the `0001` baseline and applying newer
+ones (`0002_rls_authz_hardening.sql`), recording versions and checksums in
+`private.schema_migrations`.
 
 ---
 

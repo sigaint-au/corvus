@@ -10,19 +10,17 @@ enforce access control.
 Schema DDL is maintained in the squashed `db/migrations/0001_init.sql` baseline
 and applied by the migration runner (`app/core/migrations.py`).
 
-- **Fresh installs** run the squashed baseline and marker via
-  `docker-entrypoint-initdb.d` (mounted by `compose.yml`):
-  1. `db/migrations/0001_init.sql` (as `01-init.sql`) — the complete schema,
-     functions, policies, grants, and security hardening.
-  2. `db/migrations/0002_rbac.sql` (as `02-rbac.sql`) — a no-op baseline marker
-     retained for the bootstrap contract.
-- **Every startup** the app checks the two baseline files via
-  `migrations.apply_pending()` (requires `DATABASE_ADMIN_URL`), serialized by a
-  `pg_advisory_lock`. Their versions and sha256 checksums are recorded in
+- **Fresh installs** run the baseline via `docker-entrypoint-initdb.d` (mounted
+  by `compose.yml`):
+  `db/migrations/0001_init.sql` (as `01-init.sql`) — the complete squashed schema,
+  functions, policies, grants, and security hardening.
+- **Every startup** the app checks migrations via `migrations.apply_pending()`
+  (requires `DATABASE_ADMIN_URL`), serialized by a `pg_advisory_lock`. It seeds
+  the `0001` baseline as applied, then applies any newer numbered migrations (e.g.
+  `0002_rls_authz_hardening.sql`). Versions and sha256 checksums are recorded in
   `private.schema_migrations`.
 - This branch uses a **fresh-install-only squash**. Existing databases must be
-  recreated; there is no compatibility upgrade path from the historical
-  `0003`–`0030` migration series.
+  recreated; there is no compatibility upgrade path from older schemas.
 
 > Do **not** edit an already-released migration file — its checksum is recorded
 > and drift is detected on startup. Add a new numbered migration instead.
@@ -31,18 +29,19 @@ and applied by the migration runner (`app/core/migrations.py`).
 
 | File | Contains | Does NOT contain |
 |------|----------|------------------|
-| `0001_init.sql` | Complete ordered schema and security baseline | None |
-| `0002_rbac.sql` | No-op version marker for Docker/bootstrap compatibility | Schema DDL |
+| `0001_init.sql` | Complete squashed schema and security baseline | None |
+| `0002_rls_authz_hardening.sql` | Additive RLS / authz hardening (pin `project.team_id`, guard secret/team-owner updates, restrict admin assignment) | Schema DDL for new tables |
 
-The squashed file preserves the original dependency order internally. Do not
-split it into new numbered files without defining a replacement upgrade plan.
+The squashed `0001` file preserves the original dependency order internally. Do
+not split it into new numbered files without defining a replacement upgrade plan.
 
 ### Adding a migration
 
-This branch has no supported incremental migration workflow. For a fresh-only
-development database, update the ordered content in `0001_init.sql`, keep
-`0002_rbac.sql` as the marker, recreate the database volume, and run the full
-test/lint checks. Do not apply this baseline to an existing database.
+Create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it
+idempotent where possible, and run the test/lint checks. It is applied by
+`migrations.apply_pending()` at startup. For fresh-only development databases
+you may instead edit `0001_init.sql` directly and recreate the volume. Do not
+apply this baseline to an existing database.
 
 ---
 
@@ -133,7 +132,7 @@ Unique index on `(role_id, subject_kind, subject_id, scope_kind, scope_id)`.
 ## RLS helpers (SECURITY DEFINER)
 
 All helpers set `SET search_path = api, private` and `SET row_security = off`.
-Defined in `rbac.sql`.
+Defined in the `0001_init.sql` baseline.
 
 | Function | Returns |
 |----------|---------|
@@ -168,13 +167,13 @@ The squashed baseline applies these HSM protections:
   URL for the admin UI.
 - `api.hsm_slot_url(uuid)` is revoked from PostgREST roles. Internal crypto and
   admin code read the private table through privileged application connections;
-  migration `0030` removes this unused RPC entirely.
+  the unused RPC is no longer exposed.
 - `api.hsm_slot_upsert` and `api.hsm_slot_delete` require a global admin, and the
   write RPCs are not executable by `anon`.
 - A slot URL cannot change while project keys reference that slot. Use a new slot
   and migrate the projects instead.
 
-The same baseline includes the remaining database-boundary controls:
+The baseline also includes the remaining database-boundary controls:
 
 - `PUBLIC` function execution is revoked from the `api` schema; functions must
   be explicitly granted to `anon`, `authenticated`, or `authenticator`.
@@ -189,17 +188,11 @@ The same baseline includes the remaining database-boundary controls:
   bypass RLS, so user-scoped application code must use `db.as_user()` rather
   than `db.connect_admin()`.
 
-`0030_simplify_function_surface.sql` removes the unused HSM URL RPC and sets
-secure default function privileges for future migrations. Historical migration
-files are intentionally retained because their checksums are recorded in
-`private.schema_migrations`; simplification happens through additive cleanup
-migrations rather than rewriting history.
-
 ---
 
 ## RLS policies
 
-All RLS policies are defined in `rbac.sql` (not `init.sql`). Every `api` table
+All RLS policies are defined in the `0001_init.sql` baseline. Every `api` table
 has `ENABLE` (and sensitive tables `FORCE`) ROW LEVEL SECURITY with
 `USING`/`WITH CHECK` policies for `authenticated`.
 
@@ -239,8 +232,8 @@ hash and granted only to `authenticator` (not `authenticated`).
 | `private.pending_access_requests_for_admin` | Pending requests for admin |
 
 > Functions that call RBAC auth helpers are `LANGUAGE plpgsql` (deferred
-> validation) so they can be created in `init.sql` before `rbac.sql` defines
-> the auth functions.
+> validation) so they can be created before the auth functions they call
+> are defined later in the same baseline.
 
 ---
 

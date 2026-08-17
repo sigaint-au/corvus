@@ -14,7 +14,12 @@ from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True
 
-class TestHealth:
+class TestEsoHealth:
+    """Tests for the ESO ``/health`` endpoint and security headers.
+
+    ``/healthz`` (liveness) and ``/readyz`` (readiness) are the container
+    probes; ``/health`` here is the ESO (external service) DB-backed one.
+    """
 
     def test_ok(self):
         conn, _ = _conn()
@@ -49,7 +54,7 @@ class TestHealth:
         assert r.headers.get('X-Frame-Options') == 'DENY'
         assert r.headers.get('Referrer-Policy') == 'no-referrer'
         csp = r.headers.get('Content-Security-Policy', '')
-        assert 'unpkg.com' in csp
+        assert 'unpkg.com' not in csp
         assert "frame-ancestors 'none'" in csp
         assert 'Strict-Transport-Security' not in r.headers
 

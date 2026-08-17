@@ -353,6 +353,11 @@ def safe_redirect_target(nxt: str | None, fallback: str) -> str:
     """
     if not nxt:
         return fallback
+    # Reject any control/whitespace char and backslash: browsers normalize
+    # backslash to '/', so urlsplit() sees ``/\evil`` as a harmless path while
+    # the browser flips it into ``//evil`` (open redirect). Block all three.
+    if any(c in nxt for c in "\\\r\n\t\x00"):
+        return fallback
     parts = urlsplit(nxt)
     if parts.scheme or parts.netloc or not nxt.startswith("/"):
         return fallback

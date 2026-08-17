@@ -49,4 +49,4 @@ fail-under = 9.5
 output-format = colorized
 
 [TYPECHECK]
-ignored-modules = ldap3, qrcode, pyotp
+ignored-modules = ldap3, qrcode

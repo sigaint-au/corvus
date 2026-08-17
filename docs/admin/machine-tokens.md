@@ -77,7 +77,7 @@ and resource name prefix. The UI generates the `Secret` + `SecretStore` YAML.
 ### 3. Apply in the cluster
 
 ```bash
-oc apply -f generated-secretstore.yaml
+oc apply -f generated-secretserver.yaml
 ```
 
 Sample manifest: [openshift-eso.yaml](../openshift-eso.yaml).

@@ -79,11 +79,12 @@ Reveal approval remains a separate layer after the `reveal` verb.
   `db/migrations/0001_init.sql` baseline
 - Unique index on `bindings(role_id, subject_kind, subject_id, scope_kind, scope_id)`
 - `source` column on bindings: `manual`, `ldap`, or `oidc`
-- Applied by `migrations.apply_pending()` on existing volumes and on fresh
-  volumes via compose `02-rbac.sql`
+- Applied by `migrations.apply_pending()` at startup; fresh volumes get the
+  `0001_init.sql` baseline via compose, and `0002_rls_authz_hardening.sql` is
+  applied by the app
 - `db/migrations/0001_init.sql` contains tables, RBAC functions, `ENABLE/FORCE`
   RLS, grants, and all RLS policies
-- `db/migrations/0002_rbac.sql` is a no-op bootstrap/version marker
+- `db/migrations/0002_rls_authz_hardening.sql` applies additive RLS/authz hardening
 - Legacy membership and ACL tables are removed during schema ensure
 - `can()` rejects deleted secrets at the authorizer level
 - Compatibility helpers `can_read_project`, `can_write_project`,

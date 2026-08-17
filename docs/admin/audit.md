@@ -67,13 +67,13 @@ Purge targets: `api.secret_audit`, `api.org_audit`, `private.login_failures`.
 Podman:
 
 ```cron
-15 3 * * * podman exec secretstore_app_1 flask --app app purge-audit >> /var/log/secretstore-purge-audit.log 2>&1
+15 3 * * * podman exec secretserver_app_1 flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
 ```
 
 Docker Compose:
 
 ```cron
-15 3 * * * cd /path/to/secretstore && docker compose exec -T app flask --app app purge-audit >> /var/log/secretstore-purge-audit.log 2>&1
+15 3 * * * cd /path/to/secretserver && docker compose exec -T app flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
 ```
 
 ### OpenShift CronJob
@@ -82,8 +82,8 @@ Full manifest: [openshift-purge-audit-cronjob.yaml](../openshift-purge-audit-cro
 
 ```bash
 oc apply -f docs/openshift-purge-audit-cronjob.yaml
-oc create job --from=cronjob/secretstore-purge-audit purge-audit-manual -n secretstore
-oc logs job/purge-audit-manual -n secretstore
+oc create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
+oc logs job/purge-audit-manual -n secretserver
 ```
 
 ---

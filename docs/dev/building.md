@@ -9,7 +9,7 @@ Every step is a **copy-paste code block** — replace the `…` placeholders.
 
 | Image | Source | Build or pull? |
 |-------|--------|----------------|
-| **app** (`secretstore`) | `Dockerfile` at repo root | **Build locally** (this guide) |
+| **app** (`secretserver`) | `Dockerfile` at repo root | **Build locally** (this guide) |
 | Postgres | `docker.io/library/postgres:16-alpine` | Pulled (from `compose.yml`) |
 | PostgREST | `docker.io/postgrest/postgrest:v12.2.3` | Pulled (from `compose.yml`) |
 | Redis | `docker.io/library/redis:7-alpine` | Pulled (from `compose.yml`) |
@@ -39,10 +39,10 @@ docker --version   # or: podman --version
 
 ```bash
 # From the repo root (build context = .)
-docker build -t secretstore:latest .
+docker build -t secretserver:latest .
 
 # Tagged build (recommended)
-docker build -t secretstore:1.2.0 -t secretstore:latest .
+docker build -t secretserver:1.2.0 -t secretserver:latest .
 
 # Via Compose (builds + starts the stack)
 docker compose up -d --build
@@ -51,7 +51,7 @@ docker compose up -d --build
 Podman:
 
 ```bash
-podman build -t secretstore:latest .
+podman build -t secretserver:latest .
 podman-compose up -d --build
 ```
 
@@ -60,13 +60,13 @@ podman-compose up -d --build
 ## 3. Verify the image
 
 ```bash
-docker images | grep secretstore
+docker images | grep secretserver
 
-docker inspect secretstore:latest \
+docker inspect secretserver:latest \
   --format '{{.Config.User}} | {{.Config.Cmd}} | {{.Config.ExposedPorts}}'
 # → 10001 | [gunicorn -b 0.0.0.0:8080 -w 2 --timeout 60 app:app] | map[8080/tcp:{}]
 
-docker run --rm secretstore:latest python -c "import app; print('ok')"
+docker run --rm secretserver:latest python -c "import app; print('ok')"
 ```
 
 ---
@@ -87,21 +87,21 @@ docker login quay.io
 
 ```bash
 # Docker Hub
-docker tag secretstore:1.2.0 <dockerhub-user>/secretstore:1.2.0
-docker tag secretstore:latest <dockerhub-user>/secretstore:latest
+docker tag secretserver:1.2.0 <dockerhub-user>/secretserver:1.2.0
+docker tag secretserver:latest <dockerhub-user>/secretserver:latest
 
 # GHCR
-docker tag secretstore:1.2.0 ghcr.io/<org>/secretstore:1.2.0
+docker tag secretserver:1.2.0 ghcr.io/<org>/secretserver:1.2.0
 
 # Quay
-docker tag secretstore:1.2.0 quay.io/<org>/secretstore:1.2.0
+docker tag secretserver:1.2.0 quay.io/<org>/secretserver:1.2.0
 ```
 
 ### Push
 
 ```bash
-docker push <registry>/<org>/secretstore:1.2.0
-docker push <registry>/<org>/secretstore:latest
+docker push <registry>/<org>/secretserver:1.2.0
+docker push <registry>/<org>/secretserver:latest
 ```
 
 ---
@@ -112,8 +112,8 @@ docker push <registry>/<org>/secretstore:latest
 docker buildx create --use
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t <registry>/<org>/secretstore:1.2.0 \
-  -t <registry>/<org>/secretstore:latest \
+  -t <registry>/<org>/secretserver:1.2.0 \
+  -t <registry>/<org>/secretserver:latest \
   --push .
 ```
 
@@ -122,13 +122,13 @@ Podman / Buildah:
 ```bash
 podman build \
   --platform linux/amd64,linux/arm64 \
-  -t <registry>/<org>/secretstore:1.2.0 \
-  -t <registry>/<org>/secretstore:latest \
-  --manifest secretstore \
+  -t <registry>/<org>/secretserver:1.2.0 \
+  -t <registry>/<org>/secretserver:latest \
+  --manifest secretserver \
   .
 
-podman manifest push --all secretstore \
-  docker://<registry>/<org>/secretstore:latest
+podman manifest push --all secretserver \
+  docker://<registry>/<org>/secretserver:latest
 ```
 
 ---

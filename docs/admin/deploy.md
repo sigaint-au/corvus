@@ -177,8 +177,8 @@ flask --app app purge-audit --days 90
 Inside the running container:
 
 ```bash
-podman exec secretstore_app_1 flask --app app purge-audit --dry-run
-podman exec secretstore_app_1 flask --app app purge-audit
+podman exec secretserver_app_1 flask --app app purge-audit --dry-run
+podman exec secretserver_app_1 flask --app app purge-audit
 ```
 
 ### Host crontab
@@ -186,13 +186,13 @@ podman exec secretstore_app_1 flask --app app purge-audit
 Podman:
 
 ```cron
-15 3 * * * podman exec secretstore_app_1 flask --app app purge-audit >> /var/log/secretstore-purge-audit.log 2>&1
+15 3 * * * podman exec secretserver_app_1 flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
 ```
 
 Docker Compose:
 
 ```cron
-15 3 * * * cd /path/to/secretstore && docker compose exec -T app flask --app app purge-audit >> /var/log/secretstore-purge-audit.log 2>&1
+15 3 * * * cd /path/to/secretserver && docker compose exec -T app flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
 ```
 
 ### OpenShift CronJob
@@ -202,9 +202,9 @@ Use the same app image and env as the Deployment. Full manifest:
 
 ```bash
 oc apply -f docs/openshift-purge-audit-cronjob.yaml
-oc get cronjobs -n secretstore
-oc create job --from=cronjob/secretstore-purge-audit purge-audit-manual -n secretstore
-oc logs job/purge-audit-manual -n secretstore
+oc get cronjobs -n secretserver
+oc create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
+oc logs job/purge-audit-manual -n secretserver
 ```
 
 ---
@@ -223,6 +223,6 @@ manifest [openshift-eso.yaml](../openshift-eso.yaml).
 | `Dockerfile` | App image (build context = repo root) |
 | `compose.yml` | Postgres + PostgREST + app |
 | `db/migrations/0001_init.sql` | Complete schema/security baseline (applied as `01-init.sql`) |
-| `db/migrations/0002_rbac.sql` | No-op bootstrap/version marker (applied as `02-rbac.sql`) |
-| `app/` | Flask app; `core/migrations.py` applies remaining migrations on existing volumes |
+| `db/migrations/0002_rls_authz_hardening.sql` | Additive RLS/authz hardening (applied by `core/migrations.py` at startup) |
+| `app/` | Flask app; `core/migrations.py` applies pending migrations on startup |
 | `docs/` | This documentation set |

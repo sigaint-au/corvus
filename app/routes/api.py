@@ -60,7 +60,7 @@ def api_token():
         {
             "access_token": db.make_jwt(uid),
             "token_type": "bearer",
-            "expires_in": 24 * 3600,
+            "expires_in": 1 * 3600,
             "postgrest": config.POSTGREST_URL,
         }
     )

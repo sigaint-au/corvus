@@ -1,7 +1,7 @@
 # OpenShift CronJob: daily audit retention purge
 #
 # Prerequisites:
-#   - Same app image as the secretstore Deployment
+#   - Same app image as the secretserver Deployment
 #   - Secret/env with DATABASE_ADMIN_URL (and other app env vars as needed)
 #   - Retention configured in UI: Administration → Auditing → Export & retention
 #     (audit_retention_days; 0 = forever → job exits without deleting)
@@ -9,16 +9,16 @@
 # Apply:
 #   oc apply -f docs/openshift-purge-audit-cronjob.yaml
 # Manual run:
-#   oc create job --from=cronjob/secretstore-purge-audit purge-audit-manual -n secretstore
-#   oc logs job/purge-audit-manual -n secretstore
+#   oc create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
+#   oc logs job/purge-audit-manual -n secretserver
 
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: secretstore-purge-audit
-  namespace: secretstore
+  name: secretserver-purge-audit
+  namespace: secretserver
   labels:
-    app: secretstore
+    app: secretserver
     component: purge-audit
 spec:
   # 03:15 UTC every day
@@ -35,15 +35,15 @@ spec:
       template:
         metadata:
           labels:
-            app: secretstore
+            app: secretserver
             component: purge-audit
         spec:
           restartPolicy: Never
-          # serviceAccountName: secretstore
+          # serviceAccountName: secretserver
           containers:
             - name: purge-audit
               # Replace with your ImageStream / registry tag
-              image: image-registry.openshift-image-registry.svc:5000/secretstore/secretstore:latest
+              image: image-registry.openshift-image-registry.svc:5000/secretserver/secretserver:latest
               imagePullPolicy: IfNotPresent
               command:
                 - flask
@@ -58,7 +58,7 @@ spec:
                 # Must include at least DATABASE_ADMIN_URL (and usually DATABASE_URL,
                 # JWT_SECRET, MASTER_KEY, SECRET_KEY — same as the web Deployment).
                 - secretRef:
-                    name: secretstore-app-env
+                    name: secretserver-app-env
               resources:
                 requests:
                   cpu: 50m

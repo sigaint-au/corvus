@@ -2737,7 +2737,7 @@ DROP POLICY IF EXISTS secrets_delete ON api.secrets;
 CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
   USING (
     deleted_at IS NOT NULL
-    AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)
+    AND api.can_admin_project(project_id)
   );
 
 -- ── secret_meta: select/insert/update/delete (can_access_secret read/write)
@@ -4593,7 +4593,7 @@ DROP POLICY IF EXISTS secrets_delete ON api.secrets;
 CREATE POLICY secrets_delete ON api.secrets FOR DELETE TO authenticated
           USING (
             deleted_at IS NOT NULL
-            AND api.can_access_secret_row(id, project_id, access_mode, 'write', NULL)
+            AND api.can_admin_project(project_id)
           );
 
 ALTER TABLE api.groups ENABLE ROW LEVEL SECURITY;
