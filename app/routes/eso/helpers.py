@@ -13,6 +13,7 @@ from flask import (
     jsonify,
     request,
 )
+from werkzeug.exceptions import HTTPException
 
 import audit
 import crypto
@@ -21,7 +22,6 @@ from lib.auth_tokens import classify_token
 from lib.datetime_utils import iso_utc
 from lib.validate import is_uuid
 from secret_svc.commands import upsert_secret_command
-from secret_svc.exceptions import SecretOperationError
 
 from .http import bearer_raw
 
@@ -450,7 +450,7 @@ def _upsert_body(project_ref, key: str, body: dict):
         if not _pat_can_write(cur, pid):
             return jsonify({"error": "forbidden"}), 403
         try:
-            result = upsert_secret_command(
+            sid, _was_new = upsert_secret_command(
                 cur,
                 project_id=pid,
                 key=key,
@@ -461,10 +461,8 @@ def _upsert_body(project_ref, key: str, body: dict):
                 audit_action="machine_upsert",
                 actor_email=ident,
             )
-        except SecretOperationError:
-            return jsonify({"error": "forbidden"}), 403
-        if not result.ok:
-            return jsonify({"error": "forbidden"}), 403
+        except HTTPException as e:
+            return jsonify({"error": str(e)}), e.code
         cur.execute(
             """
             SELECT id, key, note, kind, expires_at,
@@ -472,9 +470,9 @@ def _upsert_body(project_ref, key: str, body: dict):
                    created_at, updated_at
               FROM api.secrets WHERE id = %s
             """,
-            (str(result.secret_id),),
+            (str(sid),),
         )
-        row = cur.fetchone() or {"id": result.secret_id, "key": key}
+        row = cur.fetchone() or {"id": sid, "key": key}
         conn.commit()
     item = _meta_item(row, value=str(value))
     item["ok"] = True

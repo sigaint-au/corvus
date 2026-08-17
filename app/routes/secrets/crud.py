@@ -10,6 +10,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.exceptions import HTTPException
 
 import audit
 from auth import authz
@@ -19,7 +20,6 @@ from secret_svc.commands import (
     update_secret_value_command,
     upsert_secret_command,
 )
-from secret_svc.exceptions import SecretOperationError
 from secret_svc.secret_kinds import (
     normalize_kind,
     parse_kv_lines,
@@ -71,7 +71,7 @@ def create_secret(project_id):
         return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
-            result = upsert_secret_command(
+            upsert_secret_command(
                 cur,
                 project_id=project_id,
                 key=key,
@@ -84,13 +84,10 @@ def create_secret(project_id):
                 access_mode=access_mode,
                 set_access_mode=True,
             )
-            if result.ok:
-                conn.commit()
-            else:
-                conn.rollback()
-                flash(result.error, "error")
-        except SecretOperationError:
-            flash("Could not save the secret. Try again.", "error")
+            conn.commit()
+        except HTTPException as e:
+            conn.rollback()
+            flash(str(e), "error")
     if authz.htmx():
         return _secrets_partial(project_id)
     return redirect(
@@ -120,12 +117,12 @@ def delete_secret(project_id, secret_id):
         POST /projects/<project_id>/secrets/<secret_id>/delete
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        result = delete_secret_command(cur, project_id=project_id, secret_id=secret_id)
-        if result.ok:
+        try:
+            delete_secret_command(cur, project_id=project_id, secret_id=secret_id)
             conn.commit()
-        else:
+        except HTTPException as e:
             conn.rollback()
-            flash(result.error, "error")
+            flash(str(e), "error")
     if authz.htmx():
         return _secrets_partial(project_id)
     return redirect(
@@ -144,9 +141,7 @@ def upsert_secret_meta(project_id, secret_id):
     """Add or update a custom metadata field (writers)."""
     key = (request.form.get("key") or "").strip()
     value = (request.form.get("value") or "").strip()
-    meta_url = url_for(
-        "secret_view", project_id=project_id, secret_id=secret_id, tab="meta"
-    )
+    meta_url = url_for("secret_view", project_id=project_id, secret_id=secret_id, tab="meta")
     import re
 
     if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", key or ""):
@@ -203,9 +198,7 @@ def upsert_secret_meta(project_id, secret_id):
 @authz.login_required
 def delete_secret_meta(project_id, secret_id, meta_key):
     """Remove a custom metadata field."""
-    meta_url = url_for(
-        "secret_view", project_id=project_id, secret_id=secret_id, tab="meta"
-    )
+    meta_url = url_for("secret_view", project_id=project_id, secret_id=secret_id, tab="meta")
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT api.can_access_secret(%s, 'write') AS w",
@@ -271,37 +264,31 @@ def update_secret_value(project_id, secret_id):
         if authz.htmx():
             return str(e), 400
         flash("Could not save the secret. Try again.", "error")
-        return redirect(
-            url_for("project_detail", project_id=project_id, tab="secrets")
-        )
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        result = update_secret_value_command(
-            cur,
-            project_id=project_id,
-            secret_id=secret_id,
-            value=value,
-            expires_at=expires_at,
-            set_expires=set_expires,
-        )
-        if not result.ok:
-            if result.status == 403:
-                conn.rollback()
-            return result.error, result.status
-        conn.commit()
+        try:
+            update_secret_value_command(
+                cur,
+                project_id=project_id,
+                secret_id=secret_id,
+                value=value,
+                expires_at=expires_at,
+                set_expires=set_expires,
+            )
+            conn.commit()
+        except HTTPException as e:
+            conn.rollback()
+            return str(e), e.code
     if authz.htmx():
         # Hide value again; show brief confirmation and restore Reveal control
         cell_id = f"reveal-{secret_id}"
-        reveal_url = url_for(
-            "reveal_secret", project_id=project_id, secret_id=secret_id
-        )
+        reveal_url = url_for("reveal_secret", project_id=project_id, secret_id=secret_id)
         body = render_template(
             "partials/reveal_saved.html",
             reveal_url=reveal_url,
             cell_id=cell_id,
         )
-        body += _reveal_toggle_html(
-            project_id, secret_id, revealed=False, cell=None
-        )
+        body += _reveal_toggle_html(project_id, secret_id, revealed=False, cell=None)
         return body
     flash("Secret updated", "ok")
     return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
@@ -400,9 +387,8 @@ def secret_new(project_id):
         cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
         if not cur.fetchone()["w"]:
             flash("You don't have permission to do that", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="secrets")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+
     def _new_ctx(**extra):
         ctx = {
             "project": project,
@@ -415,9 +401,7 @@ def secret_new(project_id):
             "access_mode": "inherit",
             "access_modes": config.ACCESS_MODES,
             "access_mode_labels": config.ACCESS_MODE_LABELS,
-            "require_reveal_approval": bool(
-                project.get("require_reveal_approval")
-            ),
+            "require_reveal_approval": bool(project.get("require_reveal_approval")),
         }
         ctx.update(extra)
         return ctx
@@ -459,7 +443,7 @@ def secret_new(project_id):
         ), 400
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
-            result = upsert_secret_command(
+            _sid, was_new = upsert_secret_command(
                 cur,
                 project_id=project_id,
                 key=key,
@@ -472,14 +456,11 @@ def secret_new(project_id):
                 access_mode=_parse_access_mode(request.form),
                 set_access_mode=True,
             )
-            if result.ok:
-                conn.commit()
-                flash("Secret created" if result.was_new else "Secret updated", "ok")
-            else:
-                conn.rollback()
-                flash(result.error, "error")
-        except SecretOperationError:
-            flash("Could not save the secret. Try again.", "error")
+            conn.commit()
+            flash("Secret created" if was_new else "Secret updated", "ok")
+        except HTTPException as e:
+            conn.rollback()
+            flash(str(e), "error")
             return render_template(
                 "secret_new.html",
                 **_new_ctx(
@@ -491,6 +472,4 @@ def secret_new(project_id):
                     access_mode=_parse_access_mode(request.form),
                 ),
             ), 400
-    return redirect(
-        url_for("project_detail", project_id=project_id, tab="secrets")
-    )
+    return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))

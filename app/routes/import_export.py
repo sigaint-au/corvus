@@ -78,6 +78,7 @@ def register(app):
     app.post("/projects/<uuid:project_id>/import/commit")(import_commit)
     app.post("/projects/<uuid:project_id>/export/bulk")(bulk_export)
 
+
 @authz.login_required
 def export_secrets(project_id):
     """Export all live project secrets as env, JSON, or CSV (plain or encrypted).
@@ -112,9 +113,7 @@ def export_secrets(project_id):
         )
         conn.commit()
     if mode == "enc":
-        payload = {
-            r["key"]: {"value_enc": r["value_enc"], "note": r["note"]} for r in rows
-        }
+        payload = {r["key"]: {"value_enc": r["value_enc"], "note": r["note"]} for r in rows}
         body = json.dumps(payload, indent=2)
         return Response(
             body,
@@ -181,6 +180,7 @@ def _read_import_payload():
     if not raw.strip():
         return None, "Paste secrets or choose a file"
     return raw, None
+
 
 @authz.login_required
 def import_preview(project_id):
@@ -277,6 +277,7 @@ def import_preview(project_id):
         kind_options=_KIND_OPTIONS,
     )
 
+
 @authz.login_required
 def import_secrets(project_id):
     """Legacy direct import — prefer preview + commit.
@@ -291,6 +292,7 @@ def import_secrets(project_id):
         POST /projects/<project_id>/import
     """
     return import_preview(project_id)
+
 
 @authz.login_required
 def import_commit(project_id):
@@ -361,6 +363,7 @@ def import_commit(project_id):
     flash(f"Imported {n_ok} secret(s)", "ok")
     return redirect(back)
 
+
 @authz.login_required
 def bulk_export(project_id):
     """Export selected secrets as env, JSON, or CSV plaintext download.
@@ -380,28 +383,21 @@ def bulk_export(project_id):
     ids = request.form.getlist("secret_ids")
     if not ids:
         flash("Select at least one secret", "error")
-        return redirect(
-            url_for("project_detail", project_id=project_id, tab="secrets")
-        )
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT api.can_read_project(%s) AS r", (str(project_id),))
         if not (cur.fetchone() or {}).get("r"):
             return "Not found", 404
         want = {str(i) for i in ids}
         rows = [
-            r
-            for r in fetch_project_reveal_enc_rows(cur, project_id)
-            if str(r.get("id")) in want
+            r for r in fetch_project_reveal_enc_rows(cur, project_id) if str(r.get("id")) in want
         ]
         if not rows:
             flash(
-                "No selected secrets could be exported "
-                "(missing reveal permission or approval)",
+                "No selected secrets could be exported (missing reveal permission or approval)",
                 "error",
             )
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="secrets")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
         skipped = len(ids) - len(rows)
         audit.log_secret(
             cur,
@@ -412,8 +408,7 @@ def bulk_export(project_id):
         conn.commit()
         if skipped > 0:
             flash(
-                f"Exported {len(rows)} secret(s); "
-                f"skipped {skipped} without reveal permission",
+                f"Exported {len(rows)} secret(s); skipped {skipped} without reveal permission",
                 "ok",
             )
     pairs = [

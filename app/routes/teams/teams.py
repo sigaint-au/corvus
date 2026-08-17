@@ -113,8 +113,7 @@ def team_detail(team_id):
     role_descriptions = {}
     can_edit_access = False
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
-        team = cur.fetchone()
+        team = db.team(cur, team_id)
         if not team:
             return "Not found", 404
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
@@ -158,8 +157,7 @@ def team_detail(team_id):
                         (ids,),
                     )
                     provider_map = {
-                        str(r["project_id"]): r["key_provider"]
-                        for r in (cur.fetchall() or [])
+                        str(r["project_id"]): r["key_provider"] for r in (cur.fetchall() or [])
                     }
                 except Exception:
                     provider_map = {}
@@ -206,7 +204,6 @@ def team_detail(team_id):
                 )
                 join_requests = cur.fetchall() or []
         elif tab == "access" and is_admin:
-
             # All team-scope bindings (users, groups, machine accounts)
             access_bindings = rbac_sync.list_scope_bindings(cur, "team", team_id)
             rbac_sync.enrich_binding_emails(access_bindings)
@@ -219,8 +216,7 @@ def team_detail(team_id):
             try:
                 cur.execute("SELECT name, description FROM rbac.roles")
                 role_descriptions = {
-                    r["name"]: (r.get("description") or "")
-                    for r in (cur.fetchall() or [])
+                    r["name"]: (r.get("description") or "") for r in (cur.fetchall() or [])
                 }
             except Exception:
                 role_descriptions = {}
@@ -245,9 +241,7 @@ def team_detail(team_id):
             # Legacy ?group_id= → dedicated group page
             gid = (request.args.get("group_id") or "").strip()
             if gid:
-                return redirect(
-                    url_for("team_group_detail", team_id=team_id, group_id=gid)
-                )
+                return redirect(url_for("team_group_detail", team_id=team_id, group_id=gid))
         elif tab == "activity":
             try:
                 org_events = audit.list_org_for_team(cur, team_id, limit=1000)
@@ -259,9 +253,9 @@ def team_detail(team_id):
                 org_events = [
                     event
                     for event in org_events
-                    if needle in " ".join(
-                        str(event.get(key) or "")
-                        for key in ("actor_email", "action", "detail")
+                    if needle
+                    in " ".join(
+                        str(event.get(key) or "") for key in ("actor_email", "action", "detail")
                     ).casefold()
                 ]
             activity_pager = paging.page_window(len(org_events), page)
@@ -310,7 +304,6 @@ def team_detail(team_id):
                 jr.setdefault("email", str(jr.get("user_id")))
                 jr.setdefault("name", "")
     if access_bindings:
-
         rbac_sync.enrich_binding_emails(access_bindings)
     return render_template(
         "team.html",
@@ -338,9 +331,7 @@ def team_detail(team_id):
         subject_kinds=config.RBAC_SUBJECT_KINDS,
         new_invite_url=session.pop("new_invite_url", None),
         ldap_enabled=settings_svc.truthy(ldap_auth.ldap_cfg().get("ldap_enabled")),
-        oidc_enabled=settings_svc.truthy(
-            settings_svc.get_settings().get("oidc_enabled")
-        ),
+        oidc_enabled=settings_svc.truthy(settings_svc.get_settings().get("oidc_enabled")),
         active_tab=tab,
         is_admin=is_admin,
     )

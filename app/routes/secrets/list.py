@@ -49,8 +49,7 @@ def secrets_list():
     secrets_pager = None
     if tid:
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
-            team = cur.fetchone()
+            team = db.team(cur, tid)
             if team:
                 secrets, secrets_pager, team_projects = _load_team_secrets_page(
                     cur,
@@ -62,9 +61,7 @@ def secrets_list():
                     due=due,
                     access_mode=access_mode,
                 )
-    template = (
-        "partials/secrets_results.html" if authz.htmx() else "secrets.html"
-    )
+    template = "partials/secrets_results.html" if authz.htmx() else "secrets.html"
     return render_template(
         template,
         team=team,
@@ -103,9 +100,7 @@ def shared_secrets_list():
             flash("Could not load shared secrets", "error")
             secrets, secrets_pager = [], paging.page_window(0, page)
             secrets_pager.update(endpoint="shared_secrets_list", q=q or None)
-    template = (
-        "partials/shared_results.html" if authz.htmx() else "shared_secrets.html"
-    )
+    template = "partials/shared_results.html" if authz.htmx() else "shared_secrets.html"
     return render_template(
         template,
         secrets=secrets,
@@ -117,8 +112,7 @@ def shared_secrets_list():
 def _trash_items(tid, q):
     """Return trash items (with search) for the given team id."""
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
-        team = cur.fetchone()
+        team = db.team(cur, tid)
         if not team:
             return team, []
         if q:
@@ -175,12 +169,8 @@ def trash():
     if tid:
         team, items = _trash_items(tid, q)
     if authz.htmx():
-        return render_template(
-            "partials/trash_results.html", team=team, items=items, search_q=q
-        )
-    return render_template(
-        "trash.html", team=team, items=items, search_q=q
-    )
+        return render_template("partials/trash_results.html", team=team, items=items, search_q=q)
+    return render_template("trash.html", team=team, items=items, search_q=q)
 
 
 @authz.login_required
@@ -238,9 +228,7 @@ def restore_secret(secret_id):
     if authz.htmx():
         tid = nav.ensure_active_team(session["user_id"])
         team, items = _trash_items(tid, q) if tid else (None, [])
-        return render_template(
-            "partials/trash_results.html", team=team, items=items, search_q=q
-        )
+        return render_template("partials/trash_results.html", team=team, items=items, search_q=q)
     return redirect(url_for("trash", q=q or None))
 
 
@@ -288,9 +276,7 @@ def purge_secret(secret_id):
     if authz.htmx():
         tid = nav.ensure_active_team(session["user_id"])
         team, items = _trash_items(tid, q) if tid else (None, [])
-        return render_template(
-            "partials/trash_results.html", team=team, items=items, search_q=q
-        )
+        return render_template("partials/trash_results.html", team=team, items=items, search_q=q)
     return redirect(url_for("trash", q=q or None))
 
 

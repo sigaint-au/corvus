@@ -68,7 +68,7 @@ app/
     teams/             # teams, members, groups, invites
     projects/          # projects, members, group roles, settings
     secrets/           # secret CRUD, reveal, history, access requests, access mode
-    project_io.py      # import/export
+    import_export.py   # import/export
     project_tokens.py  # machine token scopes
     admin/             # server settings, users, audit
     api.py             # /api/token, /api/users/suggest, /health

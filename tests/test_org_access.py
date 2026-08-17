@@ -216,7 +216,7 @@ class TestOrgAccess:
         assert 'deleted_at IS NOT NULL' in delf
         src = migrations_src()
         assert 'WITH CHECK (api.can_access_secret_row(id, project_id, access_mode, \'write\', NULL))' in src
-        src = (APP_ROOT / 'routes' / 'project_io.py').read_text()
+        src = (APP_ROOT / 'routes' / 'import_export.py').read_text()
         assert 'fetch_project_reveal_enc_rows' in src
         bulk = src[src.index('def bulk_export'):]
         assert 'fetch_project_reveal_enc_rows' in bulk

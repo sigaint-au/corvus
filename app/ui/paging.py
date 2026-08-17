@@ -97,3 +97,39 @@ def page_window(total: int, page: int, per_page: int = DEFAULT_PAGE_SIZE) -> dic
         "prev_page": page - 1 if page > 1 else None,
         "next_page": page + 1 if page < pages else None,
     }
+
+
+def paged_rows(cur, count_sql: str, rows_sql: str, params, *, endpoint: str, q=None):
+    """Run the standard count→page→`LIMIT/OFFSET` idiom for a list view.
+
+    Caller supplies the count and rows SQL (both use the same ``params``); this
+    helper runs the count, computes the `paging window`, attaches ``endpoint``/``q``
+    and fetches the page of rows.
+
+    Args:
+        cur: Open DB cursor (user RLS context).
+        count_sql: ``SELECT count(*) AS n …`` for the unfiltered list/filter.
+        rows_sql: ``SELECT …`` with ``LIMIT %s OFFSET %s`` appended.
+        params: Tuple of parameters for both statements (limit/offset appended).
+        endpoint: Flask endpoint for the pager links.
+        q: Optional search string preserved across pages.
+
+    Returns:
+        Tuple ``(rows, pager)`` where pager is a `page_window` dict updated with
+        ``endpoint`` and ``q``.
+
+    Example:
+        >>> rows, pager = paged_rows(
+        ...     cur,
+        ...     "SELECT count(*) AS n FROM api.projects p WHERE p.team_id = %s",
+        ...     "SELECT id, name FROM api.projects p WHERE p.team_id = %s LIMIT %s OFFSET %s",
+        ...     (team_id,),
+        ...     endpoint="projects_list",
+        ... )
+    """
+    cur.execute(count_sql, params)
+    total = int((cur.fetchone() or {}).get("n") or 0)
+    pager = page_window(total, page_arg())
+    pager.update(endpoint=endpoint, q=q or None)
+    cur.execute(rows_sql, (*params, pager["limit"], pager["offset"]))
+    return (cur.fetchall() or []), pager

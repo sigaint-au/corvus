@@ -4,6 +4,7 @@ Uses ``psycopg_pool.ConnectionPool`` for admin connections (reduces per-request
 overhead). User-context connections (``as_user``) remain direct because each
 checkout needs ``SET ROLE`` + JWT claims that must be reset on return.
 """
+
 import json
 import time
 
@@ -100,9 +101,7 @@ def connect_admin(autocommit=True):
         conn = pool.connection()
         conn.autocommit = autocommit
         return conn
-    return psycopg.connect(
-        DATABASE_ADMIN_URL, row_factory=dict_row, autocommit=autocommit
-    )
+    return psycopg.connect(DATABASE_ADMIN_URL, row_factory=dict_row, autocommit=autocommit)
 
 
 def as_user(user_id: str):
@@ -132,6 +131,20 @@ def as_user(user_id: str):
             (json.dumps(claims),),
         )
     return conn
+
+
+def team(cur, team_id):
+    """Load a team row by id under the current cursor's RLS context.
+
+    Args:
+        cur: Open DB cursor (user RLS).
+        team_id: Team UUID.
+
+    Returns:
+        Team row dict (all columns) or None when the team is not visible.
+    """
+    cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
+    return cur.fetchone()
 
 
 def make_jwt(user_id: str, hours=1) -> str:

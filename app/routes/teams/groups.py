@@ -27,15 +27,12 @@ def team_group_detail(team_id, group_id):
     session["team_id"] = str(team_id)
     q = (request.args.get("q") or "").strip()
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
-        team = cur.fetchone()
+        team = db.team(cur, team_id)
         if not team:
             return "Not found", 404
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
         my_role = (cur.fetchone() or {}).get("r")
-        is_admin = my_role in ("team-owner", "team-admin") or bool(
-            session.get("is_global_admin")
-        )
+        is_admin = my_role in ("team-owner", "team-admin") or bool(session.get("is_global_admin"))
         cur.execute(
             """
             SELECT id, name, source, external_key, created_at
@@ -46,9 +43,7 @@ def team_group_detail(team_id, group_id):
         )
         group = cur.fetchone()
         if group:
-            group["team_role"] = rbac_sync.group_team_roles_map(cur, team_id).get(
-                str(group_id)
-            )
+            group["team_role"] = rbac_sync.group_team_roles_map(cur, team_id).get(str(group_id))
         if not group:
             flash("Group not found", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="groups"))

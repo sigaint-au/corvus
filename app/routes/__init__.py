@@ -5,7 +5,7 @@ def register_all(app):
     """Register every route blueprint/module on the given Flask application.
 
     Imports route modules and calls each module's ``register(app)`` in a fixed
-    order (auth, teams, projects, secrets, project_io, project_tokens, admin,
+    order (auth, teams, projects, secrets, import_export, project_tokens, admin,
     api, eso).
 
     Args:
@@ -25,8 +25,8 @@ def register_all(app):
         api,
         auth,
         eso,
+        import_export,
         mgmt_api,
-        project_io,
         project_tokens,
         projects,
         rbac,
@@ -38,7 +38,7 @@ def register_all(app):
     teams.register(app)
     projects.register(app)
     secrets.register(app)
-    project_io.register(app)
+    import_export.register(app)
     project_tokens.register(app)
     rbac.register(app)
     admin.register(app)

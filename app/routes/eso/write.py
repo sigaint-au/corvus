@@ -8,6 +8,7 @@ from flask import (
     jsonify,
     request,
 )
+from werkzeug.exceptions import HTTPException
 
 import crypto
 from core import config, db
@@ -133,9 +134,7 @@ def eso_patch_secret(project_ref, key):
                 if kind_s not in config.SECRET_KINDS:
                     return (
                         jsonify(
-                            {
-                                "error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"
-                            }
+                            {"error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"}
                         ),
                         400,
                     )
@@ -219,17 +218,13 @@ def eso_patch_secret(project_ref, key):
             enc_provider = enc.get("crypto_provider") or "master"
             value = crypto.decrypt_for_project(pid, value_enc, enc_provider)
         note = (
-            str(body.get("note") or "").strip()
-            if "note" in body
-            else (existing.get("note") or "")
+            str(body.get("note") or "").strip() if "note" in body else (existing.get("note") or "")
         )
         if "kind" in body:
             kind_s = (body.get("kind") or "plain").strip().lower()
             if kind_s not in config.SECRET_KINDS:
                 return jsonify(
-                    {
-                        "error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"
-                    }
+                    {"error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"}
                 ), 400
         else:
             kind_s = existing.get("kind") or "plain"
@@ -352,10 +347,11 @@ def eso_delete_secret(project_ref, key):
         existing = cur.fetchone()
         if not existing:
             return jsonify({"error": "not found"}), 404
-        result = delete_secret_command(
-            cur, project_id=pid, secret_id=existing["id"], actor_email="machine"
-        )
-        if not result.ok:
-            return jsonify({"error": "forbidden"}), 403
-        conn.commit()
-    return jsonify({"ok": True, "id": result.secret_id, "key": key}), 200
+        try:
+            sid = delete_secret_command(
+                cur, project_id=pid, secret_id=existing["id"], actor_email="machine"
+            )
+            conn.commit()
+        except HTTPException as e:
+            return jsonify({"error": str(e)}), e.code
+    return jsonify({"ok": True, "id": sid, "key": key}), 200

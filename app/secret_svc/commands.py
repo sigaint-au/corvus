@@ -1,7 +1,8 @@
 """Surface-agnostic command layer for secret lifecycle operations.
 
 Each command takes an **already-open cursor** (the route owns the connection
-lifecycle) and returns a :class:`~secret_svc.models.CommandResult`. The three
+lifecycle), raises a ``werkzeug`` HTTP exception (``Forbidden``/``NotFound``)
+on expected business failures, and returns plain values on success. The three
 access surfaces — UI (HTML/redirect), ESO API (JSON), management API (JSON) —
 become thin adapters that format the result.
 
@@ -18,11 +19,11 @@ from __future__ import annotations
 
 import logging
 
+from werkzeug.exceptions import Forbidden, NotFound
+
 import audit
 import crypto
 from core import db  # noqa: F401  (re-exported for adapters that import from here)
-from secret_svc.exceptions import SecretOperationError
-from secret_svc.models import CommandResult
 from secret_svc.secret_ops import _upsert_secret
 
 log = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ def upsert_secret_command(
     set_access_mode: bool = False,
     audit_action: str | None = None,
     actor_email: str | None = None,
-) -> CommandResult:
+) -> tuple[str, bool]:
     """Create or update a secret, then write the audit row.
 
     Mirrors the inline logic previously in ``routes/secrets/crud.py`` and the
@@ -68,45 +69,39 @@ def upsert_secret_command(
             Machine/CLI surfaces pass the machine label or PAT user email.
 
     Returns:
-        ``CommandResult`` — ``ok=True`` with ``secret_id``/``was_new`` on
-        success, or ``ok=False`` (status 403) when the upsert was blocked by
-        RLS (``_upsert_secret`` returned a null id).
+        Tuple ``(secret_id, was_new)``.
+
+    Raises:
+        Forbidden: when the upsert was blocked by RLS (``_upsert_secret``
+            returned a null id).
     """
-    try:
-        sid, was_new = _upsert_secret(
-            cur,
-            project_id,
-            key,
-            value,
-            note=note,
-            expires_at=expires_at,
-            kind=kind,
-            requires_approval=requires_approval,
-            set_requires_approval=set_requires_approval,
-            access_mode=access_mode,
-            set_access_mode=set_access_mode,
-        )
-        if not sid:
-            return CommandResult(ok=False, status=403, error="You don't have permission to do that")
-        audit.log_secret(
-            cur,
-            project_id=project_id,
-            secret_id=sid,
-            secret_key=key,
-            action=audit_action or ("created" if was_new else "updated"),
-            actor_email=actor_email,
-        )
-        return CommandResult(ok=True, secret_id=str(sid), secret_key=key, was_new=was_new)
-    except SecretOperationError:
-        raise
-    except Exception as e:
-        log.exception("upsert_secret_command failed")
-        raise SecretOperationError() from e
+    sid, was_new = _upsert_secret(
+        cur,
+        project_id,
+        key,
+        value,
+        note=note,
+        expires_at=expires_at,
+        kind=kind,
+        requires_approval=requires_approval,
+        set_requires_approval=set_requires_approval,
+        access_mode=access_mode,
+        set_access_mode=set_access_mode,
+    )
+    if not sid:
+        raise Forbidden("You don't have permission to do that")
+    audit.log_secret(
+        cur,
+        project_id=project_id,
+        secret_id=sid,
+        secret_key=key,
+        action=audit_action or ("created" if was_new else "updated"),
+        actor_email=actor_email,
+    )
+    return str(sid), was_new
 
 
-def delete_secret_command(
-    cur, *, project_id, secret_id, actor_email: str | None = None
-) -> CommandResult:
+def delete_secret_command(cur, *, project_id, secret_id, actor_email: str | None = None) -> str:
     """Soft-delete a secret (move to trash) and audit the deletion.
 
     Args:
@@ -117,9 +112,11 @@ def delete_secret_command(
             Machine/CLI surfaces pass the machine label or PAT user email.
 
     Returns:
-        ``CommandResult`` — ``ok=True`` on success; ``ok=False`` status 404
-        when the secret is not visible; ``ok=False`` status 403 when the
-        SELECT succeeded but the UPDATE was blocked by RLS (read-only role).
+        The deleted secret's UUID.
+
+    Raises:
+        NotFound: when the secret is not visible.
+        Forbidden: when the UPDATE was blocked by RLS (read-only role).
     """
     cur.execute(
         """
@@ -130,7 +127,7 @@ def delete_secret_command(
     )
     row = cur.fetchone()
     if not row:
-        return CommandResult(ok=False, status=404, error="Secret not found")
+        raise NotFound("Secret not found")
     cur.execute(
         """
         UPDATE api.secrets SET deleted_at = now()
@@ -140,7 +137,7 @@ def delete_secret_command(
     )
     if cur.rowcount == 0:
         # SELECT allowed (read) but UPDATE blocked (write) — e.g. read-only role
-        return CommandResult(ok=False, status=403, error="You don't have permission to do that")
+        raise Forbidden("You don't have permission to do that")
     audit.log_secret(
         cur,
         project_id=project_id,
@@ -149,7 +146,7 @@ def delete_secret_command(
         action="deleted",
         actor_email=actor_email,
     )
-    return CommandResult(ok=True, secret_id=str(row["id"]), secret_key=row["key"])
+    return str(row["id"])
 
 
 def update_secret_value_command(
@@ -160,7 +157,7 @@ def update_secret_value_command(
     value: str,
     expires_at=None,
     set_expires: bool = False,
-) -> CommandResult:
+) -> str:
     """Replace a secret's value in place (archives the prior value via trigger).
 
     Args:
@@ -172,13 +169,16 @@ def update_secret_value_command(
         set_expires: When True, write ``expires_at``; otherwise leave it.
 
     Returns:
-        ``CommandResult`` — ``ok=True`` on success; status 403 when the
-        caller cannot write the project; status 404 when the secret is gone;
-        status 403 when the UPDATE affected zero rows (RLS blocked the write).
+        The updated secret's UUID.
+
+    Raises:
+        Forbidden: when the caller cannot write the project or the UPDATE
+            affected zero rows.
+        NotFound: when the secret is gone.
     """
     cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
     if not cur.fetchone()["w"]:
-        return CommandResult(ok=False, status=403, error="Forbidden")
+        raise Forbidden("You don't have permission to do that")
     cur.execute(
         """
         SELECT id, key FROM api.secrets
@@ -188,7 +188,7 @@ def update_secret_value_command(
     )
     row = cur.fetchone()
     if not row:
-        return CommandResult(ok=False, status=404, error="Not found")
+        raise NotFound("Not found")
     enc, provider = crypto.encrypt_for_project(project_id, value)
     if set_expires:
         cur.execute(
@@ -207,7 +207,7 @@ def update_secret_value_command(
             (enc, provider, str(secret_id), str(project_id)),
         )
     if cur.rowcount == 0:
-        return CommandResult(ok=False, status=403, error="Forbidden")
+        raise Forbidden("You don't have permission to do that")
     audit.log_secret(
         cur,
         project_id=project_id,
@@ -215,4 +215,4 @@ def update_secret_value_command(
         secret_key=row["key"],
         action="updated",
     )
-    return CommandResult(ok=True, secret_id=str(row["id"]), secret_key=row["key"])
+    return str(row["id"])
