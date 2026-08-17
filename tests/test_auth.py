@@ -179,6 +179,7 @@ class TestAuth:
         assert r.status_code == 302
         sql = ' '.join((str(c.args[0]) for c in admin_cur.execute.call_args_list))
         assert 'is_global_admin = true' in sql
+        assert 'NOT EXISTS' in sql
 
     def test_register_disabled(self):
         with patch.object(settings_svc, 'registration_enabled', return_value=False):

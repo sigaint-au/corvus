@@ -7,6 +7,7 @@ from flask import jsonify, request
 import audit
 import crypto
 from core import db
+from secret_svc.secret_ops import fetch_project_reveal_enc_rows
 
 from .helpers import _require_pat, _resolve_project
 
@@ -31,30 +32,7 @@ def mgmt_export_project(project_ref):
         cur.execute("SELECT api.can_read_project(%s) AS r", (pid,))
         if not (cur.fetchone() or {}).get("r"):
             return jsonify({"error": "not found"}), 404
-        if mode == "plain":
-            cur.execute(
-                """
-                SELECT key, value_enc, note, crypto_provider
-                  FROM api.secrets
-                 WHERE project_id = %s::uuid AND deleted_at IS NULL
-                   AND api.can_access_secret(id, 'reveal')
-                   AND api.can_reveal_secret(id)
-                 ORDER BY key
-                """,
-                (pid,),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT key, value_enc, note, crypto_provider
-                  FROM api.secrets
-                 WHERE project_id = %s::uuid AND deleted_at IS NULL
-                   AND api.can_access_secret(id, 'read')
-                 ORDER BY key
-                """,
-                (pid,),
-            )
-        rows = cur.fetchall() or []
+        rows = fetch_project_reveal_enc_rows(cur, pid)
         audit.log_secret(
             cur,
             project_id=pid,

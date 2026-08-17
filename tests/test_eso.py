@@ -124,7 +124,7 @@ class TestESO:
             assert eso_routes.bearer_hash() is None
 
     def test_upsert_read_forbidden(self):
-        fo = [{'ok': True}, {'role': 'read'}]
+        fo = [{'ok': True}, {'role': 'service-read'}]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
@@ -135,7 +135,7 @@ class TestESO:
 
     def test_upsert_write_ok(self):
         sid = uuid4()
-        fo = [{'ok': True}, {'role': 'write'}, {'id': sid}, {'label': 'ci:ss_write'}, {'id': sid, 'key': 'K', 'value_enc': crypto.encrypt('secret'), 'note': '', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None}]
+        fo = [{'ok': True}, {'role': 'service-write'}, {'id': sid}, {'label': 'ci:ss_write'}, {'id': sid, 'key': 'K', 'value_enc': crypto.encrypt('secret'), 'note': '', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None}]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
@@ -152,7 +152,7 @@ class TestESO:
 
     def test_put_secret_ok(self):
         sid = uuid4()
-        fo = [{'ok': True}, {'role': 'write'}, {'id': sid}, {'label': 'ci:ss_write'}, {'id': sid, 'key': 'API_KEY', 'value_enc': crypto.encrypt('new'), 'note': 'rotated', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None}]
+        fo = [{'ok': True}, {'role': 'service-write'}, {'id': sid}, {'label': 'ci:ss_write'}, {'id': sid, 'key': 'API_KEY', 'value_enc': crypto.encrypt('new'), 'note': 'rotated', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None}]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
@@ -164,7 +164,7 @@ class TestESO:
         assert 'machine_upsert' in sql
 
     def test_patch_secret_not_found(self):
-        fo = [{'ok': True}, {'role': 'write'}, None]
+        fo = [{'ok': True}, {'role': 'service-write'}, None]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
@@ -174,7 +174,7 @@ class TestESO:
     def test_delete_secret_ok(self):
         sid = uuid4()
         enc = crypto.encrypt('v')
-        fo = [{'ok': True}, {'role': 'write'}, {'id': sid, 'key': 'K', 'value_enc': enc, 'note': '', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None}, {'id': sid}, {'label': 'ci:ss_write'}]
+        fo = [{'ok': True}, {'role': 'service-write'}, {'id': sid, 'key': 'K', 'value_enc': enc, 'note': '', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None}, {'id': sid}, {'label': 'ci:ss_write'}]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
@@ -192,7 +192,7 @@ class TestESO:
         conn.commit.assert_called()
 
     def test_delete_read_forbidden(self):
-        fo = [{'ok': True}, {'role': 'read'}]
+        fo = [{'ok': True}, {'role': 'service-read'}]
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
         with patch.object(db, 'connect', return_value=conn):
@@ -204,7 +204,7 @@ class TestESO:
         store.app.config['CSRF_TESTING'] = True
         try:
             sid = uuid4()
-            fo = [{'ok': True}, {'role': 'write'}, {'id': sid}, {'label': 'ci:ss_write'}, {'id': sid, 'key': 'K', 'value_enc': crypto.encrypt('v'), 'note': '', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None}]
+            fo = [{'ok': True}, {'role': 'service-write'}, {'id': sid}, {'label': 'ci:ss_write'}, {'id': sid, 'key': 'K', 'value_enc': crypto.encrypt('v'), 'note': '', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None}]
             conn, cur = _conn()
             cur.fetchone.side_effect = fo
             with patch.object(db, 'connect', return_value=conn):
@@ -317,8 +317,7 @@ class TestESO:
             },
             {'ok': True},  # can_access_secret
             {'ok': True},  # can_reveal_secret
-            None,  # touch_secret_access
-            None,
+            {'value_enc': enc, 'crypto_provider': 'master'},
         ]
         cur.fetchone.side_effect = fo
         cur.fetchall.side_effect = [

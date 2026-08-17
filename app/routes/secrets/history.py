@@ -18,6 +18,7 @@ from secret_svc.secret_kinds import (
     STRUCTURED_VIEW_KINDS,
     normalize_kind,
 )
+from secret_svc.secret_ops import fetch_secret_version_enc
 from .helpers import (
     _render_reveal_access_panel,
     _reveal_access_state,
@@ -103,7 +104,7 @@ def reveal_secret_version(project_id, secret_id, version_id):
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT v.value_enc, v.crypto_provider, s.key, s.note, s.kind, s.id AS secret_id
+            SELECT s.key, s.note, s.kind, s.id AS secret_id
             FROM api.secret_versions v
             JOIN api.secrets s ON s.id = v.secret_id
             WHERE v.id = %s AND s.id = %s AND s.project_id = %s
@@ -132,9 +133,12 @@ def reveal_secret_version(project_id, secret_id, version_id):
                 request_row=access_row,
                 version_id=version_id,
             )
+        enc = fetch_secret_version_enc(cur, version_id, secret_id)
+        if not enc:
+            return ("Forbidden", 403)
         try:
             plaintext = crypto.decrypt_for_project(
-            project_id, row["value_enc"], row.get("crypto_provider") or "master"
+            project_id, enc["value_enc"], enc.get("crypto_provider") or "master"
         )
         except ValueError as e:
             conn.rollback()
@@ -234,7 +238,7 @@ def rollback_secret(project_id, secret_id, version_id):
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT s.id, s.key, v.value_enc, v.crypto_provider, v.note
+            SELECT s.id, s.key, v.note
             FROM api.secret_versions v
             JOIN api.secrets s ON s.id = v.secret_id
             WHERE v.id = %s AND s.id = %s AND s.project_id = %s
@@ -248,6 +252,12 @@ def rollback_secret(project_id, secret_id, version_id):
             return redirect(
                 url_for("secret_history", project_id=project_id, secret_id=secret_id)
             )
+        enc = fetch_secret_version_enc(cur, version_id, secret_id)
+        if not enc:
+            flash("You don't have permission to do that", "error")
+            return redirect(
+                url_for("secret_history", project_id=project_id, secret_id=secret_id)
+            )
         cur.execute(
             """
             UPDATE api.secrets
@@ -255,9 +265,9 @@ def rollback_secret(project_id, secret_id, version_id):
             WHERE id = %s AND project_id = %s AND deleted_at IS NULL
             """,
             (
-                row["value_enc"],
+                enc["value_enc"],
                 row["note"] or "",
-                row.get("crypto_provider") or "master",
+                enc.get("crypto_provider") or "master",
                 str(secret_id),
                 str(project_id),
             ),

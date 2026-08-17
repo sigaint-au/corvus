@@ -49,6 +49,24 @@ def bootstrap_admin_email() -> str:
     return GLOBAL_ADMIN_EMAIL or BOOTSTRAP_ADMIN_EMAIL
 
 
+def session_cookie_secure() -> bool:
+    """Secure cookies in production. Off in development / insecure-defaults.
+
+    ``COOKIE_SECURE=1/0`` wins. Otherwise Secure is on unless
+    ``FLASK_ENV=development`` or ``ALLOW_INSECURE_DEFAULTS`` is set.
+    """
+    explicit = os.environ.get("COOKIE_SECURE", "").lower()
+    if explicit in ("1", "true", "yes"):
+        return True
+    if explicit in ("0", "false", "no"):
+        return False
+    if os.environ.get("FLASK_ENV") == "development":
+        return False
+    if os.environ.get("ALLOW_INSECURE_DEFAULTS", "").lower() in ("1", "true", "yes"):
+        return False
+    return True
+
+
 def refuse_insecure_defaults():
     """Exit the process if production still uses baked-in default secrets.
 

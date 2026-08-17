@@ -564,6 +564,15 @@ def rbac_bindings_create():
                 return redirect(
                     url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
                 )
+            if role_name == "team-owner":
+                cur.execute("SELECT api.team_role(%s) AS r", (scope_id,))
+                if (cur.fetchone() or {}).get("r") != "team-owner" and not authz.is_global_admin(
+                    session["user_id"]
+                ):
+                    flash("Only a team owner can grant the owner role", "error")
+                    return redirect(
+                        url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id)
+                    )
 
             subject_id = None
             if subject_kind == "User":

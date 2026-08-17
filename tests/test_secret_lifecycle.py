@@ -133,7 +133,7 @@ class TestSecretLifecycle:
         sid, vid = (uuid4(), uuid4())
         enc = crypto.encrypt('prior-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'value_enc': enc, 'key': 'K', 'secret_id': sid}, {'ok': True}, {'a': True}]
+        cur.fetchone.side_effect = [{'key': 'K', 'secret_id': sid}, {'ok': True}, {'a': True}, {'value_enc': enc, 'crypto_provider': 'master'}]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/versions/{vid}/reveal')
         assert r.status_code == 200

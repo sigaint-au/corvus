@@ -145,7 +145,7 @@ def create_token(project_id):
     require_expiry, max_days = settings_svc.token_expiry_policy("machine")
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         # Explicit write gate (read-only can list tokens, not create them)
-        cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+        cur.execute("SELECT api.can_admin_project(%s) AS w", (str(project_id),))
         if not cur.fetchone()["w"]:
             flash("You don't have permission to do that", "error")
             return _token_redirect()
@@ -230,7 +230,7 @@ def delete_token(project_id, token_id):
         POST /projects/<project_id>/tokens/<token_id>/delete
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+        cur.execute("SELECT api.can_admin_project(%s) AS w", (str(project_id),))
         if not cur.fetchone()["w"]:
             flash("You don't have permission to do that", "error")
             return redirect(url_for("project_detail", project_id=project_id, tab="tokens"))

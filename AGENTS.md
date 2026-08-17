@@ -19,9 +19,9 @@ Secret server: self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.i
 - **Migrations are the sole source of truth for DDL.** The fresh-install baseline lives in `db/migrations/0001_init.sql`. Existing databases are not supported by this squashed baseline.
 - **Keep the squashed baseline ordered** — RBAC definitions live inside `db/migrations/0001_init.sql`; do not create a second baseline definition.
 - **Adding a migration:** create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it idempotent where possible, and run `pytest` + `tox -e lint`. Never edit an already-released migration file — its checksum is recorded.
-- Machine-token `role` column uses `read/reveal/write` (`service-*` is the RBAC name).
+- Machine-token `role` column uses `service-read`/`service-reveal`/`service-write`.
 
-Roles in the UI are **RBAC names** (`team-owner/team-admin/...` and project-role & secret roles). Machine-token `role` column uses `read/reveal/write` (`service-*` is the RBAC name).
+Roles in the UI are **RBAC names** (`team-owner/team-admin/...` and project-role & secret roles). Machine-token `role` column uses `service-read`/`service-reveal`/`service-write`.
 
 ## Secrets / templates
 

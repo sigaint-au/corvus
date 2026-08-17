@@ -10,6 +10,36 @@ from ui import paging
 from secret_svc.secret_kinds import expires_status, secret_due_status
 
 
+def fetch_secret_enc(cur, secret_id):
+    """Return ``{value_enc, crypto_provider}`` when the caller may reveal."""
+    cur.execute(
+        "SELECT value_enc, crypto_provider FROM private.secret_enc(%s::uuid)",
+        (str(secret_id),),
+    )
+    return cur.fetchone()
+
+
+def fetch_secret_version_enc(cur, version_id, secret_id):
+    """Return version ciphertext when the caller may reveal the parent secret."""
+    cur.execute(
+        """
+        SELECT value_enc, crypto_provider
+          FROM private.secret_version_enc(%s::uuid, %s::uuid)
+        """,
+        (str(version_id), str(secret_id)),
+    )
+    return cur.fetchone()
+
+
+def fetch_project_reveal_enc_rows(cur, project_id):
+    """Ciphertext rows the caller may reveal in a project."""
+    cur.execute(
+        "SELECT id, key, value_enc, note, crypto_provider FROM private.project_reveal_enc_rows(%s::uuid)",
+        (str(project_id),),
+    )
+    return cur.fetchall() or []
+
+
 def _load_secrets_page(cur, project_id, page, q):
     """Count + page live secrets for a project. Returns (rows, pager).
 

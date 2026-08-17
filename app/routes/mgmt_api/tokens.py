@@ -103,7 +103,7 @@ def mgmt_create_token(project_ref):
         pid = _resolve_project(cur, project_ref)
         if not pid:
             return jsonify({"error": "not found"}), 404
-        cur.execute("SELECT api.can_write_project(%s) AS w", (pid,))
+        cur.execute("SELECT api.can_admin_project(%s) AS w", (pid,))
         if not (cur.fetchone() or {}).get("w"):
             return jsonify({"error": "forbidden"}), 403
         cur.execute(

@@ -43,7 +43,7 @@ POST /login
 
 A full session sets `user_id`, `email`, `name`, `is_global_admin`, a `jwt`
 (for PostgREST), and a server-side session id `sid`. The cookie is `HttpOnly`,
-`SameSite=Lax`, and `Secure` when `COOKIE_SECURE=1`.
+`SameSite=Lax`, and `Secure` unless `FLASK_ENV=development` (set `COOKIE_SECURE=0` to disable).
 
 ### 1b. Two-factor (TOTP) challenge
 

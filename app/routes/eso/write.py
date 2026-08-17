@@ -10,7 +10,7 @@ from flask import (
 from core import config
 import crypto
 from core import db
-from secret_svc.secret_ops import _upsert_secret
+from secret_svc.secret_ops import _upsert_secret, fetch_secret_enc
 from .helpers import (
     _audit,
     _machine_actor,
@@ -193,7 +193,7 @@ def eso_patch_secret(project_ref, key):
             return jsonify({"error": "forbidden"}), 403
         cur.execute(
             """
-            SELECT id, key, value_enc, note, kind, expires_at,
+            SELECT id, key, note, kind, expires_at,
                    rotation_interval_days, rotation_owner, rotation_next_at, rotated_at,
                    created_at, updated_at, crypto_provider
               FROM api.secrets
@@ -208,8 +208,11 @@ def eso_patch_secret(project_ref, key):
             value = str(body["value"])
             value_enc, enc_provider = crypto.encrypt_for_project(pid, value)
         else:
-            value_enc = existing["value_enc"]
-            enc_provider = existing.get("crypto_provider") or "master"
+            enc = fetch_secret_enc(cur, existing["id"])
+            if not enc:
+                return jsonify({"error": "forbidden"}), 403
+            value_enc = enc["value_enc"]
+            enc_provider = enc.get("crypto_provider") or "master"
             value = crypto.decrypt_for_project(pid, value_enc, enc_provider)
         note = (
             str(body.get("note") or "").strip()

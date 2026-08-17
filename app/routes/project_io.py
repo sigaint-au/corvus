@@ -13,7 +13,7 @@ from core import config
 import crypto
 from core import db
 from secret_svc.secret_kinds import detect_secret_kind, normalize_kind, parse_secret_pairs
-from secret_svc.secret_ops import _upsert_secret
+from secret_svc.secret_ops import _upsert_secret, fetch_project_reveal_enc_rows
 
 log = logging.getLogger(__name__)
 
@@ -102,29 +102,8 @@ def export_secrets(project_id):
         cur.execute("SELECT api.can_read_project(%s) AS r", (str(project_id),))
         if not (cur.fetchone() or {}).get("r"):
             return "Not found", 404
-        # Only secrets the caller may reveal (ACL + soft-deleted excluded by RLS read)
-        if mode == "plain":
-            cur.execute(
-                """
-                SELECT key, value_enc, note, crypto_provider FROM api.secrets
-                WHERE project_id = %s AND deleted_at IS NULL
-                  AND api.can_access_secret(id, 'reveal')
-                  AND api.can_reveal_secret(id)
-                ORDER BY key
-                """,
-                (str(project_id),),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT key, value_enc, note, crypto_provider FROM api.secrets
-                WHERE project_id = %s AND deleted_at IS NULL
-                  AND api.can_access_secret(id, 'read')
-                ORDER BY key
-                """,
-                (str(project_id),),
-            )
-        rows = cur.fetchall()
+        # Ciphertext only for secrets the caller may reveal
+        rows = fetch_project_reveal_enc_rows(cur, project_id)
         # Bulk exfil must leave an audit trail (especially plaintext)
         audit.log_secret(
             cur,
@@ -409,18 +388,12 @@ def bulk_export(project_id):
         cur.execute("SELECT api.can_read_project(%s) AS r", (str(project_id),))
         if not (cur.fetchone() or {}).get("r"):
             return "Not found", 404
-        cur.execute(
-            """
-            SELECT key, value_enc, crypto_provider FROM api.secrets
-            WHERE project_id = %s AND deleted_at IS NULL
-              AND id = ANY(%s::uuid[])
-              AND api.can_access_secret(id, 'reveal')
-              AND api.can_reveal_secret(id)
-            ORDER BY key
-            """,
-            (str(project_id), ids),
-        )
-        rows = cur.fetchall() or []
+        want = {str(i) for i in ids}
+        rows = [
+            r
+            for r in fetch_project_reveal_enc_rows(cur, project_id)
+            if str(r.get("id")) in want
+        ]
         if not rows:
             flash(
                 "No selected secrets could be exported "

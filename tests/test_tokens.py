@@ -108,9 +108,10 @@ class TestTokens:
         sel_start = rbac_sql.index('CREATE POLICY mt_select ON api.machine_tokens')
         sel_end = rbac_sql.index(';', sel_start)
         assert 'can_read_project' in rbac_sql[sel_start:sel_end]
-        ins_start = rbac_sql.index('CREATE POLICY mt_insert ON api.machine_tokens')
-        ins_end = rbac_sql.index(';', ins_start)
-        assert 'can_write_project' in rbac_sql[ins_start:ins_end]
+        harden = (REPO_ROOT / 'db' / 'migrations' / '0002_rls_authz_hardening.sql').read_text()
+        ins_start = harden.rindex('CREATE POLICY mt_insert ON api.machine_tokens')
+        ins_end = harden.index(';', ins_start)
+        assert 'can_admin_project' in harden[ins_start:ins_end]
 
     def test_pm_policies_use_can_admin_project(self):
         """RBAC bindings write policy requires can_manage_rbac, not mere write."""
