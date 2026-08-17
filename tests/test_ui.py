@@ -1,6 +1,7 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
+import re
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -27,6 +28,12 @@ class TestUIShell:
         assert b'Sigaint' in r.data
         assert b'Secret Server' in r.data
         assert b'static/app.css' in r.data
+        # A missing '>' on <script integrity="..."> swallows the rest of the
+        # page (the browser treats body markup as the script element).
+        assert not re.search(rb'integrity="[^"]*"</script>', r.data)
+        assert re.search(
+            rb'<script\s+src="[^"]*htmx\.min\.js"[^>]*></script>', r.data
+        )
 
     def test_app_has_sidebar(self):
         c = store.app.test_client()
