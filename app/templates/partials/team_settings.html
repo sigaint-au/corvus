@@ -22,14 +22,14 @@
       <label class="check-row">
         <input type="checkbox" name="classification_enabled" id="classification_enabled" value="1"
                {% if team.classification_enabled %}checked{% endif %}
-               onchange="updateTeamBannerPreview()">
+               onchange="updatePreview()">
         Show classification banner
       </label>
       <label>Banner text
         <input type="text" name="classification_text" id="classification_text" maxlength="120"
                value="{{ team.classification_text or classification.text or 'OFFICIAL' }}"
                placeholder="OFFICIAL - SENSITIVE"
-               oninput="updateTeamBannerPreview()">
+               oninput="updatePreview()">
       </label>
       <div class="row">
         <div>
@@ -37,11 +37,11 @@
           <div class="color-field">
             <input type="color" id="classification_color_picker"
                    value="{{ team.classification_color or classification.color or '#677381' }}"
-                   oninput="document.getElementById('classification_color').value=this.value; updateTeamBannerPreview();">
+                   oninput="document.getElementById('classification_color').value=this.value; updatePreview();">
             <input type="text" name="classification_color" id="classification_color"
                    value="{{ team.classification_color or classification.color or '#677381' }}"
                    pattern="#[0-9A-Fa-f]{6}"
-                   oninput="syncTeamColor('classification_color'); updateTeamBannerPreview();">
+                   oninput="syncColor('classification_color'); updatePreview();">
           </div>
         </div>
         <div>
@@ -49,32 +49,32 @@
           <div class="color-field">
             <input type="color" id="classification_fg_picker"
                    value="{{ team.classification_fg or classification.fg or '#ffffff' }}"
-                   oninput="document.getElementById('classification_fg').value=this.value; updateTeamBannerPreview();">
+                   oninput="document.getElementById('classification_fg').value=this.value; updatePreview();">
             <input type="text" name="classification_fg" id="classification_fg"
                    value="{{ team.classification_fg or classification.fg or '#ffffff' }}"
                    pattern="#[0-9A-Fa-f]{6}"
-                   oninput="syncTeamColor('classification_fg'); updateTeamBannerPreview();">
+                   oninput="syncColor('classification_fg'); updatePreview();">
           </div>
         </div>
       </div>
       <p class="muted preset-label">Presets</p>
       <div class="swatch-row">
         <button type="button" class="swatch" data-bg="#000000" title="Black"
-                onclick="applyTeamPreset('#000000','#ffffff')"></button>
+                onclick="applyPreset('#000000','#ffffff')"></button>
         <button type="button" class="swatch" data-bg="#677381" title="Slate"
-                onclick="applyTeamPreset('#677381','#ffffff')"></button>
+                onclick="applyPreset('#677381','#ffffff')"></button>
         <button type="button" class="swatch" data-bg="#47817F" title="Teal-grey"
-                onclick="applyTeamPreset('#47817F','#ffffff')"></button>
+                onclick="applyPreset('#47817F','#ffffff')"></button>
         <button type="button" class="swatch" data-bg="#c62828" title="Red"
-                onclick="applyTeamPreset('#c62828','#ffffff')"></button>
+                onclick="applyPreset('#c62828','#ffffff')"></button>
         <button type="button" class="swatch" data-bg="#ef6c00" title="Orange"
-                onclick="applyTeamPreset('#ef6c00','#000000')"></button>
+                onclick="applyPreset('#ef6c00','#000000')"></button>
         <button type="button" class="swatch" data-bg="#f9a825" title="Amber"
-                onclick="applyTeamPreset('#f9a825','#000000')"></button>
+                onclick="applyPreset('#f9a825','#000000')"></button>
         <button type="button" class="swatch" data-bg="#1565c0" title="Blue"
-                onclick="applyTeamPreset('#1565c0','#ffffff')"></button>
+                onclick="applyPreset('#1565c0','#ffffff')"></button>
         <button type="button" class="swatch swatch-light" data-bg="#ffffff" title="White"
-                onclick="applyTeamPreset('#ffffff','#000000')"></button>
+                onclick="applyPreset('#ffffff','#000000')"></button>
       </div>
       <div class="banner-preview" id="team-banner-preview"
            style="background: {{ team.classification_color or classification.color or '#677381' }}; color: {{ team.classification_fg or classification.fg or '#ffffff' }};">
@@ -83,29 +83,9 @@
     </div>
     <p class="form-actions"><button type="submit">Save team settings</button></p>
   </form>
+  {% set _preview_id = 'team-banner-preview' %}
+{% include "partials/color_picker_js.html" %}
   <script>
-  function applyTeamPreset(bg, fg) {
-    document.getElementById('classification_color').value = bg;
-    document.getElementById('classification_color_picker').value = bg;
-    document.getElementById('classification_fg').value = fg;
-    document.getElementById('classification_fg_picker').value = fg;
-    updateTeamBannerPreview();
-  }
-  function syncTeamColor(id) {
-    var v = document.getElementById(id).value;
-    if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
-      document.getElementById(id + '_picker').value = v;
-    }
-  }
-  function updateTeamBannerPreview() {
-    var el = document.getElementById('team-banner-preview');
-    if (!el) return;
-    var text = document.getElementById('classification_text').value || 'Preview';
-    el.textContent = text;
-    el.style.background = document.getElementById('classification_color').value;
-    el.style.color = document.getElementById('classification_fg').value;
-    el.style.opacity = document.getElementById('classification_enabled').checked ? '1' : '0.45';
-  }
   function syncTeamClassForm() {
     var on = document.getElementById('class-override').checked;
     var box = document.getElementById('team-banner-fields');
@@ -114,10 +94,9 @@
       if (el.type === 'hidden') return;
       el.disabled = !on;
     });
-    if (on) updateTeamBannerPreview();
+    if (on) updatePreview();
   }
   syncTeamClassForm();
-  updateTeamBannerPreview();
   </script>
 </section>
 

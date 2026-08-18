@@ -30,11 +30,10 @@ from secret_svc.secret_ops import (
     _parse_requires_approval,
     compose_secret_value,
 )
-from ui import paging
 
 from .helpers import (
     _reveal_toggle_html,
-    _secrets_partial,
+    _secrets_redirect_or_partial,
 )
 
 
@@ -88,17 +87,7 @@ def create_secret(project_id):
         except HTTPException as e:
             conn.rollback()
             flash(str(e), "error")
-    if authz.htmx():
-        return _secrets_partial(project_id)
-    return redirect(
-        url_for(
-            "project_detail",
-            project_id=project_id,
-            tab="secrets",
-            page=paging.page_arg("page"),
-            q=paging.list_state_q() or None,
-        )
-    )
+    return _secrets_redirect_or_partial(project_id)
 
 
 @authz.login_required
@@ -123,17 +112,7 @@ def delete_secret(project_id, secret_id):
         except HTTPException as e:
             conn.rollback()
             flash(str(e), "error")
-    if authz.htmx():
-        return _secrets_partial(project_id)
-    return redirect(
-        url_for(
-            "project_detail",
-            project_id=project_id,
-            tab="secrets",
-            page=paging.page_arg("page"),
-            q=paging.list_state_q() or None,
-        )
-    )
+    return _secrets_redirect_or_partial(project_id)
 
 
 @authz.login_required

@@ -1,0 +1,33 @@
+{# Shared color-picker JS for classification banner (server settings + team override).
+   Set _preview_id, _text_name, _color_id, _fg_id before including. #}
+<script>
+{% set _preview = _preview_id|default('banner-preview') %}
+{% set _text = _text_name|default('classification_text') %}
+{% set _color = _color_id|default('classification_color') %}
+{% set _fg = _fg_id|default('classification_fg') %}
+function applyPreset(bg, fg) {
+  document.getElementById('{{ _color }}').value = bg;
+  document.getElementById('{{ _color }}_picker').value = bg;
+  document.getElementById('{{ _fg }}').value = fg;
+  document.getElementById('{{ _fg }}_picker').value = fg;
+  updatePreview();
+}
+function syncColor(id) {
+  var v = document.getElementById(id).value;
+  if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+    document.getElementById(id + '_picker').value = v;
+  }
+}
+function updatePreview() {
+  var el = document.getElementById('{{ _preview }}');
+  if (!el) return;
+  var inp = document.querySelector('[name={{ _text }}]');
+  el.textContent = (inp ? inp.value : '') || 'Preview';
+  el.style.background = document.getElementById('{{ _color }}').value;
+  el.style.color = document.getElementById('{{ _fg }}').value;
+  var cb = document.getElementById('classification_enabled');
+  if (cb) el.style.opacity = cb.checked ? '1' : '0.45';
+}
+document.querySelector('[name={{ _text }}]').addEventListener('input', updatePreview);
+updatePreview();
+</script>
