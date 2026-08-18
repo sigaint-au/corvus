@@ -9,10 +9,10 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
 from auth import authz
-from core import config
-from core import db
+from core import config, db
 from lib.users import lookup_user_id
 from secret_svc.secret_ops import (
     _parse_access_mode,
@@ -112,12 +112,8 @@ def add_secret_access_binding(project_id, secret_id):
         sec = cur.fetchone()
         if not sec:
             flash("Secret not found", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="secrets")
-            )
-        cur.execute(
-            "SELECT id FROM rbac.roles WHERE name = %s", (role_name,)
-        )
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (role_name,))
         role = cur.fetchone()
         if not role:
             flash(f"Built-in role {role_name} missing — run schema ensure", "error")
@@ -232,7 +228,7 @@ def add_secret_access_binding(project_id, secret_id):
                 )
             else:
                 flash(f"Bound {who} as {role_name}", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update secret access. Try again.", "error")
     return redirect(access_url)

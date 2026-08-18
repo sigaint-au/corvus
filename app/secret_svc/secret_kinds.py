@@ -7,12 +7,11 @@ import io
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 SOON_DAYS = 14  # days-before-due window for "soon" status (secrets + rotation)
 _SOON_DAYS = SOON_DAYS  # private alias, kept for internal `expires_status` default
-_KEY_LINE = re.compile(
-    r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*(.*)$"
-)
+_KEY_LINE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*(.*)$")
 _PEM_BLOCK = re.compile(
     r"(-----BEGIN [A-Z0-9 ]+-----.*?-----END [A-Z0-9 ]+-----)",
     re.DOTALL,
@@ -78,11 +77,7 @@ def detect_secret_kind(value: str, note: str = "") -> str:
     stripped = v.strip()
     if stripped and _DB_URL.match(stripped) and "\n" not in stripped:
         return "database"
-    lines = [
-        ln.strip()
-        for ln in v.splitlines()
-        if ln.strip() and not ln.strip().startswith("#")
-    ]
+    lines = [ln.strip() for ln in v.splitlines() if ln.strip() and not ln.strip().startswith("#")]
     if len(lines) >= 2 and sum(1 for ln in lines if env_line_match(ln, allow_dots=True)) >= 2:
         return "kv"
     if len(lines) == 1 and env_line_match(lines[0], allow_dots=True) and "\n" in v:
@@ -166,9 +161,7 @@ def parse_pem_blocks(value: str) -> list[dict]:
             kind = "pem"
         blocks.append({"label": label or "PEM", "kind": kind, "text": block})
     if not blocks and (value or "").strip():
-        blocks.append(
-            {"label": "Value", "kind": "text", "text": (value or "").strip()}
-        )
+        blocks.append({"label": "Value", "kind": "text", "text": (value or "").strip()})
     return blocks
 
 
@@ -301,7 +294,7 @@ def annotate_token_expiry(rows):
     return rows
 
 
-def parse_secret_pairs(text: str) -> list[tuple[str, str]]:
+def parse_secret_pairs(text: str) -> list[tuple[str, str | dict[str, Any]]]:
     """Parse .env, JSON object/list, or CSV (key,value) into (key, value) pairs.
 
     Args:
@@ -323,10 +316,10 @@ def parse_secret_pairs(text: str) -> list[tuple[str, str]]:
     text = (text or "").strip()
     if not text:
         return []
+    out: list[tuple[str, str | dict[str, Any]]] = []
     if text[0] in "{[":
         data = json.loads(text)
         if isinstance(data, dict):
-            out = []
             for k, v in data.items():
                 if isinstance(v, dict) and "value" in v:
                     out.append((str(k), str(v["value"])))
@@ -336,7 +329,6 @@ def parse_secret_pairs(text: str) -> list[tuple[str, str]]:
                     out.append((str(k), "" if v is None else str(v)))
             return out
         if isinstance(data, list):
-            out = []
             for item in data:
                 if not isinstance(item, dict):
                     continue
@@ -346,20 +338,20 @@ def parse_secret_pairs(text: str) -> list[tuple[str, str]]:
                 if "value_enc" in item and "value" not in item:
                     out.append((str(k), {"_enc": item["value_enc"], "note": item.get("note", "")}))
                 else:
-                    out.append((str(k), "" if item.get("value") is None else str(item.get("value"))))
+                    out.append(
+                        (str(k), "" if item.get("value") is None else str(item.get("value")))
+                    )
             return out
         raise ValueError("JSON must be object or array of {key,value}")
     first = text.splitlines()[0].lower()
     if "key" in first and "value" in first and ("," in first or "\t" in first):
         delim = "\t" if "\t" in first and first.count("\t") >= first.count(",") else ","
         reader = csv.DictReader(io.StringIO(text), delimiter=delim)
-        out = []
         for row in reader:
             k = (row.get("key") or row.get("KEY") or "").strip()
             if k:
                 out.append((k, row.get("value") or row.get("VALUE") or ""))
         return out
-    out = []
     for line in text.splitlines():
         s = line.strip()
         if not s or s.startswith("#"):

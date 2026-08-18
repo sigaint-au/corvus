@@ -9,8 +9,8 @@ from email.message import EmailMessage
 from email.utils import formataddr
 
 from core.config import APP_NAME, DEFAULT_SETTINGS, SMTP_ENCRYPTION_MODES, SMTP_SETTING_KEYS
-from crypto import decrypt
 from core.settings_svc import get_settings, truthy
+from crypto import decrypt
 
 log = logging.getLogger(__name__)
 

@@ -4,24 +4,24 @@ from __future__ import annotations
 
 from secret_svc.secret_kinds import expires_status, parse_secret_pairs, secret_due_status
 
-from .search import (
-    global_search,
-    access_requests_inbox,
-)
-from .detail import (
-    projects_list,
-    project_detail,
-    delete_project,
-    update_project_settings,
-    project_crypto_action,
-)
 from .access import (
     add_project_binding,
-    remove_project_binding,
     add_project_group_role,
-    remove_project_group_role,
     project_access_binding_create,
     project_access_binding_delete,
+    remove_project_binding,
+    remove_project_group_role,
+)
+from .detail import (
+    delete_project,
+    project_crypto_action,
+    project_detail,
+    projects_list,
+    update_project_settings,
+)
+from .search import (
+    access_requests_inbox,
+    global_search,
 )
 
 __all__ = ["register", "expires_status", "parse_secret_pairs", "secret_due_status"]

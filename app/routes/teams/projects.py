@@ -10,9 +10,10 @@ from flask import (
     session,
     url_for,
 )
+
+import audit
 from auth import authz
 from core import db
-import audit
 
 
 @authz.login_required
@@ -29,8 +30,7 @@ def new_project_wizard(team_id):
         GET /teams/<team_id>/projects/new
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute("SELECT * FROM api.teams WHERE id = %s", (str(team_id),))
-        team = cur.fetchone()
+        team = db.team(cur, team_id)
         if not team:
             return "Not found", 404
         cur.execute("SELECT api.team_role(%s::uuid) AS r", (str(team_id),))
@@ -90,7 +90,7 @@ def create_project(team_id):
                 return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
             pid = row["id"]
             conn.commit()
-        except Exception as e:
+        except Exception:
             flash("Could not update the project. Try again.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
     if encryption in ("byok", "project", "hsm"):

@@ -6,13 +6,12 @@ from flask import (
     jsonify,
     request,
 )
+
 import audit
-from auth import authz
-from core import config
-from core import db
-from auth import rbac_sync
-from core import settings_svc
+from auth import authz, rbac_sync
+from core import config, db, settings_svc
 from lib.users import lookup_user_id
+
 from .helpers import (
     _require_pat,
     _resolve_team,
@@ -84,8 +83,7 @@ def mgmt_get_team(team_ref):
         tid = _resolve_team(cur, team_ref)
         if not tid:
             return jsonify({"error": "not found"}), 404
-        cur.execute("SELECT * FROM api.teams WHERE id = %s::uuid", (tid,))
-        team = _row(cur.fetchone())
+        team = _row(db.team(cur, tid))
         members = rbac_sync.list_scope_bindings(cur, "team", tid)
         rbac_sync.enrich_binding_emails(members)
         members = [
@@ -188,9 +186,7 @@ def mgmt_add_team_binding(team_ref):
             (tid, mid),
         )
         prev = cur.fetchone()
-        rbac_sync.sync_user_team_binding(
-            cur, user_id=mid, team_id=tid, role=role, created_by=uid
-        )
+        rbac_sync.sync_user_team_binding(cur, user_id=mid, team_id=tid, role=role, created_by=uid)
         if not cur.rowcount:
             return jsonify({"error": "forbidden"}), 403
         action = audit.ORG_MEMBER_ROLE if prev else audit.ORG_MEMBER_ADD
@@ -229,9 +225,7 @@ def mgmt_remove_team_binding(team_ref, member_ref):
         )
         if not cur.fetchone():
             return jsonify({"error": "member not found"}), 404
-        rbac_sync.sync_user_team_binding(
-            cur, user_id=mid, team_id=tid, role=None, created_by=uid
-        )
+        rbac_sync.sync_user_team_binding(cur, user_id=mid, team_id=tid, role=None, created_by=uid)
         audit.log_org(
             cur,
             team_id=tid,

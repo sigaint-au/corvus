@@ -7,11 +7,10 @@ from datetime import datetime, timedelta, timezone
 from flask import flash, redirect, render_template, request, session, url_for
 
 from auth import authz
-from core import config, settings_svc
-from core import db
-from ui import nav, paging
+from core import config, db, settings_svc
 from crypto import sha256_hex
 from secret_svc.secret_kinds import annotate_token_expiry
+from ui import nav, paging
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +65,7 @@ def register(app):
     app.post("/projects/<uuid:project_id>/tokens")(create_token)
     app.post("/projects/<uuid:project_id>/tokens/<uuid:token_id>/delete")(delete_token)
 
+
 @authz.login_required
 def machines_list():
     """List machine tokens for all projects under the session team.
@@ -78,13 +78,11 @@ def machines_list():
     """
     tid = nav.ensure_active_team(session["user_id"])
     q = paging.list_state_q()
-    page = paging.page_arg()
     team, tokens = None, []
     machines_pager = None
     if tid:
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
-            team = cur.fetchone()
+            team = db.team(cur, tid)
             if team:
                 where = "p.team_id = %s"
                 params: list = [tid]
@@ -94,19 +92,14 @@ def machines_list():
                         " AND (mt.name ILIKE %s OR p.name ILIKE %s OR mt.token_prefix ILIKE %s)"
                     )
                     params.extend([like, like, like])
-                cur.execute(
+                tokens, machines_pager = paging.paged_rows(
+                    cur,
                     f"""
                     SELECT count(*) AS n
                       FROM api.machine_tokens mt
                       JOIN api.projects p ON p.id = mt.project_id
                      WHERE {where}
                     """,
-                    params,
-                )
-                total = int((cur.fetchone() or {}).get("n") or 0)
-                machines_pager = paging.page_window(total, page)
-                machines_pager.update(endpoint="machines_list", q=q or None)
-                cur.execute(
                     f"""
                     SELECT mt.id, mt.name, mt.token_prefix, mt.role,
                            mt.created_at, mt.expires_at, mt.last_used_at,
@@ -117,13 +110,13 @@ def machines_list():
                      ORDER BY p.name, mt.name
                      LIMIT %s OFFSET %s
                     """,
-                    (*params, machines_pager["limit"], machines_pager["offset"]),
+                    params,
+                    endpoint="machines_list",
+                    q=q,
                 )
-                tokens = annotate_token_expiry(cur.fetchall())
+                tokens = annotate_token_expiry(tokens)
     template = "partials/machines_results.html" if authz.htmx() else "machines.html"
-    return render_template(
-        template, team=team, tokens=tokens, machines_pager=machines_pager, q=q
-    )
+    return render_template(template, team=team, tokens=tokens, machines_pager=machines_pager, q=q)
 
 
 @authz.login_required
@@ -163,9 +156,7 @@ def create_token(project_id):
         Example:
             return _token_redirect()
         """
-        return redirect(
-            url_for("project_detail", project_id=project_id, tab=return_tab)
-        )
+        return redirect(url_for("project_detail", project_id=project_id, tab=return_tab))
 
     expires_at = None
     days_raw = (request.form.get("expires_days") or "").strip()
@@ -226,7 +217,7 @@ def create_token(project_id):
             if scopes:
                 insert_token_scopes(cur, str(row["id"]), scopes)
             conn.commit()
-        except Exception as e:
+        except Exception:
             flash("Could not complete the request. Try again.", "error")
             return _token_redirect()
     session["new_token"] = raw  # shown once

@@ -9,10 +9,10 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
 from auth import authz
-from core import config
-from core import db
+from core import config, db
 from lib.users import lookup_user_id
 
 
@@ -73,7 +73,7 @@ def add_project_binding(project_id):
             )
             conn.commit()
             flash(f"Bound {email} as project-{role}", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update project access. Try again.", "error")
     return redirect(dest)
@@ -110,7 +110,7 @@ def remove_project_binding(project_id, user_id):
             )
             conn.commit()
             flash("Project binding removed", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update project access. Try again.", "error")
     return redirect(dest)
@@ -168,7 +168,7 @@ def add_project_group_role(project_id):
             )
             conn.commit()
             flash(f"Bound group “{row['name']}” as project-{role}", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update project access. Try again.", "error")
     return redirect(dest)
@@ -209,7 +209,7 @@ def remove_project_group_role(project_id, group_id):
             )
             conn.commit()
             flash("Group project binding removed", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update project access. Try again.", "error")
     return redirect(dest)
@@ -322,7 +322,7 @@ def project_access_binding_create(project_id):
             )
             conn.commit()
             flash("Binding created", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update project access. Try again.", "error")
     return redirect(dest)
@@ -369,7 +369,7 @@ def project_access_binding_delete(project_id, binding_id):
                 )
                 conn.commit()
                 flash("Binding removed", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update project access. Try again.", "error")
     return redirect(dest)

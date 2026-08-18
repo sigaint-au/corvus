@@ -48,6 +48,36 @@
 </section>
 
 <section class="list-panel">
+  <h2>Reveal &amp; clipboard</h2>
+  <p class="muted">
+    Clipboard auto-clear and reveal auto-hide are per-device defaults; the scope
+    of an approved reveal grant is server-wide.
+  </p>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="ux">
+    <div class="row">
+      <label>Clipboard auto-clear (seconds, 0 = off)
+        <input type="number" name="clipboard_clear_seconds" min="0" max="3600"
+               value="{{ settings.clipboard_clear_seconds or 30 }}"
+               aria-label="Clipboard auto-clear seconds">
+      </label>
+      <label>Auto-hide revealed values (seconds, 0 = off)
+        <input type="number" name="reveal_auto_hide_seconds" min="0" max="3600"
+               value="{{ settings.reveal_auto_hide_seconds or 30 }}"
+               aria-label="Auto-hide revealed values seconds">
+      </label>
+      <label>Reveal grant window (minutes)
+        <input type="number" name="reveal_access_grant_minutes" min="1" max="1440"
+               value="{{ settings.reveal_access_grant_minutes or 15 }}"
+               aria-label="Reveal grant window minutes">
+      </label>
+    </div>
+    <p class="form-actions"><button type="submit">Save reveal &amp; clipboard settings</button></p>
+  </form>
+</section>
+
+<section class="list-panel">
   <h2>Account registration</h2>
   <p class="muted">
     Control whether new local accounts can be created at <code>/register</code>.

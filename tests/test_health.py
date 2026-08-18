@@ -2,14 +2,10 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 import app as store
-from core import config
 from core import db
-
 from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True

@@ -1,18 +1,23 @@
 """Sidebar navigation context and team selection helpers."""
+
 import re
 from urllib.parse import parse_qs, urlsplit
 
 from flask import session, url_for
 
 from auth import authz
-from core.config import (
-    CLIPBOARD_CLEAR_SECONDS,
-    MAX_EXPIRY_DAYS,
-    REVEAL_AUTO_HIDE_SECONDS,
-)
 from core import db
+from core.config import (
+    MAX_EXPIRY_DAYS,
+)
+from core.settings_svc import (
+    branding,
+    classification,
+    int_setting,
+    login_banner,
+    team_classification,
+)
 from ui import pins
-from core.settings_svc import branding, classification, login_banner, team_classification
 
 
 def nav_teams(user_id: str):
@@ -175,11 +180,7 @@ def redirect_after_team_switch(nxt: str | None, team_id: str | None) -> str:
             return nxt
         # Wrong team — land on a list that respects the new session team.
         tab = (parse_qs(qs).get("tab") or [""])[0].strip().lower()
-        secrets_like = (
-            rest.startswith("/secrets")
-            or tab in ("", "secrets")
-            or "secret" in rest
-        )
+        secrets_like = rest.startswith("/secrets") or tab in ("", "secrets") or "secret" in rest
         if secrets_like:
             return url_for("secrets_list")
         if tab == "tokens" or "token" in rest:
@@ -230,8 +231,8 @@ def inject_nav():
         "nav_pins": [],
         "nav_recent": [],
         "nav_access_pending": 0,
-        "clipboard_clear_seconds": CLIPBOARD_CLEAR_SECONDS,
-        "reveal_auto_hide_seconds": REVEAL_AUTO_HIDE_SECONDS,
+        "clipboard_clear_seconds": int_setting("clipboard_clear_seconds", 30),
+        "reveal_auto_hide_seconds": int_setting("reveal_auto_hide_seconds", 30),
         "max_expiry_days": MAX_EXPIRY_DAYS,
         "csrf_token": authz.csrf_token(),
     }

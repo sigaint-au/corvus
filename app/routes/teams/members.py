@@ -9,11 +9,10 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
-from auth import authz
-from core import config
-from core import db
-from auth import rbac_sync
+from auth import authz, rbac_sync
+from core import config, db
 from lib.users import lookup_user_id
 
 
@@ -83,7 +82,7 @@ def team_access_binding_create(team_id):
             )
             conn.commit()
             flash("Binding created", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update team membership. Try again.", "error")
     return redirect(access_url)
@@ -117,7 +116,7 @@ def team_access_binding_delete(team_id, binding_id):
             else:
                 conn.rollback()
                 flash("Binding not found or not permitted", "error")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update team membership. Try again.", "error")
     return redirect(access_url)
@@ -187,7 +186,7 @@ def add_team_binding(team_id):
             audit.log_org(cur, team_id=team_id, action=action, detail=detail)
             conn.commit()
             flash(f"Bound {email} as {role}", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update team membership. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="members"))
@@ -236,7 +235,7 @@ def remove_team_binding(team_id, user_id):
             )
             conn.commit()
             flash("Member removed", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update team membership. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="members"))
@@ -295,7 +294,7 @@ def transfer_team_ownership(team_id):
             )
             conn.commit()
             flash(f"Ownership transferred to {email}", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update team membership. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))

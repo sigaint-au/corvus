@@ -1,4 +1,5 @@
 """Route-level tests for the HSM onboarding UI (wizard + settings)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -6,11 +7,10 @@ from uuid import UUID, uuid4
 
 import app as store
 import audit
-from auth import authz
 import crypto
+from auth import authz
 from core import db
-from crypto import hsm
-from crypto import project_keys
+from crypto import hsm, project_keys
 
 store.app.config["TESTING"] = True
 
@@ -19,7 +19,7 @@ def _team_conn():
     cur = MagicMock()
     cur.fetchone.side_effect = [
         {"id": "teamid", "name": "Platform"},  # wizard team row
-        {"r": "team-owner"},                   # wizard team_role
+        {"r": "team-owner"},  # wizard team_role
     ]
     cur.__enter__.return_value = cur
     cur.__exit__.return_value = False
@@ -49,17 +49,21 @@ class TestHsmWizard:
             s["user_id"] = str(uuid4())
 
     def test_hides_hsm_when_no_slots(self):
-        with patch.object(db, "as_user", return_value=_team_conn()), \
-             patch.object(db, "connect_admin", return_value=_slots_conn([])):
-            r = self.client.get("/teams/%s/projects/new" % uuid4())
+        with (
+            patch.object(db, "as_user", return_value=_team_conn()),
+            patch.object(db, "connect_admin", return_value=_slots_conn([])),
+        ):
+            r = self.client.get(f"/teams/{uuid4()}/projects/new")
         assert r.status_code == 200
         assert b'value="hsm"' not in r.data
 
     def test_shows_hsm_when_slots_exist(self):
         slot = {"id": str(uuid4()), "name": "prod-hsm", "is_default": True}
-        with patch.object(db, "as_user", return_value=_team_conn()), \
-             patch.object(db, "connect_admin", return_value=_slots_conn([slot])):
-            r = self.client.get("/teams/%s/projects/new" % uuid4())
+        with (
+            patch.object(db, "as_user", return_value=_team_conn()),
+            patch.object(db, "connect_admin", return_value=_slots_conn([slot])),
+        ):
+            r = self.client.get(f"/teams/{uuid4()}/projects/new")
         assert r.status_code == 200
         assert b'value="hsm"' in r.data
         assert b"prod-hsm" in r.data
@@ -76,8 +80,8 @@ class TestHsmSettingsAdopt:
         cur = MagicMock()
         cur.fetchone.side_effect = [
             {"team_id": "teamid"},  # project team_id
-            {"g": True},            # is_global_admin
-            {"r": "team-owner"},    # team_role
+            {"g": True},  # is_global_admin
+            {"r": "team-owner"},  # team_role
         ]
         cur.__enter__.return_value = cur
         cur.__exit__.return_value = False
@@ -88,9 +92,11 @@ class TestHsmSettingsAdopt:
         return conn
 
     def test_adopt_hsm_requires_slot(self):
-        with patch.object(db, "as_user", return_value=self._admin_conn()), \
-             patch.object(project_keys, "ensure_project_key") as ensure, \
-             patch.object(project_keys, "adopt_project_key") as adopt:
+        with (
+            patch.object(db, "as_user", return_value=self._admin_conn()),
+            patch.object(project_keys, "ensure_project_key") as ensure,
+            patch.object(project_keys, "adopt_project_key") as adopt,
+        ):
             r = self.client.post(
                 f"/projects/{self.pid}/crypto",
                 data={"action": "adopt", "provider": "hsm"},
@@ -101,9 +107,11 @@ class TestHsmSettingsAdopt:
 
     def test_adopt_hsm_success(self):
         slot = str(uuid4())
-        with patch.object(db, "as_user", return_value=self._admin_conn()), \
-             patch.object(project_keys, "ensure_project_key", return_value=True), \
-             patch.object(project_keys, "adopt_project_key", return_value=5) as adopt:
+        with (
+            patch.object(db, "as_user", return_value=self._admin_conn()),
+            patch.object(project_keys, "ensure_project_key", return_value=True),
+            patch.object(project_keys, "adopt_project_key", return_value=5) as adopt,
+        ):
             r = self.client.post(
                 f"/projects/{self.pid}/crypto",
                 data={"action": "adopt", "provider": "hsm", "hsm_slot": slot},
@@ -113,8 +121,10 @@ class TestHsmSettingsAdopt:
 
     def test_migrate_hsm_route(self):
         slot = str(uuid4())
-        with patch.object(db, "as_user", return_value=self._admin_conn()), \
-             patch.object(project_keys, "migrate_project_key", return_value=7) as migrate:
+        with (
+            patch.object(db, "as_user", return_value=self._admin_conn()),
+            patch.object(project_keys, "migrate_project_key", return_value=7) as migrate,
+        ):
             r = self.client.post(
                 f"/projects/{self.pid}/crypto",
                 data={"action": "migrate", "provider": "hsm", "target_slot": slot},
@@ -144,9 +154,12 @@ class TestHsmSlotWizard:
             "is_default": True,
         }
         from tests.helpers import mock_conn
+
         user_conn, _ = mock_conn(fetchone=slot_data)
-        with patch.object(authz, "is_global_admin", return_value=True), \
-             patch.object(db, "as_user", return_value=user_conn):
+        with (
+            patch.object(authz, "is_global_admin", return_value=True),
+            patch.object(db, "as_user", return_value=user_conn),
+        ):
             r = self.client.get(f"/settings/encryption/hsm-slots/new?slot_id={slot_id}")
         assert r.status_code == 200
         assert b"Edit HSM slot" in r.data
@@ -156,14 +169,17 @@ class TestHsmSlotWizard:
     def test_wizard_create_logs_audit(self):
         """POST create logs an hsm_slot_added audit event."""
         from tests.helpers import mock_conn
+
         admin_conn, _ = mock_conn(fetchone={"is_global_admin": True})
         user_conn, _ = mock_conn(fetchone={"id": str(uuid4())})
-        with patch.object(authz, "is_global_admin", return_value=True), \
-             patch.object(hsm, "test_connection_for_slot", return_value=(True, "OK")), \
-             patch.object(db, "as_user", return_value=user_conn), \
-             patch.object(db, "connect_admin", return_value=admin_conn), \
-             patch.object(crypto, "clear_slot_url_cache"), \
-             patch.object(audit, "log_org") as log_org:
+        with (
+            patch.object(authz, "is_global_admin", return_value=True),
+            patch.object(hsm, "test_connection_for_slot", return_value=(True, "OK")),
+            patch.object(db, "as_user", return_value=user_conn),
+            patch.object(db, "connect_admin", return_value=admin_conn),
+            patch.object(crypto, "clear_slot_url_cache"),
+            patch.object(audit, "log_org") as log_org,
+        ):
             r = self.client.post(
                 "/settings/encryption/hsm-slots/new",
                 data={
@@ -179,14 +195,19 @@ class TestHsmSlotWizard:
     def test_wizard_force_create_saves_without_test(self):
         """POST force_create saves the slot even when the connection test fails."""
         from tests.helpers import mock_conn
+
         admin_conn, _ = mock_conn(fetchone={"is_global_admin": True})
         user_conn, _ = mock_conn(fetchone={"id": str(uuid4())})
-        with patch.object(authz, "is_global_admin", return_value=True), \
-             patch.object(hsm, "test_connection_for_slot", return_value=(False, "connection refused")), \
-             patch.object(db, "as_user", return_value=user_conn), \
-             patch.object(db, "connect_admin", return_value=admin_conn), \
-             patch.object(crypto, "clear_slot_url_cache"), \
-             patch.object(audit, "log_org") as log_org:
+        with (
+            patch.object(authz, "is_global_admin", return_value=True),
+            patch.object(
+                hsm, "test_connection_for_slot", return_value=(False, "connection refused")
+            ),
+            patch.object(db, "as_user", return_value=user_conn),
+            patch.object(db, "connect_admin", return_value=admin_conn),
+            patch.object(crypto, "clear_slot_url_cache"),
+            patch.object(audit, "log_org") as log_org,
+        ):
             r = self.client.post(
                 "/settings/encryption/hsm-slots/new",
                 data={
@@ -203,14 +224,17 @@ class TestHsmSlotWizard:
         """POST create with slot_id logs hsm_slot_edited (not added)."""
         slot_id = str(uuid4())
         from tests.helpers import mock_conn
+
         admin_conn, _ = mock_conn(fetchone={"is_global_admin": True})
         user_conn, _ = mock_conn(fetchone={"id": slot_id})
-        with patch.object(authz, "is_global_admin", return_value=True), \
-             patch.object(hsm, "test_connection_for_slot", return_value=(True, "OK")), \
-             patch.object(db, "as_user", return_value=user_conn), \
-             patch.object(db, "connect_admin", return_value=admin_conn), \
-             patch.object(crypto, "clear_slot_url_cache"), \
-             patch.object(audit, "log_org") as log_org:
+        with (
+            patch.object(authz, "is_global_admin", return_value=True),
+            patch.object(hsm, "test_connection_for_slot", return_value=(True, "OK")),
+            patch.object(db, "as_user", return_value=user_conn),
+            patch.object(db, "connect_admin", return_value=admin_conn),
+            patch.object(crypto, "clear_slot_url_cache"),
+            patch.object(audit, "log_org") as log_org,
+        ):
             r = self.client.post(
                 "/settings/encryption/hsm-slots/new",
                 data={

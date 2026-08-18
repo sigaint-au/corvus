@@ -8,7 +8,6 @@ from uuid import uuid4
 import pytest
 
 import app as store
-from core import config
 import crypto
 
 store.app.config["TESTING"] = True
@@ -173,8 +172,9 @@ class TestHsmDekContract:
         assert hsm.raw_to_fernet_key(raw) == fkey
 
     def test_fernet_key_to_raw_accepts_32_bytes(self):
-        from crypto import hsm
         import os
+
+        from crypto import hsm
 
         raw = os.urandom(32)
         assert hsm.fernet_key_to_raw(raw) == raw
@@ -187,8 +187,7 @@ class TestHsmDekContract:
 
     def test_ensure_project_key_hsm_passes_fernet_key_to_wrap(self):
         """Regression: wrap_dek_for_slot must receive Fernet key material."""
-        from crypto import hsm
-        from crypto import project_keys
+        from crypto import hsm, project_keys
 
         pid = str(uuid4())
         slot_id = str(uuid4())

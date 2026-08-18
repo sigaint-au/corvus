@@ -10,12 +10,10 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
 from auth import authz
-from core import config
-from core import db
-from ui import nav
-from ui import paging
+from core import config, db, settings_svc
 from secret_svc.secret_kinds import (
     SOON_DAYS,
     annotate_token_expiry,
@@ -23,6 +21,7 @@ from secret_svc.secret_kinds import (
     secret_due_status,
 )
 from secret_svc.secret_ops import _load_secrets_page
+from ui import nav, paging
 
 
 @authz.login_required
@@ -34,34 +33,28 @@ def projects_list():
     """
     tid = nav.ensure_active_team(session["user_id"])
     q = paging.list_state_q()
-    page = paging.page_arg()
     team, projects = None, []
     projects_pager = None
     can_create_project = False
     if tid:
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-            cur.execute("SELECT * FROM api.teams WHERE id = %s", (tid,))
-            team = cur.fetchone()
+            team = db.team(cur, tid)
             if team:
                 cur.execute("SELECT api.team_role(%s::uuid) AS role", (tid,))
                 can_create_project = (cur.fetchone() or {}).get("role") in (
-                    "team-owner", "team-admin", "team-member"
+                    "team-owner",
+                    "team-admin",
+                    "team-member",
                 )
-            if team:
                 where = "p.team_id = %s"
                 params: list = [tid]
                 if q:
                     like = f"%{q}%"
                     where += " AND (p.name ILIKE %s OR COALESCE(p.description, '') ILIKE %s)"
                     params.extend([like, like])
-                cur.execute(
+                projects, projects_pager = paging.paged_rows(
+                    cur,
                     f"SELECT count(*) AS n FROM api.projects p WHERE {where}",
-                    params,
-                )
-                total = int((cur.fetchone() or {}).get("n") or 0)
-                projects_pager = paging.page_window(total, page)
-                projects_pager.update(endpoint="projects_list", q=q or None)
-                cur.execute(
                     f"""
                     SELECT p.id, p.name, p.description, p.created_at,
                       (
@@ -73,9 +66,10 @@ def projects_list():
                     ORDER BY p.name
                     LIMIT %s OFFSET %s
                     """,
-                    (*params, projects_pager["limit"], projects_pager["offset"]),
+                    params,
+                    endpoint="projects_list",
+                    q=q,
                 )
-                projects = cur.fetchall() or []
                 provider_map = {}
                 ids = [p["id"] for p in projects]
                 if ids:
@@ -85,8 +79,7 @@ def projects_list():
                             (ids,),
                         )
                         provider_map = {
-                            str(r["project_id"]): r["key_provider"]
-                            for r in (cur.fetchall() or [])
+                            str(r["project_id"]): r["key_provider"] for r in (cur.fetchall() or [])
                         }
                     except Exception:
                         provider_map = {}
@@ -327,12 +320,8 @@ def project_detail(project_id):
                 "SELECT api.can_manage_rbac('project', %s::uuid) AS ok",
                 (str(project_id),),
             )
-            can_edit_access = bool((cur.fetchone() or {}).get("ok")) or bool(
-                can_admin
-            )
-            access_bindings = rbac_sync.list_scope_bindings(
-                cur, "project", project_id
-            )
+            can_edit_access = bool((cur.fetchone() or {}).get("ok")) or bool(can_admin)
+            access_bindings = rbac_sync.list_scope_bindings(cur, "project", project_id)
             try:
                 cur.execute(
                     "SELECT * FROM api.effective_access_rows('project', %s::uuid)",
@@ -348,7 +337,8 @@ def project_detail(project_id):
                 effective_access = [
                     row
                     for row in effective_access
-                    if needle in " ".join(
+                    if needle
+                    in " ".join(
                         str(row.get(key) or "")
                         for key in (
                             "subject_email",
@@ -385,8 +375,7 @@ def project_detail(project_id):
             try:
                 cur.execute("SELECT name, description FROM rbac.roles")
                 role_descriptions = {
-                    r["name"]: (r.get("description") or "")
-                    for r in (cur.fetchall() or [])
+                    r["name"]: (r.get("description") or "") for r in (cur.fetchall() or [])
                 }
             except Exception:
                 role_descriptions = {}
@@ -423,7 +412,6 @@ def project_detail(project_id):
         from auth import rbac_sync
 
         rbac_sync.enrich_binding_emails(access_bindings)
-    from core import settings_svc
 
     public_base = settings_svc.public_base_url(request.url_root or "")
     ctx = {
@@ -446,7 +434,6 @@ def project_detail(project_id):
         "subject_kinds": config.RBAC_SUBJECT_KINDS,
         "secrets_pager": secrets_pager,
         "audit_pager": audit_pager,
-
         "team_groups": team_groups,
         "default_token_days": default_token_days,
         "can_write": can_write,
@@ -469,11 +456,9 @@ def project_detail(project_id):
         "rotation_soon": rotation_soon if tab == "secrets" else [],
         "public_base_url": public_base,
         "max_expiry_days": config.MAX_EXPIRY_DAYS,
-        "grant_minutes": config.REVEAL_ACCESS_GRANT_MINUTES,
+        "grant_minutes": settings_svc.reveal_access_grant_minutes(),
         "grant_choices": config.REVEAL_ACCESS_GRANT_CHOICES,
-        "require_reveal_approval": bool(
-            project.get("require_reveal_approval")
-        )
+        "require_reveal_approval": bool(project.get("require_reveal_approval"))
         if project
         else False,
         "access_modes": config.ACCESS_MODES,
@@ -549,9 +534,7 @@ def update_project_settings(project_id):
         cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
         if not (cur.fetchone() or {}).get("a"):
             flash("You don't have permission to do that", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="settings")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
         cur.execute(
             """
             UPDATE api.projects
@@ -600,15 +583,11 @@ def project_crypto_action(project_id):
     """
     action = (request.form.get("action") or "").strip().lower()
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),)
-        )
+        cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
         proj = cur.fetchone() or {}
         if not proj:
             flash("Project not found", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="settings")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
         team_id = proj.get("team_id")
         cur.execute("SELECT api.is_global_admin() AS g", ())
         is_global_admin = bool((cur.fetchone() or {}).get("g"))
@@ -616,9 +595,7 @@ def project_crypto_action(project_id):
         team_role = (cur.fetchone() or {}).get("r")
     if not (is_global_admin or team_role in ("team-owner", "team-admin")):
         flash("Only team owners, team admins, or global admins can manage the project key", "error")
-        return redirect(
-            url_for("project_detail", project_id=project_id, tab="settings")
-        )
+        return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
     if action == "adopt":
         from crypto import project_keys
 
@@ -628,21 +605,15 @@ def project_crypto_action(project_id):
         hsm_slot = (request.form.get("hsm_slot") or "").strip() or None
         if provider == "hsm" and not hsm_slot:
             flash("External HSM requires a named slot", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="settings")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
         try:
             created = project_keys.ensure_project_key(
                 project_id, provider=provider, hsm_slot_id=hsm_slot
             )
-            n = project_keys.adopt_project_key(
-                project_id, provider=provider, hsm_slot_id=hsm_slot
-            )
-        except Exception as e:
+            n = project_keys.adopt_project_key(project_id, provider=provider, hsm_slot_id=hsm_slot)
+        except Exception:
             flash("Could not adopt the project key. Try again.", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="settings")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             audit.log_org(
                 cur,
@@ -663,18 +634,14 @@ def project_crypto_action(project_id):
         target_slot = (request.form.get("target_slot") or "").strip() or None
         if new_provider == "hsm" and not target_slot:
             flash("External HSM requires a named slot", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="settings")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
         try:
             n = project_keys.migrate_project_key(
                 project_id, new_provider, target_slot_id=target_slot
             )
-        except Exception as e:
+        except Exception:
             flash("Could not migrate the project key. Try again.", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="settings")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             audit.log_org(
                 cur,

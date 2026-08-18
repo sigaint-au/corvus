@@ -19,13 +19,6 @@ from .groups import (
     mgmt_list_groups,
     mgmt_remove_group_member,
 )
-from .helpers import (
-    _require_global_admin,
-    _require_pat,
-    _resolve_project,
-    _resolve_team,
-    _row,
-)
 from .history import (
     mgmt_project_audit,
     mgmt_secret_history,
@@ -81,7 +74,9 @@ def register(app):
     app.post(f"{base}/teams/<team_ref>/groups")(mgmt_create_group)
     app.delete(f"{base}/teams/<team_ref>/groups/<group_ref>")(mgmt_delete_group)
     app.post(f"{base}/teams/<team_ref>/groups/<group_ref>/members")(mgmt_add_group_member)
-    app.delete(f"{base}/teams/<team_ref>/groups/<group_ref>/members/<member_ref>")(mgmt_remove_group_member)
+    app.delete(f"{base}/teams/<team_ref>/groups/<group_ref>/members/<member_ref>")(
+        mgmt_remove_group_member
+    )
     app.post(f"{base}/teams/<team_ref>/projects")(mgmt_create_project)
     app.get(f"{base}/projects/<project_ref>")(mgmt_get_project)
     app.delete(f"{base}/projects/<project_ref>")(mgmt_delete_project)
@@ -100,9 +95,13 @@ def register(app):
     app.get(f"{base}/projects/<project_ref>/secrets/<path:key>/history")(mgmt_secret_history)
     app.patch(f"{base}/projects/<project_ref>/secrets/<path:key>")(mgmt_update_secret_access)
     app.post(f"{base}/projects/<project_ref>/secrets/<path:key>/bindings")(mgmt_add_secret_binding)
-    app.delete(f"{base}/projects/<project_ref>/secrets/<path:key>/bindings/<binding_id>")(mgmt_delete_secret_binding)
+    app.delete(f"{base}/projects/<project_ref>/secrets/<path:key>/bindings/<binding_id>")(
+        mgmt_delete_secret_binding
+    )
     app.patch(f"{base}/projects/<project_ref>/secrets/<path:key>/meta")(mgmt_upsert_secret_meta)
-    app.delete(f"{base}/projects/<project_ref>/secrets/<path:key>/meta/<meta_key>")(mgmt_delete_secret_meta)
+    app.delete(f"{base}/projects/<project_ref>/secrets/<path:key>/meta/<meta_key>")(
+        mgmt_delete_secret_meta
+    )
     app.get(f"{base}/projects/<project_ref>/audit")(mgmt_project_audit)
     app.get(f"{base}/admin/users")(mgmt_admin_users)
     app.get(f"{base}/admin/audit")(mgmt_admin_audit)

@@ -7,6 +7,7 @@ from datetime import (
     datetime,
     timezone,
 )
+
 from flask import (
     flash,
     redirect,
@@ -14,15 +15,12 @@ from flask import (
     session,
     url_for,
 )
-from auth import authz
-from core import db
-from integrations import ldap_auth
-from integrations import mailer
-from integrations import oidc_auth
-from core import settings_svc
-from auth import totp_svc
-from auth import user_sessions
+
+from auth import authz, totp_svc, user_sessions
+from core import db, settings_svc
 from core.config import bootstrap_admin_email
+from integrations import ldap_auth, mailer, oidc_auth
+
 log = logging.getLogger(__name__)
 
 

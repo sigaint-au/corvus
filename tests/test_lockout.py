@@ -1,15 +1,11 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 import app as store
-from core import config
-from core import db
 from auth import lockout
-
+from core import db
 from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True
@@ -39,7 +35,7 @@ class TestLockout:
         with patch.object(db, 'connect_admin', return_value=conn):
             lockout.record_failure('A@B.C')
             lockout.clear_failures('A@B.C')
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'INSERT INTO private.login_failures' in sql
         assert 'DELETE FROM private.login_failures' in sql
         assert cur.execute.call_args_list[0].args[1] == ('a@b.c',)

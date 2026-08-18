@@ -1,22 +1,16 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
-
-import pytest
 
 import app as store
 from auth import authz
-from auth import pats
-from core import config
-from core import db
-from integrations import ldap_auth
-from integrations import oidc_auth
-from core import settings_svc
+from core import db, settings_svc
+from integrations import ldap_auth, oidc_auth
+from tests.helpers import REPO_ROOT
+from tests.helpers import mock_conn as _conn
 from ui import nav
-
-from tests.helpers import REPO_ROOT, mock_conn as _conn
 
 store.app.config["TESTING"] = True
 
@@ -162,7 +156,6 @@ class TestAuth:
 
     def test_register_does_not_auto_promote_first_user(self):
         """register_user SQL must set is_global_admin false (no first_user race)."""
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         start = init.index('CREATE OR REPLACE FUNCTION private.register_user')
         end = init.index('$$;', start)
@@ -177,7 +170,7 @@ class TestAuth:
         with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('routes.auth.helpers.bootstrap_admin_email', return_value='admin@ex.com'), patch.object(authz, 'is_global_admin', return_value=True), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/register', data={'email': 'admin@ex.com', 'password': 'password1', 'name': 'A'}, follow_redirects=False)
         assert r.status_code == 302
-        sql = ' '.join((str(c.args[0]) for c in admin_cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in admin_cur.execute.call_args_list)
         assert 'is_global_admin = true' in sql
         assert 'NOT EXISTS' in sql
 
@@ -275,7 +268,6 @@ class TestAuth:
         assert '/login' in r.location
 
     def test_password_schema_helpers(self):
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'private.change_password' in init
         assert 'private.set_local_password' in init

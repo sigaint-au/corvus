@@ -64,27 +64,5 @@
     <p class="form-actions"><button type="submit">Save banner</button></p>
   </form>
 </section>
-<script>
-function applyPreset(bg, fg) {
-  document.getElementById('classification_color').value = bg;
-  document.getElementById('classification_color_picker').value = bg;
-  document.getElementById('classification_fg').value = fg;
-  document.getElementById('classification_fg_picker').value = fg;
-  updatePreview();
-}
-function syncColor(id) {
-  var v = document.getElementById(id).value;
-  if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
-    document.getElementById(id + '_picker').value = v;
-  }
-}
-function updatePreview() {
-  var el = document.getElementById('banner-preview');
-  var text = document.querySelector('[name=classification_text]').value || 'Preview';
-  el.textContent = text;
-  el.style.background = document.getElementById('classification_color').value;
-  el.style.color = document.getElementById('classification_fg').value;
-}
-document.querySelector('[name=classification_text]').addEventListener('input', updatePreview);
-</script>
+{% include "partials/color_picker_js.html" %}
 

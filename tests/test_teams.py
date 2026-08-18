@@ -3,18 +3,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
-from pathlib import Path
-
-import pytest
 
 import app as store
-from core import config
-from core import db
+from core import config, db, settings_svc
 from integrations import ldap_auth
-from core import schema as schema_mod
-from core import settings_svc
-
-from tests.helpers import REPO_ROOT, mock_conn as _conn
+from tests.helpers import REPO_ROOT
+from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True
 
@@ -94,7 +88,7 @@ class TestTeams:
         assert b'?tab=members' in r.data
         assert b'?tab=groups' in r.data
         assert b'?tab=settings' in r.data
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
         assert 'from api.projects' in sql
 
     def test_team_detail_members_tab(self):
@@ -117,7 +111,7 @@ class TestTeams:
             r = self.client.get(f'/teams/{tid}?tab=members')
         assert r.status_code == 200
         assert b'Invites' in r.data
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list)).lower()
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
         # Members tab now reads from rbac.bindings (not legacy team_member_rows)
         assert 'rbac.bindings' in sql or 'rbac_sync' in sql.lower() or 'list_scope_bindings' in sql
 
@@ -135,12 +129,11 @@ class TestTeams:
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/teams/{tid}/members', data={'email': 'u@ex.com', 'role': 'team-member'}, follow_redirects=False)
         assert r.status_code == 302
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'private.lookup_user' in sql
         assert 'user_directory' not in sql
 
     def test_user_directory_not_granted_to_authenticated(self):
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'GRANT SELECT ON api.user_directory TO authenticated' not in init
         assert 'private.lookup_user' in init
@@ -188,7 +181,6 @@ class TestTeams:
 
     def test_tm_insert_policy_forbids_self_join(self):
         """RBAC bindings write policy must require can_manage_rbac — no self-join escape hatch."""
-        from pathlib import Path
         rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'rbac_bindings_write' in rbac_sql
         assert 'can_manage_rbac' in rbac_sql
@@ -205,7 +197,7 @@ class TestTeams:
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/teams/{tid}/members', data={'email': 'ro@ex.com', 'role': 'team-viewer'}, follow_redirects=False)
         assert r.status_code == 302
-        sql = ' '.join((str(c) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c) for c in cur.execute.call_args_list)
         assert 'viewer' in sql
 
     def test_create_project(self):

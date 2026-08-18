@@ -3,25 +3,30 @@
 from __future__ import annotations
 
 import logging
+
 from flask import (
     jsonify,
     request,
 )
-from core import config
+from werkzeug.exceptions import HTTPException
+
 import crypto
-from core import db
+from core import config, db
+from secret_svc.commands import delete_secret_command
 from secret_svc.secret_ops import _upsert_secret, fetch_secret_enc
+
 from .helpers import (
     _audit,
     _machine_actor,
     _meta_item,
-    _require_auth,
     _parse_expires_from_body,
     _pat_can_write,
+    _require_auth,
     _require_machine_write,
     _resolve_project_ref,
     _upsert_body,
 )
+
 log = logging.getLogger(__name__)
 
 
@@ -129,9 +134,7 @@ def eso_patch_secret(project_ref, key):
                 if kind_s not in config.SECRET_KINDS:
                     return (
                         jsonify(
-                            {
-                                "error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"
-                            }
+                            {"error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"}
                         ),
                         400,
                     )
@@ -215,17 +218,13 @@ def eso_patch_secret(project_ref, key):
             enc_provider = enc.get("crypto_provider") or "master"
             value = crypto.decrypt_for_project(pid, value_enc, enc_provider)
         note = (
-            str(body.get("note") or "").strip()
-            if "note" in body
-            else (existing.get("note") or "")
+            str(body.get("note") or "").strip() if "note" in body else (existing.get("note") or "")
         )
         if "kind" in body:
             kind_s = (body.get("kind") or "plain").strip().lower()
             if kind_s not in config.SECRET_KINDS:
                 return jsonify(
-                    {
-                        "error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"
-                    }
+                    {"error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"}
                 ), 400
         else:
             kind_s = existing.get("kind") or "plain"
@@ -340,29 +339,19 @@ def eso_delete_secret(project_ref, key):
             return jsonify({"error": "forbidden"}), 403
         cur.execute(
             """
-            SELECT id, key FROM api.secrets
+            SELECT id FROM api.secrets
              WHERE project_id = %s AND key = %s AND deleted_at IS NULL
             """,
             (pid, key),
         )
-        row = cur.fetchone()
-        if not row:
+        existing = cur.fetchone()
+        if not existing:
             return jsonify({"error": "not found"}), 404
-        cur.execute(
-            """
-            UPDATE api.secrets SET deleted_at = now()
-             WHERE id = %s AND project_id = %s AND deleted_at IS NULL
-            """,
-            (str(row["id"]), pid),
-        )
-        if cur.rowcount == 0:
-            return jsonify({"error": "forbidden"}), 403
-        _audit(
-            cur,
-            project_id=pid,
-            action="deleted",
-            secret_key=row["key"],
-            secret_id=row["id"],
-        )
-        conn.commit()
-    return jsonify({"ok": True, "id": str(row["id"]), "key": row["key"]}), 200
+        try:
+            sid = delete_secret_command(
+                cur, project_id=pid, secret_id=existing["id"], actor_email="machine"
+            )
+            conn.commit()
+        except HTTPException as e:
+            return jsonify({"error": str(e)}), e.code
+    return jsonify({"ok": True, "id": sid, "key": key}), 200

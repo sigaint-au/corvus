@@ -8,6 +8,7 @@ from datetime import (
     timedelta,
     timezone,
 )
+
 from flask import (
     flash,
     redirect,
@@ -15,11 +16,10 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
-from auth import authz
-from core import config
-from core import db
-from auth import rbac_sync
+from auth import authz, rbac_sync
+from core import config, db
 from crypto import sha256_hex
 
 
@@ -77,7 +77,7 @@ def create_team_invite(team_id):
                 detail=f"role={role} expires={days}d",
             )
             conn.commit()
-        except Exception as e:
+        except Exception:
             flash("Could not update the invitation. Try again.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="members"))
     session["new_invite_url"] = url_for("redeem_invite", token=raw, _external=True)
@@ -193,7 +193,7 @@ def redeem_invite(token):
                 "An owner or admin must approve it.",
                 "ok",
             )
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update the invitation. Try again.", "error")
     return redirect(url_for("teams"))
@@ -263,7 +263,7 @@ def approve_join_request(team_id, req_id):
             )
             conn.commit()
             flash("Join request approved", "ok")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update the invitation. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="members"))

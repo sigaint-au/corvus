@@ -1,16 +1,13 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import uuid4
-from pathlib import Path
 
 import pytest
 
 import app as store
 import audit
-from core import config
-
 from tests.helpers import REPO_ROOT, migrations_src
 
 store.app.config["TESTING"] = True
@@ -68,7 +65,6 @@ class TestAudit:
         assert params[-1] == 'a@b.c'
 
     def test_schema_revokes_secret_audit_insert(self):
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'REVOKE INSERT ON api.secret_audit FROM authenticated' in init
         assert 'CREATE OR REPLACE FUNCTION private.audit_secret' in init

@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from flask import (
+    redirect,
     render_template,
     request,
     session,
     url_for,
 )
-from core import config
-from core import db
-from ui import paging
+
+from auth import authz
+from core import config, db, settings_svc
 from secret_svc.secret_kinds import (
     as_utc,
     parse_database_url,
@@ -19,6 +20,7 @@ from secret_svc.secret_kinds import (
     split_cert_and_key,
 )
 from secret_svc.secret_ops import _load_secrets_page
+from ui import paging
 
 
 def _secret_requires_approval(cur, secret_id) -> bool:
@@ -147,11 +149,11 @@ def _render_reveal_access_panel(
         version_id=version_id,
     )
     html += (
-        f'<script>'
+        f"<script>"
         f'(function(){{var d=document.getElementById("access-dlg-{secret_id}");'
-        f'if(d&&window.oatOpenDialog)window.oatOpenDialog(d);'
-        f'else if(d&&d.showModal)d.showModal();}})();'
-        f'</script>'
+        f"if(d&&window.oatOpenDialog)window.oatOpenDialog(d);"
+        f"else if(d&&d.showModal)d.showModal();}})();"
+        f"</script>"
     )
     return html
 
@@ -310,9 +312,7 @@ def _render_secret_view(
             value=plaintext,
             is_version=is_version,
             kv_pairs=parse_kv_lines(plaintext) if kind == "kv" else [("", "")],
-            pem_blocks=parse_pem_blocks(plaintext)
-            if kind in ("certificate", "ssh")
-            else [],
+            pem_blocks=parse_pem_blocks(plaintext) if kind in ("certificate", "ssh") else [],
             cert_pem=cert_pem,
             cert_key=cert_key,
             db_parts=parse_database_url(plaintext) if kind == "database" else {},
@@ -338,7 +338,7 @@ def _render_secret_view(
             access_request=access_request,
             requires_approval=row.get("requires_approval"),
             require_reveal_approval=row.get("require_reveal_approval"),
-            clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
+            clipboard_clear_seconds=settings_svc.int_setting("clipboard_clear_seconds", 30),
             created_at=row.get("created_at"),
             updated_at=row.get("updated_at"),
             last_accessed_at=row.get("last_accessed_at"),
@@ -378,4 +378,30 @@ def _secrets_partial(project_id):
         secrets_pager=secrets_pager,
         search_q=q,
         access_mode_labels=config.ACCESS_MODE_LABELS,
+    )
+
+
+def _secrets_redirect_or_partial(project_id):
+    """Return the HTMX secrets partial, or redirect to the project secrets tab.
+
+    Args:
+        project_id: UUID of the project whose secrets were mutated.
+
+    Returns:
+        str | werkzeug.wrappers.Response: HTMX partial when requested;
+        otherwise a redirect preserving the list page/search state.
+
+    Example:
+        >>> return _secrets_redirect_or_partial(project_id)
+    """
+    if authz.htmx():
+        return _secrets_partial(project_id)
+    return redirect(
+        url_for(
+            "project_detail",
+            project_id=project_id,
+            tab="secrets",
+            page=paging.page_arg("page"),
+            q=paging.list_state_q() or None,
+        )
     )

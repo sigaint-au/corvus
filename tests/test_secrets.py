@@ -4,15 +4,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import pytest
-
 import app as store
-from auth import authz
-from core import config
 import crypto
-from core import db
-from core import settings_svc
-
+from auth import authz
+from core import db, settings_svc
 from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True
@@ -272,9 +267,9 @@ class TestSecrets:
         assert b'Request submitted' in r.data
         assert b'Waiting' in r.data
         conn.commit.assert_called()
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'secret_access_requests' in sql
-        audit_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        audit_args = ' '.join(str(c.args) for c in cur.execute.call_args_list if c.args)
         assert 'access_requested' in audit_args
 
     def test_approve_secret_access(self):
@@ -287,7 +282,7 @@ class TestSecrets:
         assert r.status_code == 302
         assert 'tab=requests' in r.location
         conn.commit.assert_called()
-        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        all_args = ' '.join(str(c.args) for c in cur.execute.call_args_list if c.args)
         assert 'approved' in all_args
         assert 'access_approved' in all_args
 
@@ -301,7 +296,7 @@ class TestSecrets:
         assert r.status_code == 302
         assert 'tab=requests' in r.location
         conn.commit.assert_called()
-        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        all_args = ' '.join(str(c.args) for c in cur.execute.call_args_list if c.args)
         assert 'denied' in all_args
         assert 'access_denied' in all_args
 
@@ -395,7 +390,7 @@ class TestSecrets:
         assert b'Updated' in r.data
         assert b'>Reveal</button>' in r.data
         conn.commit.assert_called()
-        sql = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list))
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'expires_at' in sql
 
     def test_reveal_missing(self):
@@ -440,7 +435,7 @@ class TestSecrets:
         assert r.status_code == 302
         assert f'/projects/{pid}/secrets/{sid}/view?tab=access' in r.location
         conn.commit.assert_called()
-        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        all_args = ' '.join(str(c.args) for c in cur.execute.call_args_list if c.args)
         assert 'INSERT INTO rbac.bindings' in all_args
         assert 'ServiceAccount' in all_args
         assert str(sa_id) in all_args
@@ -471,7 +466,7 @@ class TestSecrets:
             )
         assert r.status_code == 302
         conn.commit.assert_called()
-        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        all_args = ' '.join(str(c.args) for c in cur.execute.call_args_list if c.args)
         assert 'INSERT INTO rbac.bindings' in all_args
 
     def test_add_secret_access_binding_external_user_blocked_if_approval(self):
@@ -498,7 +493,7 @@ class TestSecrets:
             )
         assert r.status_code == 302
         conn.commit.assert_not_called()
-        all_args = ' '.join((str(c.args) for c in cur.execute.call_args_list if c.args))
+        all_args = ' '.join(str(c.args) for c in cur.execute.call_args_list if c.args)
         assert 'INSERT INTO rbac.bindings' not in all_args
 
     def test_shared_secrets_list(self):

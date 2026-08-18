@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -56,6 +55,7 @@ def test_rbac_sql_ships_can_and_tables():
 
 def test_schema_applies_migrations():
     from pathlib import Path
+
     from core import migrations as migrations_mod
 
     src = Path(migrations_mod.__file__).read_text()
@@ -127,7 +127,6 @@ def test_parse_rules_yaml_multi_rule():
 
 def test_parse_rules_yaml_rejects_empty():
     from routes.rbac import parse_rules_yaml
-    import pytest
 
     with pytest.raises(ValueError):
         parse_rules_yaml("# only comments\n")

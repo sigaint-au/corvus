@@ -104,7 +104,7 @@ def parse_pkcs11_url(url: str) -> dict:
         pin = pin_value
     elif pin_source:
         try:
-            with open(pin_source, "r", encoding="utf-8") as fh:
+            with open(pin_source, encoding="utf-8") as fh:
                 pin = fh.read().strip()
         except OSError as e:
             raise ValueError(f"Cannot read PIN file {pin_source}: {e}") from e

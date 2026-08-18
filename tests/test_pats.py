@@ -1,17 +1,15 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
+import jwt as pyjwt
 import pytest
 
-import jwt as pyjwt
 import app as store
-from core import config
-from core import db
 from auth import pats
-
+from core import config, db
 from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True
@@ -36,7 +34,7 @@ class TestPatsUnit:
         with patch.object(db, 'connect_admin', return_value=conn):
             raw = pats.create(uid, 'cli', expires_days=7)
         assert raw.startswith('pat_')
-        joined = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list if c.args))
+        joined = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
         assert 'INSERT INTO private.personal_access_tokens' in joined
 
     def test_resolve_success(self):
@@ -46,7 +44,7 @@ class TestPatsUnit:
         cur.rowcount = 1
         with patch.object(db, 'connect_admin', return_value=conn):
             assert pats.resolve('pat_' + 'x' * 40) == uid
-        joined = ' '.join((str(c.args[0]) for c in cur.execute.call_args_list if c.args))
+        joined = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
         assert 'last_used_at' in joined
 
     def test_resolve_rejects_garbage(self):

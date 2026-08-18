@@ -17,8 +17,7 @@ import jwt
 from jwt import PyJWKClient
 
 import crypto
-from core import cache, db
-from core import settings_svc
+from core import cache, db, settings_svc
 
 log = logging.getLogger(__name__)
 

@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import logging
 
+from core import db, migrations
 from core.config import DATABASE_ADMIN_URL, bootstrap_admin_email
-from core import db
-from core import migrations
 
 log = logging.getLogger(__name__)
 

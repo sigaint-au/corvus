@@ -9,10 +9,10 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
 from auth import authz
-from core import config
-from core import db
+from core import config, db
 
 
 def _can_assign_team_owner(cur, team_id) -> bool:
@@ -64,7 +64,7 @@ def add_team_ldap_map(team_id):
             )
             conn.commit()
             flash("LDAP group mapping saved — applies on next LDAP login", "ok")
-        except Exception as e:
+        except Exception:
             flash("Could not update the directory mapping. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 
@@ -141,7 +141,7 @@ def add_team_oidc_map(team_id):
             )
             conn.commit()
             flash("OIDC group mapping saved — applies on next SSO login", "ok")
-        except Exception as e:
+        except Exception:
             flash("Could not update the directory mapping. Try again.", "error")
     return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
 

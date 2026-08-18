@@ -5,9 +5,9 @@ and external HSM integration (``hsm``). The public API of this module is
 re-exported here so ``import crypto`` and ``from crypto import encrypt``
 continue to work as before.
 """
-from base64 import urlsafe_b64encode
 import json
 import logging
+from base64 import urlsafe_b64encode
 from functools import lru_cache
 from hashlib import sha256
 

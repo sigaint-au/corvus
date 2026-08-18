@@ -2,19 +2,17 @@
 from __future__ import annotations
 
 import re
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 
 import app as store
 from auth import authz
-from core import config
-from core import db
+from core import db, settings_svc
 from integrations import ldap_auth
-from core import settings_svc
-
-from tests.helpers import REPO_ROOT, mock_conn as _conn
+from tests.helpers import REPO_ROOT
+from tests.helpers import mock_conn as _conn
 
 store.app.config["TESTING"] = True
 
@@ -22,9 +20,6 @@ class TestTotp:
 
     def test_verify_code_window(self):
         import base64
-        import hashlib
-        import hmac
-        import struct
         import time
 
         from auth import totp_svc
@@ -121,7 +116,6 @@ class TestTotp:
         assert dict(sets).get('totp_enforce_global_admins') == 'true'
 
     def test_schema_has_totp(self):
-        from pathlib import Path
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'totp_secret_enc' in init
         assert 'totp_recovery_codes' in init

@@ -8,7 +8,6 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-
 pytestmark = pytest.mark.live
 _APP_URL = os.environ.get("LIVE_APP_URL", "").rstrip("/")
 _POSTGREST_URL = os.environ.get("LIVE_POSTGREST_URL", "").rstrip("/")

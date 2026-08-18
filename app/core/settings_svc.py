@@ -1,6 +1,7 @@
 """Server settings and classification banner."""
-from core.config import DEFAULT_SETTINGS, HEX, MAX_EXPIRY_DAYS, bootstrap_admin_email
+
 from core import db
+from core.config import DEFAULT_SETTINGS, HEX, MAX_EXPIRY_DAYS, bootstrap_admin_email
 
 
 def truthy(val) -> bool:
@@ -48,6 +49,7 @@ def get_settings() -> dict:
         pass
     return out
 
+
 def token_expiry_policy(kind: str) -> tuple[bool, int]:
     settings = get_settings()
     if kind == "pat":
@@ -64,6 +66,19 @@ def token_expiry_policy(kind: str) -> tuple[bool, int]:
     if max_days < 1 or max_days > MAX_EXPIRY_DAYS:
         max_days = MAX_EXPIRY_DAYS
     return truthy(settings.get(require_key)), max_days
+
+
+def int_setting(key: str, default: int) -> int:
+    """Return a server setting as a clamped non-negative int (default on garbage)."""
+    try:
+        return max(0, int(get_settings().get(key) or default))
+    except (TypeError, ValueError):
+        return default
+
+
+def reveal_access_grant_minutes() -> int:
+    """Return the approved-reveal grant window in minutes."""
+    return max(1, int_setting("reveal_access_grant_minutes", 15))
 
 
 def set_setting(key: str, value: str):
@@ -176,9 +191,7 @@ def can_create_team(is_global_admin: bool = False) -> bool:
         >>> can_create_team(is_global_admin=True)
         True
     """
-    return bool(is_global_admin) or truthy(
-        get_settings().get("user_team_creation_enabled", "true")
-    )
+    return bool(is_global_admin) or truthy(get_settings().get("user_team_creation_enabled", "true"))
 
 
 def public_base_url(fallback: str = "") -> str:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+
 from flask import (
     flash,
     redirect,
@@ -10,14 +11,16 @@ from flask import (
     session,
     url_for,
 )
+
 import audit
 from auth import authz
-from core import config
-from core import db
+from core import config, db, settings_svc
+
 from .helpers import (
     _render_reveal_access_panel,
     _reveal_access_state,
 )
+
 log = logging.getLogger(__name__)
 
 
@@ -71,9 +74,7 @@ def request_secret_access(project_id, secret_id):
                     )
                 )
             flash("You already have access to reveal this secret", "ok")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="requests")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
         if access_state == "pending":
             if wants_htmx:
                 return _render_reveal_access_panel(
@@ -85,9 +86,7 @@ def request_secret_access(project_id, secret_id):
                     cell=cell,
                 )
             flash("Access request already pending approval", "ok")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="requests")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
         try:
             cur.execute(
                 """
@@ -126,9 +125,7 @@ def request_secret_access(project_id, secret_id):
                         cell=cell,
                     )
                 flash("Access request already pending approval", "ok")
-                return redirect(
-                    url_for("project_detail", project_id=project_id, tab="requests")
-                )
+                return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
             audit.log_secret(
                 cur,
                 project_id=project_id,
@@ -151,7 +148,7 @@ def request_secret_access(project_id, secret_id):
                 "A project admin or team owner must approve it.",
                 "ok",
             )
-        except Exception as e:
+        except Exception:
             conn.rollback()
             log.exception("access request failed")
             flash("Could not update access. Try again.", "error")
@@ -172,23 +169,17 @@ def approve_secret_access(project_id, req_id):
     Example:
         POST /projects/<project_id>/access-requests/<req_id>/approve
     """
-    minutes_raw = (
-        request.form.get("minutes") or request.form.get("hours") or ""
-    ).strip()
+    minutes_raw = (request.form.get("minutes") or request.form.get("hours") or "").strip()
     try:
-        minutes = (
-            int(minutes_raw)
-            if minutes_raw
-            else config.REVEAL_ACCESS_GRANT_MINUTES
-        )
+        minutes = int(minutes_raw) if minutes_raw else settings_svc.reveal_access_grant_minutes()
         # Legacy form field "hours" (if still submitted as 1/4/24)
         if request.form.get("hours") and not request.form.get("minutes"):
             if minutes in (1, 4, 24, 168):
                 minutes = minutes * 60
     except (TypeError, ValueError):
-        minutes = config.REVEAL_ACCESS_GRANT_MINUTES
+        minutes = settings_svc.reveal_access_grant_minutes()
     if minutes not in config.REVEAL_ACCESS_GRANT_CHOICES:
-        minutes = config.REVEAL_ACCESS_GRANT_MINUTES
+        minutes = settings_svc.reveal_access_grant_minutes()
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
         if not (cur.fetchone() or {}).get("a"):
@@ -196,9 +187,7 @@ def approve_secret_access(project_id, req_id):
                 "Only a project admin or team owner can approve access requests",
                 "error",
             )
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="requests")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
         cur.execute(
             """
             SELECT r.id, r.secret_id, r.user_id, r.status, s.key AS secret_key
@@ -211,9 +200,7 @@ def approve_secret_access(project_id, req_id):
         req = cur.fetchone()
         if not req or req["status"] != "pending":
             flash("Request not found or already resolved", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="requests")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
         try:
             cur.execute(
                 """
@@ -248,14 +235,10 @@ def approve_secret_access(project_id, req_id):
                     dur = f"{minutes // 60} hours"
                 flash(
                     f"Access approved for {dur}"
-                    + (
-                        f" on “{req['secret_key']}”"
-                        if req.get("secret_key")
-                        else ""
-                    ),
+                    + (f" on “{req['secret_key']}”" if req.get("secret_key") else ""),
                     "ok",
                 )
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update access. Try again.", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
@@ -282,9 +265,7 @@ def deny_secret_access(project_id, req_id):
                 "Only a project admin or team owner can deny access requests",
                 "error",
             )
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="requests")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
         cur.execute(
             """
             SELECT r.id, r.secret_id, r.status, s.key AS secret_key
@@ -297,9 +278,7 @@ def deny_secret_access(project_id, req_id):
         req = cur.fetchone()
         if not req or req["status"] != "pending":
             flash("Request not found or already resolved", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="requests")
-            )
+            return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
         try:
             cur.execute(
                 """
@@ -329,7 +308,7 @@ def deny_secret_access(project_id, req_id):
                     + (f" for “{req['secret_key']}”" if req.get("secret_key") else ""),
                     "ok",
                 )
-        except Exception as e:
+        except Exception:
             conn.rollback()
             flash("Could not update access. Try again.", "error")
     return redirect(url_for("project_detail", project_id=project_id, tab="requests"))

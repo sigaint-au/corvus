@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from flask import jsonify
+
 import crypto
 from core import db
 from lib.validate import is_uuid
 from secret_svc.secret_ops import fetch_project_reveal_enc_rows, fetch_secret_enc
+
 from .helpers import (
     _audit,
     _machine_actor,

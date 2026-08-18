@@ -8,8 +8,8 @@ from .audit import (
     admin_audit_export,
 )
 from .settings import (
-    server_settings,
     hsm_slot_new_wizard,
+    server_settings,
 )
 
 

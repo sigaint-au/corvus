@@ -2,18 +2,16 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 
 import app as store
 from auth import authz
-from core import config
-from core import db
-from ui import paging
-
+from core import config, db
 from tests.helpers import mock_conn as _conn
+from ui import paging
 
 store.app.config["TESTING"] = True
 
