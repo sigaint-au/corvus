@@ -1,6 +1,6 @@
 # Bring Your Own Key (BYOK) per project
 
-Secret values are encrypted with Fernet before they are stored. By default a
+Secret values are encrypted with AES-256-GCM before they are stored. By default a
 single server-wide key (`MASTER_KEY`) is used. Projects can opt in to a
 **dedicated data-encryption key (DEK)** — "bring your own key" per project.
 
@@ -15,15 +15,15 @@ PKCS#11 software HSM for development, but any PKCS#11 HSM works).
 ## How it works
 
 ```
-MASTER_KEY (key-encryption key)  ──encrypts──►  private.project_crypto_keys.key_enc = DEK
-DEK (per-project Fernet key)     ──encrypts──►  api.secrets.value_enc
+MASTER_KEY (HKDF-SHA256 → AES-256 key) ──wraps──►  private.project_crypto_keys.key_enc = raw DEK
+DEK (per-project AES-256-GCM key) ──encrypts──►  api.secrets.value_enc
 ```
 
 - Each project may have exactly one active DEK (`private.project_crypto_keys`).
 - Every secret row records which key encrypted it via
   `api.secrets.crypto_provider` (`'master'` or `'project'`). Version history
   snapshots carry the same marker (`api.secret_versions.crypto_provider`).
-- The raw DEK is **never stored** — only the Fernet-wrapped form.
+- The raw DEK is **never stored** — only its wrapped form (AES-256-GCM under MASTER_KEY, or the HSM KEK).
 - Non-secret server settings (SMTP, LDAP, OIDC, TOTP) always use
   `MASTER_KEY`, regardless of project BYOK.
 

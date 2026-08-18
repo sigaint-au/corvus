@@ -75,7 +75,7 @@ The app connects as `authenticator`, then `SET ROLE authenticated` and sets
 | `teams` | api | Teams and settings |
 | `projects` | api | Projects and settings |
 | `groups` / `group_members` | api | Team-scoped groups + membership |
-| `secrets` | api | Secret rows (`value_enc` = Fernet ciphertext; `crypto_provider` records which key) |
+| `secrets` | api | Secret rows (`value_enc` = AES-256-GCM ciphertext; `crypto_provider` records which key) |
 | `project_crypto_keys.hsm_slot_id` | uuid FK → `hsm_slots` | NULL = legacy pre-named-slot HSM row; non-NULL = named slot's KEK wraps the DEK |
 | `secret_versions` | api | Archived prior ciphertext on update (also carries `crypto_provider`) |
 | `secret_meta` | api | Custom searchable metadata |

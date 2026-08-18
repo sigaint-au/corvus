@@ -30,7 +30,7 @@ scripts/bootstrap-secrets.sh secretserver   # specify a namespace
 ```
 
 The script generates random passwords (32-byte urlsafe-base64, suitable
-for Fernet-style wrapping) for every Secret listed above and `kubectl
+as AES-256 keys) for every Secret listed above and `kubectl
 apply`s them. Re-running is safe — it uses `kubectl apply` semantics.
 
 For non-disposable environments (production), generate values out-of-band
@@ -43,8 +43,8 @@ NOT commit real Secret values.
 - `JWT_SECRET` / `PGRST_JWT_SECRET`: must match between `secretserver-app-secrets`
   and `secretserver-postgrest-secrets`. PostgREST verifies HS256 tokens
   with this value; a mismatch means every API call 401s.
-- `MASTER_KEY`: 32+ random bytes (Fernet requires SHA-256 → 32 bytes →
-  urlsafe-base64 → 44 bytes). Rotating it requires running
+- `MASTER_KEY`: 32+ random bytes (64 hex chars is fine). The key is widened
+  to AES-256 via HKDF-SHA256; a single raw value is accepted. Rotating it requires running
   `flask rekey-project-keys --old-master-key "$OLD"` afterward, or
   every project BYOK-wrapped DEK is unreadable.
 - `SECRET_KEY`: Flask session signing key. 32+ bytes is fine.

@@ -93,7 +93,7 @@ a reference only.
 ### Recommended bootstrap path
 
 ```bash
-# Generates random passwords (32-byte urlsafe-base64 for Fernet keys,
+# Generates random passwords (32-byte raw keys for DEKs,
 # 32-char alphanumeric for DB / Redis) and applies the Secrets.
 scripts/bootstrap-secrets.sh secretserver
 # or for staging:

@@ -170,26 +170,26 @@ class TestProjectCrypto:
 class TestHsmDekContract:
     """generate_project_key() returns 32 raw bytes; HSM wraps the raw DEK."""
 
-    def test_fernet_key_to_raw_accepts_generate_project_key(self):
+    def test_dek_to_raw_accepts_generate_project_key(self):
         from crypto import hsm
 
         fkey = crypto.generate_project_key()
         assert len(fkey) == 32
-        assert hsm.fernet_key_to_raw(fkey) == fkey
+        assert hsm.dek_to_raw(fkey) == fkey
 
-    def test_fernet_key_to_raw_accepts_32_bytes(self):
+    def test_dek_to_raw_accepts_32_bytes(self):
         import os
 
         from crypto import hsm
 
         raw = os.urandom(32)
-        assert hsm.fernet_key_to_raw(raw) == raw
+        assert hsm.dek_to_raw(raw) == raw
 
-    def test_fernet_key_to_raw_rejects_bad_length(self):
+    def test_dek_to_raw_rejects_bad_length(self):
         from crypto import hsm
 
         with pytest.raises(ValueError, match="DEK must be"):
-            hsm.fernet_key_to_raw(b"too-short")
+            hsm.dek_to_raw(b"too-short")
 
     def test_ensure_project_key_hsm_passes_raw_dek_to_wrap(self):
         """Regression: wrap_dek_for_slot must receive the raw 32-byte DEK."""
@@ -201,7 +201,7 @@ class TestHsmDekContract:
 
         def capture_wrap(slot_url, dek):
             seen["dek"] = dek
-            hsm.fernet_key_to_raw(dek)
+            hsm.dek_to_raw(dek)
             return ("hsm-wrapped", "byok-kek")
 
         admin_conn, admin_cur = _project_keys_conn(fetchone=None)
@@ -217,7 +217,7 @@ class TestHsmDekContract:
         ):
             assert project_keys.ensure_project_key(pid, provider="hsm", hsm_slot_id=slot_id) is True
         assert len(seen["dek"]) == 32
-        assert hsm.fernet_key_to_raw(seen["dek"])  # does not raise
+        assert hsm.dek_to_raw(seen["dek"])  # does not raise
 
 
 class TestDekResolution:
@@ -312,3 +312,40 @@ class TestFipsPrimitives:
         assert not passwords.verify_password("wrong password", h)
         assert not passwords.verify_password("x", "not-a-hash")
         assert not passwords.verify_password("x", "$2b$12$legacybcrypt.hash")
+
+
+class TestKeyedCrypto:
+    def test_encrypt_decrypt_with_explicit_key(self):
+        key = crypto.master_aes_key("explicit")
+        token = crypto.encrypt_with_key(key, "payload")
+        assert token.startswith("gcm$")
+        assert crypto.decrypt_with_key(key, token) == "payload"
+
+    def test_decrypt_with_wrong_key_rejected(self):
+        good = crypto.master_aes_key("a")
+        other = crypto.master_aes_key("b")
+        token = crypto.encrypt_with_key(good, "secret")
+        with pytest.raises(ValueError):
+            crypto.decrypt_with_key(other, token)
+
+    def test_project_has_key_and_dek(self):
+        raw = crypto.generate_project_key()
+        row = {
+            "key_enc": crypto.wrap_project_key(raw),
+            "key_provider": "local",
+            "kms_key_ref": None,
+            "hsm_slot_id": None,
+        }
+        with patch.object(crypto, "_project_key", return_value=row):
+            assert crypto.project_has_key(str(uuid4())) is True
+            assert crypto.project_dek(str(uuid4())) == raw
+        with patch.object(crypto, "_project_key", return_value=None):
+            assert crypto.project_has_key(str(uuid4())) is False
+            assert crypto.project_dek(str(uuid4())) is None
+
+    def test_clear_cache_invalidates_epoch(self):
+        client = MagicMock()
+        with patch.object(crypto.cache, "redis_client", return_value=client):
+            crypto.clear_project_key_cache()
+            crypto.clear_slot_url_cache()
+        assert client.incr.call_count >= 1

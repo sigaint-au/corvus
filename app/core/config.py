@@ -77,6 +77,10 @@ def fips_enabled() -> bool:
 
     Returns:
         bool
+
+    Example:
+        >>> fips_enabled() in (True, False)
+        True
     """
     try:
         from cryptography.hazmat.backends.openssl import backend

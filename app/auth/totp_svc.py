@@ -139,8 +139,8 @@ def _b32decode(secret: str) -> bytes:
 
 
 def _totp_code(secret: str, counter: int) -> str:
-    """RFC 6238 TOTP code (SHA-1, 6 digits, 30s period)."""
-    digest = hmac.new(_b32decode(secret), struct.pack(">Q", counter), hashlib.sha1).digest()
+    """RFC 6238 TOTP code (HMAC-SHA256, 6 digits, 30s period)."""
+    digest = hmac.new(_b32decode(secret), struct.pack(">Q", counter), hashlib.sha256).digest()
     offset = digest[-1] & 0x0F
     code = (struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF) % 1_000_000
     return f"{code:06d}"
@@ -157,10 +157,10 @@ def new_secret() -> str:
 
     Example:
         >>> s = new_secret()
-        >>> len(s) >= 16
+        >>> len(s) >= 32
         True
     """
-    return base64.b32encode(os.urandom(20)).decode("ascii").rstrip("=")
+    return base64.b32encode(os.urandom(32)).decode("ascii").rstrip("=")
 
 
 def provisioning_uri(secret: str, email: str) -> str:
@@ -182,7 +182,10 @@ def provisioning_uri(secret: str, email: str) -> str:
 
     issuer = branding().get("app_name") or APP_NAME
     label = quote(f"{issuer}:{email or 'user'}", safe="")
-    return f"otpauth://totp/{label}?secret={secret}&issuer={quote(issuer, safe='')}"
+    return (
+        f"otpauth://totp/{label}?secret={secret}&issuer={quote(issuer, safe='')}"
+        "&algorithm=SHA256&digits=6&period=30"
+    )
 
 
 def qr_data_uri(uri: str) -> str:

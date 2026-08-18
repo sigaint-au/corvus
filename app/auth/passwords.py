@@ -35,6 +35,10 @@ def hash_password(password: str) -> str:
 
     Returns:
         Encoded ``pbkdf2$sha256$<iterations>$<salt>$<digest>`` string.
+
+    Example:
+        >>> hash_password("s3cret").split("$")[0:3]
+        ['pbkdf2', 'sha256', '600000']
     """
     salt = os.urandom(16)
     dk = hashlib.pbkdf2_hmac("sha256", (password or "").encode("utf-8"), salt, PBKDF2_ITERATIONS)
@@ -49,6 +53,13 @@ def verify_password(password: str, encoded: str) -> bool:
     """Verify a password against an encoded PBKDF2-SHA256 hash (constant-time).
 
     Returns False for malformed/foreign hash formats (e.g. legacy bcrypt rows).
+
+    Example:
+        >>> h = hash_password("s3cret")
+        >>> verify_password("s3cret", h)
+        True
+        >>> verify_password("wrong", h)
+        False
     """
     try:
         scheme, algo, iterations, salt_b64, digest_b64 = (encoded or "").split("$", 4)

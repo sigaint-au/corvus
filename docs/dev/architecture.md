@@ -38,7 +38,7 @@ app/
     migrations.py      # versioned migration runner (db/migrations/*.sql)
     settings_svc.py    # server settings
   crypto/              # encryption & key management
-    __init__.py        # Fernet encrypt/decrypt (MASTER_KEY) + per-project BYOK seam
+    __init__.py        # AES-256-GCM encrypt/decrypt (MASTER_KEY) + BYOK seam
     project_keys.py    # per-project DEK lifecycle (create/adopt/re-encrypt)
     hsm.py             # PKCS#11 wrapper for external-HSM (SoftHSM2) BYOK
   auth/                # authentication & authorization services
@@ -110,8 +110,8 @@ functions key off that value.
 
 Mutable application caches use Redis when `REDIS_URL` is configured:
 project-key rows, HSM slot URLs, and OIDC discovery documents use shared epoch
-keys, so updates invalidate every app replica. JWKS clients are not retained in process memory; Fernet objects
-are cached per process via ``@lru_cache(maxsize=1)`` on ``_fernet()``. If Redis is unavailable, the app bypasses
+keys, so updates invalidate every app replica. JWKS clients are not retained in process memory; the AES-256 master key is
+cached per process via ``@lru_cache(maxsize=1)`` on ``_aes_key()``. If Redis is unavailable, the app bypasses
 caching and reads the source directly; it never uses a process-local stale-key
 cache. If Redis is unavailable during invalidation, an already-populated Redis
 entry can survive until its TTL; use a database-backed generation or
@@ -158,7 +158,7 @@ transactional outbox if that failure mode must be eliminated.
 - **SECURITY DEFINER** functions with `SET row_security = off` implement the
   access checks and machine paths; they are granted narrowly.
 - **Audit rows are append-only** via SECURITY DEFINER functions.
-- **Secret values** are Fernet-encrypted at rest; only the app and `/eso/v1`
+- **Secret values** are AES-256-GCM-encrypted at rest; only the app and `/eso/v1`
   decrypt them. PostgREST only ever sees `value_enc`.
 - **RBAC** is the only authorization model — `rbac.bindings` stores all
   user/group/service-account access at cluster/team/project/secret scope.

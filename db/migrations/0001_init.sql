@@ -500,23 +500,23 @@ BEGIN
 END;
 $$;
 
--- Verify a local-account password and return the user row on success.
--- Only matches users with a non-null password_hash and disabled_at IS NULL.
+-- Return a local-account user row (with its PBKDF2 password hash) when the
+-- account exists, is enabled, and has a password. The app verifies the entered
+-- password against the returned hash (verify_password), so no plaintext/SHA-
+-- hash comparison happens in SQL.
 --
--- Input:  p_email    (text: email address, case-insensitive),
---         p_password (text: plaintext password to check)
--- Output: TABLE(id uuid, email text, name text, is_global_admin boolean) — empty if invalid
--- Example: SELECT * FROM private.verify_user('alice@example.com', 's3cret');
-CREATE OR REPLACE FUNCTION private.verify_user(p_email text, p_password text)
-RETURNS TABLE (id uuid, email text, name text, is_global_admin boolean)
+-- Input:  p_email (text: email address, case-insensitive)
+-- Output: TABLE(id, email, name, is_global_admin, password_hash) — empty if no such account
+-- Example: SELECT * FROM private.verify_user('alice@example.com');
+CREATE OR REPLACE FUNCTION private.verify_user(p_email text)
+RETURNS TABLE (id uuid, email text, name text, is_global_admin boolean, password_hash text)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
 BEGIN
   RETURN QUERY
-  SELECT u.id, u.email, u.name, u.is_global_admin FROM private.users u
+  SELECT u.id, u.email, u.name, u.is_global_admin, u.password_hash FROM private.users u
   WHERE u.email = lower(p_email)
     AND u.password_hash IS NOT NULL
-    AND u.disabled_at IS NULL
-    AND u.password_hash = p_password;
+    AND u.disabled_at IS NULL;
 END;
 $$;
 
@@ -3121,23 +3121,23 @@ DO $$ BEGIN
         $$;
 
 DROP FUNCTION IF EXISTS private.verify_user(text, text);
+DROP FUNCTION IF EXISTS private.verify_user(text);
 
--- Verify a local-account password; returns user row on success.
+-- Return a local-account user row (with PBKDF2 hash) when enabled with a
+-- password; password verification happens in the app.
         --
-        -- Input:  p_email    (text: email, case-insensitive),
-        --         p_password (text: plaintext password to check)
-        -- Output: TABLE(id, email, name, is_global_admin) — empty if invalid
-        -- Example: SELECT * FROM private.verify_user('alice@example.com', 's3cret');
-        CREATE OR REPLACE FUNCTION private.verify_user(p_email text, p_password text)
-        RETURNS TABLE (id uuid, email text, name text, is_global_admin boolean)
+        -- Input:  p_email (text: email, case-insensitive)
+        -- Output: TABLE(id, email, name, is_global_admin, password_hash) — empty if no such account
+        -- Example: SELECT * FROM private.verify_user('alice@example.com');
+        CREATE OR REPLACE FUNCTION private.verify_user(p_email text)
+        RETURNS TABLE (id uuid, email text, name text, is_global_admin boolean, password_hash text)
         LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public AS $$
         BEGIN
           RETURN QUERY
-          SELECT u.id, u.email, u.name, u.is_global_admin FROM private.users u
+          SELECT u.id, u.email, u.name, u.is_global_admin, u.password_hash FROM private.users u
           WHERE u.email = lower(p_email)
             AND u.password_hash IS NOT NULL
-            AND u.disabled_at IS NULL
-            AND u.password_hash = p_password;
+            AND u.disabled_at IS NULL;
         END;
         $$;
 

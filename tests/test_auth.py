@@ -6,7 +6,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import app as store
-from auth import authz
+from auth import authz, passwords
 from core import db, settings_svc
 from integrations import ldap_auth, oidc_auth
 from tests.helpers import REPO_ROOT
@@ -90,7 +90,14 @@ class TestAuth:
 
     def test_login_ok(self):
         uid = uuid4()
-        conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
+        conn, _ = _conn(
+            fetchone={
+                "id": uid,
+                "email": "a@b.c",
+                "name": "A",
+                "password_hash": passwords.hash_password("secret12"),
+            }
+        )
         with (
             patch.object(db, "connect", return_value=conn),
             patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}),
@@ -113,7 +120,14 @@ class TestAuth:
 
     def test_login_clears_session_first(self):
         uid = uuid4()
-        conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
+        conn, _ = _conn(
+            fetchone={
+                "id": uid,
+                "email": "a@b.c",
+                "name": "A",
+                "password_hash": passwords.hash_password("secret12"),
+            }
+        )
         with self.client.session_transaction() as s:
             s["stale"] = "should-be-gone"
             s["_csrf"] = "old"
@@ -647,3 +661,53 @@ class TestAuth:
         assert r_sec.status_code == 200
         assert b"LDAP" in r_sec.data
         assert b'name="current_password"' not in r_sec.data
+
+
+class TestPasswordService:
+    def test_change_password_ok_and_wrong_old(self):
+        from auth import passwords
+
+        uid = str(uuid4())
+        good = passwords.hash_password("oldpass12")
+
+        def change(fetch):
+            conn, cur = _conn(None)
+            cur.fetchone.side_effect = fetch
+            return conn
+
+        with patch.object(
+            db, "connect_admin", return_value=change([{"password_hash": good}, {"ok": True}])
+        ):
+            ok, err = passwords.change_password(uid, "oldpass12", "newpass12")
+        assert ok and not err
+        with patch.object(
+            db, "connect_admin", return_value=change([{"password_hash": good}, {"ok": True}])
+        ):
+            ok, err = passwords.change_password(uid, "wrongpass", "newpass12")
+        assert not ok  # old password verified app-side
+
+    def test_create_reset_token(self):
+        from auth import passwords
+
+        conn, cur = _conn(fetchone={"id": str(uuid4())})
+        with patch.object(db, "connect_admin", return_value=conn):
+            token = passwords.create_reset_token("user@example.com")
+        assert token and len(token) > 30
+        # consecutive tokens differ
+        conn2, cur2 = _conn(fetchone={"id": str(uuid4())})
+        with patch.object(db, "connect_admin", return_value=conn2):
+            token2 = passwords.create_reset_token("user@example.com")
+        assert token2 != token
+
+    def test_consume_reset_token_ok(self):
+        from auth import passwords
+
+        uid = str(uuid4())
+        conn, cur = _conn(None)
+        cur.fetchone.side_effect = [
+            {"id": "rid", "user_id": uid},  # token row
+            {"ok": True},  # set_local_password
+        ]
+        with patch.object(db, "connect_admin", return_value=conn):
+            ok, err = passwords.consume_reset_token("some-token", "newpass123")
+        assert ok and not err

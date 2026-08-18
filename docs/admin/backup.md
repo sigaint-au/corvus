@@ -1,6 +1,6 @@
 # Backup & Restore
 
-Secret values are **Fernet-encrypted** with `MASTER_KEY` and stored in
+Secret values are **AES-256-GCM-encrypted** with `MASTER_KEY` (HKDF-SHA256) and stored in
 Postgres. To restore a working instance you need **both** the database and the
 encryption/signing keys.
 

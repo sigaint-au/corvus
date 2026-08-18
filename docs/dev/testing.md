@@ -30,7 +30,7 @@ tests/
   helpers.py           # mock_conn, REPO_ROOT / APP_ROOT
   test_auth.py         # login, register, CSRF, sessions
   test_audit.py        # audit logging
-  test_crypto.py       # Fernet encrypt/decrypt
+  test_crypto.py       # AES-256-GCM encrypt/decrypt (+ FIPS primitives)
   test_eso.py          # /eso/v1 machine + PAT API
   test_health.py       # /health endpoint
   test_live_api.py     # opt-in live app/PostgREST/ESO smoke tests

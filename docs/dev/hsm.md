@@ -11,7 +11,7 @@ HSM in production by configuring a named slot's PKCS#11 URL.
 
 - Each HSM slot holds an AES-256 **KEK** (labelled by the slot URL's `object`
   segment). The KEK never leaves the HSM.
-- Each BYOK project still has a 32-byte Fernet **data-encryption key (DEK)**
+- Each BYOK project still has a 32-byte **data-encryption key (DEK)** (raw AES-256)
   for its secrets. For HSM-backed projects the DEK is wrapped with the HSM KEK
   (AES key-wrap when supported, otherwise AES-CBC) instead of `MASTER_KEY`.
 - `private.project_crypto_keys.key_enc` holds the wrapped DEK,
@@ -19,7 +19,7 @@ HSM in production by configuring a named slot's PKCS#11 URL.
   `api.secret_versions.crypto_provider` stays `'project'` for HSM-backed
   projects — the difference is only *where the DEK is unwrapped*.
 
-Value encryption/decryption is unchanged (Fernet); `MASTER_KEY` is no longer in
+Value encryption/decryption is AES-256-GCM in both cases; `MASTER_KEY` is no longer in
 the trust path for HSM-backed projects' DEKs.
 
 ## Containerised SoftHSM2 (dev)
@@ -59,9 +59,9 @@ The app holds **no global HSM configuration** — HSM access is configured per
 Everything else lives in each slot's URL. Production deployments should set an
 allow-list that contains only trusted PKCS#11 module directories.
 
-**DEK format:** project keys are Fernet keys (`Fernet.generate_key()`, 44-byte
-urlsafe base64). The HSM wraps the decoded 32 raw bytes (AES key-wrap when
-supported, else AES-CBC). Unwrap returns a Fernet key again.
+**DEK format:** project keys are 32 raw bytes. The HSM wraps the raw bytes
+(AES key-wrap when supported, else AES-CBC). Unwrap returns the raw 32-byte
+DEK again.
 
 ## Code map
 

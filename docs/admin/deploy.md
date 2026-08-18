@@ -88,7 +88,7 @@ Required:
 | Variable | Purpose |
 |----------|---------|
 | `JWT_SECRET` | Flask ↔ PostgREST JWT signing |
-| `MASTER_KEY` | Fernet key for secret values |
+| `MASTER_KEY` | HKDF-SHA256 → AES-256-GCM encrypts secret values |
 | `SECRET_KEY` | Flask session cookie (+ TOTP recovery HMAC) |
 | `DATABASE_URL` | App role (`authenticator`); RLS applies |
 | `DATABASE_ADMIN_URL` | Superuser DSN for schema upgrades (**required**) |

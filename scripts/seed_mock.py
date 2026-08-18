@@ -306,14 +306,14 @@ def main() -> None:
                 cur.execute(
                     """
                     UPDATE private.users
-                       SET password_hash = crypt(%s, gen_salt('bf')),
+                       SET password_hash = %s,
                            name = %s,
                            is_global_admin = %s,
                            auth_source = 'local',
                            disabled_at = NULL
                      WHERE id = %s::uuid
                     """,
-                    (PASSWORD, name, is_admin, uid),
+                    (passwords.hash_password(PASSWORD), name, is_admin, uid),
                 )
             else:
                 cur.execute(

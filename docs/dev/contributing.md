@@ -65,7 +65,7 @@ Dockerfile      # App image
   `row_security = off` only where needed to avoid recursion.
 - **Audit** — audit rows are append-only; the actor is derived from JWT claims,
   never caller input.
-- **Secrets at rest** — values are Fernet-encrypted with `MASTER_KEY`. Never
+- **Secrets at rest** — values are AES-256-GCM-encrypted with `MASTER_KEY`. Never
   store plaintext in `api.secrets` or log secret values.
 
 ---

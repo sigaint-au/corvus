@@ -54,11 +54,11 @@ def login():
         user = None
         # 1) Local password accounts (break-glass / non-LDAP users)
         with db.connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM private.verify_user(%s, %s)",
-                (email, passwords.hash_password(password)),
-            )
-            user = cur.fetchone()
+            cur.execute("SELECT * FROM private.verify_user(%s)", (email,))
+            row = cur.fetchone()
+            if row and passwords.verify_password(password, row.get("password_hash") or ""):
+                row.pop("password_hash", None)
+                user = row
         # 2) LDAP when enabled and local auth failed
         if not user and ldap_on:
             ldap_user = ldap_auth.ldap_authenticate(email, password)

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import app as store
-from auth import authz, lockout, user_sessions
+from auth import authz, lockout, passwords, user_sessions
 from core import db, settings_svc
 from integrations import ldap_auth
 from tests.helpers import mock_conn as _conn
@@ -106,7 +106,14 @@ class TestMailer:
         store.app.config["TESTING"] = True
         client = store.app.test_client()
         uid = uuid4()
-        conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
+        conn, _ = _conn(
+            fetchone={
+                "id": uid,
+                "email": "a@b.c",
+                "name": "A",
+                "password_hash": passwords.hash_password("secret12"),
+            }
+        )
         with (
             patch.object(db, "connect", return_value=conn),
             patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}),

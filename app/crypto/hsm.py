@@ -25,10 +25,9 @@ from urllib.parse import unquote
 
 log = logging.getLogger(__name__)
 
-# Raw AES key material inside a Fernet key (before urlsafe-b64 encoding).
 _RAW_DEK_LEN = 32
 # Fernet.generate_key() length (urlsafe-b64 of 32 bytes).
-_FERNET_KEY_LEN = 44
+_LEGACY_DEK_B64_LEN = 44  # urlsafe-base64 of 32 bytes (pre-AES-era DEKs)
 _IV_LEN = 16
 # Blob version prefixes so unwrap can tell CBC from key-wrap.
 _FMT_CBC = b"\x01"
@@ -201,35 +200,28 @@ def _find_kek(session, pkcs11, kek_label):
     return None
 
 
-def fernet_key_to_raw(dek: bytes) -> bytes:
-    """Normalize a Fernet key or raw 32-byte key to 32 raw bytes for wrapping.
+def dek_to_raw(dek: bytes) -> bytes:
+    """Normalize a DEK to 32 raw key bytes for HSM wrapping.
 
     Accepts:
-      - 44-byte ``Fernet.generate_key()`` material (urlsafe base64 of 32 bytes)
-      - 32 raw key bytes
+      - 32 raw key bytes (current format; returned unchanged)
+      - 44-byte urlsafe-base64 key (legacy Fernet-key encoding, decoded)
     """
     if not isinstance(dek, (bytes, bytearray)):
         raise TypeError("DEK must be bytes")
     if len(dek) == _RAW_DEK_LEN:
         return bytes(dek)
-    if len(dek) == _FERNET_KEY_LEN:
+    if len(dek) == _LEGACY_DEK_B64_LEN:
         try:
             raw = base64.urlsafe_b64decode(dek)
         except Exception as e:
-            raise ValueError("invalid Fernet DEK encoding") from e
+            raise ValueError("invalid base64 DEK encoding") from e
         if len(raw) != _RAW_DEK_LEN:
-            raise ValueError(f"Fernet DEK decoded to {len(raw)} bytes, expected {_RAW_DEK_LEN}")
+            raise ValueError(f"DEK decoded to {len(raw)} bytes, expected {_RAW_DEK_LEN}")
         return raw
     raise ValueError(
-        f"DEK must be {_RAW_DEK_LEN} raw bytes or {_FERNET_KEY_LEN}-byte Fernet key, got {len(dek)}"
+        f"DEK must be {_RAW_DEK_LEN} raw bytes or {_LEGACY_DEK_B64_LEN}-byte key, got {len(dek)}"
     )
-
-
-def raw_to_fernet_key(raw: bytes) -> bytes:
-    """Encode 32 raw key bytes as a Fernet-compatible key."""
-    if len(raw) != _RAW_DEK_LEN:
-        raise ValueError(f"raw DEK must be {_RAW_DEK_LEN} bytes, got {len(raw)}")
-    return base64.urlsafe_b64encode(raw)
 
 
 def generate_kek(label: str, pkcs11_url: str) -> str:
@@ -397,7 +389,7 @@ def ensure_kek_for_slot(pkcs11_url: str) -> str:
 def wrap_dek_for_slot(pkcs11_url: str, dek: bytes) -> tuple[str, str]:
     """Wrap a DEK in the specified slot; return ``(wrapped_blob, kek_label)``."""
     c = parse_pkcs11_url(pkcs11_url)
-    raw = fernet_key_to_raw(dek)
+    raw = dek_to_raw(dek)
     pkcs11 = _pkcs11()
     with _session(rw=False, pkcs11_url=pkcs11_url) as session:
         key = _find_kek(session, pkcs11, c["kek_label"])
@@ -407,7 +399,7 @@ def wrap_dek_for_slot(pkcs11_url: str, dek: bytes) -> tuple[str, str]:
 
 
 def unwrap_dek_for_slot(pkcs11_url: str, wrapped: str, kek_label: str | None = None) -> bytes:
-    """Unwrap a DEK with the KEK in the specified slot to a Fernet key."""
+    """Unwrap a DEK with the KEK in the specified slot (raw 32 bytes)."""
     c = parse_pkcs11_url(pkcs11_url)
     label = kek_label or c["kek_label"]
     fmt, rest = _decode_wrapped_blob(wrapped)
@@ -424,7 +416,7 @@ def unwrap_dek_for_slot(pkcs11_url: str, wrapped: str, kek_label: str | None = N
             raise RuntimeError(f"HSM unwrap failed: {e}") from e
     if len(raw) != _RAW_DEK_LEN:
         raise ValueError(f"unwrapped DEK has length {len(raw)}, expected {_RAW_DEK_LEN}")
-    return raw_to_fernet_key(raw)
+    return raw
 
 
 def wrap_dek_with_label(pkcs11_url: str, dek: bytes, kek_label: str) -> str:
@@ -433,7 +425,7 @@ def wrap_dek_with_label(pkcs11_url: str, dek: bytes, kek_label: str) -> str:
     Used for KEK rotation, where a freshly generated KEK (with a new label) must
     wrap the re-wrapped DEKs.
     """
-    raw = fernet_key_to_raw(dek)
+    raw = dek_to_raw(dek)
     pkcs11 = _pkcs11()
     with _session(rw=False, pkcs11_url=pkcs11_url) as session:
         key = _find_kek(session, pkcs11, kek_label)

@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 import app as store
-from auth import authz
+from auth import authz, passwords
 from core import db, settings_svc
 from integrations import ldap_auth
 from tests.helpers import REPO_ROOT
@@ -70,7 +70,14 @@ class TestTotp:
         store.app.config["TESTING"] = True
         client = store.app.test_client()
         uid = uuid4()
-        conn, _ = _conn(fetchone={"id": uid, "email": "a@b.c", "name": "A"})
+        conn, _ = _conn(
+            fetchone={
+                "id": uid,
+                "email": "a@b.c",
+                "name": "A",
+                "password_hash": passwords.hash_password("secret12"),
+            }
+        )
         with (
             patch.object(db, "connect", return_value=conn),
             patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}),
@@ -117,7 +124,14 @@ class TestTotp:
         store.app.config["TESTING"] = True
         client = store.app.test_client()
         uid = uuid4()
-        conn, _ = _conn(fetchone={"id": uid, "email": "admin@b.c", "name": "A"})
+        conn, _ = _conn(
+            fetchone={
+                "id": uid,
+                "email": "admin@b.c",
+                "name": "A",
+                "password_hash": passwords.hash_password("secret12"),
+            }
+        )
         with (
             patch.object(db, "connect", return_value=conn),
             patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}),

@@ -645,7 +645,7 @@ Use the JWT from `/api/token`. Default compose port: **3000**.
 
 ### What PostgREST is **not** for
 
-- Reading **plaintext** secret values (`value_enc` is Fernet ciphertext)
+- Reading **plaintext** secret values (`value_enc` is AES-256-GCM ciphertext)
 - Creating secrets with a plaintext `value` field
 
 ### Conventions

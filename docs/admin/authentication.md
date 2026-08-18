@@ -15,7 +15,7 @@ planes:
 
 > **Plaintext** secret values are only returned by the browser UI and the
 > `/eso/v1` routes (after decryption with `MASTER_KEY`), for **machine tokens**
-> or **PATs**. PostgREST returns `value_enc` (Fernet ciphertext), never
+> or **PATs**. PostgREST returns `value_enc` (AES-256-GCM ciphertext), never
 > plaintext.
 
 ---
@@ -388,7 +388,7 @@ for any local user from **Administration → Users**.
 - PATs and machine tokens are stored as **unsalted SHA-256** hashes —
   acceptable for high-entropy random tokens (not brute-forceable from a DB leak).
 - TOTP recovery codes are **HMAC-SHA256** with `SECRET_KEY`.
-- Secret values are **Fernet-encrypted** with `MASTER_KEY` at rest; only the
+- Secret values are **AES-256-GCM-encrypted** with `MASTER_KEY` (HKDF-SHA256) at rest; only the
   app and ESO routes decrypt them.
 - PostgREST never sees plaintext — only `value_enc`.
 

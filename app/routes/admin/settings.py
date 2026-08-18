@@ -430,6 +430,12 @@ def server_settings():
                 settings_svc.set_setting("smtp_from_name", from_name)
                 settings_svc.set_setting("smtp_login_alerts", login_alerts)
                 flash("Email (SMTP) settings saved", "ok")
+                if config.fips_enabled() and encryption == "none":
+                    # FIPS: outbound mail transport should be encrypted.
+                    flash(
+                        "Warning: SMTP transport 'none' is not FIPS-compliant — use STARTTLS or SSL.",
+                        "warning",
+                    )
         elif action == "smtp_test":
             to_email = (request.form.get("test_email") or "").strip() or (
                 session.get("email") or ""

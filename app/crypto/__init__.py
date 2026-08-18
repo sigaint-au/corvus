@@ -67,6 +67,13 @@ def master_aes_key(master_key: str) -> bytes:
 
     Returns:
         32 raw key bytes for ``AESGCM``.
+
+    Example:
+        >>> key = master_aes_key("long-master-key")
+        >>> len(key) == 32
+        True
+        >>> master_aes_key("long-master-key") == key  # deterministic
+        True
     """
     hkdf = HKDF(algorithm=hashes.SHA256(), length=_AES_KEY_LEN, salt=None, info=_HKDF_INFO)
     return hkdf.derive((master_key or "").encode("utf-8"))
@@ -87,6 +94,11 @@ def encrypt_with_key(key: bytes, val: str) -> str:
 
     Returns:
         ``gcm$<base64(nonce || ciphertext || tag)>`` token.
+
+    Example:
+        >>> key = master_aes_key("k")
+        >>> encrypt_with_key(key, "hello").startswith("gcm$")
+        True
     """
     nonce = os.urandom(12)
     ct = AESGCM(bytes(key)).encrypt(nonce, (val or "").encode("utf-8"), None)
@@ -99,6 +111,11 @@ def decrypt_with_key(key: bytes, token: str) -> str:
     Raises:
         ValueError: If the token is malformed or fails GCM authentication
             (wrong key or corrupted ciphertext).
+
+    Example:
+        >>> key = master_aes_key("k")
+        >>> decrypt_with_key(key, encrypt_with_key(key, "hello"))
+        'hello'
     """
     if not token.startswith(_TOKEN_PREFIX):
         raise ValueError("Unknown token format — not an AES-GCM token")
@@ -145,6 +162,10 @@ def decrypt(val: str) -> str:
     Raises:
         ValueError: If the token is corrupt or was encrypted with a different
             master key.
+
+    Example:
+        >>> decrypt(encrypt("hello"))
+        'hello'
     """
     return decrypt_with_key(_aes_key(), val)
 
@@ -161,12 +182,23 @@ def decrypt(val: str) -> str:
 
 
 def generate_project_key() -> bytes:
-    """Return a new random 32-byte AES-256 data-encryption key (DEK)."""
+    """Return a new random 32-byte AES-256 data-encryption key (DEK).
+
+    Example:
+        >>> len(generate_project_key()) == 32
+        True
+    """
     return os.urandom(_AES_KEY_LEN)
 
 
 def wrap_project_key(raw_key: bytes) -> str:
-    """Wrap a raw DEK with MASTER_KEY so only the raw key is never stored."""
+    """Wrap a raw DEK with MASTER_KEY so only the raw key is never stored.
+
+    Example:
+        >>> raw = generate_project_key()
+        >>> unwrap_project_key(wrap_project_key(raw)) == raw
+        True
+    """
     return encrypt_with_key(_aes_key(), raw_key.decode("latin-1"))
 
 
@@ -321,6 +353,12 @@ def encrypt_for_project(project_id, value: str) -> tuple[str, str]:
 
     Returns:
         Tuple ``(ciphertext, crypto_provider)`` for storage.
+
+    Example:
+        >>> import uuid
+        >>> ct, provider = encrypt_for_project(str(uuid.uuid4()), "value")
+        >>> provider in ("master", "project") and ct.startswith("gcm$")
+        True
     """
     row = _project_key(str(project_id))
     if row is None:
