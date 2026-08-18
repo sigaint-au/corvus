@@ -7,7 +7,7 @@ from flask import (
     request,
 )
 
-from core import config, db
+from core import config, db, settings_svc
 
 from .helpers import (
     _audit,
@@ -166,11 +166,11 @@ def eso_approve_access_request(project_ref, req_id):
         elif body.get("hours") is not None:
             minutes = int(body["hours"]) * 60
         else:
-            minutes = config.REVEAL_ACCESS_GRANT_MINUTES
+            minutes = settings_svc.reveal_access_grant_minutes()
     except (TypeError, ValueError):
-        minutes = config.REVEAL_ACCESS_GRANT_MINUTES
+        minutes = settings_svc.reveal_access_grant_minutes()
     if minutes not in config.REVEAL_ACCESS_GRANT_CHOICES:
-        minutes = config.REVEAL_ACCESS_GRANT_MINUTES
+        minutes = settings_svc.reveal_access_grant_minutes()
     with db.as_user(ident) as conn, conn.cursor() as cur:
         pid = _resolve_project_ref(cur, project_ref, kind=kind, thash=None)
         if not pid:

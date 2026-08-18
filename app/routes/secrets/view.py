@@ -14,7 +14,7 @@ from flask import (
 import audit
 import crypto
 from auth import authz
-from core import config, db
+from core import db, settings_svc
 from lib.users import user_email
 from secret_svc.queries import get_secret_brief, get_secret_detail
 from secret_svc.secret_kinds import (
@@ -145,9 +145,7 @@ def reveal_secret(project_id, secret_id):
     # Always expand inline for a consistent list UX. Structured kinds get a
     # preview + "Open full view"; plain single/multi-line stay in the cell.
     structured = kind in STRUCTURED_VIEW_KINDS
-    view_url = url_for(
-        "secret_view", project_id=project_id, secret_id=secret_id
-    )
+    view_url = url_for("secret_view", project_id=project_id, secret_id=secret_id)
     # force_inline kept for callers; no longer gates redirect.
     body = render_template(
         "partials/reveal.html",
@@ -161,12 +159,10 @@ def reveal_secret(project_id, secret_id):
         is_pinned=is_fav,
         expires_at=exp_date,
         expires_display=exp_display,
-        clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
+        clipboard_clear_seconds=settings_svc.int_setting("clipboard_clear_seconds", 30),
     )
     if authz.htmx():
-        body += _reveal_toggle_html(
-            project_id, secret_id, revealed=True, cell=cell
-        )
+        body += _reveal_toggle_html(project_id, secret_id, revealed=True, cell=cell)
     return body
 
 
@@ -201,9 +197,7 @@ def secret_view(project_id, secret_id):
         row["last_accessed_by_email"] = ""
         if row.get("last_accessed_by"):
             with db.connect_admin() as aconn, aconn.cursor() as acur:
-                row["last_accessed_by_email"] = user_email(
-                    acur, str(row["last_accessed_by"])
-                )
+                row["last_accessed_by_email"] = user_email(acur, str(row["last_accessed_by"]))
         value_enc = None
         crypto_provider = row.get("crypto_provider") or "master"
         is_version = False
@@ -369,9 +363,7 @@ def secret_view(project_id, secret_id):
             if cur.rowcount == 0:
                 conn.rollback()
                 flash("You don't have permission to do that", "error")
-                return redirect(
-                    url_for("project_detail", project_id=project_id, tab="secrets")
-                )
+                return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
             audit.log_secret(
                 cur,
                 project_id=project_id,
@@ -522,9 +514,7 @@ def hide_secret(project_id, secret_id):
     """
     cell = (request.args.get("cell") or "").strip() or None
     cell_id, _toggle_id = _reveal_cell_ids(secret_id, cell)
-    reveal_url = url_for(
-        "reveal_secret", project_id=project_id, secret_id=secret_id
-    )
+    reveal_url = url_for("reveal_secret", project_id=project_id, secret_id=secret_id)
     if cell:
         reveal_url = url_for(
             "reveal_secret",
@@ -538,9 +528,7 @@ def hide_secret(project_id, secret_id):
         cell_id=cell_id,
     )
     if authz.htmx():
-        body += _reveal_toggle_html(
-            project_id, secret_id, revealed=False, cell=cell
-        )
+        body += _reveal_toggle_html(project_id, secret_id, revealed=False, cell=cell)
     return body
 
 

@@ -112,12 +112,8 @@ def add_secret_access_binding(project_id, secret_id):
         sec = cur.fetchone()
         if not sec:
             flash("Secret not found", "error")
-            return redirect(
-                url_for("project_detail", project_id=project_id, tab="secrets")
-            )
-        cur.execute(
-            "SELECT id FROM rbac.roles WHERE name = %s", (role_name,)
-        )
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+        cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (role_name,))
         role = cur.fetchone()
         if not role:
             flash(f"Built-in role {role_name} missing — run schema ensure", "error")

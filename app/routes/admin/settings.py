@@ -207,6 +207,26 @@ def server_settings():
                 settings_svc.set_setting("login_banner_link_text", link_text)
                 settings_svc.set_setting("login_banner_link_url", link_url)
                 flash("Login banner saved", "ok")
+        elif action == "ux":
+
+            def _int_field(name, default, minimum=0):
+                raw = (request.form.get(name) or "").strip()
+                try:
+                    val = int(raw or default)
+                except ValueError:
+                    return None
+                return max(minimum, val)
+
+            clipboard = _int_field("clipboard_clear_seconds", 30)
+            auto_hide = _int_field("reveal_auto_hide_seconds", 30)
+            grant = _int_field("reveal_access_grant_minutes", 15, minimum=1)
+            if clipboard is None or auto_hide is None or grant is None:
+                flash("Clipboard/hide/grant values must be whole numbers", "error")
+            else:
+                settings_svc.set_setting("clipboard_clear_seconds", str(clipboard))
+                settings_svc.set_setting("reveal_auto_hide_seconds", str(auto_hide))
+                settings_svc.set_setting("reveal_access_grant_minutes", str(grant))
+                flash("Reveal & clipboard settings saved", "ok")
         elif action == "registration":
             enabled = "true" if request.form.get("registration_enabled") else "false"
             settings_svc.set_setting("registration_enabled", enabled)

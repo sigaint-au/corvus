@@ -1,4 +1,5 @@
 """Environment and application constants."""
+
 import os
 import re
 
@@ -24,6 +25,7 @@ def master_key_is_default() -> bool:
     Used by the admin Encryption tab to flag an insecure default key.
     """
     return MASTER_KEY == _DEFAULT_MASTER_KEY
+
 
 GLOBAL_ADMIN_EMAIL = os.environ.get("GLOBAL_ADMIN_EMAIL", "").strip().lower()
 # Alias: promote this email once no global admin exists yet (same as GLOBAL_ADMIN_EMAIL).
@@ -99,6 +101,7 @@ def refuse_insecure_defaults():
                 "Set a real value, or ALLOW_INSECURE_DEFAULTS=1 / FLASK_ENV=development for local use."
             )
 
+
 APP_NAME = "Sigaint Secret Server"
 
 HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -117,6 +120,12 @@ DEFAULT_SETTINGS = {
     "login_banner_text": "",
     "login_banner_link_text": "System Use Policy",
     "login_banner_link_url": "",
+    # Clipboard auto-clear after copy (seconds); 0 disables
+    "clipboard_clear_seconds": "30",
+    # Auto-hide revealed secret values (seconds); 0 disables
+    "reveal_auto_hide_seconds": "30",
+    # How long an approved reveal grant lasts (minutes)
+    "reveal_access_grant_minutes": "15",
     "registration_enabled": "true",
     "user_team_creation_enabled": "true",
     "ldap_enabled": "false",
@@ -240,19 +249,6 @@ RBAC_SECRET_ROLE_NAMES = tuple(n for n, _ in RBAC_SECRET_ROLE_DROPDOWN)
 RBAC_CLUSTER_ROLE_NAMES = tuple(n for n, _ in RBAC_CLUSTER_ROLE_DROPDOWN)
 RBAC_SERVICE_ROLE_NAMES = tuple(n for n, _ in RBAC_SERVICE_ROLE_DROPDOWN)
 
-# Clipboard auto-clear after copy (seconds); 0 disables
-CLIPBOARD_CLEAR_SECONDS = max(
-    0, int(os.environ.get("CLIPBOARD_CLEAR_SECONDS", "30") or "30")
-)
-# Auto-hide revealed secret values (seconds); 0 disables
-REVEAL_AUTO_HIDE_SECONDS = max(
-    0, int(os.environ.get("REVEAL_AUTO_HIDE_SECONDS", "30") or "30")
-)
-# How long an approved reveal grant lasts (minutes). Used when a secret
-# effectively requires approval (project default and/or per-secret override).
-REVEAL_ACCESS_GRANT_MINUTES = max(
-    1, int(os.environ.get("REVEAL_ACCESS_GRANT_MINUTES", "15") or "15")
-)
 # Allowed grant durations when approving a reveal access request (minutes)
 REVEAL_ACCESS_GRANT_CHOICES = (15, 60, 240, 1440)  # 15m, 1h, 4h, 1d
 # Structured secret kinds for advanced create form

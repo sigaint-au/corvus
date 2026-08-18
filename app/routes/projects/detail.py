@@ -13,7 +13,7 @@ from flask import (
 
 import audit
 from auth import authz
-from core import config, db
+from core import config, db, settings_svc
 from secret_svc.secret_kinds import (
     SOON_DAYS,
     annotate_token_expiry,
@@ -412,7 +412,6 @@ def project_detail(project_id):
         from auth import rbac_sync
 
         rbac_sync.enrich_binding_emails(access_bindings)
-    from core import settings_svc
 
     public_base = settings_svc.public_base_url(request.url_root or "")
     ctx = {
@@ -457,7 +456,7 @@ def project_detail(project_id):
         "rotation_soon": rotation_soon if tab == "secrets" else [],
         "public_base_url": public_base,
         "max_expiry_days": config.MAX_EXPIRY_DAYS,
-        "grant_minutes": config.REVEAL_ACCESS_GRANT_MINUTES,
+        "grant_minutes": settings_svc.reveal_access_grant_minutes(),
         "grant_choices": config.REVEAL_ACCESS_GRANT_CHOICES,
         "require_reveal_approval": bool(project.get("require_reveal_approval"))
         if project

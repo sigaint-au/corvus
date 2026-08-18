@@ -11,7 +11,7 @@ from flask import (
 )
 
 from auth import authz
-from core import config, db
+from core import config, db, settings_svc
 from secret_svc.secret_kinds import (
     as_utc,
     parse_database_url,
@@ -338,7 +338,7 @@ def _render_secret_view(
             access_request=access_request,
             requires_approval=row.get("requires_approval"),
             require_reveal_approval=row.get("require_reveal_approval"),
-            clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
+            clipboard_clear_seconds=settings_svc.int_setting("clipboard_clear_seconds", 30),
             created_at=row.get("created_at"),
             updated_at=row.get("updated_at"),
             last_accessed_at=row.get("last_accessed_at"),

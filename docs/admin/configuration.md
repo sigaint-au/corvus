@@ -27,9 +27,6 @@ All environment variables and server settings for Sigaint Secret Server.
 | `BOOTSTRAP_ADMIN_EMAIL` | — | Same as `GLOBAL_ADMIN_EMAIL` if unset |
 | `ALLOW_INSECURE_DEFAULTS` | `0` | `1` only for local dev defaults |
 | `COOKIE_SECURE` | on in production | `0` disables; off when `FLASK_ENV=development` or `ALLOW_INSECURE_DEFAULTS` |
-| `CLIPBOARD_CLEAR_SECONDS` | `30` | UI clipboard auto-clear; `0` disables |
-| `REVEAL_AUTO_HIDE_SECONDS` | `30` | Auto-hide revealed values; `0` disables |
-| `REVEAL_ACCESS_GRANT_MINUTES` | `15` | Default approved-reveal grant duration (minutes) |
 | `MAX_CONTENT_LENGTH` | `1 MiB` | Request/import size cap (memory DoS guard) |
 
 > `DATABASE_ADMIN_URL` is **required** — the app uses it for idempotent schema
@@ -50,6 +47,8 @@ Configured under **Administration → Server settings**. Stored in
 | Brand name | `Sigaint` | Sidebar / page titles / mail / TOTP issuer |
 | Brand tagline | `Secret Server` | Sidebar subtitle |
 | Classification | `false` | Show a classification banner (text/color) |
+| Login banner | `false` | DoD/policy disclosure text + optional policy link on sign-in |
+| Reveal & clipboard | `30 / 30 / 15` | Clipboard auto-clear, auto-hide, reveal-grant minutes |
 | Registration | `true` | Allow self-registration |
 | User team creation | `true` | Allow users to create teams |
 

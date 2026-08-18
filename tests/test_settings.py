@@ -336,3 +336,42 @@ class TestLoginBanner:
             r = store.app.test_client().get('/login')
         assert r.status_code == 200
         assert b'login-note' not in r.data
+
+
+class TestUxSettings:
+
+    def setup_method(self, method=None):
+        store.app.config['TESTING'] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s['user_id'] = self.uid
+            s['email'] = 'admin@ex.com'
+            s['is_global_admin'] = True
+
+    def test_save_ux(self):
+        with patch.object(authz, 'is_global_admin', return_value=True), \
+             patch.object(settings_svc, 'set_setting') as set_setting:
+            r = self.client.post('/settings', data={
+                'action': 'ux',
+                'clipboard_clear_seconds': '45',
+                'reveal_auto_hide_seconds': '20',
+                'reveal_access_grant_minutes': '60',
+            }, follow_redirects=False)
+        assert r.status_code == 302
+        calls = {c.args[0]: c.args[1] for c in set_setting.call_args_list}
+        assert calls['clipboard_clear_seconds'] == '45'
+        assert calls['reveal_auto_hide_seconds'] == '20'
+        assert calls['reveal_access_grant_minutes'] == '60'
+
+    def test_rejects_non_numeric(self):
+        with patch.object(authz, 'is_global_admin', return_value=True), \
+             patch.object(settings_svc, 'set_setting') as set_setting:
+            r = self.client.post('/settings', data={
+                'action': 'ux',
+                'clipboard_clear_seconds': 'lots',
+                'reveal_auto_hide_seconds': '20',
+                'reveal_access_grant_minutes': '60',
+            }, follow_redirects=False)
+        assert r.status_code == 302
+        assert not set_setting.called

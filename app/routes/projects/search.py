@@ -9,7 +9,7 @@ from flask import (
 )
 
 from auth import authz
-from core import config, db
+from core import config, db, settings_svc
 from secret_svc.secret_kinds import expires_status, secret_due_status
 from ui import paging
 
@@ -228,6 +228,6 @@ def access_requests_inbox():
     return render_template(
         "access_requests.html",
         requests=rows,
-        grant_minutes=config.REVEAL_ACCESS_GRANT_MINUTES,
+        grant_minutes=settings_svc.reveal_access_grant_minutes(),
         grant_choices=config.REVEAL_ACCESS_GRANT_CHOICES,
     )

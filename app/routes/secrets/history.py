@@ -13,7 +13,7 @@ from flask import (
 import audit
 import crypto
 from auth import authz
-from core import config, db
+from core import db, settings_svc
 from secret_svc.secret_kinds import (
     STRUCTURED_VIEW_KINDS,
     normalize_kind,
@@ -139,8 +139,8 @@ def reveal_secret_version(project_id, secret_id, version_id):
             return ("Forbidden", 403)
         try:
             plaintext = crypto.decrypt_for_project(
-            project_id, enc["value_enc"], enc.get("crypto_provider") or "master"
-        )
+                project_id, enc["value_enc"], enc.get("crypto_provider") or "master"
+            )
         except ValueError as e:
             conn.rollback()
             return str(e), 422
@@ -172,7 +172,7 @@ def reveal_secret_version(project_id, secret_id, version_id):
         editable=False,
         can_write=False,
         is_pinned=False,
-        clipboard_clear_seconds=config.CLIPBOARD_CLEAR_SECONDS,
+        clipboard_clear_seconds=settings_svc.int_setting("clipboard_clear_seconds", 30),
     )
     if authz.htmx():
         body += _reveal_toggle_html(
@@ -250,15 +250,11 @@ def rollback_secret(project_id, secret_id, version_id):
         row = cur.fetchone()
         if not row:
             flash("Version not found", "error")
-            return redirect(
-                url_for("secret_history", project_id=project_id, secret_id=secret_id)
-            )
+            return redirect(url_for("secret_history", project_id=project_id, secret_id=secret_id))
         enc = fetch_secret_version_enc(cur, version_id, secret_id)
         if not enc:
             flash("You don't have permission to do that", "error")
-            return redirect(
-                url_for("secret_history", project_id=project_id, secret_id=secret_id)
-            )
+            return redirect(url_for("secret_history", project_id=project_id, secret_id=secret_id))
         cur.execute(
             """
             UPDATE api.secrets
