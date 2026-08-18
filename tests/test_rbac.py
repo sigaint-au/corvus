@@ -1,4 +1,5 @@
 """Kubernetes-style RBAC: constants, rule matching docs, route registration."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -155,7 +156,7 @@ def test_schema_scrubs_legacy_access_modes():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
-    access = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
+    access = (root / "db" / "migrations" / "0001_init.sql").read_text()
     cleanup = access
     assert "WHERE access_mode = 'custom'" in access
     assert "WHERE access_mode NOT IN ('inherit', 'restricted')" in access

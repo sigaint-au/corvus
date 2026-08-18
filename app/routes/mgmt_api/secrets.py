@@ -35,9 +35,7 @@ def _resolve_secret(cur, pid, key):
 
 
 def _can_write(cur, secret_id):
-    cur.execute(
-        "SELECT api.can_access_secret(%s, 'write') AS w", (secret_id,)
-    )
+    cur.execute("SELECT api.can_access_secret(%s, 'write') AS w", (secret_id,))
     return bool((cur.fetchone() or {}).get("w"))
 
 

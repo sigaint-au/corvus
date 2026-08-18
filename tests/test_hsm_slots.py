@@ -1,4 +1,5 @@
 """Unit tests for the PKCS#11 URL parser and multi-slot HSM functions."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -23,15 +24,11 @@ class TestParsePkcs11Url:
     def test_pin_source_reads_file(self, tmp_path):
         f = tmp_path / "pin"
         f.write_text("9999\n")
-        p = hsm.parse_pkcs11_url(
-            f"pkcs11:token=t;object=k?module-path=/m.so&pin-source={f}"
-        )
+        p = hsm.parse_pkcs11_url(f"pkcs11:token=t;object=k?module-path=/m.so&pin-source={f}")
         assert p["pin"] == "9999"
 
     def test_percent_decoding(self):
-        p = hsm.parse_pkcs11_url(
-            "pkcs11:token=my%20box;object=k%2F2?module-path=/m.so&pin-value=x"
-        )
+        p = hsm.parse_pkcs11_url("pkcs11:token=my%20box;object=k%2F2?module-path=/m.so&pin-value=x")
         assert p["token_label"] == "my box"
         assert p["kek_label"] == "k/2"
 
@@ -89,8 +86,7 @@ class TestTestConnectionForSlot:
         mock_session.__enter__.return_value = mock_session
         mock_session.__exit__.return_value = False
         mock_session.get_objects.return_value = iter([])
-        with patch.object(hsm, "_session", return_value=mock_session), \
-             patch.object(hsm, "_pkcs11"):
+        with patch.object(hsm, "_session", return_value=mock_session), patch.object(hsm, "_pkcs11"):
             ok, msg = hsm.test_connection_for_slot(
                 "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
             )
@@ -102,8 +98,7 @@ class TestTestConnectionForSlot:
         mock_session.__enter__.return_value = mock_session
         mock_session.__exit__.return_value = False
         mock_session.get_objects.return_value = iter([MagicMock()])
-        with patch.object(hsm, "_session", return_value=mock_session), \
-             patch.object(hsm, "_pkcs11"):
+        with patch.object(hsm, "_session", return_value=mock_session), patch.object(hsm, "_pkcs11"):
             ok, msg = hsm.test_connection_for_slot(
                 "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
             )
@@ -123,15 +118,16 @@ class TestSlotFunctions:
     def test_status_for_slot_missing_module(self):
         with patch.object(hsm, "os") as os_mock:
             os_mock.path.exists.return_value = False
-            st = hsm.status_for_slot(
-                "pkcs11:token=t;object=k?module-path=/nope.so&pin-value=x"
-            )
+            st = hsm.status_for_slot("pkcs11:token=t;object=k?module-path=/nope.so&pin-value=x")
         assert st["available"] is False
         assert "not found" in (st["error"] or "")
 
     def test_available_for_slot_false_on_error(self):
         with patch.object(hsm, "_session", side_effect=RuntimeError("boom")):
-            assert hsm.available_for_slot("pkcs11:token=t;object=k?module-path=/m.so&pin-value=x") is False
+            assert (
+                hsm.available_for_slot("pkcs11:token=t;object=k?module-path=/m.so&pin-value=x")
+                is False
+            )
 
     def test_parse_in_wizard_slot_dropdown_ok(self):
         # sanity: a typical SoftHSM2 dev URL parses cleanly

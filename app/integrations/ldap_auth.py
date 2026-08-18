@@ -1,4 +1,5 @@
 """LDAP authentication and group membership sync."""
+
 import logging
 import ssl
 
@@ -309,13 +310,16 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
         else:
             svc = _ldap_bind(server, start_tls=want_tls)
 
-        if not svc.search(
-            user_base,
-            user_filter,
-            search_scope=SUBTREE,
-            attributes=[email_attr, name_attr, "memberOf", "cn", "uid"],
-            size_limit=1,
-        ) or not svc.entries:
+        if (
+            not svc.search(
+                user_base,
+                user_filter,
+                search_scope=SUBTREE,
+                attributes=[email_attr, name_attr, "memberOf", "cn", "uid"],
+                size_limit=1,
+            )
+            or not svc.entries
+        ):
             svc.unbind()
             return None
         entry = svc.entries[0]
@@ -339,7 +343,9 @@ def ldap_authenticate(login: str, password: str) -> dict | None:
                 gc = _ldap_bind(server, user=bind_dn, password=bind_pw, start_tls=want_tls)
             else:
                 gc = _ldap_bind(server, start_tls=want_tls)
-            if gc.search(group_base, gfilter, search_scope=SUBTREE, attributes=["cn", "distinguishedName"]):
+            if gc.search(
+                group_base, gfilter, search_scope=SUBTREE, attributes=["cn", "distinguishedName"]
+            ):
                 for ge in gc.entries:
                     groups.append(str(ge.entry_dn))
                     cn = ldap_attr(ge, "cn")

@@ -1,4 +1,5 @@
 """Opt-in smoke tests for a running app, PostgREST, and ESO API stack."""
+
 from __future__ import annotations
 
 import json
@@ -24,7 +25,9 @@ def _request(url: str, method: str = "GET", token: str = "", body: bytes | None 
     if body is not None:
         headers["Content-Type"] = "application/json"
     try:
-        with urlopen(Request(url, method=method, headers=headers, data=body), timeout=10) as response:
+        with urlopen(
+            Request(url, method=method, headers=headers, data=body), timeout=10
+        ) as response:
             return response.status, response.read()
     except HTTPError as error:
         return error.code, error.read()
@@ -55,7 +58,9 @@ def test_live_hsm_rpc_is_not_anonymous():
     assert status in (401, 404)
 
 
-@pytest.mark.skipif(not _POSTGREST_URL or not _JWT, reason="LIVE_POSTGREST_URL and LIVE_API_JWT are required")
+@pytest.mark.skipif(
+    not _POSTGREST_URL or not _JWT, reason="LIVE_POSTGREST_URL and LIVE_API_JWT are required"
+)
 def test_live_authenticated_postgrest_rls():
     """Verify a JWT can query RLS-protected data without receiving HSM URLs."""
     status, body = _request(

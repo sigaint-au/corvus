@@ -1,4 +1,5 @@
 """Unit tests for the versioned SQL migration runner (app/core/migrations.py)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -86,16 +87,22 @@ def test_authz_hardening_migration():
     assert "REVOKE SELECT (value_enc) ON api.secrets FROM authenticated" in sql
     assert "private.secret_enc" in sql
     assert "can_admin_project(project_id)" in sql
-    assert "OR api.can('update', 'secrets', 'secret', sid)" not in sql.split("WHEN need = 'reveal'")[1].split("ELSE")[0]
+    assert (
+        "OR api.can('update', 'secrets', 'secret', sid)"
+        not in sql.split("WHEN need = 'reveal'")[1].split("ELSE")[0]
+    )
 
 
 class TestPendingMigrations:
     def test_returns_unapplied_in_order(self, tmp_path):
-        d = _write_migrations(tmp_path, {
-            "0001_init.sql": "-- baseline",
-            "0002_rbac.sql": "-- rbac",
-            "0003_add.sql": "-- add",
-        })
+        d = _write_migrations(
+            tmp_path,
+            {
+                "0001_init.sql": "-- baseline",
+                "0002_rbac.sql": "-- rbac",
+                "0003_add.sql": "-- add",
+            },
+        )
         cur = _cur(fetchall=[{"version": "0001", "checksum": _checksum("-- baseline")}])
         with patch.object(migrations, "MIGRATIONS_DIR", d):
             pending = migrations.pending_migrations(cur)
@@ -117,27 +124,31 @@ class TestPendingMigrations:
 
 class TestApplyPending:
     def test_applies_and_records(self, tmp_path):
-        d = _write_migrations(tmp_path, {
-            "0003_add.sql": "ALTER TABLE api.secrets ADD COLUMN x int;",
-        })
+        d = _write_migrations(
+            tmp_path,
+            {
+                "0003_add.sql": "ALTER TABLE api.secrets ADD COLUMN x int;",
+            },
+        )
         cur = _cur(fetchall=[], fetchone={"ok": True})  # squashed baseline exists
         with patch.object(migrations, "MIGRATIONS_DIR", d):
             migrations.apply_pending(cur)
         sqls = " ".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
         assert "ALTER TABLE api.secrets ADD COLUMN x int" in sqls
         assert "INSERT INTO private.schema_migrations" in sqls
-        assert "0003" in " ".join(
-            str(c.args) for c in cur.execute.call_args_list
-        )
+        assert "0003" in " ".join(str(c.args) for c in cur.execute.call_args_list)
 
     def test_dollar_quoted_body_not_split(self, tmp_path):
-        d = _write_migrations(tmp_path, {
-            "0003_fn.sql": (
-                "CREATE FUNCTION f() RETURNS int AS $$\n"
-                "BEGIN RETURN 1; END;\n"
-                "$$ LANGUAGE plpgsql;"
-            ),
-        })
+        d = _write_migrations(
+            tmp_path,
+            {
+                "0003_fn.sql": (
+                    "CREATE FUNCTION f() RETURNS int AS $$\n"
+                    "BEGIN RETURN 1; END;\n"
+                    "$$ LANGUAGE plpgsql;"
+                ),
+            },
+        )
         cur = _cur(fetchone={"ok": True})
         with patch.object(migrations, "MIGRATIONS_DIR", d):
             migrations.apply_pending(cur)
@@ -146,10 +157,13 @@ class TestApplyPending:
         assert any("CREATE FUNCTION f() RETURNS int" in s for s in executed)
 
     def test_baseline_seeded_when_schema_exists(self, tmp_path):
-        d = _write_migrations(tmp_path, {
-            "0001_init.sql": "CREATE TABLE private.users (id int);",
-            "0002_add.sql": "ALTER TABLE x ADD COLUMN y int;",
-        })
+        d = _write_migrations(
+            tmp_path,
+            {
+                "0001_init.sql": "CREATE TABLE private.users (id int);",
+                "0002_add.sql": "ALTER TABLE x ADD COLUMN y int;",
+            },
+        )
         # empty migrations table, schema already exists (baseline present)
         cur = _cur(fetchone={"ok": True})
         with patch.object(migrations, "MIGRATIONS_DIR", d):
@@ -169,14 +183,17 @@ class TestApplyPending:
                 migrations.apply_pending(cur)
 
     def test_access_mode_migration_runs_in_order(self, tmp_path):
-        d = _write_migrations(tmp_path, {
-            "0004_access_mode.sql": (
-                "DO $$ BEGIN END $$;\n"
-                "UPDATE api.secrets SET access_mode = 'restricted' WHERE access_mode = 'custom';\n"
-                "UPDATE api.secrets SET access_mode = 'inherit' WHERE access_mode NOT IN ('inherit','restricted');\n"
-                "ALTER TABLE api.secrets DROP COLUMN IF EXISTS acl_mode;\n"
-            ),
-        })
+        d = _write_migrations(
+            tmp_path,
+            {
+                "0004_access_mode.sql": (
+                    "DO $$ BEGIN END $$;\n"
+                    "UPDATE api.secrets SET access_mode = 'restricted' WHERE access_mode = 'custom';\n"
+                    "UPDATE api.secrets SET access_mode = 'inherit' WHERE access_mode NOT IN ('inherit','restricted');\n"
+                    "ALTER TABLE api.secrets DROP COLUMN IF EXISTS acl_mode;\n"
+                ),
+            },
+        )
         cur = _cur(fetchone={"ok": True})
         with patch.object(migrations, "MIGRATIONS_DIR", d):
             migrations.apply_pending(cur)

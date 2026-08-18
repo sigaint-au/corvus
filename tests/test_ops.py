@@ -1,4 +1,5 @@
 """Operational job tests."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -15,8 +16,22 @@ def test_due_notifications_groups_admin_and_token_owner():
         [{"email": "admin@example.com"}],
         [{"project_name": "prod", "key": "API_KEY", "expires_at": "soon"}],
         [{"project_name": "prod", "name": "eso", "token_prefix": "ss_abc", "expires_at": "soon"}],
-        [{"email": "alice@example.com", "name": "laptop", "token_prefix": "pat_abc", "expires_at": "soon"}],
-        [{"project_name": "prod", "key": "DB", "requester": "bob@example.com", "created_at": "now"}],
+        [
+            {
+                "email": "alice@example.com",
+                "name": "laptop",
+                "token_prefix": "pat_abc",
+                "expires_at": "soon",
+            }
+        ],
+        [
+            {
+                "project_name": "prod",
+                "key": "DB",
+                "requester": "bob@example.com",
+                "created_at": "now",
+            }
+        ],
     ]
     with conn.cursor() as c:
         out = due_notifications(c, 14)
@@ -30,7 +45,10 @@ def test_due_notifications_groups_admin_and_token_owner():
 def test_send_due_notifications_dry_run_does_not_send():
     conn, cur = _conn()
     cur.fetchall.side_effect = [[{"email": "admin@example.com"}], [], [], [], []]
-    with patch.object(db, "connect_admin", return_value=conn), patch("integrations.mailer.send_email") as send:
+    with (
+        patch.object(db, "connect_admin", return_value=conn),
+        patch("integrations.mailer.send_email") as send,
+    ):
         result = send_due_notifications(dry_run=True)
     assert result == {"recipients": 0, "sent": 0, "failed": 0}
     send.assert_not_called()

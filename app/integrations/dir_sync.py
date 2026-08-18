@@ -39,8 +39,7 @@ def apply_global_admin_maps(cur, uid, groups, role_maps, group_key: str) -> None
     if not role_maps:
         return
     is_admin = any(
-        m["role"] == "global_admin" and group_matches(m[group_key], groups)
-        for m in role_maps
+        m["role"] == "global_admin" and group_matches(m[group_key], groups) for m in role_maps
     )
     cur.execute(
         "UPDATE private.users SET is_global_admin = %s WHERE id = %s",
@@ -88,10 +87,7 @@ def apply_team_membership_maps(
         rname = m["role"]
         if rname not in TEAM_RBAC_RANK:
             continue
-        if (
-            tid not in desired
-            or TEAM_RBAC_RANK.get(rname, 0) > TEAM_RBAC_RANK.get(desired[tid], 0)
-        ):
+        if tid not in desired or TEAM_RBAC_RANK.get(rname, 0) > TEAM_RBAC_RANK.get(desired[tid], 0):
             desired[tid] = rname
 
     from auth import rbac_sync
@@ -129,9 +125,7 @@ def apply_team_membership_maps(
         )
         if cur.fetchone():
             continue
-        rbac_sync.sync_user_team_binding(
-            cur, user_id=uid, team_id=tid, role=role, source=source
-        )
+        rbac_sync.sync_user_team_binding(cur, user_id=uid, team_id=tid, role=role, source=source)
 
 
 def apply_group_membership_maps(

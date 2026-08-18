@@ -81,9 +81,7 @@ def oidc_enabled() -> bool:
         True
     """
     c = oidc_cfg()
-    return settings_svc.truthy(c["oidc_enabled"]) and bool(
-        c["oidc_issuer"] and c["oidc_client_id"]
-    )
+    return settings_svc.truthy(c["oidc_enabled"]) and bool(c["oidc_issuer"] and c["oidc_client_id"])
 
 
 def _client_secret_plain() -> str:
@@ -114,7 +112,9 @@ def _client_secret_plain() -> str:
         return enc
 
 
-def _http_json(method: str, url: str, data: dict | None = None, headers: dict | None = None) -> dict:
+def _http_json(
+    method: str, url: str, data: dict | None = None, headers: dict | None = None
+) -> dict:
     """Perform an HTTP request and parse a JSON response body.
 
     Args:

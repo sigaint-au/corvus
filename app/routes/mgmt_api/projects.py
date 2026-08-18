@@ -183,9 +183,7 @@ def mgmt_add_project_binding(project_ref):
         mid = lookup_user_id(cur, email)
         if not mid:
             return jsonify({"error": "user not found"}), 404
-        cur.execute(
-            "SELECT api.can_manage_rbac('project', %s::uuid) AS ok", (pid,)
-        )
+        cur.execute("SELECT api.can_manage_rbac('project', %s::uuid) AS ok", (pid,))
         if not (cur.fetchone() or {}).get("ok"):
             return jsonify({"error": "forbidden"}), 403
 
@@ -214,9 +212,7 @@ def mgmt_remove_project_binding(project_ref, member_ref):
         mid = lookup_user_id(cur, member_ref)
         if not mid:
             return jsonify({"error": "user not found"}), 404
-        cur.execute(
-            "SELECT api.can_manage_rbac('project', %s::uuid) AS ok", (pid,)
-        )
+        cur.execute("SELECT api.can_manage_rbac('project', %s::uuid) AS ok", (pid,))
         if not (cur.fetchone() or {}).get("ok"):
             return jsonify({"error": "forbidden"}), 403
 

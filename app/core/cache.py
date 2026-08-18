@@ -1,4 +1,5 @@
 """Small shared Redis client for cross-pod application caches."""
+
 from __future__ import annotations
 
 import time

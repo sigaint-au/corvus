@@ -76,7 +76,7 @@ def parse_pkcs11_url(url: str) -> dict:
     url = (url or "").strip()
     if not url.startswith("pkcs11:"):
         raise ValueError("PKCS#11 URL must start with pkcs11:")
-    rest = url[len("pkcs11:"):]
+    rest = url[len("pkcs11:") :]
     path, _, query = rest.partition("?")
 
     path_parts: dict[str, str] = {}
@@ -218,13 +218,10 @@ def fernet_key_to_raw(dek: bytes) -> bytes:
         except Exception as e:
             raise ValueError("invalid Fernet DEK encoding") from e
         if len(raw) != _RAW_DEK_LEN:
-            raise ValueError(
-                f"Fernet DEK decoded to {len(raw)} bytes, expected {_RAW_DEK_LEN}"
-            )
+            raise ValueError(f"Fernet DEK decoded to {len(raw)} bytes, expected {_RAW_DEK_LEN}")
         return raw
     raise ValueError(
-        f"DEK must be {_RAW_DEK_LEN} raw bytes or {_FERNET_KEY_LEN}-byte "
-        f"Fernet key, got {len(dek)}"
+        f"DEK must be {_RAW_DEK_LEN} raw bytes or {_FERNET_KEY_LEN}-byte Fernet key, got {len(dek)}"
     )
 
 
@@ -385,9 +382,7 @@ def status_for_slot(pkcs11_url: str) -> dict:
         pkcs11 = _pkcs11()
         with _session(rw=False, pkcs11_url=pkcs11_url) as session:
             result["available"] = True
-            result["kek_exists"] = (
-                _find_kek(session, pkcs11, c["kek_label"]) is not None
-            )
+            result["kek_exists"] = _find_kek(session, pkcs11, c["kek_label"]) is not None
     except Exception as e:
         result["error"] = str(e)
     return result

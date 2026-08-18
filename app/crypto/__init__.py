@@ -1,17 +1,27 @@
-"""Fernet encryption for secret values and sensitive settings.
+"""AES-256-GCM encryption for secret values and sensitive settings.
+
+FIPS-compliant building blocks: the app master key is derived from
+``MASTER_KEY`` with HKDF-SHA256, and values are encrypted with AES-256-GCM
+(authenticated encryption; the ``cryptography`` AESGCM primitive). Project
+Bring-Your-Own-Key DEKs are raw 32-byte keys wrapped by the master key or an
+HSM slot's KEK.
 
 This package also hosts per-project BYOK key management (``project_keys``)
 and external HSM integration (``hsm``). The public API of this module is
 re-exported here so ``import crypto`` and ``from crypto import encrypt``
 continue to work as before.
 """
+
 import json
 import logging
-from base64 import urlsafe_b64encode
+import os
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from functools import lru_cache
 from hashlib import sha256
 
-from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from core import cache, db
 from core.config import MASTER_KEY, REDIS_DEK_CACHE_TTL
@@ -19,6 +29,11 @@ from core.config import MASTER_KEY, REDIS_DEK_CACHE_TTL
 log = logging.getLogger(__name__)
 _REDIS_EPOCH_KEY = "secretserver:crypto:project-key:epoch"
 _SLOT_EPOCH_KEY = "secretserver:crypto:hsm-slot:epoch"
+_TOKEN_PREFIX = "gcm$"
+_HKDF_INFO = b"secretserver#master-key#v1"
+_AES_KEY_LEN = 32
+
+
 def _cache_epoch(client) -> str:
     """Return the shared project-key cache epoch."""
     return client.get(_REDIS_EPOCH_KEY) or "0"
@@ -44,76 +59,100 @@ def sha256_hex(val: str) -> str:
     return sha256((val or "").encode("utf-8")).hexdigest()
 
 
-def fernet_for(master_key: str) -> Fernet:
-    """Build a Fernet instance from a raw master key string.
+def master_aes_key(master_key: str) -> bytes:
+    """Derive a 32-byte AES-256 key from the master key string via HKDF-SHA256.
 
-    The key is SHA-256 of ``master_key``, then url-safe base64-encoded to
-    satisfy Fernet's 32-byte key requirement.
+    Args:
+        master_key: The ``MASTER_KEY`` secret string.
+
+    Returns:
+        32 raw key bytes for ``AESGCM``.
     """
-    key = urlsafe_b64encode(sha256(master_key.encode()).digest())
-    return Fernet(key)
+    hkdf = HKDF(algorithm=hashes.SHA256(), length=_AES_KEY_LEN, salt=None, info=_HKDF_INFO)
+    return hkdf.derive((master_key or "").encode("utf-8"))
 
 
 @lru_cache(maxsize=1)
-def _fernet() -> Fernet:
-    """Build and cache the Fernet instance derived from ``MASTER_KEY``.
+def _aes_key() -> bytes:
+    """Return the process-cached AES-256 key derived from ``MASTER_KEY``."""
+    return master_aes_key(MASTER_KEY)
 
-    Cached for process lifetime (see :func:`fernet_for` for an explicit key).
+
+def encrypt_with_key(key: bytes, val: str) -> str:
+    """Encrypt a string with an explicit AES-256-GCM key (12-byte random nonce).
+
+    Args:
+        key: 32-byte AES key.
+        val: Plaintext UTF-8 string.
+
+    Returns:
+        ``gcm$<base64(nonce || ciphertext || tag)>`` token.
     """
-    return fernet_for(MASTER_KEY)
+    nonce = os.urandom(12)
+    ct = AESGCM(bytes(key)).encrypt(nonce, (val or "").encode("utf-8"), None)
+    return _TOKEN_PREFIX + urlsafe_b64encode(nonce + ct).decode()
+
+
+def decrypt_with_key(key: bytes, token: str) -> str:
+    """Decrypt a token produced by :func:`encrypt_with_key`.
+
+    Raises:
+        ValueError: If the token is malformed or fails GCM authentication
+            (wrong key or corrupted ciphertext).
+    """
+    if not token.startswith(_TOKEN_PREFIX):
+        raise ValueError("Unknown token format — not an AES-GCM token")
+    try:
+        blob = urlsafe_b64decode(token[len(_TOKEN_PREFIX) :].encode())
+        nonce, body = blob[:12], blob[12:]
+        plain = AESGCM(bytes(key)).decrypt(nonce, body, None)
+    except Exception as e:
+        raise ValueError(
+            "Cannot decrypt value — the encryption key does not match the key "
+            "used when this was stored (or the ciphertext is corrupt)."
+        ) from e
+    return plain.decode("utf-8")
 
 
 def encrypt(val: str) -> str:
-    """Encrypt a plaintext string with the app master key (Fernet).
+    """Encrypt a plaintext string with the app master key (AES-256-GCM).
 
     Args:
-        val: Plaintext UTF-8 string to encrypt (e.g. secret value, SMTP password).
+        val: Plaintext UTF-8 string (e.g. secret value, SMTP password).
 
     Returns:
-        Fernet token as a UTF-8 string (safe to store in the database).
+        ``gcm$`` token string, safe to store in the database.
 
     Example:
         >>> token = encrypt("db-password")
-        >>> token.startswith("gAAAA")
+        >>> token.startswith("gcm$")
         True
         >>> decrypt(token)
         'db-password'
     """
-    return _fernet().encrypt(val.encode()).decode()
+    return encrypt_with_key(_aes_key(), val)
 
 
 def decrypt(val: str) -> str:
-    """Decrypt a Fernet token produced by :func:`encrypt`.
+    """Decrypt a token produced by :func:`encrypt` (master key).
 
     Args:
-        val: Fernet ciphertext string previously returned by :func:`encrypt`.
+        val: ``gcm$`` token string previously returned by :func:`encrypt`.
 
     Returns:
         Original plaintext UTF-8 string.
 
     Raises:
         ValueError: If the token is corrupt or was encrypted with a different
-            master key (wraps cryptography InvalidToken for safer call sites).
-
-    Example:
-        >>> decrypt(encrypt("hello"))
-        'hello'
+            master key.
     """
-    from cryptography.fernet import InvalidToken
-
-    try:
-        return _fernet().decrypt(val.encode()).decode()
-    except InvalidToken as e:
-        raise ValueError(
-            "Cannot decrypt secret value — MASTER_KEY does not match the key "
-            "used when this secret was stored (or the ciphertext is corrupt)."
-        ) from e
+    return decrypt_with_key(_aes_key(), val)
 
 
 # ── Per-project Bring-Your-Own-Key (BYOK) ────────────────────────────────
 # Each project may have a dedicated data-encryption key (DEK). The DEK is a
-# random Fernet key (``Fernet.generate_key()``: 44-byte urlsafe-b64 of 32 raw
-# bytes). For local keys it is wrapped by MASTER_KEY; for HSM keys the 32 raw
+# random 32-byte AES key. For local keys it is wrapped by MASTER_KEY; for HSM
+# keys the 32 raw
 # bytes are wrapped by the HSM slot's KEK (see ``hsm.wrap_dek_for_slot``).
 # Values encrypted with a project DEK carry ``crypto_provider='project'``;
 # values encrypted with the app master key are ``'master'`` (legacy / non-BYOK).
@@ -122,18 +161,18 @@ def decrypt(val: str) -> str:
 
 
 def generate_project_key() -> bytes:
-    """Return a new random Fernet data-encryption key (32-byte urlsafe)."""
-    return Fernet.generate_key()
+    """Return a new random 32-byte AES-256 data-encryption key (DEK)."""
+    return os.urandom(_AES_KEY_LEN)
 
 
 def wrap_project_key(raw_key: bytes) -> str:
     """Wrap a raw DEK with MASTER_KEY so only the raw key is never stored."""
-    return _fernet().encrypt(raw_key).decode()
+    return encrypt_with_key(_aes_key(), raw_key.decode("latin-1"))
 
 
 def unwrap_project_key(key_enc: str) -> bytes:
     """Unwrap a project DEK stored via :func:`wrap_project_key`."""
-    return _fernet().decrypt(key_enc.encode())
+    return decrypt_with_key(_aes_key(), key_enc).encode("latin-1")
 
 
 def _project_key(project_id: str) -> dict | None:
@@ -170,8 +209,12 @@ def _project_key(project_id: str) -> dict | None:
     except Exception:
         # Key lookup is best-effort: when it fails (e.g. admin DSN unavailable,
         # table not migrated, or unit-test mocks) fall back to the master key.
-        # The write path records crypto_provider='master' in that case, so the
-        # row stays consistent and decryptable.
+        # In FIPS mode the fallback is forbidden (fail closed): a project that
+        # owns an HSM/master DEK must not silently decrypt under a different key.
+        from core import config
+
+        if config.fips_enabled():
+            raise
         return None
 
 
@@ -246,7 +289,7 @@ def _dek_for(row: dict) -> bytes:
 
 
 def project_dek(project_id) -> bytes | None:
-    """Return the project's current DEK (Fernet key material), or None."""
+    """Return the project's current DEK (raw 32-byte AES key), or None."""
     row = _project_key(str(project_id))
     return _dek_for(row) if row else None
 
@@ -281,8 +324,8 @@ def encrypt_for_project(project_id, value: str) -> tuple[str, str]:
     """
     row = _project_key(str(project_id))
     if row is None:
-        return _fernet().encrypt(value.encode()).decode(), "master"
-    return Fernet(_dek_for(row)).encrypt(value.encode()).decode(), "project"
+        return encrypt_with_key(_aes_key(), value), "master"
+    return encrypt_with_key(_dek_for(row), value), "project"
 
 
 def decrypt_for_project(project_id, token: str, provider: str = "master") -> str:
@@ -293,20 +336,11 @@ def decrypt_for_project(project_id, token: str, provider: str = "master") -> str
         provider: Row's ``crypto_provider`` — ``'project'`` uses the project
             key, anything else uses the master key.
     """
-    from cryptography.fernet import InvalidToken
-
     try:
         if provider == "project":
             row = _project_key(str(project_id))
             if row is not None:
-                return Fernet(_dek_for(row)).decrypt(token.encode()).decode()
-        return _fernet().decrypt(token.encode()).decode()
-    except InvalidToken as e:
-        raise ValueError(
-            "Cannot decrypt secret value — the encryption key for this project "
-            "does not match the key used when this secret was stored."
-        ) from e
+                return decrypt_with_key(_dek_for(row), token)
+        return decrypt_with_key(_aes_key(), token)
     except RuntimeError as e:
-        raise ValueError(
-            "HSM is unavailable; this secret cannot be decrypted right now."
-        ) from e
+        raise ValueError("HSM is unavailable; this secret cannot be decrypted right now.") from e

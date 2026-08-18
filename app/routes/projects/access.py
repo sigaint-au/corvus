@@ -50,9 +50,7 @@ def add_project_binding(project_id):
                 "error",
             )
             return redirect(dest)
-        cur.execute(
-            "SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),)
-        )
+        cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
         proj = cur.fetchone()
         try:
             from auth import rbac_sync
@@ -91,9 +89,7 @@ def remove_project_binding(project_id, user_id):
         if not (cur.fetchone() or {}).get("ok"):
             flash("You don't have permission to do that", "error")
             return redirect(dest)
-        cur.execute(
-            "SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),)
-        )
+        cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
         proj = cur.fetchone()
         try:
             from auth import rbac_sync
@@ -186,9 +182,7 @@ def remove_project_group_role(project_id, group_id):
         if not (cur.fetchone() or {}).get("ok"):
             flash("You don't have permission to do that", "error")
             return redirect(dest)
-        cur.execute(
-            "SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),)
-        )
+        cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
         proj = cur.fetchone()
         try:
             from auth import rbac_sync
@@ -232,9 +226,7 @@ def project_access_binding_create(project_id):
         if not (cur.fetchone() or {}).get("ok"):
             flash("Only project admins can manage role bindings", "error")
             return redirect(dest)
-        cur.execute(
-            "SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),)
-        )
+        cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
         proj = cur.fetchone()
         if not proj:
             flash("Project not found", "error")
@@ -340,9 +332,7 @@ def project_access_binding_delete(project_id, binding_id):
         if not (cur.fetchone() or {}).get("ok"):
             flash("Only project admins can manage role bindings", "error")
             return redirect(dest)
-        cur.execute(
-            "SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),)
-        )
+        cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
         proj = cur.fetchone()
         try:
             cur.execute(

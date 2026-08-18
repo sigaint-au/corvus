@@ -88,9 +88,7 @@ def ensure_not_last_team_owner(
     if new_role == "team-owner":
         return
     if count_team_owner_bindings(cur, team_id) <= 1:
-        raise ValueError(
-            "cannot remove the last team owner; transfer ownership first"
-        )
+        raise ValueError("cannot remove the last team owner; transfer ownership first")
 
 
 def group_team_roles_map(cur, team_id) -> dict[str, str]:
@@ -161,9 +159,7 @@ def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, cr
     )
 
 
-def sync_group_project_binding(
-    cur, *, group_id, project_id, role: str | None, created_by=None
-):
+def sync_group_project_binding(cur, *, group_id, project_id, role: str | None, created_by=None):
     """Upsert or clear a Group→project RBAC binding. ``role`` is an rbac name.
 
     Args:
@@ -257,9 +253,7 @@ def sync_user_team_binding(
     )
 
 
-def sync_user_project_binding(
-    cur, *, user_id, project_id, role: str | None, created_by=None
-):
+def sync_user_project_binding(cur, *, user_id, project_id, role: str | None, created_by=None):
     """Upsert User→project binding. ``role`` is an rbac role name or None.
 
     Args:

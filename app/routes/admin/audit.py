@@ -96,9 +96,7 @@ def admin_audit():
     until = (request.args.get("until") or "").strip()
     role_actions = (request.args.get("role_actions") or "roles").strip().lower()
     active_actions = (
-        audit.ENC_CHANGE_ACTIONS
-        if role_actions == "encryption"
-        else audit.ROLE_CHANGE_ACTIONS
+        audit.ENC_CHANGE_ACTIONS if role_actions == "encryption" else audit.ROLE_CHANGE_ACTIONS
     )
 
     with db.connect_admin() as conn, conn.cursor() as cur:

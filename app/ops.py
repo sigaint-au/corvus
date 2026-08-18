@@ -1,4 +1,5 @@
 """Operational jobs: due notifications and directory deprovisioning."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -203,7 +204,12 @@ def sync_directory(
         )
         stale = cur.fetchall() or []
         if dry_run or not stale:
-            return {"source": ",".join(sources), "disabled": len(stale), "revoked_sessions": 0, "revoked_tokens": 0}
+            return {
+                "source": ",".join(sources),
+                "disabled": len(stale),
+                "revoked_sessions": 0,
+                "revoked_tokens": 0,
+            }
         ids = [str(r["id"]) for r in stale]
         cur.execute(
             "UPDATE private.users SET disabled_at = now() WHERE id = ANY(%s::uuid[])",

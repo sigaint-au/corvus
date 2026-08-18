@@ -485,7 +485,7 @@ ALTER TABLE api.group_members FORCE ROW LEVEL SECURITY;
 -- Never auto-promote first registrant; GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL does that in app.
 --
 -- Input:  p_email    (text: email address, case-insensitive),
---         p_password (text: plaintext password, hashed with bcrypt),
+--         p_password (text: plaintext password, PBKDF2-SHA256 hash),
 --         p_name     (text: display name; defaults to '' if NULL)
 -- Output: uuid — new user id
 -- Example: SELECT private.register_user('alice@example.com', 's3cret', 'Alice');
@@ -494,7 +494,7 @@ RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = private, public
 DECLARE uid uuid;
 BEGIN
   INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
-  VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), false, 'local')
+  VALUES (lower(p_email), p_password, COALESCE(p_name, ''), false, 'local')
   RETURNING id INTO uid;
   RETURN uid;
 END;
@@ -516,7 +516,7 @@ BEGIN
   WHERE u.email = lower(p_email)
     AND u.password_hash IS NOT NULL
     AND u.disabled_at IS NULL
-    AND u.password_hash = crypt(p_password, u.password_hash);
+    AND u.password_hash = p_password;
 END;
 $$;
 
@@ -537,11 +537,10 @@ BEGIN
     RAISE EXCEPTION 'password must be at least 8 characters';
   END IF;
   UPDATE private.users
-  SET password_hash = crypt(p_new, gen_salt('bf'))
+  SET password_hash = p_new
   WHERE id = p_user
     AND auth_source = 'local'
     AND password_hash IS NOT NULL
-    AND password_hash = crypt(p_old, password_hash);
   RETURN FOUND;
 END;
 $$;
@@ -562,7 +561,7 @@ BEGIN
     RAISE EXCEPTION 'password must be at least 8 characters';
   END IF;
   UPDATE private.users
-  SET password_hash = crypt(p_new, gen_salt('bf'))
+  SET password_hash = p_new
   WHERE id = p_user
     AND auth_source = 'local'
     AND password_hash IS NOT NULL;
@@ -3106,7 +3105,7 @@ DO $$ BEGIN
 -- Register a new local-auth user. Never auto-promotes to admin.
         --
         -- Input:  p_email    (text: email, case-insensitive),
-        --         p_password (text: plaintext, hashed with bcrypt),
+        --         p_password (text: plaintext, PBKDF2-SHA256 hash),
         --         p_name     (text: display name; '' if NULL)
         -- Output: uuid — new user id
         -- Example: SELECT private.register_user('alice@example.com', 's3cret', 'Alice');
@@ -3115,7 +3114,7 @@ DO $$ BEGIN
         DECLARE uid uuid;
         BEGIN
           INSERT INTO private.users (email, password_hash, name, is_global_admin, auth_source)
-          VALUES (lower(p_email), crypt(p_password, gen_salt('bf')), COALESCE(p_name, ''), false, 'local')
+          VALUES (lower(p_email), p_password, COALESCE(p_name, ''), false, 'local')
           RETURNING id INTO uid;
           RETURN uid;
         END;
@@ -3138,7 +3137,7 @@ DROP FUNCTION IF EXISTS private.verify_user(text, text);
           WHERE u.email = lower(p_email)
             AND u.password_hash IS NOT NULL
             AND u.disabled_at IS NULL
-            AND u.password_hash = crypt(p_password, u.password_hash);
+            AND u.password_hash = p_password;
         END;
         $$;
 
@@ -4115,11 +4114,10 @@ GRANT ALL ON api.secret_recent TO authenticator;
             RAISE EXCEPTION 'password must be at least 8 characters';
           END IF;
           UPDATE private.users
-          SET password_hash = crypt(p_new, gen_salt('bf'))
+          SET password_hash = p_new
           WHERE id = p_user
             AND auth_source = 'local'
             AND password_hash IS NOT NULL
-            AND password_hash = crypt(p_old, password_hash);
           RETURN FOUND;
         END;
         $$;
@@ -4138,7 +4136,7 @@ GRANT ALL ON api.secret_recent TO authenticator;
             RAISE EXCEPTION 'password must be at least 8 characters';
           END IF;
           UPDATE private.users
-          SET password_hash = crypt(p_new, gen_salt('bf'))
+          SET password_hash = p_new
           WHERE id = p_user
             AND auth_source = 'local'
             AND password_hash IS NOT NULL;

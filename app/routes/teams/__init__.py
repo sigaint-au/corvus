@@ -50,7 +50,9 @@ def register(app):
     app.post("/teams")(create_team)
     app.get("/teams/<uuid:team_id>")(team_detail)
     app.post("/teams/<uuid:team_id>/access/bindings")(team_access_binding_create)
-    app.post("/teams/<uuid:team_id>/access/bindings/<uuid:binding_id>/delete")(team_access_binding_delete)
+    app.post("/teams/<uuid:team_id>/access/bindings/<uuid:binding_id>/delete")(
+        team_access_binding_delete
+    )
     app.post("/teams/<uuid:team_id>/members")(add_team_binding)
     app.post("/teams/<uuid:team_id>/members/<uuid:user_id>/remove")(remove_team_binding)
     app.post("/teams/<uuid:team_id>/transfer")(transfer_team_ownership)
@@ -73,6 +75,6 @@ def register(app):
     app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>")(update_team_group)
     app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>/delete")(delete_team_group)
     app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>/members")(add_group_member)
-    app.post(
-        "/teams/<uuid:team_id>/groups/<uuid:group_id>/members/<uuid:user_id>/remove"
-    )(remove_group_member)
+    app.post("/teams/<uuid:team_id>/groups/<uuid:group_id>/members/<uuid:user_id>/remove")(
+        remove_group_member
+    )

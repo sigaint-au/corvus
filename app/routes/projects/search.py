@@ -58,9 +58,7 @@ def global_search():
                 teams_total = int((cur.fetchone() or {}).get("n") or 0)
                 if scope == "teams":
                     search_pager = paging.page_window(teams_total, page)
-                    search_pager.update(
-                        endpoint="global_search", q=q, scope="teams"
-                    )
+                    search_pager.update(endpoint="global_search", q=q, scope="teams")
                     cur.execute(
                         """
                         SELECT id, name FROM api.teams
@@ -94,9 +92,7 @@ def global_search():
                 projects_total = int((cur.fetchone() or {}).get("n") or 0)
                 if scope == "projects":
                     search_pager = paging.page_window(projects_total, page)
-                    search_pager.update(
-                        endpoint="global_search", q=q, scope="projects"
-                    )
+                    search_pager.update(endpoint="global_search", q=q, scope="projects")
                     cur.execute(
                         """
                         SELECT p.id, p.name, p.description,
@@ -141,9 +137,7 @@ def global_search():
                     sec_where += " AND s.kind = %s"
                     sec_params.append(kind)
                 if due == "overdue":
-                    sec_where += (
-                        " AND s.expires_at IS NOT NULL AND s.expires_at < now()"
-                    )
+                    sec_where += " AND s.expires_at IS NOT NULL AND s.expires_at < now()"
                 elif due == "soon":
                     sec_where += """
                       AND s.expires_at IS NOT NULL

@@ -12,7 +12,7 @@ from flask import (
     url_for,
 )
 
-from auth import authz, totp_svc
+from auth import authz, passwords, totp_svc
 from core import db, settings_svc
 
 from .helpers import (
@@ -49,7 +49,7 @@ def register_page():
             with db.connect(autocommit=True) as conn, conn.cursor() as cur:
                 cur.execute(
                     "SELECT private.register_user(%s, %s, %s) AS id",
-                    (email, password, name),
+                    (email, passwords.hash_password(password), name),
                 )
                 uid = cur.fetchone()["id"]
         except psycopg.errors.UniqueViolation:

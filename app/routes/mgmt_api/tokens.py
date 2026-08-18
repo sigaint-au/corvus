@@ -126,9 +126,7 @@ def mgmt_create_token(project_ref):
     out = _row(row) or {}
     out["ok"] = True
     out["token"] = raw  # shown once
-    out["scope"] = [
-        {"secret_key": v} if k == "key" else {"key_pattern": v} for k, v in scopes
-    ]
+    out["scope"] = [{"secret_key": v} if k == "key" else {"key_pattern": v} for k, v in scopes]
     return jsonify(out), 201
 
 

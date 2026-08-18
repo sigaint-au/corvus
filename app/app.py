@@ -4,10 +4,13 @@ Application factory pattern: ``create_app()`` builds and configures the Flask
 app. The module-level ``app`` instance is kept for backward compatibility
 with ``gunicorn app:app`` and ``import app as store`` in tests.
 """
+
+import hashlib
 import logging
 import os
 
 from flask import Flask, jsonify, render_template, request
+from flask.sessions import SecureCookieSessionInterface
 
 from auth import authz
 from core import config, db
@@ -18,6 +21,15 @@ from ui.nav import inject_nav
 log = logging.getLogger(__name__)
 
 config.refuse_insecure_defaults()
+
+
+class _FipsSessionInterface(SecureCookieSessionInterface):
+    """Flask cookie-session signer using HMAC-SHA256 instead of the SHA-1 default.
+
+    FIPS-friendly: SHA-1 is excluded from approved HMAC algorithms.
+    """
+
+    digest_method = staticmethod(hashlib.sha256)
 
 
 # User-facing messages for HTTP errors rendered as WebUI pages.
@@ -91,6 +103,7 @@ def create_app():
     """
     app = Flask(__name__)
     app.secret_key = config.SECRET_KEY
+    app.session_interface = _FipsSessionInterface()
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -171,9 +184,7 @@ def create_app():
             "frame-ancestors 'none'"
         )
         if config.session_cookie_secure():
-            resp.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
-            )
+            resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return resp
 
     return app

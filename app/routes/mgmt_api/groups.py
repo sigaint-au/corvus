@@ -28,7 +28,7 @@ def _find_group(cur, team_id, ref):
         """,
         (team_id, ref, ref),
     )
-    rows = (cur.fetchall() or [])
+    rows = cur.fetchall() or []
     return rows[0] if len(rows) == 1 else None
 
 
@@ -85,9 +85,7 @@ def mgmt_create_group(team_ref):
         g = cur.fetchone()
         if not g:
             return jsonify({"error": "forbidden"}), 403
-        audit.log_org(
-            cur, team_id=tid, action="group_add", detail=f"{name} ({source})"
-        )
+        audit.log_org(cur, team_id=tid, action="group_add", detail=f"{name} ({source})")
         conn.commit()
     return jsonify({"ok": True, "id": str(g["id"]), "name": name, "source": source})
 
@@ -104,9 +102,7 @@ def mgmt_delete_group(team_ref, group_ref):
         g = _find_group(cur, tid, group_ref)
         if not g:
             return jsonify({"error": "not found"}), 404
-        cur.execute(
-            "DELETE FROM api.groups WHERE id = %s::uuid", (str(g["id"]),)
-        )
+        cur.execute("DELETE FROM api.groups WHERE id = %s::uuid", (str(g["id"]),))
         if cur.rowcount == 0:
             return jsonify({"error": "forbidden"}), 403
         audit.log_org(cur, team_id=tid, action="group_delete", detail=g["name"])

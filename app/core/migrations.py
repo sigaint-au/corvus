@@ -117,9 +117,7 @@ def _ensure_table(cur) -> None:
         )
         """
     )
-    cur.execute(
-        f"REVOKE ALL ON {_MIGRATIONS_TABLE} FROM authenticator, authenticated, anon"
-    )
+    cur.execute(f"REVOKE ALL ON {_MIGRATIONS_TABLE} FROM authenticator, authenticated, anon")
 
 
 def _applied_checksums(cur) -> dict[str, str]:
@@ -130,9 +128,7 @@ def _applied_checksums(cur) -> dict[str, str]:
 
 def _squashed_baseline_exists(cur) -> bool:
     """Return True when the current fresh-install baseline is present."""
-    cur.execute(
-        "SELECT to_regclass('private.squashed_baseline_marker') IS NOT NULL AS ok"
-    )
+    cur.execute("SELECT to_regclass('private.squashed_baseline_marker') IS NOT NULL AS ok")
     return bool((cur.fetchone() or {}).get("ok"))
 
 

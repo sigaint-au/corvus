@@ -115,9 +115,7 @@ def list_org_audit(
         >>> "when_display" in rows[0]
         True
     """
-    where, params = _org_audit_where(
-        actions=actions, q=q, actor=actor, since=since, until=until
-    )
+    where, params = _org_audit_where(actions=actions, q=q, actor=actor, since=since, until=until)
     cur.execute(
         f"""
         SELECT a.id, a.team_id, a.project_id, a.action, a.detail,
@@ -165,9 +163,7 @@ def count_org_audit(
         >>> isinstance(n, int)
         True
     """
-    where, params = _org_audit_where(
-        actions=actions, q=q, actor=actor, since=since, until=until
-    )
+    where, params = _org_audit_where(actions=actions, q=q, actor=actor, since=since, until=until)
     cur.execute(
         f"""
         SELECT count(*) AS n

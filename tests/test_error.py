@@ -1,4 +1,5 @@
 """Unit tests for the minimal WebUI error pages (pytest, mocked DB)."""
+
 from __future__ import annotations
 
 from uuid import uuid4
@@ -9,7 +10,6 @@ store.app.config["TESTING"] = True
 
 
 class TestErrorPages:
-
     def test_404_renders_minimal_themed_page(self):
         c = store.app.test_client()
         r = c.get("/definitely/not/a/route")

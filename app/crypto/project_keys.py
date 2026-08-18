@@ -206,8 +206,6 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
         >>> n >= 0
         True
     """
-    from cryptography.fernet import Fernet
-
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT key_provider, hsm_slot_id FROM private.project_crypto_keys WHERE project_id = %s",
@@ -255,7 +253,6 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
     old_dek = crypto.project_dek(project_id)
     if old_dek is None:
         raise RuntimeError("project key exists but its DEK could not be resolved")
-    old_fernet = Fernet(old_dek)
 
     new_raw = crypto.generate_project_key()
     new_ref: str | None = None
@@ -271,7 +268,6 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
     else:
         new_enc = crypto.wrap_project_key(new_raw)
         new_ref = None
-    new_fernet = Fernet(new_raw)
 
     re_encrypted = 0
     with db.connect_admin(autocommit=False) as conn, conn.cursor() as cur:
@@ -294,8 +290,8 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
         version_rows = cur.fetchall() or []
         for row in secret_rows:
             try:
-                plaintext = old_fernet.decrypt(row["value_enc"].encode()).decode()
-                new_enc_value = new_fernet.encrypt(plaintext.encode()).decode()
+                plaintext = crypto.decrypt_with_key(old_dek, row["value_enc"])
+                new_enc_value = crypto.encrypt_with_key(new_raw, plaintext)
             except Exception:
                 continue
             cur.execute(
@@ -305,8 +301,8 @@ def migrate_project_key(project_id, new_provider: str = "hsm", target_slot_id=No
             re_encrypted += 1
         for row in version_rows:
             try:
-                plaintext = old_fernet.decrypt(row["value_enc"].encode()).decode()
-                new_enc_value = new_fernet.encrypt(plaintext.encode()).decode()
+                plaintext = crypto.decrypt_with_key(old_dek, row["value_enc"])
+                new_enc_value = crypto.encrypt_with_key(new_raw, plaintext)
             except Exception:
                 continue
             cur.execute(
@@ -346,7 +342,7 @@ def rewrap_project_keys(old_master_key: str) -> int:
         >>> n >= 0
         True
     """
-    old = crypto.fernet_for(old_master_key)
+    old_aes = crypto.master_aes_key(old_master_key)
     re_wrapped = 0
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute("SELECT project_id, key_enc, key_provider FROM private.project_crypto_keys")
@@ -355,7 +351,7 @@ def rewrap_project_keys(old_master_key: str) -> int:
                 # HSM-wrapped DEKs don't depend on MASTER_KEY — nothing to do.
                 continue
             try:
-                raw = old.decrypt(row["key_enc"].encode())
+                raw = crypto.decrypt_with_key(old_aes, row["key_enc"]).encode("latin-1")
             except Exception:
                 # Already wrapped under the new key, or unreadable — leave it.
                 continue

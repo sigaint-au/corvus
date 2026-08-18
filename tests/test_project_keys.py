@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 
+import crypto
 from crypto import project_keys
 
 
@@ -36,7 +37,7 @@ class TestProjectKeys:
         ]
         assert len(insert) == 1
         key_enc = insert[0][1][1]
-        assert key_enc.startswith("gAAAA")  # Fernet-wrapped by MASTER_KEY
+        assert key_enc.startswith("gcm$")  # AES-GCM-wrapped by MASTER_KEY
 
     def test_ensure_project_key_idempotent(self):
         pid = str(uuid4())
@@ -69,7 +70,9 @@ class TestProjectKeys:
 
         old_master = "old-master-key"
         raw = crypto.generate_project_key()
-        old_wrapped = crypto.fernet_for(old_master).encrypt(raw).decode()
+        old_wrapped = crypto.encrypt_with_key(
+            crypto.master_aes_key(old_master), raw.decode("latin-1")
+        )
         rows = [{"project_id": str(uuid4()), "key_enc": old_wrapped}]
         admin_conn, admin_cur = _conn(fetchone=None, fetchall=rows)
         with patch.object(project_keys.db, "connect_admin", return_value=admin_conn):
@@ -132,14 +135,12 @@ class TestProjectKeys:
         assert not any("hsm-blob" in str(u[1]) for u in updates)
 
     def test_migrate_project_key_to_hsm(self):
-        from cryptography.fernet import Fernet
-
         from crypto import hsm
 
         pid = str(uuid4())
         slot_id = str(uuid4())
-        old_dek = Fernet.generate_key()
-        new_dek = Fernet.generate_key()
+        old_dek = crypto.generate_project_key()
+        new_dek = crypto.generate_project_key()
         admin_conn, admin_cur = _conn(fetchone={"key_provider": "local"}, fetchall=[])
         slot_url = "pkcs11:token=t;object=k?module-path=/m.so&pin-value=x"
         with (
@@ -167,11 +168,9 @@ class TestProjectKeys:
         assert str(params[3]) == slot_id
 
     def test_migrate_project_key_to_local(self):
-        from cryptography.fernet import Fernet
-
         pid = str(uuid4())
-        old_dek = Fernet.generate_key()
-        new_dek = Fernet.generate_key()
+        old_dek = crypto.generate_project_key()
+        new_dek = crypto.generate_project_key()
         admin_conn, admin_cur = _conn(fetchone={"key_provider": "hsm"}, fetchall=[])
         with (
             patch.object(project_keys.db, "connect_admin", return_value=admin_conn),

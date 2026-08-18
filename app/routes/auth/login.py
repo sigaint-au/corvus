@@ -54,7 +54,10 @@ def login():
         user = None
         # 1) Local password accounts (break-glass / non-LDAP users)
         with db.connect() as conn, conn.cursor() as cur:
-            cur.execute("SELECT * FROM private.verify_user(%s, %s)", (email, password))
+            cur.execute(
+                "SELECT * FROM private.verify_user(%s, %s)",
+                (email, passwords.hash_password(password)),
+            )
             user = cur.fetchone()
         # 2) LDAP when enabled and local auth failed
         if not user and ldap_on:
@@ -103,9 +106,7 @@ def login_oidc():
         session["oidc_nonce"] = nonce
         redirect_uri = oidc_auth.redirect_uri_for_request(request.url_root)
         session["oidc_redirect_uri"] = redirect_uri
-        url = oidc_auth.build_authorize_url(
-            redirect_uri=redirect_uri, state=state, nonce=nonce
-        )
+        url = oidc_auth.build_authorize_url(redirect_uri=redirect_uri, state=state, nonce=nonce)
         return redirect(url)
     except Exception:
         log.exception("OIDC start failed")
@@ -150,9 +151,7 @@ def login_oidc_callback():
             raise RuntimeError("token response missing id_token")
         claims = oidc_auth.verify_id_token(id_token, nonce=nonce)
         ident = oidc_auth.claims_to_identity(claims)
-        user = oidc_auth.sync_oidc_user(
-            ident["email"], ident["name"], ident.get("groups") or []
-        )
+        user = oidc_auth.sync_oidc_user(ident["email"], ident["name"], ident.get("groups") or [])
     except Exception:
         log.exception("OIDC callback failed")
         flash("SSO sign-in failed. Try again.", "error")
@@ -209,9 +208,7 @@ def login_2fa():
             try:
                 ua, ip = user_sessions.client_meta()
                 when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                mailer.send_login_alert(
-                    email, ip=ip, user_agent=ua, when=when
-                )
+                mailer.send_login_alert(email, ip=ip, user_agent=ua, when=when)
             except Exception:
                 log.exception("login alert email failed")
         return _finish_login_redirect()
@@ -253,9 +250,7 @@ def forgot_password():
                     mailed = True
                     log.info("password reset email sent for %s", email.lower())
                 else:
-                    log.warning(
-                        "password reset email failed for %s: %s", email.lower(), err
-                    )
+                    log.warning("password reset email failed for %s: %s", email.lower(), err)
             else:
                 log.info(
                     "password reset token created for local user %s (SMTP not configured)",

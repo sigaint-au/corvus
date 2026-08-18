@@ -54,9 +54,7 @@ def smtp_password_plain(cfg: dict) -> str:
     try:
         return decrypt(enc)
     except Exception:
-        log.exception(
-            "failed to decrypt smtp_password; refusing ciphertext as SMTP password"
-        )
+        log.exception("failed to decrypt smtp_password; refusing ciphertext as SMTP password")
         return ""
 
 
@@ -195,9 +193,7 @@ def send_email(
     try:
         if encryption == "ssl":
             context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(
-                host, port, timeout=SMTP_TIMEOUT, context=context
-            ) as smtp:
+            with smtplib.SMTP_SSL(host, port, timeout=SMTP_TIMEOUT, context=context) as smtp:
                 if username:
                     smtp.login(username, password)
                 smtp.send_message(msg)

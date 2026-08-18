@@ -14,6 +14,28 @@ from psycopg.rows import dict_row
 
 from core.config import DATABASE_ADMIN_URL, DATABASE_URL, JWT_SECRET
 
+
+def _tls_dsn(dsn: str) -> str:
+    """Return the DSN with ``sslmode`` forced to ``require`` in FIPS mode.
+
+    When ``FIPS_REQUIRED=1`` an explicit transport-encryption requirement is
+    added (unless the DSN already pins ``sslmode``). Outside FIPS mode the DSN
+    is returned unchanged so local/compose setups without DB TLS keep working.
+    """
+    from core.config import FIPS_REQUIRED
+
+    if not dsn or not FIPS_REQUIRED:
+        return dsn
+    try:
+        params = psycopg.conninfo.conninfo_to_dict(dsn)
+    except psycopg.Error:
+        return dsn
+    if not params.get("sslmode"):
+        sep = "&" if "?" in dsn else "?"
+        return f"{dsn}{sep}sslmode=require"
+    return dsn
+
+
 # ── Connection pools (admin only; user connections stay direct) ──────────
 _admin_pool = None
 _admin_pool_opened = False
@@ -23,7 +45,7 @@ try:
 
     if DATABASE_ADMIN_URL:
         _admin_pool = ConnectionPool(
-            DATABASE_ADMIN_URL,
+            _tls_dsn(DATABASE_ADMIN_URL),
             min_size=1,
             max_size=5,
             kwargs={"row_factory": dict_row},
@@ -74,7 +96,7 @@ def connect(autocommit=False):
         ...     cur.fetchone()
         {'n': 1}
     """
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=autocommit)
+    return psycopg.connect(_tls_dsn(DATABASE_URL), row_factory=dict_row, autocommit=autocommit)
 
 
 def connect_admin(autocommit=True):
@@ -101,7 +123,9 @@ def connect_admin(autocommit=True):
         conn = pool.connection()
         conn.autocommit = autocommit
         return conn
-    return psycopg.connect(DATABASE_ADMIN_URL, row_factory=dict_row, autocommit=autocommit)
+    return psycopg.connect(
+        _tls_dsn(DATABASE_ADMIN_URL), row_factory=dict_row, autocommit=autocommit
+    )
 
 
 def as_user(user_id: str):

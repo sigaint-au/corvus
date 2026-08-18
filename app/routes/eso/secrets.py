@@ -109,17 +109,13 @@ def eso_get_secret(project_ref, key):
                 jsonify(
                     {
                         "error": "forbidden",
-                        "message": (
-                            "You do not have permission to reveal this secret"
-                        ),
+                        "message": ("You do not have permission to reveal this secret"),
                         "key": row["key"],
                     }
                 ),
                 403,
             )
-        cur.execute(
-            "SELECT api.can_reveal_secret(%s) AS ok", (str(row["id"]),)
-        )
+        cur.execute("SELECT api.can_reveal_secret(%s) AS ok", (str(row["id"]),))
         if not (cur.fetchone() or {}).get("ok"):
             cur.execute(
                 """
@@ -137,8 +133,7 @@ def eso_get_secret(project_ref, key):
                         "message": (
                             "Access request pending approval"
                             if pending
-                            else "Reveal requires approval; "
-                            "request access first"
+                            else "Reveal requires approval; request access first"
                         ),
                         "key": row["key"],
                         "pending": bool(pending),
@@ -151,9 +146,7 @@ def eso_get_secret(project_ref, key):
                 "SELECT * FROM private.secret_meta_rows(%s::uuid)",
                 (str(row["id"]),),
             )
-            row["metadata"] = {
-                m["key"]: m["value"] for m in (cur.fetchall() or [])
-            }
+            row["metadata"] = {m["key"]: m["value"] for m in (cur.fetchall() or [])}
         except Exception:
             row["metadata"] = {}
         try:

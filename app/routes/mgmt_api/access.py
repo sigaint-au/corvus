@@ -66,9 +66,7 @@ def mgmt_update_secret_access(project_ref, key):
             action="updated",
         )
         conn.commit()
-    return jsonify(
-        {"ok": True, "key": key, "access_mode": mode, "requires_approval": req_appr}
-    )
+    return jsonify({"ok": True, "key": key, "access_mode": mode, "requires_approval": req_appr})
 
 
 def mgmt_add_secret_binding(project_ref, key):
@@ -120,9 +118,7 @@ def mgmt_add_secret_binding(project_ref, key):
             if subject_kind == "User":
                 subject_id = lookup_user_id(cur, subject)
                 if not subject_id:
-                    return jsonify(
-                        {"error": "user not found — they must register first"}
-                    ), 400
+                    return jsonify({"error": "user not found — they must register first"}), 400
                 who = subject
                 cur.execute(
                     """SELECT api.can('list','secrets','team',%s::uuid,%s::uuid) AS m""",

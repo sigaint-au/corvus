@@ -224,9 +224,7 @@ def remove_team_binding(team_id, user_id):
             if not row:
                 flash("Member not found", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
-            rbac_sync.sync_user_team_binding(
-                cur, user_id=user_id, team_id=team_id, role=None
-            )
+            rbac_sync.sync_user_team_binding(cur, user_id=user_id, team_id=team_id, role=None)
             audit.log_org(
                 cur,
                 team_id=team_id,

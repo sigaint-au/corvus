@@ -1,4 +1,5 @@
 """Pagination, team secrets filters, and machine token scope helpers."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -128,7 +129,10 @@ def test_create_token_persists_scopes(client):
         s["user_id"] = uid
         s["email"] = "u@ex.com"
 
-    with patch.object(db, "as_user", return_value=conn), patch.object(settings_svc, "token_expiry_policy", return_value=(False, 3650)):
+    with (
+        patch.object(db, "as_user", return_value=conn),
+        patch.object(settings_svc, "token_expiry_policy", return_value=(False, 3650)),
+    ):
         r = client.post(
             f"/projects/{pid}/tokens",
             data={
@@ -140,9 +144,7 @@ def test_create_token_persists_scopes(client):
             follow_redirects=False,
         )
     assert r.status_code == 302
-    insert_sqls = [
-        str(c.args[0]) for c in cur.execute.call_args_list if c.args
-    ]
+    insert_sqls = [str(c.args[0]) for c in cur.execute.call_args_list if c.args]
     assert any("INSERT INTO api.machine_tokens" in s for s in insert_sqls)
     assert any("machine_token_scope" in s and "secret_key" in s for s in insert_sqls)
     assert any("machine_token_scope" in s and "key_pattern" in s for s in insert_sqls)
@@ -191,15 +193,11 @@ def test_redirect_after_team_switch_from_other_project(app):
     with app.test_request_context("/"):
         with patch.object(nav, "_project_team_id", return_value="other-team"):
             assert (
-                nav.redirect_after_team_switch(
-                    f"/projects/{pid}?tab=secrets", "new-team"
-                )
+                nav.redirect_after_team_switch(f"/projects/{pid}?tab=secrets", "new-team")
                 == "/secrets"
             )
             assert (
-                nav.redirect_after_team_switch(
-                    f"/projects/{pid}?tab=settings", "new-team"
-                )
+                nav.redirect_after_team_switch(f"/projects/{pid}?tab=settings", "new-team")
                 == "/projects"
             )
         assert nav.redirect_after_team_switch("/secrets", "new-team") == "/secrets"

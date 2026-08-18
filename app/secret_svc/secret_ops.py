@@ -383,7 +383,6 @@ def _parse_requires_approval(form_or_value) -> bool | None:
     return None
 
 
-
 def _parse_access_mode(form_or_value) -> str:
     """Parse the secret access mode; default to inherited project access.
 

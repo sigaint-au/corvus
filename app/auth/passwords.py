@@ -1,8 +1,18 @@
-"""Local-account password change and reset helpers."""
+"""Local-account password hashing, change, and reset helpers.
+
+FIPS: passwords are hashed with PBKDF2-HMAC-SHA256 (``hashlib.pbkdf2_hmac``)
+rather than bcrypt. Encoded hash format::
+
+    pbkdf2$sha256$<iterations>$<salt_b64>$<digest_b64>
+"""
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import logging
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -13,6 +23,43 @@ log = logging.getLogger(__name__)
 
 MIN_PASSWORD_LEN = 8
 RESET_TOKEN_HOURS = 1
+PBKDF2_ITERATIONS = 600_000  # NIST 800-63B / OWASP recommended for PBKDF2-SHA256
+_HASH_PREFIX = "pbkdf2$sha256$"
+
+
+def hash_password(password: str) -> str:
+    """Hash a plaintext password with PBKDF2-HMAC-SHA256 (self-included salt).
+
+    Args:
+        password: Plaintext password.
+
+    Returns:
+        Encoded ``pbkdf2$sha256$<iterations>$<salt>$<digest>`` string.
+    """
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", (password or "").encode("utf-8"), salt, PBKDF2_ITERATIONS)
+    return (
+        f"{_HASH_PREFIX}{PBKDF2_ITERATIONS}$"
+        f"{base64.b64encode(salt).decode()}$"
+        f"{base64.b64encode(dk).decode()}"
+    )
+
+
+def verify_password(password: str, encoded: str) -> bool:
+    """Verify a password against an encoded PBKDF2-SHA256 hash (constant-time).
+
+    Returns False for malformed/foreign hash formats (e.g. legacy bcrypt rows).
+    """
+    try:
+        scheme, algo, iterations, salt_b64, digest_b64 = (encoded or "").split("$", 4)
+        if (scheme, algo) != ("pbkdf2", "sha256"):
+            return False
+        salt = base64.b64decode(salt_b64)
+        expected = base64.b64decode(digest_b64)
+    except (ValueError, TypeError):
+        return False
+    got = hashlib.pbkdf2_hmac("sha256", (password or "").encode("utf-8"), salt, int(iterations))
+    return hmac.compare_digest(got, expected)
 
 
 def change_password(user_id: str, old_password: str, new_password: str) -> tuple[bool, str]:
@@ -36,11 +83,22 @@ def change_password(user_id: str, old_password: str, new_password: str) -> tuple
         return False, f"Password must be at least {MIN_PASSWORD_LEN} characters"
     if not old_password:
         return False, "Current password is required"
+    new_hash = hash_password(new_password)
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
+                "SELECT password_hash FROM private.users "
+                "WHERE id = %s::uuid AND auth_source = 'local'",
+                (str(user_id),),
+            )
+            row = cur.fetchone()
+            if not row or not row.get("password_hash"):
+                return False, "Current password is incorrect or account is not local"
+            if not verify_password(old_password, row["password_hash"]):
+                return False, "Current password is incorrect"
+            cur.execute(
                 "SELECT private.change_password(%s::uuid, %s, %s) AS ok",
-                (user_id, old_password, new_password),
+                (user_id, old_password, new_hash),
             )
             row = cur.fetchone()
             if row and row.get("ok"):
@@ -217,7 +275,7 @@ def consume_reset_token(token: str, new_password: str) -> tuple[bool, str]:
                 return False, "Invalid or expired reset link"
             cur.execute(
                 "SELECT private.set_local_password(%s::uuid, %s) AS ok",
-                (str(row["user_id"]), new_password),
+                (str(row["user_id"]), hash_password(new_password)),
             )
             ok = (cur.fetchone() or {}).get("ok")
             if not ok:

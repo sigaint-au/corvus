@@ -11,7 +11,7 @@ All environment variables and server settings for Sigaint Secret Server.
 | Variable | Purpose | Example |
 |----------|---------|---------|
 | `JWT_SECRET` | Flask ↔ PostgREST JWT signing (HS256) | 64 hex chars |
-| `MASTER_KEY` | Fernet key for secret values | 64 hex chars |
+| `MASTER_KEY` | HKDF-SHA256 → AES-256-GCM key for secret values | 64 hex chars |
 | `SECRET_KEY` | Flask session cookie (+ TOTP recovery HMAC) | 64 hex chars |
 | `DATABASE_URL` | App role (`authenticator`); RLS applies | `postgres://authenticator:…@db:5432/secretserver` |
 | `DATABASE_ADMIN_URL` | Superuser DSN for schema upgrades (**required**) | `postgres://postgres:…@db:5432/secretserver` |
@@ -28,6 +28,7 @@ All environment variables and server settings for Sigaint Secret Server.
 | `ALLOW_INSECURE_DEFAULTS` | `0` | `1` only for local dev defaults |
 | `COOKIE_SECURE` | on in production | `0` disables; off when `FLASK_ENV=development` or `ALLOW_INSECURE_DEFAULTS` |
 | `MAX_CONTENT_LENGTH` | `1 MiB` | Request/import size cap (memory DoS guard) |
+| `FIPS_REQUIRED` | off | Fail closed unless the OpenSSL backend reports FIPS mode; forces `sslmode=require` on DB connections |
 
 > `DATABASE_ADMIN_URL` is **required** — the app uses it for idempotent schema
 > upgrades (`app/core/schema.py`). Compose sets it for you.

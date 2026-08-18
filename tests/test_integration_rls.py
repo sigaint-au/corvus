@@ -27,6 +27,7 @@ Running::
 The fixture applies all migrations from ``db/migrations/`` once per session
 and tears down (drops the schema) on exit.
 """
+
 from __future__ import annotations
 
 import os
@@ -88,7 +89,10 @@ def _as_user(conn, user_id: str, role: str = "authenticated"):
     c = psycopg.connect(_INTEGRATION_DSN, autocommit=False)
     with c.cursor() as cur:
         cur.execute("SET ROLE %s", (role,))
-        cur.execute("SELECT set_config('request.jwt.claims', %s, false)", (json.dumps({"sub": str(user_id), "role": role}),))
+        cur.execute(
+            "SELECT set_config('request.jwt.claims', %s, false)",
+            (json.dumps({"sub": str(user_id), "role": role}),),
+        )
     return c
 
 

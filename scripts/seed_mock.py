@@ -14,6 +14,7 @@ custom roles with rules, restricted (access_mode) secrets, reveal approval,
 machine tokens with key allow-lists, and ServiceAccount subjects (visible in
 Access review, Effective access, and My access).
 """
+
 from __future__ import annotations
 
 import os
@@ -25,6 +26,7 @@ sys.path.insert(0, "/app")
 os.chdir("/app")
 
 import crypto  # noqa: E402
+from auth import passwords  # noqa: E402
 from core import db  # noqa: E402
 
 PASSWORD = "password"
@@ -81,23 +83,93 @@ PROJECTS = [
 
 SECRETS = [
     # project (team/name), key, value, note, kind
-    ("Platform", "demo-api", "DATABASE_URL", "postgres://demo:s3cret@db:5432/demo", "primary app DB", "database"),
+    (
+        "Platform",
+        "demo-api",
+        "DATABASE_URL",
+        "postgres://demo:s3cret@db:5432/demo",
+        "primary app DB",
+        "database",
+    ),
     ("Platform", "demo-api", "API_KEY", "demo-api-key-001", "public API key", "plain"),
-    ("Platform", "demo-api", "STRIPE_WEBHOOK_SECRET", "whsec_mock_stripe_001", "stripe webhook", "plain"),
+    (
+        "Platform",
+        "demo-api",
+        "STRIPE_WEBHOOK_SECRET",
+        "whsec_mock_stripe_001",
+        "stripe webhook",
+        "plain",
+    ),
     ("Platform", "demo-api", "REDIS_URL", "redis://redis:6379/0", "cache", "plain"),
-    ("Platform", "infra-core", "SSH_DEPLOY_KEY", "-----BEGIN OPENSSH PRIVATE KEY-----\nMOCKKEY\n-----END OPENSSH PRIVATE KEY-----", "deploy key", "ssh"),
-    ("Platform", "infra-core", "TLS_CERT", "-----BEGIN CERTIFICATE-----\nMOCKCERT\n-----END CERTIFICATE-----", "edge cert", "certificate"),
+    (
+        "Platform",
+        "infra-core",
+        "SSH_DEPLOY_KEY",
+        "-----BEGIN OPENSSH PRIVATE KEY-----\nMOCKKEY\n-----END OPENSSH PRIVATE KEY-----",
+        "deploy key",
+        "ssh",
+    ),
+    (
+        "Platform",
+        "infra-core",
+        "TLS_CERT",
+        "-----BEGIN CERTIFICATE-----\nMOCKCERT\n-----END CERTIFICATE-----",
+        "edge cert",
+        "certificate",
+    ),
     ("Platform", "infra-core", "AWS_ACCESS_KEY_ID", "AKIAMOCKPLATFORM", "AWS key id", "plain"),
-    ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", "awsSecretMockPlatform001", "AWS secret", "plain"),
-    ("Payments", "billing-api", "DATABASE_URL", "postgres://bill:pay@db:5432/billing", "billing DB", "database"),
-    ("Payments", "billing-api", "PAYMENT_GATEWAY_KEY", "pk_test_mock_payments", "gateway public", "plain"),
-    ("Payments", "billing-api", "PAYMENT_GATEWAY_SECRET", "sk_test_mock_payments_secret", "gateway secret", "plain"),
-    ("Payments", "ledger", "DATABASE_URL", "postgres://ledger:led@db:5432/ledger", "ledger DB", "database"),
+    (
+        "Platform",
+        "infra-core",
+        "AWS_SECRET_ACCESS_KEY",
+        "awsSecretMockPlatform001",
+        "AWS secret",
+        "plain",
+    ),
+    (
+        "Payments",
+        "billing-api",
+        "DATABASE_URL",
+        "postgres://bill:pay@db:5432/billing",
+        "billing DB",
+        "database",
+    ),
+    (
+        "Payments",
+        "billing-api",
+        "PAYMENT_GATEWAY_KEY",
+        "pk_test_mock_payments",
+        "gateway public",
+        "plain",
+    ),
+    (
+        "Payments",
+        "billing-api",
+        "PAYMENT_GATEWAY_SECRET",
+        "sk_test_mock_payments_secret",
+        "gateway secret",
+        "plain",
+    ),
+    (
+        "Payments",
+        "ledger",
+        "DATABASE_URL",
+        "postgres://ledger:led@db:5432/ledger",
+        "ledger DB",
+        "database",
+    ),
     ("Payments", "ledger", "KV_CONFIG", "FOO=bar\nBAZ=qux\n", "sample kv", "kv"),
     ("Mobile", "ios-app", "APNS_KEY", "apns-mock-key-ios", "Apple push", "plain"),
     ("Mobile", "ios-app", "SENTRY_DSN", "https://mock@sentry.example/ios", "Sentry", "plain"),
     ("Mobile", "android-app", "FCM_SERVER_KEY", "fcm-mock-server-key", "Firebase", "plain"),
-    ("Mobile", "android-app", "SENTRY_DSN", "https://mock@sentry.example/android", "Sentry", "plain"),
+    (
+        "Mobile",
+        "android-app",
+        "SENTRY_DSN",
+        "https://mock@sentry.example/android",
+        "Sentry",
+        "plain",
+    ),
 ]
 
 # Secrets that require admin approval before the value can be revealed.
@@ -176,7 +248,13 @@ CUSTOM_BINDINGS = [
     ("team", ("Platform",), "User", "dave@example.com", "infra-viewer"),
     ("project", ("Platform", "demo-api"), "Group", "platform-ops", "secrets-operator"),
     ("project", ("Payments", "billing-api"), "Group", "payments-readers", "payments-reviewer"),
-    ("secret", ("Platform", "infra-core", "SSH_DEPLOY_KEY"), "User", "carol@example.com", "secrets-operator"),
+    (
+        "secret",
+        ("Platform", "infra-core", "SSH_DEPLOY_KEY"),
+        "User",
+        "carol@example.com",
+        "secrets-operator",
+    ),
 ]
 
 # Machine accounts (ServiceAccount subjects): (team, project, name, role, scope keys|None)
@@ -240,7 +318,7 @@ def main() -> None:
             else:
                 cur.execute(
                     "SELECT private.register_user(%s, %s, %s) AS id",
-                    (email, PASSWORD, name),
+                    (email, passwords.hash_password(PASSWORD), name),
                 )
                 uid = str(cur.fetchone()["id"])
                 if is_admin:
@@ -473,7 +551,9 @@ def main() -> None:
             if team_role:
                 bind_group(
                     TEAM_ROLE_MAP.get(team_role, f"team-{team_role}"),
-                    gid, "team", tid,
+                    gid,
+                    "team",
+                    tid,
                     uids.get("admin@example.com") or next(iter(uids.values())),
                 )
             print(f"group {team_name}/{gname:24}  {gid}  bind={team_role or 'none'}")
@@ -484,7 +564,9 @@ def main() -> None:
             gid = group_ids[(team_name, gname)]
             bind_group(
                 PROJECT_ROLE_MAP.get(role, "project-read"),
-                gid, "project", pid,
+                gid,
+                "project",
+                pid,
                 uids.get("admin@example.com") or next(iter(uids.values())),
             )
             print(f"gbind {team_name}/{proj_name}/{gname} -> {PROJECT_ROLE_MAP.get(role)}")
@@ -501,8 +583,13 @@ def main() -> None:
                 bind_user(role_name, uids[subject_ref], scope_kind, scope_id)
             elif subject_kind == "Group":
                 gid = group_ids[(scope_key[0], subject_ref)]
-                bind_group(role_name, gid, scope_kind, scope_id,
-                           uids.get("admin@example.com") or next(iter(uids.values())))
+                bind_group(
+                    role_name,
+                    gid,
+                    scope_kind,
+                    scope_id,
+                    uids.get("admin@example.com") or next(iter(uids.values())),
+                )
             print(f"cbind {scope_kind} {scope_key} {subject_kind} {subject_ref} -> {role_name}")
 
         # Machine accounts (ServiceAccount subjects) + allow-list scopes
@@ -548,10 +635,14 @@ def main() -> None:
             # ServiceAccount binding at project scope (service-* role)
             bind_sa(
                 SERVICE_ROLE_MAP.get(role, "service-reveal"),
-                token_id, "project", pid,
+                token_id,
+                "project",
+                pid,
                 uids.get("admin@example.com") or next(iter(uids.values())),
             )
-            print(f"token {team_name}/{proj_name}/{name}  {raw}  (scope={'allow-list' if scope_keys else 'all keys'})")
+            print(
+                f"token {team_name}/{proj_name}/{name}  {raw}  (scope={'allow-list' if scope_keys else 'all keys'})"
+            )
 
         # Secret-scope bindings (restricted access_mode)
         for team_name, proj_name, key, user_email, gname, role_name in SECRET_BINDINGS:

@@ -37,8 +37,12 @@ def register(app):
     app.post("/projects/<uuid:project_id>/members")(add_project_binding)
     app.post("/projects/<uuid:project_id>/members/<uuid:user_id>/remove")(remove_project_binding)
     app.post("/projects/<uuid:project_id>/group-roles")(add_project_group_role)
-    app.post("/projects/<uuid:project_id>/group-roles/<uuid:group_id>/remove")(remove_project_group_role)
+    app.post("/projects/<uuid:project_id>/group-roles/<uuid:group_id>/remove")(
+        remove_project_group_role
+    )
     app.post("/projects/<uuid:project_id>/access/bindings")(project_access_binding_create)
-    app.post("/projects/<uuid:project_id>/access/bindings/<uuid:binding_id>/delete")(project_access_binding_delete)
+    app.post("/projects/<uuid:project_id>/access/bindings/<uuid:binding_id>/delete")(
+        project_access_binding_delete
+    )
     app.post("/projects/<uuid:project_id>/settings")(update_project_settings)
     app.post("/projects/<uuid:project_id>/crypto")(project_crypto_action)

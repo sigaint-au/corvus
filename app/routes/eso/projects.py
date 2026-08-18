@@ -31,9 +31,7 @@ def eso_list_projects():
         return err
     kind, ident = auth
     if kind != "pat":
-        return jsonify(
-            {"error": "project list requires a personal access token (pat_…)"}
-        ), 400
+        return jsonify({"error": "project list requires a personal access token (pat_…)"}), 400
     q = (request.args.get("q") or request.args.get("name") or "").strip() or None
     with db.as_user(ident) as conn, conn.cursor() as cur:
         if q:

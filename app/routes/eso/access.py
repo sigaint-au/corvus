@@ -48,9 +48,7 @@ def eso_request_secret_access(project_ref, key):
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
-        cur.execute(
-            "SELECT api.can_reveal_secret(%s) AS ok", (str(row["id"]),)
-        )
+        cur.execute("SELECT api.can_reveal_secret(%s) AS ok", (str(row["id"]),))
         if (cur.fetchone() or {}).get("ok"):
             return jsonify(
                 {

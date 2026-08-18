@@ -69,27 +69,58 @@ def session_cookie_secure() -> bool:
     return True
 
 
+def fips_enabled() -> bool:
+    """Return True when the linked OpenSSL backend reports FIPS mode.
+
+    Best-effort: the ``cryptography`` backend exposes the OpenSSL ``FIPS_mode``
+    state. When ``FIPS_REQUIRED=1`` the app fails startup unless this is True.
+
+    Returns:
+        bool
+    """
+    try:
+        from cryptography.hazmat.backends.openssl import backend
+
+        fips = getattr(backend, "_fips", None)
+        if fips is None:
+            fips = getattr(backend, "_fips_enabled", False)
+        return bool(fips)
+    except Exception:
+        return False
+
+
+FIPS_REQUIRED = os.environ.get("FIPS_REQUIRED", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "required",
+)
+
+
 def refuse_insecure_defaults():
     """Exit the process if production still uses baked-in default secrets.
 
     Skipped when ``FLASK_ENV=development`` or ``ALLOW_INSECURE_DEFAULTS`` is
-    truthy (``1`` / ``true`` / ``yes``). Checks ``SECRET_KEY``, ``JWT_SECRET``,
-    and ``MASTER_KEY`` against their compile-time defaults.
+    truthy (``1`` / ``true`` / ``yes``). When ``FIPS_REQUIRED`` is set, also
+    requires the OpenSSL backend to report FIPS mode (fail closed).
 
     Args:
         None.
 
     Returns:
-        None. Raises ``SystemExit`` if a default secret is still in use.
-
-    Example:
-        >>> # Called once at app import:
-        >>> refuse_insecure_defaults()  # no-op in development
+        None. Raises ``SystemExit`` on a default secret or (when required) a
+        non-FIPS backend.
     """
     if os.environ.get("FLASK_ENV") == "development":
         return
     if os.environ.get("ALLOW_INSECURE_DEFAULTS", "").lower() in ("1", "true", "yes"):
         return
+    if FIPS_REQUIRED and not fips_enabled():
+        raise SystemExit(
+            "FIPS_REQUIRED=1 but the OpenSSL backend is not in FIPS mode. "
+            "Start the process under a FIPS-enabled libcrypto (e.g. OPENSSL_CONF) "
+            "or unset FIPS_REQUIRED."
+        )
     for name, current, default in (
         ("SECRET_KEY", SECRET_KEY, _DEFAULT_SECRET_KEY),
         ("JWT_SECRET", JWT_SECRET, _DEFAULT_JWT_SECRET),

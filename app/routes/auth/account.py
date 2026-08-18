@@ -149,9 +149,7 @@ def profile():
 
     totp_on = bool(user.get("totp_enabled_at"))
     recovery_left = totp_svc.recovery_codes_remaining(uid) if totp_on else 0
-    totp_enforced = bool(
-        user.get("is_global_admin") and totp_svc.enforce_global_admins()
-    )
+    totp_enforced = bool(user.get("is_global_admin") and totp_svc.enforce_global_admins())
 
     active_sessions = user_sessions.list_sessions(uid) if tab == "security" else []
     current_sid = session.get("sid")
@@ -201,14 +199,11 @@ def profile():
                     WHERE api.can_read_project(p.id)
                     ORDER BY t.name, p.name
                     """,
-
                 )
                 projects = cur.fetchall() or []
 
             if tab == "account":
-                cur.execute(
-                    "SELECT count(*) AS n FROM api.secrets WHERE deleted_at IS NULL"
-                )
+                cur.execute("SELECT count(*) AS n FROM api.secrets WHERE deleted_at IS NULL")
                 row = cur.fetchone()
                 secret_count = int(row["n"]) if row else 0
                 cur.execute(
@@ -243,16 +238,15 @@ def profile():
                     recent = [
                         row
                         for row in recent
-                        if needle in " ".join(
+                        if needle
+                        in " ".join(
                             str(row.get(key) or "")
                             for key in ("key", "project_name", "team_name", "accessed_at")
                         ).casefold()
                     ]
                 page = paging.page_arg("page")
                 recent_pager = paging.page_window(len(recent), page)
-                recent_pager.update(
-                    endpoint="profile", tab="activity", q=activity_q or None
-                )
+                recent_pager.update(endpoint="profile", tab="activity", q=activity_q or None)
                 start = (page - 1) * recent_pager["per_page"]
                 recent = recent[start : start + recent_pager["per_page"]]
             if tab == "myaccess":

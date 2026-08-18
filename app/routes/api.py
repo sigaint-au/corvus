@@ -15,6 +15,7 @@ def register(app):
     app.get("/api/token")(api_token)
     app.get("/api/users/suggest")(users_suggest)
 
+
 def api_token():
     """Return a short-lived JWT for PostgREST API access.
 
@@ -62,6 +63,7 @@ def api_token():
             "postgrest": config.POSTGREST_URL,
         }
     )
+
 
 @authz.login_required
 def users_suggest():
@@ -142,9 +144,7 @@ def users_suggest():
                 "email": r["email"],
                 "name": r.get("name") or "",
                 "label": (
-                    f"{r['name']} <{r['email']}>"
-                    if (r.get("name") or "").strip()
-                    else r["email"]
+                    f"{r['name']} <{r['email']}>" if (r.get("name") or "").strip() else r["email"]
                 ),
             }
             for r in rows

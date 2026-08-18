@@ -205,9 +205,7 @@ def _post_password_login(user):
         try:
             ua, ip = user_sessions.client_meta()
             when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            ok, err = mailer.send_login_alert(
-                user["email"], ip=ip, user_agent=ua, when=when
-            )
+            ok, err = mailer.send_login_alert(user["email"], ip=ip, user_agent=ua, when=when)
             if not ok:
                 log.warning("login alert email failed for %s: %s", user["email"], err)
         except Exception:

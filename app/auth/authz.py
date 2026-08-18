@@ -1,4 +1,5 @@
 """Auth decorators, admin checks, CSRF."""
+
 import hmac
 import logging
 import secrets
@@ -151,7 +152,6 @@ def validate_registered_session():
         flash("Your session was signed out or expired. Please sign in again.", "error")
         return redirect(url_for("login"))
     return None
-
 
 
 def global_admin_required(f):

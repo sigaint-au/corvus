@@ -36,8 +36,6 @@ def client_meta() -> tuple[str, str]:
     return ua, ip[:100]
 
 
-
-
 def create_session(user_id) -> str | None:
     """Insert a session row; return session id or None on failure.
 

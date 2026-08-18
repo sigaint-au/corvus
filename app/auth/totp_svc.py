@@ -142,7 +142,7 @@ def _totp_code(secret: str, counter: int) -> str:
     """RFC 6238 TOTP code (SHA-1, 6 digits, 30s period)."""
     digest = hmac.new(_b32decode(secret), struct.pack(">Q", counter), hashlib.sha1).digest()
     offset = digest[-1] & 0x0F
-    code = (struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 1_000_000
+    code = (struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF) % 1_000_000
     return f"{code:06d}"
 
 
@@ -182,10 +182,7 @@ def provisioning_uri(secret: str, email: str) -> str:
 
     issuer = branding().get("app_name") or APP_NAME
     label = quote(f"{issuer}:{email or 'user'}", safe="")
-    return (
-        f"otpauth://totp/{label}?secret={secret}"
-        f"&issuer={quote(issuer, safe='')}"
-    )
+    return f"otpauth://totp/{label}?secret={secret}&issuer={quote(issuer, safe='')}"
 
 
 def qr_data_uri(uri: str) -> str:
@@ -293,33 +290,15 @@ def hash_recovery_code(code: str) -> str:
     return hmac.new(key, raw.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def _legacy_hash_recovery_code(code: str) -> str:
-    """Unsalted SHA-256 used before SECRET_KEY HMAC (accept until codes regenerated).
-
-    Args:
-        code: Plaintext recovery code (normalized before hashing).
-
-    Returns:
-        Hex digest of SHA-256(normalized_code) without HMAC keying.
-
-    Example:
-        >>> h = _legacy_hash_recovery_code("abcd")
-        >>> len(h) == 64
-        True
-    """
-    raw = _normalize_recovery(code)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
 def recovery_hash_matches(code: str, stored: str) -> bool:
-    """Constant-time compare of a recovery code against a stored hash.
+    """Constant-time compare of a recovery code against its stored HMAC-SHA256 hash.
 
     Args:
         code: User-entered recovery code.
         stored: Hash string from private.totp_recovery_codes.code_hash.
 
     Returns:
-        True if stored matches current HMAC hash or legacy SHA-256 hash.
+        True when the code hashes to ``stored``.
 
     Example:
         >>> recovery_hash_matches("x", "")
@@ -327,10 +306,7 @@ def recovery_hash_matches(code: str, stored: str) -> bool:
     """
     if not stored:
         return False
-    if hmac.compare_digest(hash_recovery_code(code), stored):
-        return True
-    # Temporary dual-verify for pre-migration codes
-    return hmac.compare_digest(_legacy_hash_recovery_code(code), stored)
+    return hmac.compare_digest(hash_recovery_code(code), stored)
 
 
 def generate_recovery_codes(n: int = RECOVERY_CODE_COUNT) -> list[str]:

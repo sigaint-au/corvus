@@ -1,4 +1,5 @@
 """OIDC shared-cache tests."""
+
 from unittest.mock import MagicMock, patch
 
 from integrations import oidc_auth
@@ -12,8 +13,10 @@ def test_discover_uses_redis_cache():
         "authorization_endpoint": "https://idp/auth",
         "token_endpoint": "https://idp/token",
     }
-    with patch.object(oidc_auth.cache, "redis_client", return_value=client), \
-         patch.object(oidc_auth, "_http_json", return_value=document) as fetch:
+    with (
+        patch.object(oidc_auth.cache, "redis_client", return_value=client),
+        patch.object(oidc_auth, "_http_json", return_value=document) as fetch,
+    ):
         assert oidc_auth.discover("https://idp") == document
     fetch.assert_called_once()
     client.setex.assert_called_once()
