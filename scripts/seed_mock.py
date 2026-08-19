@@ -17,6 +17,7 @@ Access review, Effective access, and My access).
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import sys
@@ -328,6 +329,14 @@ def main() -> None:
                     )
             uids[email] = uid
             print(f"user  {email:24}  admin={is_admin}  {uid}")
+
+        # connect_admin has no JWT; 0002's guard_secret_update requires
+        # can_admin_project() (global admin short-circuits) to change
+        # access_mode / requires_approval.
+        cur.execute(
+            "SELECT set_config('request.jwt.claims', %s, false)",
+            (json.dumps({"sub": uids["admin@example.com"], "role": "authenticated"}),),
+        )
 
         def role_id(name: str):
             cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (name,))
@@ -690,6 +699,8 @@ def main() -> None:
                     (rid, gid, sid),
                 )
                 print(f"bind  {key} group={gname} {role_name}")
+
+        cur.execute("SELECT set_config('request.jwt.claims', '', false)")
 
     print()
     print("All accounts password:", PASSWORD)

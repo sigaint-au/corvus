@@ -424,6 +424,10 @@ class TestAuth:
         assert "private.set_local_password" in init
         assert "private.user_sessions" in init
         assert "private.password_reset_tokens" in init
+        # UPDATE ... RETURN FOUND is invalid PL/pgSQL (the FIPS hash change
+        # dropped the statement terminator after removing crypt()).
+        assert "AND password_hash IS NOT NULL\n  RETURN FOUND" not in init
+        assert "AND password_hash IS NOT NULL\n          RETURN FOUND" not in init
 
     def test_profile_my_access(self):
         uid = uuid4()

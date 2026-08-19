@@ -540,7 +540,7 @@ BEGIN
   SET password_hash = p_new
   WHERE id = p_user
     AND auth_source = 'local'
-    AND password_hash IS NOT NULL
+    AND password_hash IS NOT NULL;
   RETURN FOUND;
 END;
 $$;
@@ -4117,7 +4117,7 @@ GRANT ALL ON api.secret_recent TO authenticator;
           SET password_hash = p_new
           WHERE id = p_user
             AND auth_source = 'local'
-            AND password_hash IS NOT NULL
+            AND password_hash IS NOT NULL;
           RETURN FOUND;
         END;
         $$;
