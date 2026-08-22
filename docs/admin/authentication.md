@@ -25,6 +25,14 @@ planes:
 The browser flow is the only one that uses a cookie. It is **two-step** when
 2FA is enabled, and can be forced through TOTP enrollment for global admins.
 
+### 1a-0. Email verification (local signups)
+
+When SMTP is configured, self-registered accounts start **unverified** and
+receive a single-use link (`/verify-email/<token>`, valid 3 days) before they
+can sign in. The link is stored hashed; the resend form on the sign-in page
+answers generically and sends at most one email per address per minute.
+LDAP/OIDC-provisioned accounts skip this: the directory already proves the
+mailbox. Without SMTP, new accounts are active immediately (fail-open).
 ### 1a. Password (local) or LDAP login
 
 ```

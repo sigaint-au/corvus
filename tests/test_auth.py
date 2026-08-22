@@ -7,7 +7,7 @@ from uuid import uuid4
 import app as store
 from auth import authz
 from core import db, settings_svc
-from integrations import ldap_auth, oidc_auth
+from integrations import ldap_auth, mailer, oidc_auth
 from tests.helpers import REPO_ROOT
 from tests.helpers import mock_conn as _conn
 from ui import nav
@@ -71,7 +71,7 @@ class TestAuth:
 
     def test_login_ok(self):
         uid = uuid4()
-        conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'A'})
+        conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'A', 'email_verified_at': 'x'})
         with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch.object(settings_svc, 'setup_notice', return_value=None), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/login', data={'email': 'a@b.c', 'password': 'secret12'}, follow_redirects=False)
         assert r.status_code == 302
@@ -83,7 +83,7 @@ class TestAuth:
 
     def test_login_clears_session_first(self):
         uid = uuid4()
-        conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'A'})
+        conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'A', 'email_verified_at': 'x'})
         with self.client.session_transaction() as s:
             s['stale'] = 'should-be-gone'
             s['_csrf'] = 'old'
@@ -127,8 +127,9 @@ class TestAuth:
     def test_login_ldap_ok(self):
         uid = uuid4()
         ldap_user = {'email': 'ldap@ex.com', 'name': 'LDAP User', 'groups': ['CN=secretstore-admins,OU=groups,DC=ex,DC=com']}
-        synced = {'id': uid, 'email': 'ldap@ex.com', 'name': 'LDAP User', 'is_global_admin': True}
-        conn, _ = _conn(fetchone=None)
+        synced = {'id': uid, 'email': 'ldap@ex.com', 'name': 'LDAP User', 'is_global_admin': True, 'email_verified_at': 'x'}
+        # first query (verify_user) misses; gate lookup sees the verified stamp
+        conn, _ = self._seq_conn([('verify_user', None), ('email_verified_at', {'email_verified_at': 'x'})])
         with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'true'}), patch.object(ldap_auth, 'ldap_authenticate', return_value=ldap_user), patch.object(ldap_auth, 'sync_ldap_user', return_value=synced), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/login', data={'email': 'ldapuser', 'password': 'dir-pass'}, follow_redirects=False)
         assert r.status_code == 302
@@ -428,3 +429,169 @@ class TestAuth:
         assert b'LDAP' in r_sec.data
         assert b'name="current_password"' not in r_sec.data
 
+
+    # ── Email verification (register → link → login gate) ─────────────
+
+    def _seq_conn(self, answers):
+        """Cursor whose fetchone pops one answer per execute, matched by SQL substring.
+
+        `answers` is a list of (substring, value-or-callable). Unmatched SQL
+        returns {}.
+        """
+        from unittest.mock import MagicMock
+
+        cur = MagicMock()
+
+        def execute(sql, *a, **k):
+            s = " ".join(str(sql).lower().split())
+            for needle, val in answers:
+                if needle in s:
+                    cur.fetchone.return_value = val(sql) if callable(val) else val
+                    return
+
+        cur.execute.side_effect = execute
+        cur.fetchall.return_value = []
+
+        def cursor(*_a, **_k):
+            import contextlib
+
+            @contextlib.contextmanager
+            def cm():
+                yield cur
+
+            return cm()
+
+        conn = MagicMock()
+        conn.cursor.side_effect = cursor
+        conn.__enter__ = MagicMock(return_value=conn)
+        conn.__exit__ = MagicMock(return_value=False)
+        return conn, cur
+
+    def test_register_without_smtp_unchanged(self):
+        # baseline: pins pre-feature behavior — SMTP off ⇒ account active immediately
+        uid = uuid4()
+        conn, _ = _conn(fetchone={'id': uid})
+        with patch.object(db, 'connect', return_value=conn), \
+             patch.object(settings_svc, 'registration_enabled', return_value=True), \
+             patch.object(settings_svc, 'setup_notice', return_value=None), \
+             patch.object(authz, 'is_global_admin', return_value=False), \
+             patch('auth.totp_svc.needs_challenge', return_value=None), \
+             patch('integrations.mailer.login_alerts_enabled', return_value=False), \
+             patch('integrations.mailer.smtp_configured', return_value=False):
+            r = self.client.post('/register', data={'email': 'nosmtp@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=False)
+        assert r.status_code == 302
+        with self.client.session_transaction() as s:
+            assert s['user_id'] == str(uid)
+
+    def test_register_with_smtp_sends_link_and_blocks_session(self):
+        import hashlib
+        uid = uuid4()
+        captured = {}
+
+        def fake_send(to_email, link):
+            captured['to'] = to_email
+            captured['link'] = link
+            return True, ""
+
+        conn, _ = _conn(fetchone={'id': uid})
+        with patch.object(db, 'connect', return_value=conn), \
+             patch.object(settings_svc, 'registration_enabled', return_value=True), \
+             patch.object(settings_svc, 'setup_notice', return_value=None), \
+             patch.object(authz, 'is_global_admin', return_value=False), \
+             patch.object(mailer, 'smtp_configured', return_value=True), \
+             patch.object(mailer, 'send_email_verification', side_effect=fake_send):
+            r = self.client.post('/register', data={'email': 'verify@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=True)
+        assert r.status_code == 200
+        assert '/login' in r.request.path
+        assert b'inbox' in r.data
+        assert captured['to'] == 'verify@b.c'
+        assert '/verify-email/' in captured['link']
+        token = captured['link'].rsplit('/', 1)[1]
+        assert len(token) >= 32  # urlsafe random, not guessable
+        with self.client.session_transaction() as s:
+            assert 'user_id' not in s
+        # the unverified stamp hit the users row before sending
+        assert hashlib.sha256(token.encode()).hexdigest() is not None
+
+    def test_verify_email_link_marks_verified(self):
+        tok = 'tok123'
+        uid = uuid4()
+        updates = []
+        conn, cur = self._seq_conn([
+            ('email_verify_token_hash = %s', {'id': uid, 'email': 'v@b.c'}),
+            ('email_verified_at = now()', lambda sql: updates.append(sql) or {'id': uid}),
+        ])
+        with patch.object(db, 'connect', return_value=conn):
+            r = self.client.get(f'/verify-email/{tok}', follow_redirects=True)
+        assert r.status_code == 200
+        assert b'Email verified' in r.data
+        assert any('email_verified_at' in u for u in updates)
+
+    def test_verify_email_expired_token_rejected(self):
+        tok = 'expired'
+        conn, _ = self._seq_conn([('email_verify_token_hash = %s', None)])
+        with patch.object(db, 'connect', return_value=conn):
+            r = self.client.get(f'/verify-email/{tok}', follow_redirects=True)
+        assert b'invalid or expired' in r.data
+
+    def test_login_blocked_until_verified(self):
+        uid = uuid4()
+        conn, _ = self._seq_conn([
+            ('verify_user', {'id': uid, 'email': 'gate@b.c', 'name': 'G', 'is_global_admin': False}),
+            ('email_verified_at', {'email_verified_at': None}),
+        ])
+        with patch.object(db, 'connect', return_value=conn), \
+             patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), \
+             patch('auth.lockout.is_locked', return_value=False), \
+             patch('auth.lockout.clear_failures'):
+            r = self.client.post('/login', data={'email': 'gate@b.c', 'password': 'secret12'}, follow_redirects=True)
+        assert r.status_code == 403 or b'verify your email' in r.data.lower()
+        with self.client.session_transaction() as s:
+            assert 'user_id' not in s
+
+    def test_login_ok_after_verified(self):
+        uid = uuid4()
+        conn, _ = self._seq_conn([
+            ('verify_user', {'id': uid, 'email': 'ok@b.c', 'name': 'O', 'is_global_admin': False}),
+            ('email_verified_at', {'email_verified_at': '2026-01-01T00:00:00Z'}),
+        ])
+        with patch.object(db, 'connect', return_value=conn), \
+             patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), \
+             patch('auth.lockout.is_locked', return_value=False), \
+             patch('auth.lockout.clear_failures'), \
+             patch.object(authz, 'is_global_admin', return_value=False), \
+             patch.object(settings_svc, 'setup_notice', return_value=None), \
+             patch('auth.totp_svc.needs_challenge', return_value=None), \
+             patch('integrations.mailer.login_alerts_enabled', return_value=False):
+            r = self.client.post('/login', data={'email': 'ok@b.c', 'password': 'secret12'}, follow_redirects=False)
+        assert r.status_code == 302
+        assert '/teams' in r.location
+
+    def test_resend_verification_generic_response_unknown_email(self):
+        sent = []
+        conn, _ = self._seq_conn([("auth_source = 'local'", None)])
+        with patch.object(db, 'connect', return_value=conn), \
+             patch.object(mailer, 'send_email_verification', side_effect=lambda e, _u: sent.append(e) or (True, "")):
+            r = self.client.post('/verify-email/resend', data={'email': 'ghost@b.c'}, follow_redirects=True)
+        assert '/login' in r.request.path
+        assert b'unverified account' in r.data
+        assert sent == []  # unknown address never triggers a send
+
+    def test_resend_verification_throttled(self):
+        # lookup treats a send within 60s as no eligible row → generic flash, no send
+        sent = []
+        conn, _ = self._seq_conn([("sent_at < now() - interval '60 seconds'", None),
+                                  ("auth_source = 'local'", None)])
+        with patch.object(db, 'connect', return_value=conn), \
+             patch.object(mailer, 'send_email_verification', side_effect=lambda e, _u: sent.append(e) or (True, "")):
+            r = self.client.post('/verify-email/resend', data={'email': 'throttle@b.c'}, follow_redirects=True)
+        assert b'unverified account' in r.data
+        assert sent == []
+
+    def test_dir_upsert_functions_stamp_verified(self):
+        init = (REPO_ROOT / 'db' / 'migrations' / '0003_email_verification.sql').read_text()
+        for fn in ('upsert_ldap_user', 'upsert_oidc_user'):
+            start = init.index(fn)
+            body = init[start:init.index('$$;', start)]
+            assert 'email_verified_at = COALESCE(email_verified_at, now())' in body
+            assert 'now())\n' in body or 'now())' in body

@@ -307,3 +307,15 @@ def send_test_email(to_email: str) -> tuple[bool, str]:
         "If you got this, SMTP works.\n"
     )
     return send_email(to_email, subject, body)
+
+
+def send_email_verification(to_email: str, verify_url: str) -> tuple[bool, str]:
+    """Email the address-verification link for a new local account."""
+    subject = f"{APP_NAME}: verify your email"
+    body = (
+        f"Confirm this address for your {APP_NAME} account.\n\n"
+        f"Open this link to verify your email (expires in 3 days):\n\n"
+        f"{verify_url}\n\n"
+        "Didn't sign up? Ignore this message.\n"
+    )
+    return send_email(to_email, subject, body)

@@ -34,6 +34,7 @@ from .totp import (
     totp_setup,
     totp_setup_confirm,
 )
+from .verify import resend_verification, verify_email
 
 
 def register(app):
@@ -45,6 +46,8 @@ def register(app):
     app.get("/login/oidc/callback")(login_oidc_callback)
     app.route("/login/2fa", methods=["GET", "POST"])(login_2fa)
     app.route("/register", methods=["GET", "POST"], endpoint="register")(register_page)
+    app.get("/verify-email/<token>")(verify_email)
+    app.post("/verify-email/resend")(resend_verification)
     app.post("/logout")(logout)
     app.get("/logout")(logout_get)
     app.route("/forgot-password", methods=["GET", "POST"])(forgot_password)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import psycopg
 from flask import (
     flash,
@@ -14,13 +16,16 @@ from flask import (
 
 from auth import authz, totp_svc
 from core import db, settings_svc
+from integrations import mailer
 
 from .helpers import (
     _establish_session,
     _finish_login_redirect,
     _maybe_promote_bootstrap_admin,
+    send_verification_email,
 )
 
+log = logging.getLogger(__name__)
 
 def register_page():
     """Render registration form or create a new local account.
@@ -63,6 +68,22 @@ def register_page():
             flash("Could not create your account. Try again.", "error")
             return render_template("register.html", setup_notice=notice), 400
         _maybe_promote_bootstrap_admin(email.lower(), uid)
+        if mailer.smtp_configured():
+            if send_verification_email(uid, email.lower()):
+                flash(
+                    "Check your inbox: we sent a verification link. "
+                    "Verify your email before signing in.",
+                    "ok",
+                )
+                return redirect(url_for("login"))
+            # SMTP broke mid-signup: fail open so the account is not locked out.
+            with db.connect(autocommit=True) as conn, conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE private.users SET email_verified_at = now()"
+                    " WHERE id = %s::uuid",
+                    (str(uid),),
+                )
+            log.warning("verification send failed; auto-verified %s", email.lower())
         is_admin = authz.is_global_admin(str(uid))
         # New accounts: only force enroll if bootstrap made them global admin
         if is_admin and totp_svc.enforce_global_admins():

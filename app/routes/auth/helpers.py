@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import secrets as _secrets
 from datetime import (
     datetime,
     timezone,
@@ -12,6 +14,7 @@ from flask import (
     flash,
     redirect,
     render_template,
+    request,
     session,
     url_for,
 )
@@ -20,6 +23,36 @@ from auth import authz, totp_svc, user_sessions
 from core import db, settings_svc
 from core.config import bootstrap_admin_email
 from integrations import ldap_auth, mailer, oidc_auth
+
+log = logging.getLogger(__name__)
+
+
+def send_verification_email(uid, email: str) -> bool:
+    """Stamp an unverified token on the user row and email the link.
+
+    Returns True only when the email was handed to SMTP successfully.
+    On any failure the caller decides whether to fail open (register does).
+    """
+    token = _secrets.token_urlsafe(32)
+    thash = hashlib.sha256(token.encode()).hexdigest()
+    try:
+        with db.connect(autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute(
+                """UPDATE private.users
+                      SET email_verified_at = NULL,
+                          email_verify_token_hash = %s,
+                          email_verify_sent_at = now()
+                    WHERE id = %s::uuid""",
+                (thash, str(uid)),
+            )
+        link = request.url_root.rstrip("/") + url_for("verify_email", token=token)
+        ok, err = mailer.send_email_verification(email, link)
+        if not ok:
+            log.warning("verification email failed for %s: %s", email, err)
+        return ok
+    except Exception:
+        log.exception("verification email setup failed for %s", email)
+        return False
 
 log = logging.getLogger(__name__)
 

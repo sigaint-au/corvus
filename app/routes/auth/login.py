@@ -77,6 +77,18 @@ def login():
         if authz.is_account_disabled(str(user["id"])):
             flash("This account has been disabled. Contact an administrator.", "error")
             return _login_page(), 403
+        with db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT email_verified_at FROM private.users WHERE id = %s::uuid",
+                (str(user["id"]),),
+            )
+            vrow = cur.fetchone() or {}
+        if not vrow.get("email_verified_at"):
+            # Password proved; clear lockout so the retry after clicking the
+            # link is not penalized.
+            lockout.clear_failures(email)
+            flash("Verify your email first. Check your inbox for the link.", "error")
+            return _login_page(), 403
         lockout.clear_failures(email)
         return _post_password_login(user)
     return _login_page()
