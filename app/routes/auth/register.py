@@ -41,7 +41,7 @@ def register_page():
     """
     notice = settings_svc.setup_notice()
     if not settings_svc.registration_enabled():
-        flash(notice or "Account registration is disabled", "error")
+        flash(notice or "Registration is disabled", "error")
         return redirect(url_for("login"))
     if request.method == "POST":
         email = request.form.get("email", "").strip()
@@ -62,19 +62,15 @@ def register_page():
                 )
                 uid = cur.fetchone()["id"]
         except psycopg.errors.UniqueViolation:
-            flash("Email already registered", "error")
+            flash("An account with this email already exists", "error")
             return render_template("register.html", setup_notice=notice), 400
         except Exception:
-            flash("Could not create your account. Try again.", "error")
+            flash("Account creation failed. Try again.", "error")
             return render_template("register.html", setup_notice=notice), 400
         _maybe_promote_bootstrap_admin(email.lower(), uid)
         if mailer.smtp_configured():
             if send_verification_email(uid, email.lower()):
-                flash(
-                    "Check your inbox: we sent a verification link. "
-                    "Sign in to activate your account.",
-                    "ok",
-                )
+                flash("We sent a verification link to your inbox. Sign in to activate your account.", "ok")
                 return redirect(url_for("login"))
             # SMTP broke mid-signup: fail open so the account is not locked out.
             log.warning("verification send failed; auto-verified %s", email.lower())

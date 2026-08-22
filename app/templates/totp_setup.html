@@ -5,10 +5,10 @@
   <h1>Set up two-factor authentication</h1>
 </div>
 {% if required %}
-<p role="alert" data-variant="error">Global admins must enable 2FA before using Secret Server.</p>
+<p role="alert" data-variant="error">Global admins must enable two-factor authentication before using Secret Server.</p>
 {% endif %}
 <p class="page-desc muted">
-  Scan the QR code with any authenticator app, then enter a code to confirm.
+  Scan the QR code with your authenticator app, then enter the code to confirm.
 </p>
 
 <section>
@@ -32,7 +32,7 @@
              inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
              placeholder="123456" autofocus>
     </label>
-    <p class="form-actions"><button type="submit">Enable 2FA</button></p>
+    <p class="form-actions"><button type="submit">Enable two-factor authentication</button></p>
   </form>
 </section>
 

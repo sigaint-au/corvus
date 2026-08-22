@@ -86,7 +86,7 @@ def login():
             # Password proved; clear lockout so the retry after clicking the
             # link is not penalized.
             lockout.clear_failures(email)
-            flash("Verify your email first. Check your inbox for the link.", "error")
+            flash("Verify your email before signing in. Check your inbox for the verification link.", "error")
             return render_template("verify_email.html", email=email), 403
         lockout.clear_failures(email)
         return _post_password_login(user)
@@ -212,8 +212,7 @@ def login_2fa():
         if method == "recovery":
             left = totp_svc.recovery_codes_remaining(uid)
             flash(
-                f"Signed in with a recovery code. {left} recovery code(s) remaining. "
-                "Consider regenerating codes on your profile.",
+                f"Signed in with a recovery code. {left} remaining. Regenerate codes from your profile.",
                 "ok",
             )
         if mailer.login_alerts_enabled():
@@ -310,7 +309,7 @@ def reset_password(token):
             return render_template("reset_password.html", token=token), 400
         ok, err = passwords.consume_reset_token(token, pw)
         if not ok:
-            flash(err or "Reset failed", "error")
+            flash(err or "Password reset failed. Try again.", "error")
             return render_template("reset_password.html", token=token), 400
         flash("Password updated. Sign in with your new password.", "ok")
         return redirect(url_for("login"))
