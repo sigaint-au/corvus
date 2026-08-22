@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Verify email - {{ app_name }}{% endblock %}
+{% block body %}
+<h1>Verify your email</h1>
+<p>Check your inbox: we sent a verification link to <strong>{{ email }}</strong>.
+  Click the link in that email to activate your account before signing in.</p>
+<details class="muted">
+  <summary>Didn't get the email?</summary>
+  <form method="post" action="{{ url_for('resend_verification') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Email <input type="email" name="email" value="{{ email }}" required></label>
+    <button type="submit" class="ghost small">Resend</button>
+  </form>
+</details>
+<p class="muted"><a href="{{ url_for('login') }}">Back to sign in</a></p>
+{% endblock %}

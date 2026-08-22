@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 
-from flask import flash, redirect, request, url_for
+from flask import flash, redirect, render_template, request, url_for
 
 from core import db
 
@@ -41,10 +41,10 @@ def verify_email(token: str):
         if not row:
             flash(
                 "This verification link is invalid or expired. "
-                "Resend it from the sign-in page.",
+                "Request a new link below.",
                 "error",
             )
-            return redirect(url_for("login"))
+            return redirect(url_for("verify_resend_page"))
         cur.execute(
             """
             UPDATE private.users
@@ -70,7 +70,7 @@ def resend_verification():
         None (reads form ``email``).
 
     Returns:
-        Redirect to login with a generic ok flash.
+        Redirect to the verification page with a generic ok flash.
 
     Example:
         POST /verify-email/resend  (form field: email)
@@ -102,4 +102,22 @@ def resend_verification():
         "If that address belongs to an unverified account, we sent a new link.",
         "ok",
     )
-    return redirect(url_for("login"))
+    return redirect(url_for("verify_resend_page"))
+
+
+def verify_resend_page():
+    """Step-2 signup screen: check-inbox notice plus resend form.
+
+    Also reachable standalone (GET /verify-email) for users who lost
+    the email; ``?email=`` pre-fills the form.
+
+    Args:
+        None (reads optional query arg ``email``).
+
+    Returns:
+        HTML verification page.
+
+    Example:
+        GET /verify-email?email=user@example.com
+    """
+    return render_template("verify_email.html", email=request.args.get("email", ""))

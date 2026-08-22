@@ -34,7 +34,7 @@ from .totp import (
     totp_setup,
     totp_setup_confirm,
 )
-from .verify import resend_verification, verify_email
+from .verify import resend_verification, verify_email, verify_resend_page
 
 
 def register(app):
@@ -47,6 +47,7 @@ def register(app):
     app.route("/login/2fa", methods=["GET", "POST"])(login_2fa)
     app.route("/register", methods=["GET", "POST"], endpoint="register")(register_page)
     app.get("/verify-email/<token>")(verify_email)
+    app.get("/verify-email", endpoint="verify_resend_page")(verify_resend_page)
     app.post("/verify-email/resend")(resend_verification)
     app.post("/logout")(logout)
     app.get("/logout")(logout_get)
