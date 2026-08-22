@@ -256,7 +256,7 @@ def transfer_team_ownership(team_id):
     """
     email = (request.form.get("email") or "").strip().lower()
     if not email:
-        flash("Enter an email address.", "error")
+        flash("Enter an email address", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))

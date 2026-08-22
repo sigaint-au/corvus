@@ -67,7 +67,7 @@ def create_team_invite(team_id):
             )
             row = cur.fetchone()
             if not row:
-                flash("You don't have permission to do that", "error")
+                flash("Permission denied", "error")
                 conn.rollback()
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             audit.log_org(

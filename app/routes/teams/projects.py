@@ -85,7 +85,7 @@ def create_project(team_id):
             )
             row = cur.fetchone()
             if not row:
-                flash("You don't have permission to do that", "error")
+                flash("Permission denied", "error")
                 conn.rollback()
                 return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
             pid = row["id"]
@@ -162,7 +162,7 @@ def delete_project_from_team(team_id, project_id):
             (str(project_id), str(team_id)),
         )
         if cur.rowcount == 0:
-            flash("You don't have permission to do that", "error")
+            flash("Permission denied", "error")
             conn.rollback()
         else:
             conn.commit()

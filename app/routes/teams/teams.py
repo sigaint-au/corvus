@@ -71,7 +71,7 @@ def create_team():
         return redirect(url_for("teams"))
     name = request.form.get("name", "").strip()
     if not name:
-        flash("Name required", "error")
+        flash("Team name is required", "error")
         return redirect(url_for("teams"))
     with db.connect(autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(
@@ -416,7 +416,7 @@ def update_team_settings(team_id):
                 ),
             )
             if cur.rowcount == 0:
-                flash("You don't have permission to do that", "error")
+                flash("Permission denied", "error")
                 conn.rollback()
             else:
                 audit.log_org(
@@ -458,7 +458,7 @@ def delete_team(team_id):
         try:
             cur.execute("DELETE FROM api.teams WHERE id = %s", (str(team_id),))
             if cur.rowcount == 0:
-                flash("You don't have permission to do that", "error")
+                flash("Permission denied", "error")
                 conn.rollback()
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             conn.commit()
