@@ -1,11 +1,11 @@
 <section class="list-panel">
   <h2>Global admins</h2>
-  <p class="muted">Global admins can access every team, project, and server settings.</p>
+  <p class="muted">Global admins can access every team, every project, and all server settings.</p>
   {% set admin_users = users|selectattr('is_global_admin')|list %}
   {% if admin_users %}
   <div class="table"><table>
     <thead>
-      <tr><th>User</th><th>Role</th><th></th></tr>
+      <tr><th>User</th><th>Role</th><th class="acts-col" aria-label="Actions"></th></tr>
     </thead>
     <tbody>
       {% for u in admin_users %}

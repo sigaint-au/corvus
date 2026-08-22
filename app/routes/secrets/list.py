@@ -199,7 +199,7 @@ def restore_secret(secret_id):
             )
             row = cur.fetchone()
             if not row:
-                flash("Could not restore — missing permission or key already exists", "error")
+                flash("Could not restore. You may lack permission, or a secret with that key already exists.", "error")
             else:
                 cur.execute(
                     """
@@ -210,7 +210,7 @@ def restore_secret(secret_id):
                     (str(secret_id),),
                 )
                 if cur.rowcount == 0:
-                    flash("Could not restore — missing permission or key already exists", "error")
+                    flash("Could not restore. You may lack permission, or a secret with that key already exists.", "error")
                 else:
                     audit.log_secret(
                         cur,

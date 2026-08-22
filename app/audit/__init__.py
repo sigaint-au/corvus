@@ -2,6 +2,7 @@
 
 from .constants import (
     ACTIONS,
+    ENC_CHANGE_ACTIONS,
     ORG_INVITE_CREATE,
     ORG_INVITE_REVOKE,
     ORG_JOIN_APPROVE,
@@ -38,6 +39,7 @@ from .write import log_org, log_secret
 
 __all__ = [
     "ACTIONS",
+    "ENC_CHANGE_ACTIONS",
     "ORG_INVITE_CREATE",
     "ORG_INVITE_REVOKE",
     "ORG_JOIN_APPROVE",

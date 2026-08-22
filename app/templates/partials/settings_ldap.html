@@ -2,11 +2,10 @@
   <h2>LDAP authentication</h2>
   <p class="muted page-desc">
     Directory login alongside local accounts. Groups are read on each sign-in.
-    Use <code class="k">ldaps://</code> or StartTLS - plain <code class="k">ldap://</code> without TLS is refused.
+    Use <code class="k">ldaps://</code> or StartTLS. Plain <code class="k">ldap://</code> without TLS is refused.
   </p>
-  <form method="post" class="settings-form">
+  <form method="post" class="settings-form" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="action" value="ldap">
 
     <label class="check-row">
       <input type="checkbox" name="ldap_enabled" value="1"
@@ -55,6 +54,11 @@
                  placeholder="(|(mail={login})(uid={login}))">
           <span class="field-hint"><code class="k">{login}</code> is replaced with the signed-in identifier</span>
         </label>
+        <label class="span-2">Probe login <span class="muted">(optional)</span>
+          <input type="text" name="ldap_probe_login" value="{{ settings.ldap_probe_login or '' }}"
+                 placeholder="e.g. alice@example.com" autocomplete="off">
+          <span class="field-hint">Sample sign-in name used when testing the connection</span>
+        </label>
         <label>Email attribute
           <input type="text" name="ldap_email_attr" value="{{ settings.ldap_email_attr or 'mail' }}">
         </label>
@@ -85,7 +89,23 @@
       </div>
     </fieldset>
 
-    <p class="form-actions"><button type="submit">Save LDAP settings</button></p>
+    {% if ldap_test %}
+    <p class="status-row">
+      {% if ldap_test.ok and not ldap_test.warn %}
+      <span class="badge" data-variant="success">Connected</span>
+      {% elif ldap_test.ok %}
+      <span class="badge" data-variant="warning">Check settings</span>
+      {% else %}
+      <span class="badge" data-variant="danger">Failed</span>
+      {% endif %}
+      <span class="muted">{{ ldap_test.detail }}</span>
+    </p>
+    {% endif %}
+
+    <p class="form-actions">
+      <button type="submit" name="action" value="ldap_test" class="button outline">Test connection</button>
+      <button type="submit" name="action" value="ldap">Save LDAP settings</button>
+    </p>
   </form>
 </section>
 
@@ -96,7 +116,7 @@
   </p>
   {% if ldap_role_maps %}
   <div class="table"><table>
-    <thead><tr><th>LDAP group</th><th>Role</th><th></th></tr></thead>
+    <thead><tr><th>LDAP group</th><th>Role</th><th class="acts-col" aria-label="Actions"></th></tr></thead>
     <tbody>
     {% for m in ldap_role_maps %}
       <tr>

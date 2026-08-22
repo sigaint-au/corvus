@@ -40,7 +40,7 @@ Dockerfile      # App image
 ## Making changes
 
 1. **Write a failing test first** where possible. Tests live in `tests/` and
-   mock the DB — no live Postgres needed.
+   mock the DB, so no live Postgres is needed.
 2. **Schema changes update the fresh-install baseline.** This branch uses a
    fresh-install-only squash: update the ordered content in
    `db/migrations/0001_init.sql` and recreate the database volume
@@ -58,14 +58,14 @@ Dockerfile      # App image
 
 ## Security-sensitive areas
 
-- **RLS / access control** — changes must preserve the invariant that the UI
+- **RLS / access control**: changes must preserve the invariant that the UI
   and APIs use the same SQL helpers; there is no separate app-only ACL.
-- **SECURITY DEFINER functions** — grant them narrowly (never `authenticated`
+- **SECURITY DEFINER functions**: grant them narrowly (never `authenticated`
   for machine helpers), set an explicit `search_path`, and use
   `row_security = off` only where needed to avoid recursion.
-- **Audit** — audit rows are append-only; the actor is derived from JWT claims,
+- **Audit**: audit rows are append-only; the actor is derived from JWT claims,
   never caller input.
-- **Secrets at rest** — values are Fernet-encrypted with `MASTER_KEY`. Never
+- **Secrets at rest**: values are Fernet-encrypted with `MASTER_KEY`. Never
   store plaintext in `api.secrets` or log secret values.
 
 ---
@@ -81,6 +81,6 @@ reproduction if possible.
 
 ## Related docs
 
-- [architecture.md](architecture.md) — how it fits together
-- [database.md](database.md) — schema & RLS
-- [testing.md](testing.md) — tests & lint
+- [architecture.md](architecture.md): how it fits together
+- [database.md](database.md): schema & RLS
+- [testing.md](testing.md): tests & lint

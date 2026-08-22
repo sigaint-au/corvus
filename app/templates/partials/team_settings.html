@@ -1,6 +1,6 @@
 <section>
   <h2>Team settings</h2>
-  <form method="post" action="{{ url_for('update_team_settings', team_id=team.id) }}" id="team-settings-form">
+  <form method="post" action="{{ url_for('update_team_settings', team_id=team.id) }}" id="team-settings-form" data-dirty-guard>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div class="row">
       <label>Default machine-token expiry (days)
@@ -108,7 +108,7 @@
   </p>
   {% if ldap_maps %}
   <div class="table"><table>
-    <thead><tr><th>LDAP group</th><th>Team role</th><th></th></tr></thead>
+    <thead><tr><th>LDAP group</th><th>Team role</th><th class="acts-col" aria-label="Actions"></th></tr></thead>
     <tbody>
     {% for m in ldap_maps %}
       <tr>
@@ -155,7 +155,7 @@
   </p>
   {% if oidc_maps %}
   <div class="table"><table>
-    <thead><tr><th>OIDC group</th><th>Team role</th><th></th></tr></thead>
+    <thead><tr><th>OIDC group</th><th>Team role</th><th class="acts-col" aria-label="Actions"></th></tr></thead>
     <tbody>
     {% for m in oidc_maps %}
       <tr>

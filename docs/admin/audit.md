@@ -47,7 +47,7 @@ Sidebar → **Administration → Auditing**. Tabs:
 Retention is configured in the UI (**Administration → Auditing → Export &
 retention**, `audit_retention_days`). `0` = keep forever.
 
-Rows are **not** deleted automatically — a purge job must run:
+Rows are **not** deleted automatically. A purge job must run:
 
 ```bash
 # Dry-run (counts only)
@@ -97,5 +97,5 @@ tab. Use this for compliance / external auditors.
 
 ## Related docs
 
-- [deploy.md](deploy.md) — purge cron setup
-- [api.md](../dev/api.md) — audit via API
+- [deploy.md](deploy.md): purge cron setup
+- [api.md](../dev/api.md): audit via API

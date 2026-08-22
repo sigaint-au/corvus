@@ -310,7 +310,7 @@ def import_commit(project_id):
     back = url_for("project_detail", project_id=project_id, tab="import")
     items = _items_from_import_form()
     if not items:
-        flash("Nothing to import — upload again", "error")
+        flash("Nothing to import in that file. Upload again.", "error")
         return redirect(back)
     n_ok = 0
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:

@@ -1,4 +1,4 @@
-# User Guide — Using the Web UI
+# User guide
 
 How to use Sigaint Secret Server day to day: teams, projects, secrets, reveal,
 access requests, metadata, import/export.
@@ -14,9 +14,9 @@ Organisation
            └── Secret (a key/value, e.g. DATABASE_URL)
 ```
 
-- **Team** — the top-level access boundary. You belong to one or more teams.
-- **Project** — lives inside a team. Secrets are organised per project.
-- **Secret** — a named value (plain text, database URL, certificate, SSH key,
+- **Team**: the top-level access boundary. You belong to one or more teams.
+- **Project**: lives inside a team. Secrets are organised per project.
+- **Secret**: a named value (plain text, database URL, certificate, SSH key,
   or key/value pairs). Values are encrypted at rest.
 
 The **sidebar team switcher** selects which team you are working in. Most
@@ -52,7 +52,7 @@ You become the **team-owner** of any team you create.
 |------|-----|
 | **team-owner** | Everything; delete team; always project admin/write |
 | **team-admin** | Manage members, groups, settings; always project admin/write |
-| **team-member** | Create projects; write secrets (no reveal — grant separately) |
+| **team-member** | Create projects; write secrets (reveal granted separately) |
 | **team-viewer** | Read-only (metadata, no plaintext) |
 
 Only **team-owners** can assign the `team-owner` role.
@@ -167,9 +167,9 @@ Action…  →  Export .env | Export JSON | Delete
 
 ### Search
 
-- **Sidebar search** — searches teams, projects, and secrets you can access
+- **Sidebar search**: searches teams, projects, and secrets you can access
   (including custom metadata).
-- **Per-project search** — the search box on the Secrets tab filters key/note.
+- **Per-project search**: the search box on the Secrets tab filters key/note.
 
 ### Trash
 
@@ -188,10 +188,10 @@ accessed) and lets writers add custom searchable key/value labels.
 
 The **Access** tab on a secret controls:
 
-- **Access mode** — `inherit` (project/team bindings apply) or `restricted`
+- **Access mode**: `inherit` (project/team bindings apply) or `restricted`
   (only secret-scope bindings + project admins).
-- **Reveal approval** — override the project default (require / exempt).
-- **Secret role bindings** — bind users/groups to `secret-read`,
+- **Reveal approval**: override the project default (require / exempt).
+- **Secret role bindings**: bind users/groups to `secret-read`,
   `secret-reveal`, or `secret-write` roles.
 
 ---
@@ -207,8 +207,8 @@ Format:  Encrypted JSON | .env (plaintext) | JSON (plaintext) | CSV (plaintext)
 [Download]
 ```
 
-Plaintext exports require a confirmation. Exports respect reveal permissions — you
-only get secrets you may reveal.
+Plaintext exports require a confirmation. Exports respect reveal permissions:
+you only get secrets you may reveal.
 
 ### Import
 
@@ -233,6 +233,6 @@ of creates vs updates before anything is written. Requires write access.
 
 ## Related docs
 
-- [cli.md](cli.md) — CLI guide
-- [../admin/rbac.md](../admin/rbac.md) — RBAC access model
-- [../admin/machine-tokens.md](../admin/machine-tokens.md) — machine accounts
+- [cli.md](cli.md): CLI guide
+- [../admin/rbac.md](../admin/rbac.md): RBAC access model
+- [../admin/machine-tokens.md](../admin/machine-tokens.md): machine accounts

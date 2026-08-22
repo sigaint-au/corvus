@@ -17,7 +17,7 @@
         hx-swap="innerHTML">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div class="reveal-head">
-      <span class="badge" data-variant="{% if kind == 'kv' %}success{% elif kind in ('certificate', 'ssh') %}warning{% else %}secondary{% endif %}">{{ kind }}</span>
+      <span class="badge" data-variant="secondary">{{ kind }}</span>
       <span class="reveal-actions">
         <button type="button" class="link copy-btn"
            data-copy-target="{{ val_id }}"
@@ -45,7 +45,7 @@
 
   {% else %}
   <div class="reveal-head">
-    <span class="badge" data-variant="{% if kind == 'kv' %}success{% elif kind in ('certificate', 'ssh') %}warning{% else %}secondary{% endif %}">{{ kind }}</span>
+    <span class="badge" data-variant="secondary">{{ kind }}</span>
     <span class="reveal-actions">
       <button type="button" class="link copy-btn"
          data-copy-target="{{ val_id }}"

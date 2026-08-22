@@ -96,7 +96,7 @@ def parse_rules_yaml(text: str) -> list[tuple[list[str], list[str]]]:
             )
         rules.append((resources, verbs))
     if not rules:
-        raise ValueError("No rules found — add at least one resources/verbs pair")
+        raise ValueError("No rules yet. Add at least one resources/verbs pair.")
     return rules
 
 

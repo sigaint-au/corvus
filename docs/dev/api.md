@@ -1,4 +1,4 @@
-# API Reference
+# API reference
 
 Sigaint Secret Server exposes three machine-facing surfaces:
 
@@ -6,7 +6,7 @@ Sigaint Secret Server exposes three machine-facing surfaces:
 |---------|------|------|--------------------|
 | **App JSON** | `:8080` | Session or PAT (route-dependent) | No (except via UI HTML) |
 | **Unified secret API (ESO / CLI)** | `:8080/eso/v1/…` | `Authorization: Bearer ss_…` **or** `pat_…` | **Yes** (decrypt with `MASTER_KEY`) |
-| **PostgREST** | `:3000` (default) | `Authorization: Bearer <JWT>` | **No** — returns `value_enc` only |
+| **PostgREST** | `:3000` (default) | `Authorization: Bearer <JWT>` | **No**: returns `value_enc` only |
 
 > Authentication flows, token lifecycle, and credential curl examples:
 > [authentication.md](../admin/authentication.md).
@@ -343,7 +343,7 @@ curl -s -H "$AUTH" \
 
 A successful get (PAT) updates `last_accessed_at` / `last_accessed_by`.
 
-**404** `{"error":"not found"}` — token valid, key missing  
+**404** `{"error":"not found"}`: token valid, key missing  
 **401** `{"error":"unauthorized"}`  
 **403** PAT may return:
 
@@ -380,7 +380,7 @@ curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
   "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets" | jq .
 ```
 
-**200** — full secret object plus `"ok": true`.
+**200**: full secret object plus `"ok": true`.
 
 Notes:
 
@@ -426,7 +426,7 @@ curl -s -X PATCH -H "$AUTH" -H "Content-Type: application/json" \
   "$SS_URL/eso/v1/projects/$SS_PROJECT/secrets/API_KEY" | jq .
 ```
 
-**200** — updated secret object + `"ok": true`  
+**200**: updated secret object + `"ok": true`  
 **404** `{"error":"not found"}`  
 **403** read token cannot mutate
 **400** validation errors

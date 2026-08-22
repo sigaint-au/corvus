@@ -18,7 +18,7 @@
       <th>Project</th>
       <th>Note</th>
       <th>Deleted</th>
-      <th></th>
+      <th class="acts-col" aria-label="Actions"></th>
     </tr>
   </thead>
   <tbody>
@@ -70,7 +70,7 @@
 {% else %}
 {% set icon = 'inbox' %}
 {% set title = 'Trash is empty' %}
-{% set text = 'Soft-deleted secrets land here and can be restored or permanently purged.' %}
+  <p class="muted">Soft-deleted secrets land here. They can be restored or permanently deleted.</p>
 {% include "partials/empty_state.html" %}
 {% endif %}
 {% endif %}

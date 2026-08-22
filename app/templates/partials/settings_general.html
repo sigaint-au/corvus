@@ -4,7 +4,7 @@
     Public base URL of this application (no trailing slash). Used for OIDC redirect URIs
     and ESO / External Secrets Operator YAML defaults.
   </p>
-  <form method="post">
+  <form method="post" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="server_url">
     <label>Server URL
@@ -20,7 +20,7 @@
   <p class="muted">
     Add the required disclosure notice and an optional link to your system-use policy.
   </p>
-  <form method="post">
+  <form method="post" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="login_banner">
     <label class="check-row">
@@ -53,10 +53,10 @@
     Clipboard auto-clear and reveal auto-hide are per-device defaults; the scope
     of an approved reveal grant is server-wide.
   </p>
-  <form method="post">
+  <form method="post" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="ux">
-    <div class="row">
+    <div class="field-grid">
       <label>Clipboard auto-clear (seconds, 0 = off)
         <input type="number" name="clipboard_clear_seconds" min="0" max="3600"
                value="{{ settings.clipboard_clear_seconds or 30 }}"
@@ -83,7 +83,7 @@
     Control whether new local accounts can be created at <code>/register</code>.
     Existing users and LDAP login are unaffected.
   </p>
-  <form method="post">
+  <form method="post" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="registration">
     <label class="check-row">
@@ -100,7 +100,7 @@
   <p class="muted">
     When disabled, only global admins can create teams. Existing teams are unchanged.
   </p>
-  <form method="post">
+  <form method="post" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="team_creation">
     <label class="check-row">
@@ -117,7 +117,7 @@
   <p class="muted">
     Any user can enable TOTP. When enforced below, global admins must enroll and can't disable 2FA.
   </p>
-  <form method="post">
+  <form method="post" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="totp_enforce">
     <label class="check-row">
@@ -136,7 +136,7 @@
       <p class="muted">Set expiry requirements for newly issued personal access and machine tokens.</p>
     </div>
   </div>
-  <form method="post" aria-describedby="token-policy-help">
+  <form method="post" data-dirty-guard onsubmit="this._dirty=false" aria-describedby="token-policy-help">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="token_policy">
     <p id="token-policy-help" class="field-hint">Maximum lifetime is measured in days and applies when an expiry is required. Lifetime fields are enabled only while the matching expiry requirement is on.</p>

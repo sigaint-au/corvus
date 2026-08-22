@@ -222,12 +222,12 @@ def create_token(project_id):
             return _token_redirect()
     session["new_token"] = raw  # shown once
     scope_note = (
-        f" (scoped to {len(scopes)} key rule{'s' if len(scopes) != 1 else ''})"
+        f" scoped to {len(scopes)} key rule{'s' if len(scopes) != 1 else ''}"
         if scopes
-        else " (full project access)"
+        else " with full project access"
     )
     flash(
-        f"Machine account created{scope_note} — copy the token now; it is shown once",
+        f"Machine account created{scope_note}. Copy the token now. It is shown only once.",
         "ok",
     )
     return _token_redirect()

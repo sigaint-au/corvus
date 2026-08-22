@@ -114,7 +114,7 @@ class TestPersonalTokenRoutes:
         with self.client.session_transaction() as s:
             assert 'new_pat' not in s
             flashes = s.get('_flashes') or []
-        assert any(('Could not update your token. Try again.' in msg for _c, msg in flashes))
+        assert any(('Token creation failed. Try again.' in msg for _c, msg in flashes))
 
     def test_delete_pat(self):
         tid = uuid4()

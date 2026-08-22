@@ -62,7 +62,7 @@ class TestTotp:
         store.app.config['TESTING'] = True
         client = store.app.test_client()
         uid = uuid4()
-        conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'A'})
+        conn, _ = _conn(fetchone={'id': uid, 'email': 'a@b.c', 'name': 'A', 'email_verified_at': 'x'})
         with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=False), patch.object(authz, 'is_account_disabled', return_value=False), patch('auth.totp_svc.needs_challenge', return_value='verify'):
             r = client.post('/login', data={'email': 'a@b.c', 'password': 'secret12'}, follow_redirects=False)
         assert r.status_code == 302
@@ -92,7 +92,7 @@ class TestTotp:
         store.app.config['TESTING'] = True
         client = store.app.test_client()
         uid = uuid4()
-        conn, _ = _conn(fetchone={'id': uid, 'email': 'admin@b.c', 'name': 'A'})
+        conn, _ = _conn(fetchone={'id': uid, 'email': 'admin@b.c', 'name': 'A', 'email_verified_at': 'x'})
         with patch.object(db, 'connect', return_value=conn), patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), patch('auth.lockout.is_locked', return_value=False), patch('auth.lockout.clear_failures'), patch.object(authz, 'is_global_admin', return_value=True), patch.object(authz, 'is_account_disabled', return_value=False), patch('auth.totp_svc.needs_challenge', return_value='enroll'), patch('auth.user_sessions.create_session', return_value=None):
             r = client.post('/login', data={'email': 'admin@b.c', 'password': 'secret12'}, follow_redirects=False)
         assert r.status_code == 302

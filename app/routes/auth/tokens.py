@@ -42,12 +42,12 @@ def create_personal_token():
     try:
         raw = pats.create(session["user_id"], name, expires_days=expires_days)
         session["new_pat"] = raw
-        flash("Personal access token created — copy it now; it is shown once", "ok")
+        flash("Personal access token created. Copy the token now. It will not be shown again.", "ok")
     except ValueError:
-        flash("Could not update your token. Try again.", "error")
+        flash("Token creation failed. Try again.", "error")
     except Exception:
         log.exception("create PAT failed")
-        flash("Could not update your token. Try again.", "error")
+        flash("Token creation failed. Try again.", "error")
     return redirect(url_for("profile", tab="security"))
 
 

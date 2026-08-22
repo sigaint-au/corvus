@@ -67,7 +67,7 @@ def create_team_invite(team_id):
             )
             row = cur.fetchone()
             if not row:
-                flash("You don't have permission to do that", "error")
+                flash("Permission denied", "error")
                 conn.rollback()
                 return redirect(url_for("team_detail", team_id=team_id, tab="members"))
             audit.log_org(
@@ -81,7 +81,7 @@ def create_team_invite(team_id):
             flash("Could not update the invitation. Try again.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="members"))
     session["new_invite_url"] = url_for("redeem_invite", token=raw, _external=True)
-    flash("Invite link created — copy it now (shown once)", "ok")
+    flash("Invite link created. Copy it now; it shows only this once.", "ok")
     return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 

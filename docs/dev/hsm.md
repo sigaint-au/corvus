@@ -17,7 +17,7 @@ HSM in production by configuring a named slot's PKCS#11 URL.
 - `private.project_crypto_keys.key_enc` holds the wrapped DEK,
   `key_provider='hsm'`, and `kms_key_ref` = the KEK label. `api.secrets`/
   `api.secret_versions.crypto_provider` stays `'project'` for HSM-backed
-  projects — the difference is only *where the DEK is unwrapped*.
+  projects; the difference is only *where the DEK is unwrapped*.
 
 Value encryption/decryption is unchanged (Fernet); `MASTER_KEY` is no longer in
 the trust path for HSM-backed projects' DEKs.
@@ -47,7 +47,7 @@ HSM-backed projects.
 
 ## App configuration (env)
 
-The app holds **no global HSM configuration** — HSM access is configured per
+The app holds **no global HSM configuration**: HSM access is configured per
 **named slot** (a PKCS#11 URL in `private.hsm_slots`). Runtime configuration includes:
 
 - `SOFTHSM2_CONF`: SoftHSM2's shared configuration path.
@@ -134,8 +134,8 @@ pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofths
   cannot be decrypted until linked to a slot. The wizard offers "HSM" only when
   named slots exist.
 - **Linking legacy projects**: once a slot's KEK label matches a legacy
-  project's `kms_key_ref`, use the "Link legacy project(s)" action — a
-  metadata-only `UPDATE` (no re-encryption). The slot must be reachable
+  project's `kms_key_ref`, use the "Link legacy project(s)" action, a metadata-only `UPDATE`
+  (no re-encryption). The slot must be reachable
   (`available_for_slot`) before linking; the KEK label is verified against the
   live token.
 - A slot URL cannot be changed while project keys reference that slot. Create a
@@ -148,8 +148,7 @@ pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofths
 
 ## `test_connection_for_slot` behavior
 
-Returns `(True, msg)` when the token is reachable, **even if the KEK is missing**
-— the KEK is created lazily on first use. Returns `(False, error)` when the
+Returns `(True, msg)` when the token is reachable, even if the KEK is missing; the KEK is created lazily on first use. Returns `(False, error)` when the
 session cannot be opened (module not found, token missing, wrong PIN, etc.) or
 the configured connection-test timeout is reached.
 
@@ -165,11 +164,11 @@ UI to warn that inline PINs are stored in the database. Prefer `pin-source=`
 
 ## Notes / caveats
 
-- SoftHSM2 is a **local library**, not a network HSM — the token directory must
+- SoftHSM2 is a **local library**, not a network HSM. The token directory must
   be shared with the app (hence the shared volume).
 - The PKCS#11 calls in `app/crypto/hsm.py` are written for SoftHSM2 2.6 + `python-pkcs11`
   0.7. If you point at a real HSM, verify its AES-CBC key-wrap behaviour.
 - MASTER_KEY rotation (`rekey-project-keys`) skips HSM-backed rows: their DEKs
   don't depend on `MASTER_KEY`.
-- Loss of the HSM token (or PIN) makes HSM-backed secrets unrecoverable —
-  back up the token directory.
+- Losing the HSM token (or its PIN) makes HSM-backed secrets unrecoverable.
+  Back up the token directory.

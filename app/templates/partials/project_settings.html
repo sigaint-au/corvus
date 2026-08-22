@@ -2,9 +2,9 @@
 <section>
   <div class="section-head">
     <h2>General</h2>
-    <p class="muted section-head-desc">Applied when new secrets are created in this project.</p>
+  <p class="muted section-head-desc">Applied to new secrets created in this project.</p>
   </div>
-  <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="settings-form">
+  <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="settings-form" data-dirty-guard>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <fieldset class="field-group">
       <legend>Project</legend>
@@ -46,7 +46,7 @@
       </div>
     </fieldset>
     <p class="form-actions">
-      <button type="submit" class="button">Save changes</button>
+      <button type="submit">Save changes</button>
     </p>
   </form>
 </section>
@@ -108,10 +108,11 @@
   <div class="crypto-migrate-card">
     <div class="crypto-migrate-header">
       <strong>Upgrade to hardware security (HSM)</strong>
-      <p class="muted">Re-wraps this project's key with an external PKCS#11 HSM token. All secrets will be re-encrypted under the new HSM KEK.</p>
+      <p class="muted">Re-wraps this project's key with an external PKCS#11 HSM token. The server re-encrypts every secret under the new HSM KEK.</p>
     </div>
     <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
           class="crypto-migrate-form"
+          data-dirty-guard
           onsubmit="return confirm('Migrate this project to an HSM-wrapped key? All secrets will be re-encrypted. The HSM must remain available for all future access.');">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="action" value="migrate">
@@ -134,6 +135,7 @@
   {% if can_manage_keys and not project_crypto %}
   <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
         class="crypto-adopt"
+        data-dirty-guard
         onsubmit="var p=this.querySelector('input[name=provider]:checked');var h=p&&p.value==='hsm';return confirm(h?'Create an HSM-wrapped project key and re-encrypt secrets onto it?':'Create a project key and re-encrypt secrets onto it?');">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="adopt">
@@ -166,7 +168,7 @@
     </label>
     {% endif %}
     <p class="form-actions">
-      <button type="submit" class="button">Adopt project key</button>
+      <button type="submit">Adopt project key</button>
     </p>
   </form>
   <script>

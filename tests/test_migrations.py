@@ -37,7 +37,12 @@ def _write_migrations(tmp_path, files):
 def test_migrations_ship_in_order():
     """Baseline plus additive hardening migrations ship in order."""
     files = [p.name for p in migrations._migration_files()]
-    assert files == ["0001_init.sql", "0002_rls_authz_hardening.sql"]
+    assert files == [
+        "0001_init.sql",
+        "0002_rls_authz_hardening.sql",
+        "0003_email_verification.sql",
+        "0004_email_verify_backfill.sql",
+    ]
     for name in files:
         assert name[:4].isdigit()
         assert name[4] == "_"

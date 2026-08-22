@@ -23,7 +23,7 @@
   {% if members %}
   <div class="table">
     <table>
-      <thead><tr><th>Member</th><th>Role</th><th>Created</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
+      <thead><tr><th>Member</th><th>Role</th><th>Created</th>{% if is_admin %}<th class="acts-col" aria-label="Actions"></th>{% endif %}</tr></thead>
       <tbody>
       {% for b in members %}
         <tr>
@@ -76,12 +76,12 @@
   </form>
   {% if invites %}
   <div class="table"><table>
-    <thead><tr><th>Role</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Role</th><th>Expires</th><th>Status</th><th class="acts-col" aria-label="Actions"></th></tr></thead>
     <tbody>
     {% for i in invites %}
       <tr>
         <td><span class="badge" data-variant="secondary">{{ i.role }}</span></td>
-        <td class="muted">{{ i.expires_at }}</td>
+        <td class="muted" title="{{ i.expires_at|time_when }}">{{ i.expires_at|expires if i.expires_at else '-' }}</td>
         <td class="muted">{% if i.revoked_at %}revoked{% else %}active{% endif %}</td>
         <td class="acts">
           {% if not i.revoked_at %}
@@ -101,13 +101,13 @@
   <h3>Pending requests</h3>
   {% if join_requests %}
   <div class="table"><table>
-    <thead><tr><th>User</th><th>Role</th><th>Requested</th><th></th></tr></thead>
+    <thead><tr><th>User</th><th>Role</th><th>Requested</th><th class="acts-col" aria-label="Actions"></th></tr></thead>
     <tbody>
     {% for r in join_requests %}
       <tr>
         <td>{{ r.name or r.email }} <span class="muted">{{ r.email }}</span></td>
         <td><span class="badge" data-variant="secondary">{{ r.role }}</span></td>
-        <td class="muted">{{ r.created_at }}</td>
+        <td class="muted" title="{{ r.created_at|time_when }}">{{ r.created_at|time_ago }}</td>
         <td class="acts">
           <form method="post" action="{{ url_for('approve_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">

@@ -45,7 +45,7 @@ def change_password():
         return redirect(url_for("profile", tab="security"))
     ok, err = passwords.change_password(uid, old, new)
     if not ok:
-        flash(err or "Could not change password", "error")
+        flash(err or "Password change failed", "error")
         return redirect(url_for("profile", tab="security"))
     # Keep current session; sign out other devices after password change
     sid = session.get("sid")
@@ -76,7 +76,7 @@ def revoke_other_sessions():
     uid = session["user_id"]
     sid = session.get("sid")
     if not sid:
-        flash("No active session registry entry for this browser", "error")
+        flash("No active session found for this browser", "error")
         return redirect(url_for("profile", tab="security"))
     n = user_sessions.revoke_other_sessions(uid, sid)
     flash(f"Signed out {n} other session(s).", "ok")
@@ -101,12 +101,12 @@ def revoke_session(session_id):
     if sid == session.get("sid"):
         user_sessions.revoke_session(sid, uid)
         session.clear()
-        flash("Signed out this session.", "ok")
+        flash("Current session signed out", "ok")
         return redirect(url_for("login"))
     if user_sessions.revoke_session(sid, uid):
-        flash("Session signed out.", "ok")
+        flash("Session revoked", "ok")
     else:
-        flash("Session not found or already signed out.", "error")
+        flash("Session not found or already revoked", "error")
     return redirect(url_for("profile", tab="security"))
 
 
@@ -144,7 +144,7 @@ def profile():
     except Exception:
         log.exception("profile: load user failed")
     if not user:
-        flash("Could not load your profile", "error")
+        flash("Failed to load profile", "error")
         return redirect(url_for("projects_list"))
 
     totp_on = bool(user.get("totp_enabled_at"))

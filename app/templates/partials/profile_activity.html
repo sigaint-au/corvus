@@ -63,7 +63,7 @@
         </td>
         <td>{{ s.project_name }}</td>
         <td class="muted">{{ s.team_name }}</td>
-        <td class="muted">{{ s.accessed_at }}</td>
+        <td class="muted" title="{{ s.accessed_at|time_when }}">{{ s.accessed_at|time_ago }}</td>
       </tr>
     {% endfor %}
     </tbody>

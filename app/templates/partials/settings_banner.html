@@ -1,7 +1,7 @@
 <section class="list-panel">
   <h2>Classification banner</h2>
-  <p class="muted">Shown at the top of every page when enabled. Used for DoD / policy compliance.</p>
-  <form method="post" id="banner-form">
+  <p class="muted">Shown at the top of every page when enabled.</p>
+  <form method="post" id="banner-form" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="classification">
     <label class="check-row">

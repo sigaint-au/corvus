@@ -99,7 +99,7 @@
             {% if s.rotation_due == 'overdue' %}<span class="badge" data-variant="danger">rotation overdue</span>
             {% elif s.rotation_due == 'soon' %}<span class="badge" data-variant="warning">rotation soon</span>{% endif %}
           </td>
-          <td><span class="badge" data-variant="{% if s.kind == 'kv' %}success{% elif s.kind in ('certificate', 'ssh') %}warning{% else %}secondary{% endif %}">{{ s.kind or 'plain' }}</span></td>
+          <td><span class="badge" data-variant="secondary">{{ s.kind or 'plain' }}</span></td>
           <td><a href="{{ url_for('project_detail', project_id=s.project_id) }}">{{ s.project_name }}</a></td>
           <td class="muted">{{ s.team_name }}</td>
           <td class="col-note muted">{{ s.note }}</td>
@@ -194,7 +194,7 @@
           {% if s.rotation_due == 'overdue' %}<span class="badge" data-variant="danger">rotation overdue</span>
           {% elif s.rotation_due == 'soon' %}<span class="badge" data-variant="warning">rotation soon</span>{% endif %}
         </td>
-        <td><span class="badge" data-variant="{% if s.kind == 'kv' %}success{% elif s.kind in ('certificate', 'ssh') %}warning{% else %}secondary{% endif %}">{{ s.kind or 'plain' }}</span></td>
+        <td><span class="badge" data-variant="secondary">{{ s.kind or 'plain' }}</span></td>
         <td><a href="{{ url_for('project_detail', project_id=s.project_id) }}">{{ s.project_name }}</a></td>
         <td class="muted">{{ s.team_name }}</td>
         <td class="col-note muted">{{ s.note }}</td>

@@ -2,7 +2,7 @@
 
 Secret values are encrypted with Fernet before they are stored. By default a
 single server-wide key (`MASTER_KEY`) is used. Projects can opt in to a
-**dedicated data-encryption key (DEK)** — "bring your own key" per project.
+**dedicated data-encryption key (DEK)**: "bring your own key" per project.
 
 The first supported tier generates and stores the project key **locally**
 (server-side, wrapped by `MASTER_KEY`). An **external HSM** tier wraps the
@@ -23,7 +23,7 @@ DEK (per-project Fernet key)     ──encrypts──►  api.secrets.value_enc
 - Every secret row records which key encrypted it via
   `api.secrets.crypto_provider` (`'master'` or `'project'`). Version history
   snapshots carry the same marker (`api.secret_versions.crypto_provider`).
-- The raw DEK is **never stored** — only the Fernet-wrapped form.
+- The raw DEK is **never stored**: only the Fernet-wrapped form.
 - Non-secret server settings (SMTP, LDAP, OIDC, TOTP) always use
   `MASTER_KEY`, regardless of project BYOK.
 
@@ -34,14 +34,14 @@ DEK (per-project Fernet key)     ──encrypts──►  api.secrets.value_enc
 Create a project via **Add project →** the new-project onboarding page
 (`/teams/<team_id>/projects/new`):
 
-1. **Basics** — name + description.
-2. **Encryption** — choose:
-   - **Managed — platform key** (default): secrets use the server key.
-   - **Project key — bring your own key**: the wizard creates a project DEK at
+1. **Basics**: name + description.
+2. **Encryption**: choose:
+   - **Managed (platform key)** (default): secrets use the server key.
+   - **Project key (bring your own key)**: the wizard creates a project DEK at
      creation time. All new secrets are encrypted under it.
    - **External HSM** (shown when an HSM is configured): the project DEK is
      wrapped by the HSM's key-encryption key.
-3. **Create** — review and submit.
+3. **Create**: review and submit.
 
 Creating a project with BYOK records an `org_audit` event
 (`project_key_created`).
@@ -50,12 +50,12 @@ Creating a project with BYOK records an `org_audit` event
 
 - **Status:** shows whether the project uses a managed (server) key or a
   dedicated project key (`local` provider) and when it was created.
-- **Adopt project key** — applies a project key to a project that was created
+- **Adopt project key**: applies a project key to a project that was created
   with the managed key (or re-encrypts legacy rows). Every secret/version still
   encrypted with `MASTER_KEY` is re-encrypted under the project DEK. The
   operation is additive (rows that fail stay `crypto_provider='master'` and
   remain readable) and audited (`project_key_adopted`).
-- **Migrate to HSM** — when an HSM is configured, a `local` project can be
+- **Migrate to HSM**: when an HSM is configured, a `local` project can be
   migrated to an HSM-wrapped key (all secrets re-encrypted, audited as
   `project_key_migrated`).
 
@@ -85,7 +85,7 @@ for the full URL format and Kubernetes/Docker PIN setup.
 
 1. Create a test project and select **HSM** (choose the slot).
 2. Check Project Settings → Encryption shows the slot name.
-3. Create a secret and reveal it — confirms the full encrypt/decrypt path.
+3. Create a secret and reveal it to confirm the full encrypt/decrypt path.
 
 ### Backup
 
@@ -126,8 +126,8 @@ If the HSM is lost:
   a compromise of `MASTER_KEY` compromises local-BYOK projects. Local-BYOK
   projects remain in the same trust boundary as the app server.
 - **HSM-backed:** the DEK is wrapped by the HSM key-encryption key, so
-  `MASTER_KEY` is *not* in the trust path — a `MASTER_KEY` compromise does not
-  affect HSM-backed projects. (They still rely on the HSM being online and on
+  `MASTER_KEY` is *not* in the trust path, so a `MASTER_KEY` compromise does
+  not affect HSM-backed projects. (They still rely on the HSM being online and on
   the HSM's own protection of the KEK.)
 
 ---
@@ -185,7 +185,7 @@ pkcs11:token=<label>;object=<KEK label>?module-path=/path/to/module.so&pin-sourc
   PINs and warns when an inline PIN is stored in the database).
 - **Edit a slot** via the slot menu → Edit. The existing URL is shown redacted;
   leave it blank to keep it unchanged. A slot URL cannot be changed while
-  project keys reference it—create a new slot and migrate those projects instead.
+  project keys reference it. Create a new slot and migrate those projects instead.
 - **Default slot**: new HSM projects auto-select it in the wizard.
 - **Status badge**: each slot shows a Connected/Offline badge (checked on page
   load). Connection tests are bounded by `HSM_TEST_TIMEOUT_SECONDS` (10 seconds
@@ -193,8 +193,8 @@ pkcs11:token=<label>;object=<KEK label>?module-path=/path/to/module.so&pin-sourc
 - **Test** verifies the slot's token opens and the KEK exists (non-destructive).
   Returns success even when the KEK is missing (created on first use).
 - **Save without testing**: when the connection test fails, a "Save without
-  testing" button appears — use for slots that will be reachable later (e.g.
-  HSM not yet online during initial setup).
+  testing" button covers slots that are not reachable yet (e.g. the HSM is
+  offline during initial setup).
 - **Rotate KEK** generates a fresh KEK and re-wraps the slot's projects. The
   confirm dialog shows the slot name.
 - **Delete** is blocked while projects still reference the slot.
@@ -202,7 +202,7 @@ pkcs11:token=<label>;object=<KEK label>?module-path=/path/to/module.so&pin-sourc
   revokes default `PUBLIC` function execution and only exposes non-sensitive
   slot metadata to ordinary authenticated callers.
 - **Link legacy project(s)**: associates pre-slot HSM projects (created before
-  named slots) with a slot whose KEK label matches — metadata only, no
+  named slots) with a slot whose KEK label matches. Metadata only; no
   re-encryption. The slot must be reachable before linking.
 - **Migrate all local to HSM**: when local BYOK projects exist and slots are
   configured, a slot selector + button appears to bulk-migrate all local
@@ -263,10 +263,10 @@ migrated `local → hsm`; the reverse is not exposed).
 
 ## Roadmap / not yet shipped
 
-- **Key rotation** — planned contract: reuse the adopt gate (team owner/admin
+- **Key rotation**: planned contract reuses the adopt gate (team owner/admin
   or global admin), add `key_version` to `api.secrets`/`api.secret_versions`
   plus a DEK history so old ciphertext stays decryptable, require a
   confirmation step, and record an `org_audit` event (`project_key_rotated`).
-- **"Require HSM" policy** — a server setting that disables Managed/Local in
+- **"Require HSM" policy**: a server setting that disables Managed/Local in
   the new-project wizard so every new project must be HSM-backed.
 - Per-team keys (today granularity is per-project).

@@ -198,7 +198,7 @@ def add_group_member(team_id, group_id):
     """Add a manual member to a group."""
     email = (request.form.get("email") or "").strip().lower()
     if not email:
-        flash("Enter an email address.", "error")
+        flash("Enter an email address", "error")
         return redirect(_group_detail_url(team_id, group_id))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
@@ -211,7 +211,7 @@ def add_group_member(team_id, group_id):
             return redirect(url_for("team_detail", team_id=team_id, tab="groups"))
         uid = lookup_user_id(cur, email)
         if not uid:
-            flash("User not found — they must register or sign in first", "error")
+            flash("No user with that email. They need to register or sign in first.", "error")
             return redirect(_group_detail_url(team_id, group_id))
         try:
             cur.execute(

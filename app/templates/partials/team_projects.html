@@ -20,7 +20,7 @@
   </div>
   {% if projects %}
   <div class="table"><table>
-    <thead><tr><th>Name</th><th>Description</th><th>Encryption</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th></th>{% endif %}</tr></thead>
+    <thead><tr><th>Name</th><th>Description</th><th>Encryption</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th class="acts-col" aria-label="Actions"></th>{% endif %}</tr></thead>
     <tbody>
     {% for p in projects %}
       <tr>

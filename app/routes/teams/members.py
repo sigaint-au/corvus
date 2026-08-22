@@ -43,7 +43,7 @@ def team_access_binding_create(team_id):
             if subject_kind == "User":
                 subject_id = lookup_user_id(cur, subject_email)
                 if not subject_id:
-                    flash("User not found — they must register first", "error")
+                    flash("No user with that email. They need to register first.", "error")
                     return redirect(access_url)
             elif subject_kind == "Group":
                 cur.execute(
@@ -149,7 +149,7 @@ def add_team_binding(team_id):
             return redirect(url_for("team_detail", team_id=team_id, tab="members"))
         uid = lookup_user_id(cur, email)
         if not uid:
-            flash("User not found — they must register or sign in via LDAP first", "error")
+            flash("No user with that email. They need to register or sign in via LDAP first.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="members"))
         try:
             # Check for existing binding to determine add vs update
@@ -256,7 +256,7 @@ def transfer_team_ownership(team_id):
     """
     email = (request.form.get("email") or "").strip().lower()
     if not email:
-        flash("Enter an email address.", "error")
+        flash("Enter an email address", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
@@ -265,7 +265,7 @@ def transfer_team_ownership(team_id):
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
         new_uid = lookup_user_id(cur, email)
         if not new_uid:
-            flash("User not found — they must already be registered", "error")
+            flash("No user with that email. Ask them to sign up first.", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
         if new_uid == session["user_id"]:
             flash("Already owner", "ok")

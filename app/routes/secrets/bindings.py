@@ -116,14 +116,14 @@ def add_secret_access_binding(project_id, secret_id):
         cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (role_name,))
         role = cur.fetchone()
         if not role:
-            flash(f"Built-in role {role_name} missing — run schema ensure", "error")
+            flash(f"Built-in role {role_name} missing. Run schema ensure.", "error")
             return redirect(access_url)
         try:
             if subject_kind == "User":
                 subject_id = lookup_user_id(cur, email)
                 if not subject_id:
                     flash(
-                        "User not found — they must register or sign in first",
+                        "No user with that email. They need to register or sign in first.",
                         "error",
                     )
                     return redirect(access_url)
@@ -222,8 +222,8 @@ def add_secret_access_binding(project_id, secret_id):
             conn.commit()
             if external_user:
                 flash(
-                    f"Bound {who} as {role_name}. They are not on this team - "
-                    "they will only see this secret under Workspace → Shared secrets.",
+                    f"Bound {who} as {role_name}. They are not on this team. "
+                    "They will only see this secret under Workspace in Shared secrets.",
                     "ok",
                 )
             else:

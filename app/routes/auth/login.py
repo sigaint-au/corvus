@@ -52,10 +52,12 @@ def login():
             flash("Too many failed attempts. Try again in a few minutes.", "error")
             return _login_page(), 429
         user = None
+        local_ok = False
         # 1) Local password accounts (break-glass / non-LDAP users)
         with db.connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM private.verify_user(%s, %s)", (email, password))
             user = cur.fetchone()
+            local_ok = bool(user)
         # 2) LDAP when enabled and local auth failed
         if not user and ldap_on:
             ldap_user = ldap_auth.ldap_authenticate(email, password)
@@ -77,6 +79,15 @@ def login():
         if authz.is_account_disabled(str(user["id"])):
             flash("This account has been disabled. Contact an administrator.", "error")
             return _login_page(), 403
+        # Local password auth only: directory (LDAP/OIDC) already proved the
+        # mailbox. email_verified_at comes from private.verify_user — do not
+        # SELECT private.users as authenticator (no table privilege).
+        if local_ok and not user.get("email_verified_at"):
+            # Password proved; clear lockout so the retry after clicking the
+            # link is not penalized.
+            lockout.clear_failures(email)
+            flash("Verify your email before signing in. Check your inbox for the verification link.", "error")
+            return render_template("verify_email.html", email=email), 403
         lockout.clear_failures(email)
         return _post_password_login(user)
     return _login_page()
@@ -201,8 +212,7 @@ def login_2fa():
         if method == "recovery":
             left = totp_svc.recovery_codes_remaining(uid)
             flash(
-                f"Signed in with a recovery code. {left} recovery code(s) remaining. "
-                "Consider regenerating codes on your profile.",
+                f"Signed in with a recovery code. {left} remaining. Regenerate codes from your profile.",
                 "ok",
             )
         if mailer.login_alerts_enabled():
@@ -299,7 +309,7 @@ def reset_password(token):
             return render_template("reset_password.html", token=token), 400
         ok, err = passwords.consume_reset_token(token, pw)
         if not ok:
-            flash(err or "Reset failed", "error")
+            flash(err or "Password reset failed. Try again.", "error")
             return render_template("reset_password.html", token=token), 400
         flash("Password updated. Sign in with your new password.", "ok")
         return redirect(url_for("login"))
