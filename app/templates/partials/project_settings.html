@@ -2,7 +2,7 @@
 <section>
   <div class="section-head">
     <h2>General</h2>
-    <p class="muted section-head-desc">Applied when new secrets are created in this project.</p>
+  <p class="muted section-head-desc">Applied to new secrets created in this project.</p>
   </div>
   <form method="post" action="{{ url_for('update_project_settings', project_id=project.id) }}" class="settings-form" data-dirty-guard>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">

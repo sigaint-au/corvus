@@ -132,7 +132,7 @@
   {% endif %}
   {% else %}
   <p class="muted">
-    Authenticator app at sign-in.
+    Use an authenticator app at sign-in.
     {% if totp_enforced_for_user %}<strong>Required for global admins.</strong>{% endif %}
   </p>
   <p class="form-actions"><a class="button outline" href="{{ url_for('totp_setup') }}">Set up 2FA</a></p>
@@ -179,7 +179,7 @@
     </form>
     {% endif %}
   </div>
-  <p class="muted">Signed-in devices.</p>
+  <p class="muted">Devices signed in to your account.</p>
   {% if active_sessions %}
   <div class="table"><table>
     <thead>

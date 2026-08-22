@@ -57,7 +57,7 @@
       Send login alert emails on successful sign-in
     </label>
     <p class="muted field-spacer">
-      Password-reset emails send when SMTP is enabled; login alerts need the checkbox above.
+      Password reset emails are sent when SMTP is enabled; login alerts require the checkbox above.
     </p>
     <p class="form-actions"><button type="submit">Save email settings</button></p>
   </form>
@@ -65,7 +65,7 @@
 
 <section class="list-panel">
   <h2>Send test email</h2>
-  <p class="muted">Uses the saved SMTP settings. Save first if you changed them.</p>
+  <p class="muted">Uses the saved SMTP settings. Save before testing if you changed them.</p>
   <form method="post" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="smtp_test">
