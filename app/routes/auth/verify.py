@@ -27,7 +27,7 @@ def verify_email(token: str):
         GET /verify-email/<token>
     """
     thash = hashlib.sha256((token or "").encode()).hexdigest()
-    with db.connect(autocommit=True) as conn, conn.cursor() as cur:
+    with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
             """
             SELECT id FROM private.users
@@ -78,7 +78,7 @@ def resend_verification():
     email = (request.form.get("email") or "").strip().lower()
     if email:
         try:
-            with db.connect(autocommit=True) as conn, conn.cursor() as cur:
+            with db.connect_admin() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT id, email FROM private.users

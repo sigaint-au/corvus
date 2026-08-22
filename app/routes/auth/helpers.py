@@ -36,7 +36,7 @@ def send_verification_email(uid, email: str) -> bool:
     token = _secrets.token_urlsafe(32)
     thash = hashlib.sha256(token.encode()).hexdigest()
     try:
-        with db.connect(autocommit=True) as conn, conn.cursor() as cur:
+        with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
                 """UPDATE private.users
                       SET email_verified_at = NULL,

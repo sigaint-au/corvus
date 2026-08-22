@@ -154,14 +154,14 @@ class TestAuth:
     def test_register_password_match_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid})
-        with patch.object(db, 'connect', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
+        with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/register', data={'email': 'match@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=False)
         assert r.status_code == 302
 
     def test_register_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid})
-        with patch.object(db, 'connect', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
+        with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
             r = self.client.post('/register', data={'email': 'new@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/teams' in r.location
@@ -472,6 +472,7 @@ class TestAuth:
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid})
         with patch.object(db, 'connect', return_value=conn), \
+             patch.object(db, 'connect_admin', return_value=conn), \
              patch.object(settings_svc, 'registration_enabled', return_value=True), \
              patch.object(settings_svc, 'setup_notice', return_value=None), \
              patch.object(authz, 'is_global_admin', return_value=False), \
@@ -495,6 +496,7 @@ class TestAuth:
 
         conn, _ = _conn(fetchone={'id': uid})
         with patch.object(db, 'connect', return_value=conn), \
+             patch.object(db, 'connect_admin', return_value=conn), \
              patch.object(settings_svc, 'registration_enabled', return_value=True), \
              patch.object(settings_svc, 'setup_notice', return_value=None), \
              patch.object(authz, 'is_global_admin', return_value=False), \
@@ -521,7 +523,7 @@ class TestAuth:
             ('email_verify_token_hash = %s', {'id': uid, 'email': 'v@b.c'}),
             ('email_verified_at = now()', lambda sql: updates.append(sql) or {'id': uid}),
         ])
-        with patch.object(db, 'connect', return_value=conn):
+        with patch.object(db, 'connect_admin', return_value=conn):
             r = self.client.get(f'/verify-email/{tok}', follow_redirects=True)
         assert r.status_code == 200
         assert b'Email verified' in r.data
@@ -530,7 +532,7 @@ class TestAuth:
     def test_verify_email_expired_token_rejected(self):
         tok = 'expired'
         conn, _ = self._seq_conn([('email_verify_token_hash = %s', None)])
-        with patch.object(db, 'connect', return_value=conn):
+        with patch.object(db, 'connect_admin', return_value=conn):
             r = self.client.get(f'/verify-email/{tok}', follow_redirects=True)
         assert b'invalid or expired' in r.data
 
@@ -552,8 +554,8 @@ class TestAuth:
     def test_login_ok_after_verified(self):
         uid = uuid4()
         conn, _ = self._seq_conn([
-            ('verify_user', {'id': uid, 'email': 'ok@b.c', 'name': 'O', 'is_global_admin': False}),
-            ('email_verified_at', {'email_verified_at': '2026-01-01T00:00:00Z'}),
+            ('verify_user', {'id': uid, 'email': 'ok@b.c', 'name': 'O', 'is_global_admin': False,
+                             'email_verified_at': '2026-01-01T00:00:00Z'}),
         ])
         with patch.object(db, 'connect', return_value=conn), \
              patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), \
@@ -570,7 +572,7 @@ class TestAuth:
     def test_resend_verification_generic_response_unknown_email(self):
         sent = []
         conn, _ = self._seq_conn([("auth_source = 'local'", None)])
-        with patch.object(db, 'connect', return_value=conn), \
+        with patch.object(db, 'connect_admin', return_value=conn), \
              patch.object(mailer, 'send_email_verification', side_effect=lambda e, _u: sent.append(e) or (True, "")):
             r = self.client.post('/verify-email/resend', data={'email': 'ghost@b.c'}, follow_redirects=True)
         assert '/login' in r.request.path
@@ -582,7 +584,7 @@ class TestAuth:
         sent = []
         conn, _ = self._seq_conn([("sent_at < now() - interval '60 seconds'", None),
                                   ("auth_source = 'local'", None)])
-        with patch.object(db, 'connect', return_value=conn), \
+        with patch.object(db, 'connect_admin', return_value=conn), \
              patch.object(mailer, 'send_email_verification', side_effect=lambda e, _u: sent.append(e) or (True, "")):
             r = self.client.post('/verify-email/resend', data={'email': 'throttle@b.c'}, follow_redirects=True)
         assert b'unverified account' in r.data
@@ -595,3 +597,9 @@ class TestAuth:
             body = init[start:init.index('$$;', start)]
             assert 'email_verified_at = COALESCE(email_verified_at, now())' in body
             assert 'now())\n' in body or 'now())' in body
+
+    def test_verify_user_returns_email_verified_at(self):
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0004_email_verify_backfill.sql').read_text()
+        assert 'email_verified_at timestamptz' in sql
+        assert 'SET email_verified_at = COALESCE(email_verified_at, created_at, now())' in sql
+        assert 'GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator' in sql

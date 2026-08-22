@@ -52,10 +52,12 @@ def login():
             flash("Too many failed attempts. Try again in a few minutes.", "error")
             return _login_page(), 429
         user = None
+        local_ok = False
         # 1) Local password accounts (break-glass / non-LDAP users)
         with db.connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM private.verify_user(%s, %s)", (email, password))
             user = cur.fetchone()
+            local_ok = bool(user)
         # 2) LDAP when enabled and local auth failed
         if not user and ldap_on:
             ldap_user = ldap_auth.ldap_authenticate(email, password)
@@ -77,13 +79,10 @@ def login():
         if authz.is_account_disabled(str(user["id"])):
             flash("This account has been disabled. Contact an administrator.", "error")
             return _login_page(), 403
-        with db.connect() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT email_verified_at FROM private.users WHERE id = %s::uuid",
-                (str(user["id"]),),
-            )
-            vrow = cur.fetchone() or {}
-        if not vrow.get("email_verified_at"):
+        # Local password auth only: directory (LDAP/OIDC) already proved the
+        # mailbox. email_verified_at comes from private.verify_user — do not
+        # SELECT private.users as authenticator (no table privilege).
+        if local_ok and not user.get("email_verified_at"):
             # Password proved; clear lockout so the retry after clicking the
             # link is not penalized.
             lockout.clear_failures(email)

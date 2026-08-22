@@ -77,13 +77,14 @@ def register_page():
                 )
                 return redirect(url_for("login"))
             # SMTP broke mid-signup: fail open so the account is not locked out.
-            with db.connect(autocommit=True) as conn, conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE private.users SET email_verified_at = now()"
-                    " WHERE id = %s::uuid",
-                    (str(uid),),
-                )
             log.warning("verification send failed; auto-verified %s", email.lower())
+        # No SMTP, or send failed: stamp verified so the next login is not gated.
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE private.users SET email_verified_at = now()"
+                " WHERE id = %s::uuid",
+                (str(uid),),
+            )
         is_admin = authz.is_global_admin(str(uid))
         # New accounts: only force enroll if bootstrap made them global admin
         if is_admin and totp_svc.enforce_global_admins():
