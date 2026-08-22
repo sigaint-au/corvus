@@ -26,14 +26,9 @@
 <p class="muted"><a href="{{ url_for('forgot_password') }}">Forgot password?</a>
   <span>(local accounts)</span>
 </p>
-<details class="muted">
-  <summary>Resend verification email</summary>
-  <form method="post" action="{{ url_for('resend_verification') }}">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Email <input type="email" name="email" required></label>
-    <button type="submit" class="ghost small">Resend</button>
-  </form>
-</details>
+{% if registration_enabled and smtp_configured %}
+<p class="muted">Didn't get your verification email? <a href="{{ url_for('verify_resend_page') }}">Resend it</a>.</p>
+{% endif %}
 {% if registration_enabled %}
 <p class="muted">No account? <a href="{{ url_for('register') }}">Register</a>
   {% if ldap_enabled or oidc_enabled %} <span>(local account)</span>{% endif %}

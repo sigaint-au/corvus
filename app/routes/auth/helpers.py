@@ -270,6 +270,7 @@ def _login_page(**extra):
         oidc_enabled=oidc_on,
         oidc_button_label=cfg.get("oidc_button_label") or "Sign in with SSO",
         registration_enabled=settings_svc.registration_enabled(),
+        smtp_configured=mailer.smtp_configured(),
         setup_notice=settings_svc.setup_notice(),
         **extra,
     )
