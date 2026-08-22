@@ -52,7 +52,7 @@ def admin_audit():
                 if days < 0 or days > 36500:
                     raise ValueError("out of range")
             except ValueError:
-                flash("Retention must be an integer from 0 (forever) to 36500 days", "error")
+                flash("Retention must be a number from 0 (keep forever) to 36500 days", "error")
             else:
                 settings_svc.set_setting("audit_retention_days", str(days))
                 flash(
