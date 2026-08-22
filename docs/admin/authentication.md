@@ -29,8 +29,9 @@ The browser flow is the only one that uses a cookie. It is **two-step** when
 
 When SMTP is configured, self-registered accounts start **unverified** and
 receive a single-use link (`/verify-email/<token>`, valid 3 days) before they
-can sign in. The link is stored hashed; the resend form on the sign-in page
-answers generically and sends at most one email per address per minute.
+can sign in. The link is stored hashed; after registering (or via the
+standalone `/verify-email` page) a check-inbox screen offers a resend form
+that answers generically and sends at most one email per address per minute.
 LDAP/OIDC-provisioned accounts skip this: the directory already proves the
 mailbox. Without SMTP, new accounts are active immediately (fail-open).
 ### 1a. Password (local) or LDAP login
