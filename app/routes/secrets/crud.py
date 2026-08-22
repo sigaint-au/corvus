@@ -56,7 +56,7 @@ def create_secret(project_id):
     note = request.form.get("note", "").strip()
     kind = normalize_kind(request.form.get("kind"))
     if kind != "plain":
-        flash("Use Advanced create for structured secret types", "error")
+        flash("Structured secret types require the advanced form.", "error")
         return redirect(url_for("secret_new", project_id=project_id))
     req_appr = _parse_requires_approval(request.form)
     access_mode = _parse_access_mode(request.form)
