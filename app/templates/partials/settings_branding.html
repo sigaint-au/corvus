@@ -4,7 +4,7 @@
     Product name shown in the sidebar, login screen, and page titles.
     Classification banner colours are under the Classification tab.
   </p>
-  <form method="post">
+  <form method="post" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="branding">
     <label>Brand name

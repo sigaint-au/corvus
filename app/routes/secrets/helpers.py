@@ -305,6 +305,8 @@ def _render_secret_view(
             "secret_view.html",
             project_id=project_id,
             project_name=row.get("project_name") or "",
+            team_id=row.get("team_id"),
+            team_name=row.get("team_name"),
             secret_id=secret_id,
             secret_key=row["key"],
             note=(row.get("note") or ""),

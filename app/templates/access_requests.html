@@ -19,7 +19,7 @@
       <th>Requester</th>
       <th>Reason</th>
       <th>Requested</th>
-      <th>Actions</th>
+      <th class="acts-col" aria-label="Actions"></th>
     </tr>
   </thead>
   <tbody>
@@ -42,7 +42,7 @@
         {% if r.name %}<span class="muted">{{ r.email }}</span>{% endif %}
       </td>
       <td class="muted col-note">{{ r.reason or '-' }}</td>
-      <td class="muted">{{ r.created_at }}</td>
+      <td class="muted" title="{{ r.created_at|time_when }}">{{ r.created_at|time_ago }}</td>
       <td class="acts access-acts">
         <div class="access-acts-stack">
             <form method="post"

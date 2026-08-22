@@ -25,7 +25,7 @@ Roles in the UI are **RBAC names** (`team-owner/team-admin/...` and project-role
 
 ## Secrets / templates
 
-- `app/templates/` = server-rendered, oat.ink + HTMX. Tabs on server pages are `<nav class="tabs">` links (not `role=tablist`); responsive tables by wrap `<div class="table">` (oat does horizontal scroll).
+- `app/templates/` = server-rendered, oat.ink + HTMX. Resource sub-pages use the vertical rail (`page-side`/`page-subnav`, `?tab=` links); `nav.tabs` markup remains only for client-side widget tablists (e.g. role-create mode switcher); responsive tables by wrap `<div class="table">` (oat does horizontal scroll).
 - Health checks: `/healthz` (liveness, always 200) and `/readyz` (readiness, checks DB). No auth required.
 - Config: `pyproject.toml` consolidates ruff, pytest, pyright, mypy, pylint settings. `.pylintrc` and `tox.ini` remain for their respective tools.
 - Connection pool: `db.py` uses `psycopg_pool` for admin connections (reduces overhead). User connections (`as_user`) stay direct (need `SET ROLE` per checkout).

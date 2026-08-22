@@ -7,7 +7,7 @@ with ``gunicorn app:app`` and ``import app as store`` in tests.
 import logging
 import os
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, get_flashed_messages, jsonify, render_template, request
 
 from auth import authz
 from core import config, db
@@ -153,6 +153,34 @@ def create_app():
 
     app.before_request(authz.csrf_protect)
     app.before_request(authz.validate_registered_session)
+
+    @app.after_request
+    def htmx_flashes(resp):
+        """Deliver flashed messages to HTMX partial swaps out-of-band.
+
+        Partials swapped via HTMX bypass ``base.html``, so flashes queued
+        during an hx request would otherwise surface only on some later
+        full page load. Append an OOB ``#flashes`` fragment instead.
+        """
+        if (
+            resp.status_code == 200
+            and request.headers.get("HX-Request") == "true"
+            and (resp.mimetype or "") == "text/html"
+        ):
+            try:
+                body = resp.get_data(as_text=False)
+                if b'id="flashes"' not in body:
+                    msgs = get_flashed_messages(with_categories=True)
+                    if msgs:
+                        oob = render_template(
+                            "partials/flash_messages.html",
+                            messages=msgs,
+                            oob=True,
+                        )
+                        resp.set_data(body + oob.encode())
+            except Exception:
+                log.exception("htmx flash delivery failed")
+        return resp
 
     @app.after_request
     def security_headers(resp):

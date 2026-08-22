@@ -5,7 +5,7 @@
     When SMTP is disabled or incomplete, password resets still create a token
     (logged server-side); login alerts are skipped.
   </p>
-  <form method="post">
+  <form method="post" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="smtp">
     <label class="check-row">
@@ -17,7 +17,7 @@
       <input type="text" name="smtp_host" value="{{ settings.smtp_host }}"
              placeholder="smtp.example.com" autocomplete="off">
     </label>
-    <div class="row">
+    <div class="field-grid">
       <label>Port
         <input type="number" name="smtp_port" min="1" max="65535"
                value="{{ settings.smtp_port or '587' }}" required>
@@ -31,15 +31,16 @@
         </select>
       </label>
     </div>
-    <label>Username <span class="muted">(optional if server allows relay)</span>
+    <label>Username
       <input type="text" name="smtp_username" value="{{ settings.smtp_username }}"
              autocomplete="off">
+      <span class="field-hint">Optional if the server allows relay</span>
     </label>
     <label>Password
       <input type="password" name="smtp_password" value="" autocomplete="new-password"
              placeholder="{% if settings.smtp_password_set %}•••••••• (leave blank to keep){% else %}optional{% endif %}">
     </label>
-    <div class="row">
+    <div class="field-grid">
       <label>From email
         <input type="email" name="smtp_from_email" value="{{ settings.smtp_from_email }}"
                placeholder="e.g. noreply@example.com">

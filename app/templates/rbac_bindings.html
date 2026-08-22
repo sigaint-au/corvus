@@ -22,7 +22,7 @@
 <form method="get" action="{{ url_for('rbac_bindings') }}" class="list-panel review-form">
   <div class="review-form-row">
     <label>Scope
-      <select name="scope" id="bind-scope" onchange="this.form.submit()">
+      <select name="scope" id="bind-scope">
         {% for sk in scope_kinds %}
         {% if sk != 'cluster' or session.get('is_global_admin') %}
         <option value="{{ sk }}" {% if sk == scope_kind %}selected{% endif %}>{{ sk|capitalize }}</option>
@@ -32,7 +32,7 @@
     </label>
     {% if scope_kind == 'team' %}
     <label>Team
-      <select name="scope_id" onchange="this.form.submit()">
+      <select name="scope_id">
         <option value="">Choose a team…</option>
         {% for t in teams %}
         <option value="{{ t.id }}" {% if scope_id and scope_id|string == t.id|string %}selected{% endif %}>{{ t.name }}</option>
@@ -41,7 +41,7 @@
     </label>
     {% elif scope_kind == 'project' %}
     <label>Project
-      <select name="scope_id" onchange="this.form.submit()">
+      <select name="scope_id">
         <option value="">Choose a project…</option>
         {% for p in projects %}
         <option value="{{ p.id }}" {% if scope_id and scope_id|string == p.id|string %}selected{% endif %}>{{ p.name }}</option>
@@ -50,7 +50,7 @@
     </label>
     {% elif scope_kind == 'secret' %}
     <label>Secret
-      <select name="scope_id" onchange="this.form.submit()">
+      <select name="scope_id">
         <option value="">Choose a secret…</option>
         {% for s in secrets %}
         <option value="{{ s.id }}" {% if scope_id and scope_id|string == s.id|string %}selected{% endif %}>
@@ -60,6 +60,7 @@
       </select>
     </label>
     {% endif %}
+    <button type="submit" class="button small">Apply</button>
   </div>
   <p class="muted review-form-hint">
     Bind a user, group, or machine account to a role at this scope.
@@ -87,7 +88,7 @@
           <th>Subject</th>
           <th>Role</th>
           <th>Created</th>
-          <th></th>
+          <th class="acts-col" aria-label="Actions"></th>
         </tr>
       </thead>
       <tbody>
@@ -195,7 +196,7 @@
     </fieldset>
 
     <p class="form-actions">
-      <button type="submit" class="button">Create binding</button>
+      <button type="submit">Create binding</button>
     </p>
   </form>
 </section>

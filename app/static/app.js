@@ -225,6 +225,54 @@ document.addEventListener('htmx:configRequest', function (e) {
     });
   })();
 
+  /* Unsaved-changes guard: warn before leaving a page with dirty forms. */
+  (function () {
+    function snapshot(form) {
+      return new FormData(form);
+    }
+    function same(a, b) {
+      if (a.length !== b.length) return false;
+      var ak = Array.from(a.keys()).sort().join('|');
+      var bk = Array.from(b.keys()).sort().join('|');
+      if (ak !== bk) return false;
+      for (var k of ak.split('|')) {
+        var av = a.getAll(k).join('\u0000');
+        var bv = b.getAll(k).join('\u0000');
+        if (av !== bv) return false;
+      }
+      return true;
+    }
+    function scan(root) {
+      (root || document).querySelectorAll('form[data-dirty-guard]').forEach(function (f) {
+        if (!f._clean) f._clean = snapshot(f);
+        f.addEventListener('input', function () { f._dirty = !same(f._clean, snapshot(f)); });
+      });
+    }
+    scan(document);
+    document.addEventListener('htmx:afterSwap', function (e) {
+      scan(e && e.target ? e.target : document);
+    });
+    window.addEventListener('beforeunload', function (e) {
+      var dirty = null;
+      document.querySelectorAll('form[data-dirty-guard]').forEach(function (f) {
+        if (f._dirty) dirty = f;
+      });
+      if (dirty) { e.preventDefault(); e.returnValue = ''; }
+    });
+    /* Intercept sidebar subnav links when a guarded form is dirty */
+    document.addEventListener('click', function (e) {
+      var link = e.target.closest && e.target.closest('.side-nav-link');
+      if (!link) return;
+      var dirty = null;
+      document.querySelectorAll('form[data-dirty-guard]').forEach(function (f) {
+        if (f._dirty) dirty = f;
+      });
+      if (dirty && !window.confirm('You have unsaved changes. Leave anyway?')) {
+        e.preventDefault();
+      }
+    }, true);
+  })();
+
   /* Dim search/filter forms immediately on submit (full-page GET). */
   document.addEventListener('submit', function (e) {
     var f = e.target && e.target.closest ? e.target.closest('form[method="get"]') : null;
@@ -399,7 +447,20 @@ document.addEventListener('htmx:configRequest', function (e) {
       hideTimers[key] = setTimeout(function () {
         hideTimers[key] = null;
         var cell = wrap.closest('.secret-cell');
-        if (!cell) return;
+        if (!cell) {
+          /* Standalone wrap (e.g. secret full view): mask in place. */
+          wrap.querySelectorAll('.secret-value').forEach(function (el) {
+            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+              el.value = '••••••••';
+              el.readOnly = true;
+            } else {
+              el.textContent = '••••••••';
+            }
+          });
+          wrap.querySelectorAll('.copy-btn').forEach(function (b) { b.disabled = true; });
+          if (window.ssToast) window.ssToast('Secret hidden — reload to reveal again');
+          return;
+        }
         var toggle = document.querySelector(
           '.reveal-toggle[hx-target="#' + cell.id + '"]'
         );

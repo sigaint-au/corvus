@@ -18,6 +18,7 @@ from flask import (
 import audit
 from auth import authz
 from core import db, settings_svc
+from ui import paging
 
 from .helpers import (
     _csv_response,
@@ -89,12 +90,21 @@ def admin_audit():
     access_rows = []
     role_rows = []
     role_total = 0
+    role_pager = None
     counts = {"secret_audit": 0, "org_audit": 0, "oldest": None, "newest": None}
     q = (request.args.get("q") or "").strip()
     actor = (request.args.get("actor") or "").strip()
     since = (request.args.get("since") or "").strip()
     until = (request.args.get("until") or "").strip()
-    role_actions = (request.args.get("role_actions") or "roles").strip().lower()
+    # ponytail: pager.html has a fixed filter-key set; "action" aliases
+    # role_actions there so the view survives pagination. Drop the alias if
+    # pager.html ever grows a role_actions key.
+    role_actions = (
+        request.args.get("role_actions")
+        or request.args.get("action")
+        or request.form.get("role_actions")
+        or "roles"
+    ).strip().lower()
     active_actions = (
         audit.ENC_CHANGE_ACTIONS
         if role_actions == "encryption"
@@ -113,6 +123,18 @@ def admin_audit():
                 since=since,
                 until=until,
             )
+            role_pager = paging.page_window(
+                role_total, paging.page_arg(), per_page=25
+            )
+            role_pager.update(
+                endpoint="admin_audit",
+                tab="roles",
+                q=q or None,
+                actor=actor or None,
+                since=since or None,
+                until=until or None,
+                action=role_actions if role_actions in ("roles", "encryption") else None,
+            )
             role_rows = audit.list_org_audit(
                 cur,
                 actions=active_actions,
@@ -120,7 +142,8 @@ def admin_audit():
                 actor=actor,
                 since=since,
                 until=until,
-                limit=100,
+                limit=role_pager["limit"],
+                offset=role_pager["offset"],
             )
         elif tab == "export":
             counts = audit.audit_counts(cur)
@@ -131,6 +154,7 @@ def admin_audit():
         access_rows=access_rows,
         role_rows=role_rows,
         role_total=role_total,
+        role_pager=role_pager,
         role_actions=role_actions,
         counts=counts,
         retention_days=retention_days,

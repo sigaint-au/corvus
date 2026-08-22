@@ -1,23 +1,6 @@
-{# Machine accounts results panel: search + table + pager (swapped via HTMX). #}
+{# Machine accounts results panel: table + pager (swapped via HTMX).
+   The search form lives in machines.html, outside this swap target. #}
 <div id="machines-results">
-  <form method="get" action="{{ url_for('machines_list') }}" class="audit-filters" role="search"
-        hx-get="{{ url_for('machines_list') }}"
-        hx-target="#machines-results"
-        hx-swap="outerHTML"
-        hx-push-url="true"
-        hx-trigger="submit, input delay:250ms from:input[name=q]">
-    <fieldset class="group search-input">
-      {% include "partials/search_icon.html" %}
-      <input type="search" name="q" value="{{ q or '' }}"
-             placeholder="Search machine accounts" autocomplete="off"
-             aria-label="Search machine accounts">
-    </fieldset>
-    {% if q %}
-    <div class="audit-filter-actions">
-      <a class="btn-clear" href="{{ url_for('machines_list') }}">Clear</a>
-    </div>
-    {% endif %}
-  </form>
   <section class="list-panel">
     {% if tokens %}
     <div class="table">
@@ -32,9 +15,9 @@
            <td><code class="k">{{ t.token_prefix }}…</code></td>
           <td><span class="badge" data-variant="secondary">{{ t.role or 'service-reveal' }}</span></td>
           <td class="muted" title="{% if t.last_used_at %}{{ t.last_used_at|time_when }}{% endif %}">{% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}never{% endif %}</td>
-          <td class="muted">{{ t.created_at }}</td>
-          <td class="muted">
-            {{ t.expires_at or 'never' }}
+          <td class="muted" title="{{ t.created_at|time_when }}">{{ t.created_at|time_ago }}</td>
+          <td class="muted"{% if t.expires_at %} title="{{ t.expires_at|time_when }}"{% endif %}>
+            {% if t.expires_at %}{{ t.expires_at|time_ago }}{% else %}never{% endif %}
             {% if t.due == 'overdue' %}<span class="badge" data-variant="danger">expired</span>
             {% elif t.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
           </td>
@@ -48,9 +31,7 @@
     {% else %}
     {% set icon = 'key' %}
     {% set title = 'No machine accounts' %}
-    {% set text = 'Machine accounts are service credentials scoped to a project for automation and CI use.' %}
-    {% set action = 'Create one on a project page' %}
-    {% set action_href = url_for('projects_list') %}
+    {% set text = 'Machine accounts are service credentials scoped to a project for automation and CI use. Open a project and use its Tokens tab to create one.' %}
     {% include "partials/empty_state.html" %}
     {% endif %}
   </section>

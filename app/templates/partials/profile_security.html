@@ -71,7 +71,7 @@
         <th>Created</th>
         <th>Expires</th>
         <th>Last used</th>
-        <th></th>
+        <th class="acts-col" aria-label="Actions"></th>
       </tr>
     </thead>
     <tbody>
@@ -80,7 +80,7 @@
         <td>{{ t.name }}</td>
         <td><code class="k">{{ t.token_prefix }}…</code></td>
         <td class="muted" title="{{ t.created_at }}">{{ t.created_at|time_ago if t.created_at else '-' }}</td>
-        <td class="muted">{{ t.expires_at or 'never' }}</td>
+        <td class="muted"{% if t.expires_at %} title="{{ t.expires_at|time_when }}"{% endif %}>{{ t.expires_at|expires if t.expires_at else 'never' }}</td>
         <td class="muted" title="{{ t.last_used_at }}">
           {% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}-{% endif %}
         </td>
@@ -106,7 +106,7 @@
   <p>
     <span class="badge" data-variant="secondary">Enabled</span>
     {% if user.totp_enabled_at %}
-    <span class="muted">since {{ user.totp_enabled_at }}</span>
+    <span class="muted" title="{{ user.totp_enabled_at|time_when }}">since {{ user.totp_enabled_at|time_ago }}</span>
     {% endif %}
     · {{ totp_recovery_remaining }} recovery codes left
     {% if totp_enforced_for_user %}<span class="muted">(required for global admins)</span>{% endif %}
@@ -187,7 +187,7 @@
         <th>Device / browser</th>
         <th>IP</th>
         <th>Last active</th>
-        <th></th>
+        <th class="acts-col" aria-label="Actions"></th>
       </tr>
     </thead>
     <tbody>

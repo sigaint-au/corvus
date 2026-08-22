@@ -9,18 +9,20 @@
   <a href="{{ url_for('rbac_bindings') }}">Role bindings</a>.
 </p>
 
-<nav class="tabs" aria-label="Roles sections">
+<div class="page-side">
+<nav class="page-subnav" aria-label="Roles sections">
   <a href="{{ url_for('rbac_roles', tab='builtin') }}"
-     class="tab {% if active_tab == 'builtin' %}active{% endif %}"{% if active_tab == 'builtin' %} aria-current="page"{% endif %}
->Built-in
+     class="page-subnav-link {% if active_tab == 'builtin' %}active{% endif %}"{% if active_tab == 'builtin' %} aria-current="page"{% endif %}
+  >Built-in
     <span class="tab-badge">{{ builtin_roles|length }}</span>
   </a>
   <a href="{{ url_for('rbac_roles', tab='custom') }}"
-     class="tab {% if active_tab == 'custom' %}active{% endif %}"{% if active_tab == 'custom' %} aria-current="page"{% endif %}
->Custom
+     class="page-subnav-link {% if active_tab == 'custom' or active_tab == 'create' %}active{% endif %}"{% if active_tab == 'custom' or active_tab == 'create' %} aria-current="page"{% endif %}
+  >Custom
     <span class="tab-badge">{{ custom_roles|length }}</span>
   </a>
 </nav>
+<div class="page-panel">
 
 {% if active_tab == 'builtin' %}
 <section>
@@ -77,7 +79,7 @@
           <th>Name</th>
           <th>Description</th>
           <th>Rules</th>
-          {% if can_edit %}<th></th>{% endif %}
+          {% if can_edit %}<th class="acts-col" aria-label="Actions"></th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -199,7 +201,7 @@ verbs: *
     </ot-tabs>
 
     <p class="form-actions">
-      <button type="submit" class="button">Create role</button>
+      <button type="submit">Create role</button>
       <a class="button ghost" href="{{ url_for('rbac_roles', tab='custom') }}">Cancel</a>
     </p>
   </form>
@@ -242,4 +244,6 @@ verbs: *
 {% elif active_tab == 'create' %}
 <p class="muted">Only global admins can create roles.</p>
 {% endif %}
+</div>
+</div>
 {% endblock %}

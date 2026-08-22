@@ -1,5 +1,5 @@
 {% if reveal_url and cell_id %}
-<a href="#"
+<a href="{{ reveal_url }}"
    class="secret-masked"
    hx-get="{{ reveal_url }}"
    hx-target="#{{ cell_id }}"

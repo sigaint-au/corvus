@@ -127,6 +127,208 @@ def _health_probe() -> dict:
     }
 
 
+# Form keys re-applied to the rendered form after a connection test, so the
+# admin does not lose typed-but-unsaved values when probing LDAP/OIDC.
+_PROBE_BOOL_KEYS = frozenset(
+    {
+        "ldap_enabled",
+        "ldap_start_tls",
+        "ldap_use_memberof",
+        "oidc_enabled",
+        "oidc_require_email_verified",
+    }
+)
+_PROBE_FORM_KEYS = (
+    "ldap_enabled",
+    "ldap_url",
+    "ldap_start_tls",
+    "ldap_bind_dn",
+    "ldap_probe_login",
+    "ldap_user_base",
+    "ldap_user_filter",
+    "ldap_email_attr",
+    "ldap_name_attr",
+    "ldap_group_base",
+    "ldap_group_filter",
+    "ldap_use_memberof",
+    "oidc_enabled",
+    "oidc_issuer",
+    "oidc_client_id",
+    "oidc_scopes",
+    "oidc_button_label",
+    "oidc_username_claim",
+    "oidc_groups_claim",
+    "oidc_require_email_verified",
+)
+
+
+def _overlay_probe_form(settings: dict, form) -> None:
+    """Copy submitted (non-secret) settings values back over the stored ones.
+
+    Args:
+        settings: Render settings dict to mutate in place.
+        form: The request form that carried the connection-test values.
+
+    Returns:
+        None.
+
+    Example:
+        >>> # _overlay_probe_form(settings, request.form)
+    """
+    for key in _PROBE_FORM_KEYS:
+        if key in _PROBE_BOOL_KEYS:
+            settings[key] = "true" if form.get(key) else "false"
+        else:
+            val = (form.get(key) or "").strip()
+            if val:
+                settings[key] = val
+
+
+def _ldap_test_probe(form) -> dict:
+    """Attempt an LDAP service bind and user search with submitted values.
+
+    Uses the same ``Server``/``Tls``/bind construction as the login path in
+    ``integrations.ldap_auth`` with a shorter timeout. Never raises.
+
+    Args:
+        form: Submitted LDAP settings form (typed values, not saved ones).
+
+    Returns:
+        Status dict ``{"ok": bool, "warn": bool, "detail": str}`` for
+        inline display in the LDAP card.
+
+    Example:
+        >>> # result = _ldap_test_probe(request.form)
+        >>> # result["ok"] in (True, False)
+        True
+    """
+    url = (form.get("ldap_url") or "").strip()
+    user_base = (form.get("ldap_user_base") or "").strip()
+    start_tls = bool(form.get("ldap_start_tls"))
+    if not url or not user_base:
+        return {
+            "ok": False,
+            "warn": False,
+            "detail": "Server URL and user search base are required",
+        }
+    if not ldap_auth.ldap_tls_required_ok(url, start_tls):
+        return {
+            "ok": False,
+            "warn": False,
+            "detail": "Refused: use ldaps:// or enable StartTLS (cleartext is not allowed)",
+        }
+    want_tls = start_tls and not url.lower().startswith("ldaps://")
+    bind_dn = (form.get("ldap_bind_dn") or "").strip()
+    new_pw = (form.get("ldap_bind_password") or "").strip()
+    if new_pw:
+        bind_pw = new_pw
+    else:
+        stored = settings_svc.get_settings().get("ldap_bind_password") or ""
+        bind_pw = ldap_auth.ldap_password_plain({"ldap_bind_password": stored})
+    email_attr = (form.get("ldap_email_attr") or "mail").strip() or "mail"
+    name_attr = (form.get("ldap_name_attr") or "displayName").strip() or "displayName"
+    filt = (form.get("ldap_user_filter") or config.DEFAULT_SETTINGS["ldap_user_filter"]).strip()
+    probe_login = (form.get("ldap_probe_login") or "").strip()
+    conn = None
+    try:
+        import ssl
+
+        from ldap3 import ALL, SUBTREE, Server, Tls
+
+        try:
+            tls = Tls(validate=ssl.CERT_REQUIRED)
+        except TypeError:  # ldap3 < 2.9.1
+            tls = None
+        # ponytail: fixed 5s timeouts; per-deployment tuning only if probes hang
+        server = Server(url, get_info=ALL, connect_timeout=5, tls=tls)
+        if bind_dn:
+            conn = ldap_auth._ldap_bind(
+                server, user=bind_dn, password=bind_pw, start_tls=want_tls, receive_timeout=5
+            )
+        else:
+            conn = ldap_auth._ldap_bind(server, start_tls=want_tls, receive_timeout=5)
+        found = conn.search(
+            user_base,
+            filt.replace("{login}", ldap_auth.ldap_escape(probe_login)),
+            search_scope=SUBTREE,
+            attributes=[email_attr, name_attr, "memberOf", "cn", "uid"],
+            size_limit=5,
+        )
+        if not found:
+            return {
+                "ok": True,
+                "warn": True,
+                "detail": f"Bind OK, but the user search failed: {conn.result}",
+            }
+        n = len(conn.entries or [])
+        if not n:
+            hint = "" if probe_login else " (add a probe login to test the filter)"
+            return {
+                "ok": True,
+                "warn": True,
+                "detail": f"Bind OK, but the user filter matched 0 entries{hint}",
+            }
+        return {
+            "ok": True,
+            "warn": False,
+            "detail": f"Bind OK — user filter matched {n} "
+            f"entr{'y' if n == 1 else 'ies'} under {user_base}",
+        }
+    except Exception as e:
+        return {"ok": False, "warn": False, "detail": (str(e) or "Connection failed")[:300]}
+    finally:
+        if conn is not None:
+            try:
+                conn.unbind()
+            except Exception:
+                pass
+
+
+def _oidc_test_probe(issuer: str) -> dict:
+    """Fetch the OIDC discovery document and validate required endpoints.
+
+    Uses the same HTTP helper as the OIDC login path
+    (``integrations.oidc_auth._http_json``). Never raises.
+
+    Args:
+        issuer: Issuer URL from the submitted form (falls back to nothing).
+
+    Returns:
+        Status dict ``{"ok": bool, "warn": bool, "detail": str}`` for
+        inline display in the OIDC card.
+
+    Example:
+        >>> # result = _oidc_test_probe(request.form.get("oidc_issuer"))
+        >>> # result["ok"] in (True, False)
+        True
+    """
+    from integrations import oidc_auth
+
+    iss = (issuer or "").strip().rstrip("/")
+    if not iss:
+        return {"ok": False, "warn": False, "detail": "Issuer URL is required"}
+    try:
+        doc = oidc_auth._http_json("GET", iss + "/.well-known/openid-configuration")
+    except Exception as e:
+        return {"ok": False, "warn": False, "detail": (str(e) or "Request failed")[:300]}
+    missing = [
+        key
+        for key in ("authorization_endpoint", "token_endpoint", "jwks_uri")
+        if not doc.get(key)
+    ]
+    if missing:
+        return {
+            "ok": False,
+            "warn": False,
+            "detail": "Discovery document is missing: " + ", ".join(missing),
+        }
+    return {
+        "ok": True,
+        "warn": False,
+        "detail": "Discovery OK — authorization, token, and JWKS endpoints present",
+    }
+
+
 SETTINGS_CATEGORIES = [
     (
         "system",
@@ -159,9 +361,15 @@ def server_settings():
     Example:
         GET/POST /settings?tab=general
     """
+    ldap_test = None
+    oidc_test = None
     if request.method == "POST":
         action = request.form.get("action") or "classification"
-        if action == "server_url":
+        if action == "ldap_test":
+            ldap_test = _ldap_test_probe(request.form)
+        elif action == "oidc_test":
+            oidc_test = _oidc_test_probe(request.form.get("oidc_issuer"))
+        elif action == "server_url":
             raw = (request.form.get("server_url") or "").strip().rstrip("/")
             if raw and not (raw.startswith("https://") or raw.startswith("http://")):
                 flash("Server URL must start with http:// or https://", "error")
@@ -675,7 +883,8 @@ def server_settings():
                 ok, detail = probe["hsm"]["ok"], probe["hsm"]["detail"]
                 label = "HSM"
             flash(f"{label}: {detail}", "ok" if ok else "error")
-        # Stay on the relevant tab after save
+        # Stay on the relevant tab after save; test actions fall through to a
+        # re-render so the result can be shown inline next to the form.
         tab_for = {
             "server_url": "general",
             "registration": "general",
@@ -707,8 +916,9 @@ def server_settings():
             "health_test_hsm": "health",
             "token_policy": "general",
         }
-        tab = tab_for.get(action, "general")
-        return redirect(url_for("server_settings", tab=tab))
+        if ldap_test is None and oidc_test is None:
+            tab = tab_for.get(action, "general")
+            return redirect(url_for("server_settings", tab=tab))
 
     tab = (request.args.get("tab") or "general").strip().lower()
     if tab not in ALL_TABS:
@@ -722,6 +932,9 @@ def server_settings():
     settings["smtp_password"] = ""
     settings["oidc_client_secret_set"] = bool((settings.get("oidc_client_secret") or "").strip())
     settings["oidc_client_secret"] = ""
+    if ldap_test is not None or oidc_test is not None:
+        # Keep typed-but-unsaved values on screen after a connection test.
+        _overlay_probe_form(settings, request.form)
     users, all_users, ldap_role_maps, oidc_role_maps = [], [], [], []
     with db.connect_admin() as conn, conn.cursor() as cur:
         if tab == "admins":
@@ -844,6 +1057,8 @@ def server_settings():
         encryption_page=encryption_page,
         projects_pager=projects_pager,
         health_probe=health_probe,
+        ldap_test=ldap_test,
+        oidc_test=oidc_test,
     )
 
 

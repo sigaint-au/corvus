@@ -29,7 +29,7 @@
           <th>Last used</th>
           <th>Created</th>
           <th>Expires</th>
-          <th></th>
+          <th class="acts-col" aria-label="Actions"></th>
         </tr>
       </thead>
       <tbody>
@@ -61,9 +61,9 @@
             {% endif %}
           </td>
           <td class="muted" title="{% if t.last_used_at %}{{ t.last_used_at|time_when }}{% endif %}">{% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}never{% endif %}</td>
-          <td class="muted">{{ t.created_at }}</td>
-          <td class="muted">
-            {{ t.expires_at or 'never' }}
+          <td class="muted" title="{{ t.created_at|time_when }}">{{ t.created_at|time_ago }}</td>
+          <td class="muted"{% if t.expires_at %} title="{{ t.expires_at|time_when }}"{% endif %}>
+            {% if t.expires_at %}{{ t.expires_at|expires }}{% else %}never{% endif %}
             {% if t.due == 'overdue' %}<span class="badge" data-variant="danger">expired</span>
             {% elif t.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
           </td>

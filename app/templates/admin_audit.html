@@ -4,17 +4,19 @@
 <div class="page-head"><h1>Auditing</h1></div>
 <p class="page-desc muted">Global admins only. Review access, role changes, and audit records.</p>
 
-<nav class="tabs" aria-label="Auditing sections">
+<div class="page-side">
+<nav class="page-subnav" aria-label="Auditing sections">
   <a href="{{ url_for('admin_audit', tab='access') }}"
-     class="tab {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
->Access review</a>
+     class="page-subnav-link {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
+  >Grants export</a>
   <a href="{{ url_for('admin_audit', tab='roles') }}"
-     class="tab {% if active_tab == 'roles' %}active{% endif %}"{% if active_tab == 'roles' %} aria-current="page"{% endif %}
->Role changes</a>
+     class="page-subnav-link {% if active_tab == 'roles' %}active{% endif %}"{% if active_tab == 'roles' %} aria-current="page"{% endif %}
+  >Role changes</a>
   <a href="{{ url_for('admin_audit', tab='export') }}"
-     class="tab {% if active_tab == 'export' %}active{% endif %}"{% if active_tab == 'export' %} aria-current="page"{% endif %}
->Export &amp; retention</a>
+     class="page-subnav-link {% if active_tab == 'export' %}active{% endif %}"{% if active_tab == 'export' %} aria-current="page"{% endif %}
+  >Export &amp; retention</a>
 </nav>
+<div class="page-panel">
 
 {% if active_tab == 'access' %}
 <section>
@@ -78,7 +80,7 @@
   <form method="get" action="{{ url_for('admin_audit') }}" class="audit-filters" role="search">
     <input type="hidden" name="tab" value="roles">
     <label>Show
-      <select name="role_actions" onchange="this.form.submit()">
+      <select name="role_actions">
         <option value="roles" {% if role_actions != 'encryption' %}selected{% endif %}>Role changes</option>
         <option value="encryption" {% if role_actions == 'encryption' %}selected{% endif %}>Encryption keys</option>
       </select>
@@ -98,6 +100,7 @@
     <label>To
       <input type="date" name="until" value="{{ audit_until or '' }}">
     </label>
+    <button type="submit" class="button outline small">Apply</button>
     {% if search_q or audit_actor or audit_since or audit_until %}
     <div class="audit-filter-actions">
       <a class="button ghost small" href="{{ url_for('admin_audit', tab='roles') }}">Clear</a>
@@ -105,7 +108,6 @@
     {% endif %}
   </form>
   {% if role_rows %}
-  <p class="muted">Showing {{ role_rows|length }} of {{ role_total }} event(s).</p>
   <div class="table"><table class="audit-table">
     <thead>
       <tr>
@@ -124,12 +126,15 @@
         <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
         <td>{{ e.detail or '-' }}</td>
         <td class="muted">{{ e.actor_email or '-' }}</td>
-        <td>{{ e.team_name or '-' }}</td>
-        <td>{{ e.project_name or '-' }}</td>
-      </tr>
+      <td>{{ e.team_name or '-' }}</td>
+      <td>{{ e.project_name or '-' }}</td>
+    </tr>
     {% endfor %}
     </tbody>
   </table></div>
+  {% with pager=role_pager %}
+  {% include "partials/pager.html" %}
+  {% endwith %}
   {% else %}
   <p class="empty">
     {% if search_q or audit_actor or audit_since or audit_until %}
@@ -161,7 +166,8 @@
   </div>
   {% if counts.oldest %}
   <p class="muted">
-    Oldest event: {{ counts.oldest }} · Newest: {{ counts.newest }}
+    Oldest event: <span title="{{ counts.oldest|time_when }}">{{ counts.oldest|time_ago }}</span>
+    · Newest: <span title="{{ counts.newest|time_when }}">{{ counts.newest|time_ago }}</span>
   </p>
   {% endif %}
   <form method="get" action="{{ url_for('admin_audit_export') }}" class="row row-end">
@@ -213,4 +219,6 @@
   </form>
 </section>
 {% endif %}
+</div>
+</div>
 {% endblock %}

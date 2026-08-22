@@ -1,7 +1,7 @@
 """Unit tests (pytest). Mock DB — no Postgres required."""
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import app as store
@@ -375,3 +375,138 @@ class TestUxSettings:
             }, follow_redirects=False)
         assert r.status_code == 302
         assert not set_setting.called
+
+
+class TestConnectionTests:
+    """Inline LDAP / OIDC connection tests (action=ldap_test|oidc_test)."""
+
+    def setup_method(self, method=None):
+        store.app.config['TESTING'] = True
+        self.client = store.app.test_client()
+        self.uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s['user_id'] = self.uid
+            s['email'] = 'admin@ex.com'
+            s['is_global_admin'] = True
+
+    def _render_mocks(self):
+        return (
+            patch.object(db, 'as_user', return_value=_conn(fetchall=[])[0]),
+            patch.object(db, 'connect_admin', return_value=_conn(fetchall=[])[0]),
+            patch.object(authz, 'is_global_admin', return_value=True),
+            patch.object(settings_svc, 'get_settings', return_value={}),
+            patch.object(settings_svc, 'classification', return_value={'enabled': False, 'text': '', 'color': '#000', 'fg': '#fff'}),
+        )
+
+    def test_ldap_test_success_renders_inline(self):
+        conn = MagicMock()
+        conn.search.return_value = True
+        conn.entries = [MagicMock(), MagicMock()]
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4], \
+             patch('integrations.ldap_auth._ldap_bind', return_value=conn) as bind:
+            r = self.client.post('/settings?tab=ldap', data={
+                'action': 'ldap_test',
+                'ldap_url': 'ldaps://ipa.example.com',
+                'ldap_user_base': 'cn=users,dc=example,dc=com',
+                'ldap_user_filter': '(mail={login})',
+                'ldap_probe_login': 'alice@example.com',
+            }, follow_redirects=False)
+        assert r.status_code == 200
+        assert b'Connected' in r.data
+        assert b'Bind OK' in r.data
+        assert b'matched 2 entries' in r.data
+        assert b'name="ldap_probe_login" value="alice@example.com"' in r.data  # probe login restored
+        bind.assert_called_once()
+
+    def test_ldap_test_refuses_cleartext(self):
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4], \
+             patch('integrations.ldap_auth._ldap_bind') as bind:
+            r = self.client.post('/settings?tab=ldap', data={
+                'action': 'ldap_test',
+                'ldap_url': 'ldap://ipa.example.com',
+                'ldap_user_base': 'cn=users,dc=example,dc=com',
+            }, follow_redirects=False)
+        assert r.status_code == 200
+        assert b'Refused' in r.data
+        assert not bind.called
+
+    def test_ldap_test_bind_failure_never_raises(self):
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4], \
+             patch('integrations.ldap_auth._ldap_bind', side_effect=RuntimeError('LDAP bind failed')):
+            r = self.client.post('/settings?tab=ldap', data={
+                'action': 'ldap_test',
+                'ldap_url': 'ldaps://ipa.example.com',
+                'ldap_user_base': 'cn=users,dc=example,dc=com',
+            }, follow_redirects=False)
+        assert r.status_code == 200
+        assert b'LDAP bind failed' in r.data
+
+    def test_ldap_test_zero_matches_warns(self):
+        conn = MagicMock()
+        conn.search.return_value = True
+        conn.entries = []
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4], \
+             patch('integrations.ldap_auth._ldap_bind', return_value=conn):
+            r = self.client.post('/settings?tab=ldap', data={
+                'action': 'ldap_test',
+                'ldap_url': 'ldaps://ipa.example.com',
+                'ldap_user_base': 'cn=users,dc=example,dc=com',
+            }, follow_redirects=False)
+        assert r.status_code == 200
+        assert b'Check settings' in r.data
+        assert b'matched 0 entries' in r.data
+
+    def test_oidc_test_discovery_ok(self):
+        doc = {
+            'authorization_endpoint': 'https://idp.example/authorize',
+            'token_endpoint': 'https://idp.example/token',
+            'jwks_uri': 'https://idp.example/jwks',
+        }
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4], \
+             patch('integrations.oidc_auth._http_json', return_value=doc) as http:
+            r = self.client.post('/settings?tab=oidc', data={
+                'action': 'oidc_test',
+                'oidc_issuer': 'https://idp.example/realms/main/',
+            }, follow_redirects=False)
+        assert r.status_code == 200
+        assert b'Discovery OK' in r.data
+        http.assert_called_once_with('GET', 'https://idp.example/realms/main/.well-known/openid-configuration')
+
+    def test_oidc_test_missing_endpoints_fails(self):
+        doc = {'authorization_endpoint': 'https://idp.example/authorize'}
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4], \
+             patch('integrations.oidc_auth._http_json', return_value=doc):
+            r = self.client.post('/settings?tab=oidc', data={
+                'action': 'oidc_test',
+                'oidc_issuer': 'https://idp.example',
+            }, follow_redirects=False)
+        assert r.status_code == 200
+        assert b'missing' in r.data
+        assert b'token_endpoint' in r.data
+        assert b'jwks_uri' in r.data
+
+    def test_oidc_test_http_error_reports_detail(self):
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4], \
+             patch('integrations.oidc_auth._http_json', side_effect=RuntimeError('OIDC HTTP 404 from issuer')):
+            r = self.client.post('/settings?tab=oidc', data={
+                'action': 'oidc_test',
+                'oidc_issuer': 'https://idp.example',
+            }, follow_redirects=False)
+        assert r.status_code == 200
+        assert b'OIDC HTTP 404' in r.data
+
+    def test_ldap_save_still_redirects_after_test_actions_exist(self):
+        sets = []
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4], \
+             patch.object(settings_svc, 'set_setting', side_effect=lambda k, v: sets.append((k, v))):
+            r = self.client.post('/settings?tab=ldap', data={'action': 'ldap'}, follow_redirects=False)
+        assert r.status_code == 302
+        assert 'tab=ldap' in r.location

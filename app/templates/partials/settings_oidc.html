@@ -4,9 +4,8 @@
     Authorization-code login (Keycloak and other OIDC providers). Accounts are linked by
     <strong>email</strong> on first SSO sign-in; local password login stays available for break-glass.
   </p>
-  <form method="post" class="settings-form">
+  <form method="post" class="settings-form" data-dirty-guard onsubmit="this._dirty=false">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="action" value="oidc">
 
     <label class="check-row">
       <input type="checkbox" name="oidc_enabled" value="1"
@@ -65,14 +64,28 @@
                  {% if settings.oidc_require_email_verified not in ('false', '0', 'no', 'off') %}checked{% endif %}>
           Require verified email (<code class="k">email_verified</code>)
         </label>
-        <p class="field-hint span-2">
+        <span class="field-hint span-2">
           Recommended. Turn off only if your IdP never sends <code class="k">email_verified</code>
           and you trust its email claim.
-        </p>
+        </span>
       </div>
     </fieldset>
 
-    <p class="form-actions"><button type="submit">Save OIDC settings</button></p>
+    {% if oidc_test %}
+    <p class="status-row">
+      {% if oidc_test.ok %}
+      <span class="badge" data-variant="success">Discovery OK</span>
+      {% else %}
+      <span class="badge" data-variant="danger">Failed</span>
+      {% endif %}
+      <span class="muted">{{ oidc_test.detail }}</span>
+    </p>
+    {% endif %}
+
+    <p class="form-actions">
+      <button type="submit" name="action" value="oidc_test" class="button outline">Test discovery</button>
+      <button type="submit" name="action" value="oidc">Save OIDC settings</button>
+    </p>
   </form>
 </section>
 <section class="list-panel">
@@ -82,7 +95,7 @@
   </p>
   {% if oidc_role_maps %}
   <div class="table"><table>
-    <thead><tr><th>OIDC group</th><th>Role</th><th></th></tr></thead>
+    <thead><tr><th>OIDC group</th><th>Role</th><th class="acts-col" aria-label="Actions"></th></tr></thead>
     <tbody>
     {% for m in oidc_role_maps %}
       <tr>

@@ -57,7 +57,7 @@
     <p class="form-actions">
       <a class="button ghost" href="{{ url_for('server_settings', tab='encryption') }}">Cancel</a>
       <button type="submit" name="action" value="test" class="button outline">Test connection</button>
-      <button type="submit" name="action" value="create" class="button">{{ 'Save changes' if slot_id else 'Create slot' }}</button>
+      <button type="submit" name="action" value="create">{{ 'Save changes' if slot_id else 'Create slot' }}</button>
       {% if test_result is sameas false %}
       <button type="button" class="button outline" data-open-dialog="hsm-save-dialog">
         Save without testing

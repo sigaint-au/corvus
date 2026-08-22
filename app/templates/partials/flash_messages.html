@@ -1,0 +1,11 @@
+{# Flash alerts. Renders current flashed messages; with oob=true the container
+   is swapped out-of-band into an existing #flashes node (HTMX responses). #}
+{% set _msgs = messages if messages is defined else get_flashed_messages(with_categories=true) %}
+<div id="flashes"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% for cat, msg in _msgs %}
+  {# oat.ink Alert #}
+  <div role="alert"{% if cat in ('error', 'danger') %} data-variant="error"{% elif cat in ('ok', 'success') %} data-variant="success"{% elif cat == 'warning' %} data-variant="warning"{% endif %}>
+    {{ msg }}
+  </div>
+  {% endfor %}
+</div>

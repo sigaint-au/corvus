@@ -6,7 +6,9 @@
   ('Import preview', none),
 ] %}
 {% include "partials/breadcrumb.html" %}
-<h1>Import preview</h1>
+<div class="page-head">
+  <h1>Import preview</h1>
+</div>
 <p class="page-desc muted">
   Project <strong>{{ project.name }}</strong>:
   <strong>{{ n_creates }}</strong> create(s),
@@ -70,6 +72,7 @@
     </tbody>
   </table></div>
 
+  <p class="muted">{{ n_creates }} create{{ 's' if n_creates != 1 }}, {{ n_updates }} update{{ 's' if n_updates != 1 }}. Updates overwrite the existing secret value.</p>
   <p class="form-actions">
     <button type="submit">Commit import</button>
     <a class="button outline" href="{{ url_for('project_detail', project_id=project.id, tab='import') }}">Cancel</a>

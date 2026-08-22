@@ -41,9 +41,13 @@ def register_page():
     if request.method == "POST":
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
+        password_confirm = request.form.get("password_confirm") or ""
         name = request.form.get("name", "").strip()
         if len(password) < 8:
             flash("Password must be at least 8 characters", "error")
+            return render_template("register.html", setup_notice=notice), 400
+        if password != password_confirm:
+            flash("Passwords do not match", "error")
             return render_template("register.html", setup_notice=notice), 400
         try:
             with db.connect(autocommit=True) as conn, conn.cursor() as cur:

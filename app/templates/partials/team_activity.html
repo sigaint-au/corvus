@@ -19,7 +19,7 @@
     <tbody>
     {% for e in org_events %}
       <tr>
-        <td class="muted">{{ e.created_at }}</td>
+        <td class="muted" title="{{ e.created_at|time_when }}">{{ e.created_at|time_ago }}</td>
         <td>{{ e.actor_email or 'unknown' }}</td>
         <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
         <td class="muted">{{ e.detail }}</td>

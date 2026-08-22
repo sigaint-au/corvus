@@ -24,6 +24,28 @@
 {% endif %}
 {% else %}
 <p class="page-desc muted">Team: <strong>{{ team.name }}</strong></p>
+<form method="get" action="{{ url_for('machines_list') }}" class="audit-filters" role="search"
+      hx-get="{{ url_for('machines_list') }}"
+      hx-target="#machines-results"
+      hx-swap="outerHTML"
+      hx-push-url="true"
+      hx-trigger="submit, input delay:250ms from:input[name=q]">
+  <fieldset class="group search-input">
+    {% include "partials/search_icon.html" %}
+    <input type="search" name="q" value="{{ q or '' }}"
+           placeholder="Search machine accounts" autocomplete="off"
+           aria-label="Search machine accounts">
+  </fieldset>
+  {% if q %}
+  <div class="audit-filter-actions">
+    <a class="button ghost small" href="{{ url_for('machines_list') }}"
+       hx-get="{{ url_for('machines_list') }}"
+       hx-target="#machines-results"
+       hx-swap="outerHTML"
+       hx-push-url="true">Clear</a>
+  </div>
+  {% endif %}
+</form>
 {% include "partials/machines_results.html" %}
 {% endif %}
 {% endblock %}

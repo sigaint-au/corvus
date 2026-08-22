@@ -197,6 +197,121 @@ def redirect_after_team_switch(nxt: str | None, team_id: str | None) -> str:
     return nxt
 
 
+def nav_groups() -> list[dict]:
+    """Build the sidebar navigation model (groups, items, active flags).
+
+    Single source of truth for sidebar grouping/active-state so new routes
+    only need to be added here, not threaded through template tuples.
+
+    Returns:
+        List of group dicts: ``key`` (localStorage id), ``label``, ``open``,
+        and ``items`` (label/href/active/badge).
+    """
+    from flask import request
+
+    ep = request.endpoint or ""
+    rbac_eps = (
+        "rbac_bindings",
+        "rbac_bindings_create",
+        "rbac_bindings_delete",
+    )
+    is_rbac_bindings = ep in rbac_eps
+    rbac_scoped = bool(request.args.get("scope_id"))
+
+    def item(label: str, endpoint: str, eps, **kw) -> dict:
+        active = ep in eps
+        return {"label": label, "href": url_for(endpoint), "active": active,
+                "badge": kw.get("badge")}
+
+    workspace_eps = (
+        "projects_list", "project_detail", "create_secret", "delete_secret",
+        "reveal_secret", "create_token", "delete_token", "create_project",
+        "new_project_wizard",
+    )
+    teams_eps = (
+        "teams", "create_team", "team_detail", "add_team_binding",
+        "add_team_ldap_map", "delete_team_ldap_map", "delete_team",
+        "delete_project_from_team",
+    )
+    org_items: list[dict] = [item("Teams", "teams", teams_eps)]
+    # Role bindings scoped to the session team lives under Organisation;
+    # the scope-less view lives under Administration. Exactly one highlights.
+    if not session.get("is_global_admin") and session.get("team_id"):
+        org_items.append({
+            "label": "Role bindings",
+            "href": url_for("rbac_bindings", scope="team",
+                            scope_id=session.get("team_id")),
+            "active": is_rbac_bindings and rbac_scoped,
+            "badge": None,
+        })
+    org_items.append(item(
+        "Access requests", "access_requests_inbox", ("access_requests_inbox",),
+    ))
+
+    groups: list[dict] = [
+        {
+            "key": "workspace", "label": "Workspace",
+            "items": [
+                item("Projects", "projects_list", workspace_eps),
+                item("Secrets", "secrets_list", ("secrets_list",)),
+                item("Shared secrets", "shared_secrets_list",
+                     ("shared_secrets_list",)),
+                item("Machine accounts", "machines_list", ("machines_list",)),
+                item("Trash", "trash", ("trash",)),
+            ],
+        },
+        {
+            "key": "account", "label": "Organisation", "items": org_items,
+        },
+        {
+            "key": "profile", "label": "Account",
+            "items": [item("My profile", "profile", ("profile",))],
+        },
+    ]
+
+    claimed_eps = set(workspace_eps) | set(teams_eps) | {
+        "access_requests_inbox", "profile", "secrets_list",
+        "shared_secrets_list", "machines_list", "trash",
+    } | set(rbac_eps) | {
+        "rbac_roles", "rbac_roles_create", "rbac_roles_delete",
+        "rbac_access_review", "admin_audit", "admin_audit_access_export",
+        "admin_audit_export", "server_settings",
+    }
+    groups[0]["open"] = any(i["active"] for i in groups[0]["items"]) or (
+        ep not in claimed_eps and ep != "profile")
+    for g in groups[1:]:
+        g["open"] = any(i["active"] for i in g["items"])
+
+    if session.get("is_global_admin"):
+        admin_open = (is_rbac_bindings and not rbac_scoped) or ep in (
+            "rbac_roles", "rbac_roles_create", "rbac_roles_delete",
+            "rbac_access_review", "admin_audit", "admin_audit_access_export",
+            "admin_audit_export", "server_settings",
+        )
+        groups.append({
+            "key": "administration", "label": "Administration",
+            "open": admin_open,
+            "items": [
+                {
+                    "label": "Role bindings",
+                    "href": url_for("rbac_bindings", scope="team"),
+                    "active": is_rbac_bindings and not rbac_scoped,
+                    "badge": None,
+                },
+                item("Roles", "rbac_roles",
+                     ("rbac_roles", "rbac_roles_create", "rbac_roles_delete")),
+                item("Access review", "rbac_access_review",
+                     ("rbac_access_review",)),
+                item("Auditing", "admin_audit",
+                     ("admin_audit", "admin_audit_access_export",
+                      "admin_audit_export")),
+                item("Server settings", "server_settings",
+                     ("server_settings",)),
+            ],
+        })
+    return groups
+
+
 def inject_nav():
     """Flask context processor: template globals for chrome and sidebar.
 
@@ -231,6 +346,7 @@ def inject_nav():
         "nav_pins": [],
         "nav_recent": [],
         "nav_access_pending": 0,
+        "nav_groups": [],
         "clipboard_clear_seconds": int_setting("clipboard_clear_seconds", 30),
         "reveal_auto_hide_seconds": int_setting("reveal_auto_hide_seconds", 30),
         "max_expiry_days": MAX_EXPIRY_DAYS,
@@ -288,4 +404,13 @@ def inject_nav():
             base["nav_recent"] = pins.list_recent(cur, session["user_id"])
     except Exception:
         pass
+    groups = nav_groups()
+    if base["nav_access_pending"]:
+        for g in groups:
+            if g["key"] != "account":
+                continue
+            for it in g["items"]:
+                if it["label"] == "Access requests":
+                    it["badge"] = base["nav_access_pending"]
+    base["nav_groups"] = groups
     return base

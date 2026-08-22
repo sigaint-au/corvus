@@ -144,11 +144,24 @@ class TestAuth:
         assert r.status_code == 400
         assert b'8 characters' in r.data
 
+    def test_register_password_mismatch(self):
+        with patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None):
+            r = self.client.post('/register', data={'email': 'a@b.c', 'password': 'password1', 'password_confirm': 'password2', 'name': 'A'})
+        assert r.status_code == 400
+        assert b'Passwords do not match' in r.data
+
+    def test_register_password_match_ok(self):
+        uid = uuid4()
+        conn, _ = _conn(fetchone={'id': uid})
+        with patch.object(db, 'connect', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
+            r = self.client.post('/register', data={'email': 'match@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=False)
+        assert r.status_code == 302
+
     def test_register_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid})
         with patch.object(db, 'connect', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
-            r = self.client.post('/register', data={'email': 'new@b.c', 'password': 'password1', 'name': 'N'}, follow_redirects=False)
+            r = self.client.post('/register', data={'email': 'new@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/teams' in r.location
         with self.client.session_transaction() as s:
@@ -168,7 +181,7 @@ class TestAuth:
         conn, _ = _conn(fetchone={'id': uid})
         admin_conn, admin_cur = _conn()
         with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('routes.auth.helpers.bootstrap_admin_email', return_value='admin@ex.com'), patch.object(authz, 'is_global_admin', return_value=True), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
-            r = self.client.post('/register', data={'email': 'admin@ex.com', 'password': 'password1', 'name': 'A'}, follow_redirects=False)
+            r = self.client.post('/register', data={'email': 'admin@ex.com', 'password': 'password1', 'password_confirm': 'password1', 'name': 'A'}, follow_redirects=False)
         assert r.status_code == 302
         sql = ' '.join(str(c.args[0]) for c in admin_cur.execute.call_args_list)
         assert 'is_global_admin = true' in sql
