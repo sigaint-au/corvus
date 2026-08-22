@@ -1,4 +1,4 @@
-# Machine Accounts & ESO
+# Machine accounts and ESO
 
 Machine tokens (`ss_…`) let automation (CI, OpenShift External Secrets
 Operator) read and write secrets without a browser session.

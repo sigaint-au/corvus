@@ -1,4 +1,4 @@
-# Backup & Restore
+# Backup and restore
 
 Secret values are **Fernet-encrypted** with `MASTER_KEY` and stored in
 Postgres. To restore a working instance you need **both** the database and the

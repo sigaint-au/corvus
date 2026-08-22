@@ -1,4 +1,4 @@
-# API Reference
+# API reference
 
 Sigaint Secret Server exposes three machine-facing surfaces:
 

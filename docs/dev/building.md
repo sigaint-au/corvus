@@ -1,4 +1,4 @@
-# Building & Pushing Container Images
+# Building and pushing container images
 
 Build the Sigaint Secret Server container image and push it to a registry.
 Every step is a **copy-paste code block**: replace the `…` placeholders.

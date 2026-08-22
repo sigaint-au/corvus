@@ -1,4 +1,4 @@
-# Testing & Lint
+# Testing and lint
 
 Unit tests use **pytest** with a mocked DB, so Postgres is not required.
 

@@ -123,7 +123,7 @@
   <form method="post" action="{{ url_for('totp_disable') }}" class="mt-1"
         onsubmit="return confirm('Disable two-factor authentication?')">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <label>Disable - confirm with code
+    <label>Disable (confirm with code)
       <input type="text" name="code" required autocomplete="one-time-code"
              placeholder="123456 or xxxx-xxxx">
     </label>

@@ -1,4 +1,4 @@
-# Organisation RBAC Guide
+# Organisation RBAC
 
 Access control using Kubernetes-style RBAC: subjects, roles, bindings, and
 scope hierarchy. Enforcement is in **Postgres RLS** via `api.can()`,

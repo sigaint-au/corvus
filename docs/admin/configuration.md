@@ -1,4 +1,4 @@
-# Configuration Reference
+# Configuration reference
 
 All environment variables and server settings for Sigaint Secret Server.
 

@@ -1,4 +1,4 @@
-# Deploy Guide
+# Deploy guide
 
 Deploy Sigaint Secret Server end to end. Every step is a **copy-paste code
 block**: replace the `…` placeholders.

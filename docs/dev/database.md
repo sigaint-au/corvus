@@ -1,4 +1,4 @@
-# Database & RLS Reference
+# Database and RLS reference
 
 Schema, Row-Level Security policies, and the SECURITY DEFINER functions that
 enforce access control.

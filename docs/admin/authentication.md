@@ -1,4 +1,4 @@
-# Authentication & Token Flows
+# Authentication and token flows
 
 Every way a caller can authenticate, the exact flow for each, and concrete
 `curl` examples.
