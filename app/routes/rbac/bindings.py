@@ -293,7 +293,7 @@ def rbac_bindings_create():
             if subject_kind == "User":
                 subject_id = lookup_user_id(cur, subject_email)
                 if not subject_id:
-                    flash("User not found — they must register first", "error")
+                    flash("No user with that email. They need to register first.", "error")
                     return redirect(url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id))
             elif subject_kind == "Group":
                 if not is_uuid(subject_group):

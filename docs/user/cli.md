@@ -1,4 +1,4 @@
-# CLI Guide — `secretserver`
+# CLI guide
 
 A kubectl-style CLI for Sigaint Secret Server (`/eso/v1`). Python 3 stdlib only,
 RHEL 9+.
@@ -79,7 +79,7 @@ Values are **not** listed (metadata only).
 
 ```bash
 secretserver get secret API_KEY              # table (default)
-secretserver get secret API_KEY -o value     # scripts — value only
+secretserver get secret API_KEY -o value     # scripts: value only
 secretserver get secret API_KEY -o json
 secretserver get secret API_KEY -o name
 ```
@@ -172,7 +172,7 @@ secretserver transfer team NAME --email user@x
 
 ## Shell scripts (keep secrets out of history)
 
-1. Store `SS_TOKEN` in env/CI secrets or a `0600` config — never in git.
+1. Store `SS_TOKEN` in env/CI secrets or a `0600` config file, never in git.
 2. Read with `-o value`.
 3. Write with `--from-file=-` or `--from-env=…` (not `--value`).
 4. Prefer `set -euo pipefail`.
@@ -201,6 +201,6 @@ secretserver <command> --help
 
 ## Related docs
 
-- [guide.md](guide.md) — web UI guide
-- [../admin/machine-tokens.md](../admin/machine-tokens.md) — machine accounts
-- [../admin/authentication.md](../admin/authentication.md) — auth flows
+- [guide.md](guide.md): web UI guide
+- [../admin/machine-tokens.md](../admin/machine-tokens.md): machine accounts
+- [../admin/authentication.md](../admin/authentication.md): auth flows

@@ -21,11 +21,11 @@ A binding at an ancestor applies to descendants. Evaluation uses
 
 | Role | Scope | Intent |
 |------|-------|--------|
-| `global-admin` | cluster | Full access (`*` / `*`) — only role with wildcard |
+| `global-admin` | cluster | Full access (`*` / `*`), the only role with a wildcard |
 | `audit-viewer` | cluster | Read all audit logs |
 | `team-owner` | team | Full control of team tree (scoped, not wildcard) |
 | `team-admin` | team | Admin without ownership transfer; can read roles |
-| `team-member` | team | Create/update secrets (no reveal — grant separately) |
+| `team-member` | team | Create/update secrets (reveal granted separately) |
 | `team-viewer` | team | Read-only (metadata, no plaintext) |
 | `project-admin` | project | Full admin of a single project |
 | `project-write` | project | Create, update, reveal secrets |
@@ -75,7 +75,7 @@ Reveal approval remains a separate layer after the `reveal` verb.
 
 ## Schema
 
-- `rbac.roles`, `rbac.role_rules`, `rbac.bindings` — defined in the squashed
+- `rbac.roles`, `rbac.role_rules`, `rbac.bindings`: defined in the squashed
   `db/migrations/0001_init.sql` baseline
 - Unique index on `bindings(role_id, subject_kind, subject_id, scope_kind, scope_id)`
 - `source` column on bindings: `manual`, `ldap`, or `oidc`
@@ -104,7 +104,7 @@ RBAC is additive on the scope chain. To **exclude** broader team/project
 grants from a sensitive secret, set `access_mode = restricted`. Then only
 secret-scope bindings (+ project admins) apply.
 
-### Role edits (R2 — deferred)
+### Role edits (R2, deferred)
 
 Editing a custom role's rules immediately affects every binding to that role.
 Versioning / blast-radius warnings are not implemented yet.
@@ -171,6 +171,6 @@ ON CONFLICT DO NOTHING;
 
 ## Related docs
 
-- [rbac.md](rbac.md) — access rules in plain terms
-- [machine-tokens.md](machine-tokens.md) — machine accounts and service roles
-- [database.md](../dev/database.md) — schema, RLS, functions
+- [rbac.md](rbac.md): access rules in plain terms
+- [machine-tokens.md](machine-tokens.md): machine accounts and service roles
+- [database.md](../dev/database.md): schema, RLS, functions

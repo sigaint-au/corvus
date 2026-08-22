@@ -196,7 +196,7 @@ curl -s "${AUTH[@]}" \
 PAT bulk list with values only includes secrets the caller may reveal (access
 mode + approval). Machine tokens return all live keys in the project.
 
-### List metadata only (CLI — no plaintext)
+### List metadata only (CLI never returns plaintext)
 
 ```bash
 curl -s "${AUTH[@]}" \
@@ -263,8 +263,7 @@ from a session or PAT, signed with `JWT_SECRET` (HS256), carrying `sub`
 (user id), `role: authenticated`, and a 1h `exp`.
 
 PostgREST maps the JWT `role` to the DB role `authenticated` and reads the `sub`
-claim from `request.jwt.claims` for RLS. **RLS is the access-control plane** —
-a valid JWT with no membership sees empty sets, not other teams' rows.
+claim from `request.jwt.claims` for RLS. **RLS is the access-control plane**: a valid JWT with no membership sees empty sets, not other teams' rows.
 
 ```bash
 JWT=$(curl -s -H "Authorization: Bearer pat_XXXX..." \
@@ -385,12 +384,13 @@ for any local user from **Administration → Users**.
 
 ### Security notes
 
-- PATs and machine tokens are stored as **unsalted SHA-256** hashes —
-  acceptable for high-entropy random tokens (not brute-forceable from a DB leak).
+- PATs and machine tokens are stored as **unsalted SHA-256** hashes. That is
+  acceptable for high-entropy random tokens, which resist brute force even
+  from a DB leak.
 - TOTP recovery codes are **HMAC-SHA256** with `SECRET_KEY`.
 - Secret values are **Fernet-encrypted** with `MASTER_KEY` at rest; only the
   app and ESO routes decrypt them.
-- PostgREST never sees plaintext — only `value_enc`.
+- PostgREST never sees plaintext, only `value_enc`.
 
 ---
 

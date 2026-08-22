@@ -123,7 +123,7 @@ def add_secret_access_binding(project_id, secret_id):
                 subject_id = lookup_user_id(cur, email)
                 if not subject_id:
                     flash(
-                        "User not found — they must register or sign in first",
+                        "No user with that email. They need to register or sign in first.",
                         "error",
                     )
                     return redirect(access_url)

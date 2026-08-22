@@ -36,7 +36,7 @@ Cluster
 |------|-----|
 | `team-owner` | Full team control; delete team; always project admin/write |
 | `team-admin` | Manage members, groups, settings; always project admin/write |
-| `team-member` | Create projects; write secrets (no reveal — grant separately) |
+| `team-member` | Create projects; write secrets (reveal granted separately) |
 | `team-viewer` | Read-only (metadata, no plaintext) |
 
 Only `team-owner` can assign the `team-owner` role.
@@ -78,7 +78,7 @@ If a user has **no** project-scope binding, access falls back to their team role
 
 | Role | Scope | Can |
 |------|-------|-----|
-| `global-admin` | cluster | Full access (`*` / `*`) — only role with wildcard |
+| `global-admin` | cluster | Full access (`*` / `*`), the only role with a wildcard |
 | `audit-viewer` | cluster | Read all audit logs |
 | `team-audit-viewer` | team | Read audit logs for a specific team |
 
@@ -111,7 +111,7 @@ via RBAC, then also hold a valid approval grant.
 1. Bootstrap a global admin (GLOBAL_ADMIN_EMAIL or BOOTSTRAP_ADMIN_EMAIL).
 2. Create a team (you become team-owner).
 3. Add people (Team → Members): email + role.
-4. Create groups (recommended for orgs) — see §5 and §6.
+4. Create groups, recommended for orgs (see §5 and §6).
 5. Create projects (Team → Projects).
 6. Tighten sensitive secrets (access_mode = restricted + bindings).
 7. (Optional) Wire LDAP/OIDC.
@@ -128,10 +128,10 @@ Groups are **team-scoped** principals. They are not global across the server.
 
 1. Open **Team → Groups**.
 2. **Create group**:
-   - **Name** — human label (e.g. `platform-ops`).
-   - **Source** — `manual`, `ldap`, or `oidc`.
-   - **External key** — required when source is `ldap`/`oidc`.
-   - **Team role** — optional: `team-admin` / `team-member` / `team-viewer` (not `team-owner`).
+   - **Name**: human label (e.g. `platform-ops`).
+   - **Source**: `manual`, `ldap`, or `oidc`.
+   - **External key**: required when source is `ldap`/`oidc`.
+   - **Team role**: one of `team-admin` / `team-member` / `team-viewer` (not `team-owner`).
 3. Add members (email) for manual groups. Directory members sync on login.
 
 ### When to set a team role on the group
@@ -236,7 +236,7 @@ Permission rank: `read` < `reveal` < `write`.
 | User has directory group but no access | Wrong `external_key`; user has not logged in since map created; team role empty and no project/secret grant |
 | Manual member disappeared | They were directory-sourced only and no longer match maps |
 | Can see project but not secret value | Secret `access_mode = restricted`; or reveal approval pending |
-| Machine token ignores restricted mode | By design — use a separate project or key allow-list |
+| Machine token ignores restricted mode | By design. Use a separate project or a key allow-list |
 | `ensure_schema` fails at startup | `DATABASE_ADMIN_URL` must be a superuser DSN |
 
 ---
@@ -259,8 +259,8 @@ Permission rank: `read` < `reveal` < `write`.
 
 ## Related docs
 
-- [rbac-k8s.md](rbac-k8s.md) — K8s RBAC model details
-- [deploy.md](deploy.md) — env vars, bootstrap admin, OIDC/LDAP server config
-- [authentication.md](authentication.md) — login flows, PAT, machine tokens, JWT
-- [machine-tokens.md](machine-tokens.md) — machine accounts, key allow-lists, ESO
-- [api.md](../dev/api.md) — secret API, access modes, PostgREST
+- [rbac-k8s.md](rbac-k8s.md): K8s RBAC model details
+- [deploy.md](deploy.md): env vars, bootstrap admin, OIDC/LDAP server config
+- [authentication.md](authentication.md): login flows, PAT, machine tokens, JWT
+- [machine-tokens.md](machine-tokens.md): machine accounts, key allow-lists, ESO
+- [api.md](../dev/api.md): secret API, access modes, PostgREST

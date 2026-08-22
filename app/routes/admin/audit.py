@@ -69,7 +69,7 @@ def admin_audit():
             except ValueError:
                 days = 365
             if days <= 0:
-                flash("Retention is forever — set a positive day count before purging", "error")
+                flash("Retention is set to forever. Set a positive day count before purging.", "error")
                 return redirect(url_for("admin_audit", tab="export"))
             with db.connect_admin() as conn, conn.cursor() as cur:
                 result = audit.purge_old_audit(cur, days)

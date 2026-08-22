@@ -46,7 +46,7 @@ def add_project_binding(project_id):
         uid = lookup_user_id(cur, email)
         if not uid:
             flash(
-                "User not found — they must register or sign in via LDAP first",
+                "No user with that email. They need to register or sign in via LDAP first.",
                 "error",
             )
             return redirect(dest)
@@ -251,7 +251,7 @@ def project_access_binding_create(project_id):
             if subject_kind == "User":
                 subject_id = lookup_user_id(cur, subject_email)
                 if not subject_id:
-                    flash("User not found — they must register first", "error")
+                    flash("No user with that email. They need to register first.", "error")
                     return redirect(dest)
                 detail_who = subject_email
                 rbac_sync.sync_user_project_binding(

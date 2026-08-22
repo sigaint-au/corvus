@@ -690,7 +690,7 @@ def server_settings():
                 if row:
                     flash(f"Promoted {email} to global admin", "ok")
                 else:
-                    flash("User not found — they must register or sign in via LDAP first", "error")
+                    flash("No user with that email. They need to register or sign in via LDAP first.", "error")
         elif action == "demote":
             uid = (request.form.get("user_id") or "").strip()
             if uid == session.get("user_id"):

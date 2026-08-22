@@ -108,7 +108,7 @@
   <div class="crypto-migrate-card">
     <div class="crypto-migrate-header">
       <strong>Upgrade to hardware security (HSM)</strong>
-      <p class="muted">Re-wraps this project's key with an external PKCS#11 HSM token. All secrets will be re-encrypted under the new HSM KEK.</p>
+      <p class="muted">Re-wraps this project's key with an external PKCS#11 HSM token. The server re-encrypts every secret under the new HSM KEK.</p>
     </div>
     <form method="post" action="{{ url_for('project_crypto_action', project_id=project.id) }}"
           class="crypto-migrate-form"

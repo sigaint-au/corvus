@@ -12,7 +12,7 @@ and applied by the migration runner (`app/core/migrations.py`).
 
 - **Fresh installs** run the baseline via `docker-entrypoint-initdb.d` (mounted
   by `compose.yml`):
-  `db/migrations/0001_init.sql` (as `01-init.sql`) — the complete squashed schema,
+  `db/migrations/0001_init.sql` (mounted as `01-init.sql`): the complete squashed schema,
   functions, policies, grants, and security hardening.
 - **Every startup** the app checks migrations via `migrations.apply_pending()`
   (requires `DATABASE_ADMIN_URL`), serialized by a `pg_advisory_lock`. It seeds
@@ -22,8 +22,8 @@ and applied by the migration runner (`app/core/migrations.py`).
 - This branch uses a **fresh-install-only squash**. Existing databases must be
   recreated; there is no compatibility upgrade path from older schemas.
 
-> Do **not** edit an already-released migration file — its checksum is recorded
-> and drift is detected on startup. Add a new numbered migration instead.
+> Do **not** edit an already-released migration file. Its checksum is recorded
+> and drift fails startup. Add a new numbered migration instead.
 
 ### Baseline files
 
@@ -261,9 +261,9 @@ INSERT INTO api.machine_token_scope (token_id, key_pattern) VALUES (tok, 'prod/*
 
 ## Related docs
 
-- [architecture.md](architecture.md) — request flow
-- [../admin/rbac.md](../admin/rbac.md) — access rules in plain terms
-- [../admin/byok.md](../admin/byok.md) — per-project encryption keys (BYOK)
-- [hsm.md](hsm.md) — external HSM (SoftHSM2) key management for BYOK
-- [rbac-k8s.md](../admin/rbac-k8s.md) — K8s RBAC model
-- [api.md](api.md) — API reference
+- [architecture.md](architecture.md): request flow
+- [../admin/rbac.md](../admin/rbac.md): access rules in plain terms
+- [../admin/byok.md](../admin/byok.md): per-project encryption keys (BYOK)
+- [hsm.md](hsm.md): external HSM (SoftHSM2) key management for BYOK
+- [rbac-k8s.md](../admin/rbac-k8s.md): K8s RBAC model
+- [api.md](api.md): API reference

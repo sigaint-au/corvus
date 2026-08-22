@@ -124,7 +124,7 @@ transactional outbox if that failure mode must be eliminated.
 1. Browser loads a page → Flask `before_request` runs `ensure_schema()` (once)
    and `validate_registered_session()`.
 2. The route opens a connection via `db.as_user(session["user_id"])`.
-3. Queries run under RLS — the user only sees rows they are allowed to see.
+3. Queries run under RLS, so the user only sees rows they are allowed to see.
 4. HTMX requests swap partials (secret list, reveal cell, dialogs) without a
    full page reload.
 5. Every response gets security headers (CSP, X-Frame-Options, nosniff).
@@ -141,7 +141,7 @@ transactional outbox if that failure mode must be eliminated.
    and the token role (`service-read`/`service-reveal`/`service-write`).
    `service-read` tokens are rejected at both the DB function level
    (``machine_get_row`` / ``machine_list_enc`` return no rows) and the app
-   layer (explicit 403 before decryption) — they can only list metadata.
+   layer (explicit 403 before decryption). They can only list metadata.
 4. Secret values are decrypted with the project DEK (or ``MASTER_KEY``)
    and returned as plaintext. Only ``service-reveal`` and ``service-write``
    tokens receive plaintext.
@@ -153,27 +153,27 @@ transactional outbox if that failure mode must be eliminated.
 
 ## Security model
 
-- **RLS at the database** is the enforcement plane — the UI and APIs call the
+- **RLS at the database** is the enforcement plane. The UI and APIs call the
   same SQL helpers; there is no separate app-only ACL.
 - **SECURITY DEFINER** functions with `SET row_security = off` implement the
   access checks and machine paths; they are granted narrowly.
 - **Audit rows are append-only** via SECURITY DEFINER functions.
 - **Secret values** are Fernet-encrypted at rest; only the app and `/eso/v1`
   decrypt them. PostgREST only ever sees `value_enc`.
-- **RBAC** is the only authorization model — `rbac.bindings` stores all
+- **RBAC** is the only authorization model. `rbac.bindings` stores all
   user/group/service-account access at cluster/team/project/secret scope.
 - **Per-project crypto keys are not an RBAC resource.** Key lifecycle
   (create/adopt/rotate) is gated by app-side admin predicates (team
-  owner/admin or global admin), not `rbac.role_rules` — keep `keys` out of
+  owner/admin or global admin), not `rbac.role_rules`. Keep `keys` out of
   `RBAC_RESOURCES` so wildcard grants never cover key management.
 
 ---
 
 ## Related docs
 
-- [database.md](database.md) — schema, RLS, functions
-- [api.md](api.md) — API reference
-- [testing.md](testing.md) — tests
-- [contributing.md](contributing.md) — how to contribute
-- [../admin/rbac.md](../admin/rbac.md) — RBAC access model
-- [../admin/rbac-k8s.md](../admin/rbac-k8s.md) — K8s RBAC model
+- [database.md](database.md): schema, RLS, functions
+- [api.md](api.md): API reference
+- [testing.md](testing.md): tests
+- [contributing.md](contributing.md): how to contribute
+- [../admin/rbac.md](../admin/rbac.md): RBAC access model
+- [../admin/rbac-k8s.md](../admin/rbac-k8s.md): K8s RBAC model

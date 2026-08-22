@@ -1,7 +1,7 @@
 # Deploy Guide
 
 Deploy Sigaint Secret Server end to end. Every step is a **copy-paste code
-block** — replace the `…` placeholders.
+block**: replace the `…` placeholders.
 
 Also see [configuration.md](configuration.md) for the full env/settings
 reference, [authentication.md](authentication.md) for auth flows, and
@@ -30,8 +30,8 @@ GLOBAL_ADMIN_EMAIL=you@example.com
 ```
 
 > The app **refuses to start** if `JWT_SECRET`, `MASTER_KEY`, or `SECRET_KEY`
-> are still the baked-in defaults. Set real values — do not use
-> `ALLOW_INSECURE_DEFAULTS=1` outside local testing.
+> are still the baked-in defaults. Set real values, and keep
+> `ALLOW_INSECURE_DEFAULTS=1` out of anything but local testing.
 
 ### 1b. Start the stack
 
@@ -73,7 +73,7 @@ Then, in order:
 1. Create a team
 2. Create a project inside the team
 3. Add secrets to the project
-4. (ESO) create a machine account — use reveal for value reads
+4. (ESO) create a machine account with the reveal role for value reads
 5. (optional) OIDC/LDAP, SMTP, TOTP enforcement, audit retention
 ```
 
@@ -120,8 +120,8 @@ curl -s -H "Authorization: Bearer $JWT" \
 ```
 
 PATs act as that user under RLS. Machine tokens (`ss_…`) are for project
-ESO/CI. PostgREST returns encrypted `value_enc` — use ESO routes or the UI for
-plaintext. See [api.md](../dev/api.md) and
+ESO/CI. PostgREST returns encrypted `value_enc` only. Use the ESO routes or
+the UI for plaintext. See [api.md](../dev/api.md) and
 [postgrest-openapi.json](../postgrest-openapi.json).
 
 ---

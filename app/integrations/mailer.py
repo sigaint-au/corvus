@@ -233,12 +233,12 @@ def send_password_reset(to_email: str, reset_url: str) -> tuple[bool, str]:
         ...     "https://app.example/reset?token=abc",
         ... )
     """
-    subject = f"Password reset — {APP_NAME}"
+    subject = f"{APP_NAME}: password reset"
     body = (
-        f"You requested a password reset for your {APP_NAME} account.\n\n"
+        f"You asked for a password reset for your {APP_NAME} account.\n\n"
         f"Open this link to choose a new password (expires in 1 hour):\n\n"
         f"{reset_url}\n\n"
-        "If you did not request this, you can ignore this message.\n"
+        "Didn't request this? Ignore the message and your password stays as it is.\n"
     )
     return send_email(to_email, subject, body)
 
@@ -268,9 +268,9 @@ def send_login_alert(
         ...     when="2024-01-01 12:00 UTC",
         ... )
     """
-    subject = f"New sign-in — {APP_NAME}"
+    subject = f"{APP_NAME}: new sign-in"
     lines = [
-        f"A successful sign-in was recorded for your {APP_NAME} account.",
+        f"Someone signed in to your {APP_NAME} account.",
         "",
     ]
     if when:
@@ -281,11 +281,9 @@ def send_login_alert(
         lines.append(f"Client: {user_agent}")
     lines.extend(
         [
-            "",
-            "If this was you, no action is needed.",
-            "If you do not recognize this sign-in, change your password and "
-            "revoke other sessions from your profile.",
-            "",
+            "If this was you, nothing to do.",
+            "If you don't recognize the sign-in, change your password and "
+            "sign out other sessions from your profile.",
         ]
     )
     return send_email(to_email, subject, "\n".join(lines))
@@ -303,9 +301,9 @@ def send_test_email(to_email: str) -> tuple[bool, str]:
     Example:
         >>> ok, err = send_test_email("admin@example.com")
     """
-    subject = f"Test email — {APP_NAME}"
+    subject = f"{APP_NAME}: test email"
     body = (
         f"This is a test message from {APP_NAME}.\n\n"
-        "If you received this, SMTP is configured correctly.\n"
+        "If you got this, SMTP works.\n"
     )
     return send_email(to_email, subject, body)

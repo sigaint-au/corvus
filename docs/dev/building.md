@@ -1,7 +1,7 @@
 # Building & Pushing Container Images
 
 Build the Sigaint Secret Server container image and push it to a registry.
-Every step is a **copy-paste code block** — replace the `…` placeholders.
+Every step is a **copy-paste code block**: replace the `…` placeholders.
 
 ---
 
@@ -142,5 +142,5 @@ See [deploy.md](../admin/deploy.md) for the full OpenShift setup.
 
 ## Related docs
 
-- [deploy.md](../admin/deploy.md) — deployment
-- [testing.md](testing.md) — running tests
+- [deploy.md](../admin/deploy.md): deployment
+- [testing.md](testing.md): running tests

@@ -32,7 +32,7 @@ Expires (days): 90      (optional)
 [Create machine account]
 ```
 
-Copy the `ss_…` value immediately — it is shown once.
+Copy the `ss_…` value immediately; it shows only this once.
 
 ---
 
@@ -115,7 +115,7 @@ control; rotate tokens on a schedule.
 
 ## Related docs
 
-- [authentication.md](authentication.md) — machine token auth flow and curl
-- [cli.md](../user/cli.md) — CLI usage
-- [api.md](../dev/api.md) — `/eso/v1` endpoint reference
-- [openshift-eso.yaml](../openshift-eso.yaml) — sample ESO manifest
+- [authentication.md](authentication.md): machine token auth flow and curl
+- [cli.md](../user/cli.md): CLI usage
+- [api.md](../dev/api.md): `/eso/v1` endpoint reference
+- [openshift-eso.yaml](../openshift-eso.yaml): sample ESO manifest

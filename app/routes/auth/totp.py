@@ -72,10 +72,10 @@ def totp_setup_confirm():
     secret = session.get("pending_totp_secret")
     code = request.form.get("code") or ""
     if not secret:
-        flash("Setup session expired — start again", "error")
+        flash("Two-factor setup expired. Start again.", "error")
         return redirect(url_for("totp_setup"))
     if not totp_svc.verify_code(secret, code):
-        flash("Invalid code — check your authenticator and try again", "error")
+        flash("That code didn't match. Check your authenticator and try again.", "error")
         return redirect(url_for("totp_setup"))
     try:
         recovery = totp_svc.enable(uid, secret)
@@ -171,5 +171,5 @@ def totp_regenerate_recovery():
         return redirect(url_for("profile", tab="security"))
     codes = totp_svc.regenerate_recovery_codes(uid)
     session["new_recovery_codes"] = codes
-    flash("New recovery codes generated — save them now", "ok")
+    flash("New recovery codes generated. Save them now.", "ok")
     return redirect(url_for("totp_recovery_codes"))

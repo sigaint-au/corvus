@@ -227,7 +227,7 @@ def create_token(project_id):
         else " (full project access)"
     )
     flash(
-        f"Machine account created{scope_note} — copy the token now; it is shown once",
+        f"Machine account created{scope_note}. Copy the token now; it shows only this once.",
         "ok",
     )
     return _token_redirect()

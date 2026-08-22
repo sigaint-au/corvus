@@ -79,7 +79,7 @@ Documentation is organised by audience.
 | Secret metadata | System (created, updated, last accessed) + custom searchable key/values |
 | Structured kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
 | Browser UI | Bulk actions, trash, version history, search (incl. metadata), pins, mobile nav |
-| Postgres RLS | Access control enforced at the database, not just the app |
+| Postgres RLS | Access control enforced by the database itself |
 | Unified secret API | `/eso/v1` with `ss_…` (machine) or `pat_…` (PAT): list, get, create, update, soft-delete |
 | PostgREST API | SQL-style API with JWT auth for metadata / org clients |
 | ESO integration | Machine API powers OpenShift External Secrets Operator webhooks |
@@ -100,7 +100,7 @@ Documentation is organised by audience.
 ## Tests
 
 Unit tests live under `tests/` (not shipped in the container image). They use
-**pytest** with a mocked DB — Postgres is not required.
+**pytest** with a mocked DB, so Postgres is not required.
 
 ```bash
 pip install -e ".[dev]"

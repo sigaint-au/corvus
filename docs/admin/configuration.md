@@ -29,7 +29,7 @@ All environment variables and server settings for Sigaint Secret Server.
 | `COOKIE_SECURE` | on in production | `0` disables; off when `FLASK_ENV=development` or `ALLOW_INSECURE_DEFAULTS` |
 | `MAX_CONTENT_LENGTH` | `1 MiB` | Request/import size cap (memory DoS guard) |
 
-> `DATABASE_ADMIN_URL` is **required** — the app uses it for idempotent schema
+> `DATABASE_ADMIN_URL` is **required**: the app uses it for idempotent schema
 > upgrades (`app/core/schema.py`). Compose sets it for you.
 
 ---
@@ -130,6 +130,6 @@ Configured under **Administration → Server settings**. Stored in
 
 ## Related docs
 
-- [deploy.md](deploy.md) — deployment guide
-- [rbac.md](rbac.md) — RBAC access model
-- [authentication.md](authentication.md) — auth flows
+- [deploy.md](deploy.md): deployment guide
+- [rbac.md](rbac.md): RBAC access model
+- [authentication.md](authentication.md): auth flows

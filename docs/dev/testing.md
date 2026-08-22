@@ -1,6 +1,6 @@
 # Testing & Lint
 
-Unit tests use **pytest** with a mocked DB — Postgres is not required.
+Unit tests use **pytest** with a mocked DB, so Postgres is not required.
 
 ---
 
@@ -102,7 +102,7 @@ API token and project reference for the optional test.
 
 ## Test conventions
 
-- Tests mock the DB connection (`helpers.mock_conn`) — no live Postgres.
+- Tests mock the DB connection (`helpers.mock_conn`); no live Postgres.
 - The app is imported with `TESTING=True`, so `ensure_schema()` is skipped.
 - Tests cover auth, CSRF, sessions, secrets, ESO, PATs, teams, groups, RLS
   schema, pagination, machine token scopes, audit, TOTP, LDAP, mailer, lockout.
@@ -116,6 +116,6 @@ API token and project reference for the optional test.
 
 ## Related docs
 
-- [architecture.md](architecture.md) — app layout
-- [contributing.md](contributing.md) — how to contribute
-- [database.md](database.md) — schema & RLS
+- [architecture.md](architecture.md): app layout
+- [contributing.md](contributing.md): how to contribute
+- [database.md](database.md): schema & RLS

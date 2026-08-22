@@ -69,7 +69,7 @@ the app environment so existing ciphertext and tokens remain valid.
 > `0001_init.sql` / `0002_rls_authz_hardening.sql` are for a **first** database init and fresh installs only.
 > This branch uses a fresh-install-only squashed baseline; recreate the database
 > before applying it and do not use it as an upgrade script for an existing DB.
-> This branch is **fresh-install-only squash** — existing databases must be
+> This branch is **fresh-install-only squash**: existing databases must be
 > recreated; do **not** re-run the baseline migrations over a restored database.
 
 ---
@@ -78,12 +78,12 @@ the app environment so existing ciphertext and tokens remain valid.
 
 1. Start the app against the restored DB with the original keys.
 2. Log in as an existing user.
-3. Reveal a known secret — it must decrypt correctly.
+3. Reveal a known secret; it must decrypt correctly.
 4. Confirm audit logs and access requests are present.
 
 ---
 
 ## Related docs
 
-- [configuration.md](configuration.md) — env vars / keys
-- [deploy.md](deploy.md) — deployment
+- [configuration.md](configuration.md): env vars / keys
+- [deploy.md](deploy.md): deployment
