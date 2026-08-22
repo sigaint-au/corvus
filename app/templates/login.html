@@ -26,9 +26,6 @@
 <p class="muted"><a href="{{ url_for('forgot_password') }}">Forgot password?</a>
   <span>(local accounts)</span>
 </p>
-{% if registration_enabled and smtp_configured %}
-<p class="muted">Didn't get your verification email? <a href="{{ url_for('verify_resend_page') }}">Resend it</a>.</p>
-{% endif %}
 {% if registration_enabled %}
 <p class="muted">No account? <a href="{{ url_for('register') }}">Register</a>
   {% if ldap_enabled or oidc_enabled %} <span>(local account)</span>{% endif %}
