@@ -504,7 +504,7 @@ class TestAuth:
              patch.object(mailer, 'send_email_verification', side_effect=fake_send):
             r = self.client.post('/register', data={'email': 'verify@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=True)
         assert r.status_code == 200
-        assert 'Verify your email' in r.get_data(as_text=True)  # step-2 screen, not login
+        assert '/login' in r.request.path  # back to sign-in after signup
         assert b'inbox' in r.data
         assert captured['to'] == 'verify@b.c'
         assert '/verify-email/' in captured['link']
@@ -575,7 +575,7 @@ class TestAuth:
         with patch.object(db, 'connect_admin', return_value=conn), \
              patch.object(mailer, 'send_email_verification', side_effect=lambda e, _u: sent.append(e) or (True, "")):
             r = self.client.post('/verify-email/resend', data={'email': 'ghost@b.c'}, follow_redirects=True)
-        assert '/verify-email' in r.request.path
+        assert '/login' in r.request.path
         assert b'unverified account' in r.data
         assert sent == []  # unknown address never triggers a send
 
@@ -590,15 +590,20 @@ class TestAuth:
         assert b'unverified account' in r.data
         assert sent == []
 
-    def test_verify_resend_page_renders(self):
-        with patch.object(settings_svc, 'setup_notice', return_value=None), \
+    def test_login_gate_renders_verify_page(self):
+        uid = uuid4()
+        conn, _ = self._seq_conn([
+            ('verify_user', {'id': uid, 'email': 'gate@b.c', 'name': 'G', 'is_global_admin': False}),
+            ('email_verified_at', {'email_verified_at': None}),
+        ])
+        with patch.object(db, 'connect', return_value=conn), \
              patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), \
-             patch.object(oidc_auth, 'oidc_enabled', return_value=False), \
-             patch.object(mailer, 'smtp_configured', return_value=True):
-            r = self.client.get('/verify-email?email=lost@b.c')
-        assert r.status_code == 200
-        assert b'lost@b.c' in r.data
-        assert b'Resend' in r.data
+             patch('auth.lockout.is_locked', return_value=False), \
+             patch('auth.lockout.clear_failures'):
+            r = self.client.post('/login', data={'email': 'gate@b.c', 'password': 'secret12'})
+        assert r.status_code == 403
+        assert b'gate@b.c' in r.data
+        assert b'Resend verification email' in r.data
     def test_dir_upsert_functions_stamp_verified(self):
         init = (REPO_ROOT / 'db' / 'migrations' / '0003_email_verification.sql').read_text()
         for fn in ('upsert_ldap_user', 'upsert_oidc_user'):

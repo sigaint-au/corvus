@@ -87,7 +87,7 @@ def login():
             # link is not penalized.
             lockout.clear_failures(email)
             flash("Verify your email first. Check your inbox for the link.", "error")
-            return _login_page(), 403
+            return render_template("verify_email.html", email=email), 403
         lockout.clear_failures(email)
         return _post_password_login(user)
     return _login_page()

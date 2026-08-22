@@ -70,8 +70,12 @@ def register_page():
         _maybe_promote_bootstrap_admin(email.lower(), uid)
         if mailer.smtp_configured():
             if send_verification_email(uid, email.lower()):
-                # Step 2: check-inbox screen with resend form.
-                return render_template("verify_email.html", email=email.lower())
+                flash(
+                    "Check your inbox: we sent a verification link. "
+                    "Sign in to activate your account.",
+                    "ok",
+                )
+                return redirect(url_for("login"))
             # SMTP broke mid-signup: fail open so the account is not locked out.
             log.warning("verification send failed; auto-verified %s", email.lower())
         # No SMTP, or send failed: stamp verified so the next login is not gated.
