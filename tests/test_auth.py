@@ -24,7 +24,7 @@ class TestAuth:
             patch.object(settings_svc, 'setup_notice', return_value=None),
             patch.object(settings_svc, 'get_settings', return_value={'registration_enabled': 'true'}),
             patch.object(nav, 'branding', return_value={
-                'app_name': 'Sigaint', 'brand_name': 'Sigaint', 'brand_tagline': ''
+                'app_name': 'Corvus', 'brand_name': 'Corvus', 'brand_tagline': ''
             }),
             patch.object(nav, 'classification', return_value={
                 'enabled': False, 'text': '', 'color': '#677381', 'fg': '#ffffff'

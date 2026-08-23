@@ -44,7 +44,7 @@ Configured under **Administration → Server settings**. Stored in
 | Setting | Default | Purpose |
 |---------|---------|---------|
 | Server URL | `""` | Public base URL (no trailing slash); OIDC redirect + ESO YAML default |
-| Brand name | `Sigaint` | Sidebar / page titles / mail / TOTP issuer |
+| Brand name | `Corvus` | Sidebar / page titles / mail / TOTP issuer |
 | Brand tagline | `Corvus` | Sidebar subtitle |
 | Classification | `false` | Show a classification banner (text/color) |
 | Login banner | `false` | DoD/policy disclosure text + optional policy link on sign-in |

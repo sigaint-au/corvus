@@ -9,8 +9,8 @@
     <input type="hidden" name="action" value="branding">
     <label>Brand name
       <input type="text" name="brand_name" required maxlength="80"
-             value="{{ settings.brand_name or 'Sigaint' }}"
-             placeholder="Sigaint">
+             value="{{ settings.brand_name or 'Corvus' }}"
+             placeholder="Corvus">
     </label>
     <label>Tagline
       <input type="text" name="brand_tagline" maxlength="120"
@@ -19,12 +19,12 @@
     </label>
     <p class="muted field-spacer">
       Preview:
-      <strong>{{ settings.brand_name or 'Sigaint' }}</strong>
+      <strong>{{ settings.brand_name or 'Corvus' }}</strong>
       {% if settings.brand_tagline %}
       <span class="muted">{{ settings.brand_tagline }}</span>
       {% endif %}
       · page titles:
-      <code class="k">{{ settings.brand_name or 'Sigaint' }}{% if settings.brand_tagline %} {{ settings.brand_tagline }}{% endif %}</code>
+      <code class="k">{{ settings.brand_name or 'Corvus' }}{% if settings.brand_tagline %} {{ settings.brand_tagline }}{% endif %}</code>
     </p>
     <p class="form-actions"><button type="submit">Save branding</button></p>
   </form>
