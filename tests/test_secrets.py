@@ -411,6 +411,50 @@ class TestSecrets:
         assert b'class="button outline small copy-btn"' in plain_copy
         assert b'id="toggle-edit-mode"' in r.data
 
+    def test_secret_view_update_binds_note_and_provider(self):
+        """BYOK splat used to bind provider as note and note as expires_at (500)."""
+        sid = uuid4()
+        enc = crypto.encrypt('old')
+        conn, cur = _conn()
+        row = {
+            'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'note': 'old-note', 'kind': 'plain',
+            'expires_at': None, 'requires_approval': None, 'access_mode': 'inherit',
+            'created_at': '2026-01-01', 'updated_at': '2026-01-01',
+            'last_accessed_at': None, 'last_accessed_by': None,
+            'project_name': 'prod', 'require_reveal_approval': False,
+        }
+        cur.fetchone.side_effect = [
+            row, {'w': True}, {'r': True}, {'a': True}, {'a': True},
+        ]
+        cur.fetchall.side_effect = [[], [], [], []]
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn), \
+             patch.object(crypto, 'encrypt_for_project', return_value=('enc-token', 'project')):
+            r = self.client.post(
+                f'/projects/{self.pid}/secrets/{sid}/view',
+                data={
+                    'kind': 'plain',
+                    'plain_value': 'new-secret',
+                    'note': 'rotated',
+                    'expires_at': '2030-01-15',
+                },
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        update = next(
+            c for c in cur.execute.call_args_list
+            if c.args and 'UPDATE api.secrets' in str(c.args[0])
+        )
+        params = update.args[1]
+        assert params[0] == 'enc-token'
+        assert params[1] == 'rotated'
+        assert getattr(params[2], 'year', None) == 2030
+        assert params[3] == 'plain'
+        assert params[4] == 'project'
+        assert params[5] == str(sid)
+        assert params[6] == str(self.pid)
+        conn.commit.assert_called()
+
     def test_hide_secret(self):
         sid = uuid4()
         with self.client.session_transaction() as s:

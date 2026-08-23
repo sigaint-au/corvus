@@ -34,6 +34,7 @@ tests/
   test_eso.py          # /eso/v1 machine + PAT API
   test_health.py       # /health endpoint
   test_live_api.py     # opt-in live app/PostgREST/ESO smoke tests
+  test_live_secrets.py # opt-in live create/edit/delete (HTML + ESO)
   test_helpers.py      # test utility helpers
   test_jwt.py          # JWT generation/validation
   test_ldap.py         # LDAP bind + group sync
@@ -99,6 +100,34 @@ tests cover the database triggers and grants; a live PostgreSQL run is still
 required to verify effective ACLs and RLS behavior.
 Run `scripts/seed_mock.py` in the app container first; it prints the machine
 API token and project reference for the optional test.
+
+### Live secret create / edit / delete
+
+Unit tests mock the DB, so they cannot catch SQL bind-order or type errors on
+write. `tests/test_live_secrets.py` drives a running app (Compose or otherwise)
+through the HTML view-page save (the path that previously 500'd) and the ESO
+API:
+
+```bash
+LIVE_APP_URL=http://127.0.0.1:8080 \
+LIVE_USER_EMAIL=admin@example.com \
+LIVE_USER_PASSWORD=password \
+pytest -m live tests/test_live_secrets.py
+```
+
+After `scripts/seed_mock.py`, those credentials work on the local stack.
+`LIVE_PROJECT_REF` is optional for the HTML test (the first visible project is
+used). The ESO test also needs the machine token printed by the seeder:
+
+```bash
+LIVE_APP_URL=http://127.0.0.1:8080 \
+LIVE_MACHINE_TOKEN=ss_… \
+LIVE_PROJECT_REF=<project-uuid> \
+pytest -m live tests/test_live_secrets.py::test_live_eso_secret_create_edit_delete
+```
+
+Each test creates a uniquely named secret and deletes it afterwards. Default
+`pytest` / `tox -e py` skip these unless the env vars are set.
 
 ## Test conventions
 
