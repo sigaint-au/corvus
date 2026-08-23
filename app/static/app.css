@@ -1547,6 +1547,9 @@
       max-width: 36rem;
     }
     .reveal-access-msg { margin: 0 0 0.5rem; }
+    .reveal-denied-heading { display: flex; gap: 0.65rem; align-items: center; }
+    .reveal-denied-heading h2 { margin: 0.1rem 0 0; }
+    .reveal-denied .muted { max-width: 36rem; }
     /* Reveal cells: loading cue while the mask blob / toggle fetches the value */
     .secret-masked.htmx-request,
     .reveal-toggle.htmx-request {

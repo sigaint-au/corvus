@@ -46,7 +46,7 @@ class TestSecrets:
         if tab == 'settings':
             fa = [[]]
         elif tab == 'secrets':
-            fa = [rows, [], [], []]
+            fa = [rows, [], [], [], []]
         elif tab in ('access', 'requests'):
             fa = [access_requests or []]
         else:
@@ -75,6 +75,29 @@ class TestSecrets:
         assert b'project-panel' not in r.data
         assert b'Projects' not in r.data
         assert b'Add secret' in r.data
+
+    def test_viewer_cannot_click_masked_secret_without_reveal_access(self):
+        sid = uuid4()
+        secret = {
+            'id': sid, 'key': 'API_KEY', 'note': '', 'kind': 'plain',
+            'expires_at': None, 'updated_at': '2026-01-01',
+            'rotation_next_at': None, 'rotation_owner': None, 'rotated_at': None,
+            'is_pinned': False, 'due': None, 'rotation_due': None,
+            'access_mode': 'inherit', 'access_restricted': False,
+            'reveal_access': 'denied', 'needs_approval': False,
+            'can_reveal': False,
+        }
+        with patch.object(
+            db, 'as_user',
+            return_value=self._project_conn(
+                can_write=False, can_admin=False, team_role='team-viewer', secrets=[secret]
+            ),
+        ):
+            r = self.client.get(f'/projects/{self.pid}?tab=secrets')
+        assert r.status_code == 200
+        assert b'class="k secret-masked"' in r.data
+        assert f'/projects/{self.pid}/secrets/{sid}/reveal'.encode() not in r.data
+        assert b'data-open-dialog=' not in r.data
 
     def test_project_access_tab(self):
         reqs = [{'id': uuid4(), 'secret_id': uuid4(), 'secret_key': 'API_KEY', 'user_id': self.uid, 'email': 'u@ex.com', 'name': 'User', 'status': 'pending', 'reason': 'debug prod', 'created_at': '2026-01-01', 'resolved_at': None, 'approved_until': None, 'resolver_email': ''}]
@@ -235,7 +258,7 @@ class TestSecrets:
                 headers={'HX-Request': 'true'},
             )
         assert r.status_code == 200
-        assert b'Reveal permission required' in r.data
+        assert b'Reveal access required' in r.data
         assert b'The action failed' not in r.data
 
     def test_reveal_secret_requires_access_request(self):
