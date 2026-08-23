@@ -5,8 +5,8 @@ FROM registry.access.redhat.com/ubi9/python-312 AS builder
 
 # Toolchain only for compiling wheels without manylinux coverage
 # (python-pkcs11). Nothing here reaches the runtime stage.
-RUN microdnf install -y gcc gcc-c++ python3-devel \
-    && microdnf clean all
+RUN dnf install -y gcc gcc-c++ python3-devel \
+    && dnf clean all
 
 WORKDIR /build
 COPY app/requirements.txt .
