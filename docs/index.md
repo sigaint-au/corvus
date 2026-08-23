@@ -38,5 +38,5 @@ For responsible disclosure, see
 
 ## License
 
-[GNU Affero General Public License v3.0](https://git.sigaint.au/Sigaint/corvus/src/branch/main/LICENSE)
-(AGPL-3.0).
+[GNU Affero General Public License v3.0](https://git.sigaint.au/Sigaint/corvus/src/branch/main/LICENSE) (AGPL-3.0).
+Third-party notices: [THIRD_PARTY.md](https://git.sigaint.au/Sigaint/corvus/src/branch/main/THIRD_PARTY.md).

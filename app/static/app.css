@@ -1185,6 +1185,22 @@
     .auth-card form button[type="submit"] {
       margin-top: 1rem;
     }
+    .auth-source {
+      position: fixed;
+      left: 50%;
+      bottom: 1rem;
+      transform: translateX(-50%);
+      z-index: 5;
+      margin: 0;
+      padding: 0 .75rem;
+      font-size: .8rem;
+      text-align: center;
+      pointer-events: none;
+    }
+    .auth-source a { pointer-events: auto; }
+    @media (max-width: 720px) {
+      body.auth:has(.login-note) .auth-source { bottom: 4.75rem; }
+    }
     .auth-brand {
       display: flex;
       flex-direction: column;
