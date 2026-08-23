@@ -1,7 +1,7 @@
 # Machine accounts and ESO
 
-Machine tokens (`ss_…`) let automation (CI, OpenShift External Secrets
-Operator) read and write secrets without a browser session.
+Machine tokens (`ss_…`) let automation (CI, External Secrets Operator)
+read and write secrets without a browser session.
 
 ---
 
@@ -26,7 +26,7 @@ Tokens are **project-scoped** (a token only ever sees one project). The raw
 Project → **Integrations** (or **Machine accounts**):
 
 ```text
-Name: openshift-prod
+Name: eso-prod
 Role: service-reveal    (or service-write)
 Expires (days): 90      (optional)
 [Create machine account]
@@ -72,7 +72,7 @@ The machine API is the External Secrets Operator **webhook** backend.
 Full setup, troubleshooting, and copy-paste YAML:
 [external-secrets.md](external-secrets.md).
 
-Samples: [openshift-eso.yaml](../openshift-eso.yaml) (pull),
+Samples: [eso-pull.yaml](../eso-pull.yaml) (pull),
 [eso-push.yaml](../eso-push.yaml) (push).
 
 Project → **Integrations** generates the pull token Secret + SecretStore. Add
@@ -107,5 +107,5 @@ control; rotate tokens on a schedule.
 - [cli.md](../user/cli.md): CLI usage
 - [api.md](../dev/api.md): `/eso/v1` endpoint reference
 - [external-secrets.md](external-secrets.md): ESO pull and push setup
-- [openshift-eso.yaml](../openshift-eso.yaml): pull manifests
+- [eso-pull.yaml](../eso-pull.yaml): pull manifests
 - [eso-push.yaml](../eso-push.yaml): push manifests

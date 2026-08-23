@@ -14,7 +14,7 @@ push. One store cannot do both.
 
 Copy-paste manifests:
 
-- Pull: [../openshift-eso.yaml](../openshift-eso.yaml)
+- Pull: [../eso-pull.yaml](../eso-pull.yaml)
 - Push: [../eso-push.yaml](../eso-push.yaml)
 
 Machine tokens, roles, and allow-lists: [machine-tokens.md](machine-tokens.md).
@@ -108,7 +108,7 @@ ESO `GET`s each key and writes a Kubernetes Secret.
 
 1. Create a `service-reveal` token.
 2. Apply the token Secret + SecretStore + ExternalSecret (below or
-   [openshift-eso.yaml](../openshift-eso.yaml)).
+   [eso-pull.yaml](../eso-pull.yaml)).
 3. Confirm the store is `Ready` and the ExternalSecret is `SecretSynced`.
 
 Replace `PROJECT_ID`, `ss_…`, host, namespace, and key names.
@@ -332,5 +332,5 @@ project **Audit log** tab.
 - [authentication.md](authentication.md): `ss_…` / `pat_…` flows
 - [api.md](../dev/api.md): `/eso/v1` GET, PUT, POST, DELETE
 - [cli.md](../user/cli.md): `secretserver create token` / `get secret`
-- [openshift-eso.yaml](../openshift-eso.yaml): pull manifests
+- [eso-pull.yaml](../eso-pull.yaml): pull manifests
 - [eso-push.yaml](../eso-push.yaml): push manifests

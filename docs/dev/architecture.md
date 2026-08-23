@@ -175,6 +175,5 @@ transactional outbox if that failure mode must be eliminated.
 - [api.md](api.md): API reference
 - [testing.md](testing.md): tests
 - [contributing.md](contributing.md): how to contribute
-- [../admin/rbac.md](../admin/rbac.md): RBAC access model
-- [../admin/rbac-k8s.md](../admin/rbac-k8s.md): K8s RBAC model
+- [../admin/rbac.md](../admin/rbac.md): roles and bindings
 - [../admin/external-secrets.md](../admin/external-secrets.md): External Secrets Operator

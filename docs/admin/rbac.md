@@ -1,7 +1,7 @@
 # Organisation RBAC
 
-Access control using Kubernetes-style RBAC: subjects, roles, bindings, and
-scope hierarchy. Enforcement is in **Postgres RLS** via `api.can()`,
+Access control with subjects, roles, bindings, and a scope hierarchy.
+Enforcement is in **Postgres RLS** via `api.can()`,
 `api.team_role()`, `api.project_role()`, and `api.can_access_secret()`.
 
 ---
@@ -259,7 +259,7 @@ Permission rank: `read` < `reveal` < `write`.
 
 ## Related docs
 
-- [rbac-k8s.md](rbac-k8s.md): K8s RBAC model details
+- [rbac-internals.md](rbac-internals.md): schema, SQL examples
 - [deploy.md](deploy.md): env vars, bootstrap admin, OIDC/LDAP server config
 - [authentication.md](authentication.md): login flows, PAT, machine tokens, JWT
 - [machine-tokens.md](machine-tokens.md): machine accounts, key allow-lists

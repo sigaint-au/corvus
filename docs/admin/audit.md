@@ -76,14 +76,14 @@ Docker Compose:
 15 3 * * * cd /path/to/secretserver && docker compose exec -T app flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
 ```
 
-### OpenShift CronJob
+### Kubernetes CronJob
 
 Full manifest: [openshift-purge-audit-cronjob.yaml](../openshift-purge-audit-cronjob.yaml).
 
 ```bash
-oc apply -f docs/openshift-purge-audit-cronjob.yaml
-oc create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
-oc logs job/purge-audit-manual -n secretserver
+kubectl apply -f docs/openshift-purge-audit-cronjob.yaml
+kubectl create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
+kubectl logs job/purge-audit-manual -n secretserver
 ```
 
 ---

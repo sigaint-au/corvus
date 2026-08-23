@@ -1,4 +1,4 @@
-# Kubernetes-style RBAC
+# RBAC internals
 
 **Subjects** (User, Group, ServiceAccount) + **Roles** (verbs × resources) +
 **Bindings** (subject + role + scope).

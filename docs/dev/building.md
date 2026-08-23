@@ -133,10 +133,9 @@ podman manifest push --all secretserver \
 
 ---
 
-## 6. OpenShift
+## 6. Kubernetes
 
-Use the internal registry and an ImageStream so Deployments can pull by tag.
-See [deploy.md](../admin/deploy.md) for the full OpenShift setup.
+See [deploy.md](../admin/deploy.md) for cluster deployment.
 
 ---
 

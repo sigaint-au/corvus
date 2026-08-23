@@ -18,7 +18,7 @@ Sigaint Secret Server exposes three machine-facing surfaces:
 | Goal | Recommended API | Token |
 |------|-----------------|-------|
 | **CLI / CI: list, get, create, update, delete secrets (plaintext)** | `/eso/v1` secret API | `ss_…` (**write** to mutate) **or** `pat_…` (user write access) |
-| **OpenShift External Secrets Operator pull** | `GET /eso/v1/…/secrets/{key}` | Machine account `ss_…` (`reveal` reads values) |
+| **External Secrets Operator pull** | `GET /eso/v1/…/secrets/{key}` | Machine account `ss_…` (`reveal` reads values) |
 | **Scripts: list teams/projects/metadata under user RLS** | PostgREST **or** `GET /eso/v1/projects` (PAT) | PAT → JWT via `/api/token`, or PAT on `/eso/v1` |
 | **Browser UI** | HTML session routes | Cookie session |
 
@@ -752,4 +752,4 @@ Full flows: [authentication.md](../admin/authentication.md).
 - Deploy, env, OIDC, audit purge: [deploy.md](../admin/deploy.md)
 - Machine accounts: [machine-tokens.md](../admin/machine-tokens.md)
 - ESO pull and push: [external-secrets.md](../admin/external-secrets.md)
-- ESO manifests: [openshift-eso.yaml](../openshift-eso.yaml), [eso-push.yaml](../eso-push.yaml)
+- ESO manifests: [eso-pull.yaml](../eso-pull.yaml), [eso-push.yaml](../eso-push.yaml)

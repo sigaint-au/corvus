@@ -1,4 +1,4 @@
-# OpenShift CronJob: daily audit retention purge
+# Kubernetes CronJob: daily audit retention purge
 #
 # Prerequisites:
 #   - Same app image as the secretserver Deployment
@@ -7,7 +7,7 @@
 #     (audit_retention_days; 0 = forever → job exits without deleting)
 #
 # Apply:
-#   oc apply -f docs/openshift-purge-audit-cronjob.yaml
+#   kubectl apply -f docs/openshift-purge-audit-cronjob.yaml
 # Manual run:
 #   oc create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
 #   oc logs job/purge-audit-manual -n secretserver
@@ -23,7 +23,7 @@ metadata:
 spec:
   # 03:15 UTC every day
   schedule: "15 3 * * *"
-  timeZone: "UTC" # requires Kubernetes 1.27+ / recent OpenShift; remove if unsupported
+  timeZone: "UTC" # requires Kubernetes 1.27+; remove if unsupported
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3

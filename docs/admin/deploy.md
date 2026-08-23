@@ -195,16 +195,16 @@ Docker Compose:
 15 3 * * * cd /path/to/secretserver && docker compose exec -T app flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
 ```
 
-### OpenShift CronJob
+### Kubernetes CronJob
 
 Use the same app image and env as the Deployment. Full manifest:
 [openshift-purge-audit-cronjob.yaml](../openshift-purge-audit-cronjob.yaml).
 
 ```bash
-oc apply -f docs/openshift-purge-audit-cronjob.yaml
-oc get cronjobs -n secretserver
-oc create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
-oc logs job/purge-audit-manual -n secretserver
+kubectl apply -f docs/openshift-purge-audit-cronjob.yaml
+kubectl get cronjobs -n secretserver
+kubectl create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
+kubectl logs job/purge-audit-manual -n secretserver
 ```
 
 ---
@@ -213,7 +213,7 @@ oc logs job/purge-audit-manual -n secretserver
 
 See [external-secrets.md](external-secrets.md) for pull (`ExternalSecret`) and
 push (`PushSecret`) setup, plus copy-paste YAML.
-Samples: [openshift-eso.yaml](../openshift-eso.yaml),
+Samples: [eso-pull.yaml](../eso-pull.yaml),
 [eso-push.yaml](../eso-push.yaml).
 Tokens: [machine-tokens.md](machine-tokens.md).
 

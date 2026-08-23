@@ -2,7 +2,7 @@
 
 A self-hosted **team secrets store** for people and platforms: team → project →
 key/value secrets, enforced with **Postgres Row-Level Security (RLS)**. Ships a
-browser UI, an OpenShift External Secrets Operator (ESO) webhook API, a CLI, and
+browser UI, an External Secrets Operator (ESO) webhook API, a CLI, and
 PostgREST for API clients. Secret values are encrypted at rest with `MASTER_KEY`.
 
 This repository is a mirror of https://git.sigaint.au/Sigaint/secretserver
@@ -48,7 +48,7 @@ Documentation is organised by audience.
 
 | Doc | Contents |
 |-----|----------|
-| [docs/admin/deploy.md](docs/admin/deploy.md) | Deploy, first-run bootstrap, OpenShift |
+| [docs/admin/deploy.md](docs/admin/deploy.md) | Deploy, first-run bootstrap, Kubernetes |
 | [docs/admin/configuration.md](docs/admin/configuration.md) | All environment variables and server settings |
 | [docs/admin/rbac.md](docs/admin/rbac.md) | Roles, groups, project/secret permissions, setup checklist |
 | [docs/admin/authentication.md](docs/admin/authentication.md) | Session, PAT, JWT, machine token, OIDC, LDAP, SMTP, password reset |
