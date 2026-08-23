@@ -74,7 +74,7 @@ def reveal_secret(project_id, secret_id):
                 secret_key=row["key"],
                 state="denied",
                 cell=cell,
-            ), 403
+            )
         access_state, access_row = _reveal_access_state(
             cur, project_id, secret_id, session["user_id"]
         )

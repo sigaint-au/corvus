@@ -222,6 +222,22 @@ class TestSecrets:
         assert b'class="reveal-toggle ghost"' in r.data
         assert b'name="expires_at"' not in r.data
 
+    def test_reveal_secret_denied_shows_permission_message(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': sid, 'key': 'API_KEY', 'expires_at': None},
+            {'ok': False},
+        ]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(
+                f'/projects/{self.pid}/secrets/{sid}/reveal',
+                headers={'HX-Request': 'true'},
+            )
+        assert r.status_code == 200
+        assert b'Reveal permission required' in r.data
+        assert b'The action failed' not in r.data
+
     def test_reveal_secret_requires_access_request(self):
         sid = uuid4()
         enc = crypto.encrypt('super-secret')
@@ -366,6 +382,11 @@ class TestSecrets:
         assert r.status_code == 200
         assert b'DATABASE_URL' in r.data
         assert b'plain-value' in r.data
+        plain_copy = r.data[
+            r.data.index(b'data-copy-target="plain-view"') - 100 :
+        ]
+        assert b'class="button outline small copy-btn"' in plain_copy
+        assert b'id="toggle-edit-mode"' in r.data
 
     def test_hide_secret(self):
         sid = uuid4()
@@ -522,4 +543,3 @@ class TestSecrets:
         assert b'prod' in r.data
         assert b'Ops' in r.data
         assert b'secret-reveal' in r.data
-
