@@ -42,6 +42,7 @@ def test_migrations_ship_in_order():
         "0002_rls_authz_hardening.sql",
         "0003_email_verification.sql",
         "0004_email_verify_backfill.sql",
+        "0005_sql_password_crypt.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
