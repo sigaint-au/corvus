@@ -1,4 +1,4 @@
-# `secretserver-syd` — example overlay
+# `corvus-syd` — example overlay
 
 Worked example of deploying the **base** manifests onto a cluster that
 already has operators (cert-manager, CloudNativePG) and does **not** want
@@ -11,12 +11,12 @@ and `MASTER_KEY` stay as in-cluster Secrets you create yourself.
 Use it by copying the directory and changing the rows in **What to change**.
 
 ```bash
-cp -r deploy/overlays/secretserver-syd deploy/overlays/my-cluster
+cp -r deploy/overlays/corvus-syd deploy/overlays/my-cluster
 ```
 
 ## What this overlay assumes
 
-- Namespace `secretserver` already exists (Rancher/project-managed).
+- Namespace `corvus` already exists (Rancher/project-managed).
 - [cert-manager](https://cert-manager.io/) ClusterIssuer `le-production` exists.
 - [CloudNativePG](https://cloudnative-pg.io/) operator is installed (API 1.28-compatible Cluster spec).
 - Ingress controller class `traefik`.
@@ -34,9 +34,9 @@ one Redis replica with AOF, Ingress + Certificate, CronJobs, HPAs, PDBs.
 
 | File / field | Example value here | You set |
 |--------------|--------------------|---------|
-| `kustomization.yaml` → `namespace` | `secretserver` | Target namespace |
-| `kustomization.yaml` → `images[].newName` / `newTag` | `quay.io/sigaint/secretserver` / a build tag | Registry and tag you built ([building.md](../../../docs/dev/building.md)) |
-| `ingress-patch.yaml` | host `secretserver.sigaint.au`, class `traefik`, issuer `le-production` | Your DNS name, IngressClass, cert-manager issuer |
+| `kustomization.yaml` → `namespace` | `corvus` | Target namespace |
+| `kustomization.yaml` → `images[].newName` / `newTag` | `quay.io/sigaint/corvus` / a build tag | Registry and tag you built ([building.md](../../../docs/dev/building.md)) |
+| `ingress-patch.yaml` | host `corvus.sigaint.au`, class `traefik`, issuer `le-production` | Your DNS name, IngressClass, cert-manager issuer |
 | `certificate-patch.yaml` | same DNS + `le-production` | Must match Ingress TLS host |
 | `global-admin-email.yaml` | `admin@sigaint.au` | Email that is promoted to global admin **once**, when that user exists and no admin exists yet. Empty string disables promotion. |
 | `pull-secret-deploy.yaml` / `pull-secret-cronjob.yaml` | `imagePullSecrets: quay-registry` | Name of your pull Secret, or delete these patches if the image is public |
@@ -48,14 +48,14 @@ Do **not** put `MASTER_KEY`, DB passwords, or registry passwords in this
 directory. Create those Secrets in the namespace first:
 
 ```bash
-scripts/bootstrap-secrets.sh secretserver
+scripts/bootstrap-secrets.sh corvus
 # or apply your own Opaque Secrets (see deploy/README.md)
 ```
 
 If the app image is private:
 
 ```bash
-kubectl -n secretserver create secret docker-registry quay-registry \
+kubectl -n corvus create secret docker-registry quay-registry \
   --docker-server=quay.io \
   --docker-username=… \
   --docker-password=…
@@ -65,14 +65,14 @@ kubectl -n secretserver create secret docker-registry quay-registry \
 
 ```bash
 # Render (no cluster required)
-kubectl kustomize deploy/overlays/secretserver-syd
+kubectl kustomize deploy/overlays/corvus-syd
 
 # Diff against the live API
-kubectl diff -k deploy/overlays/secretserver-syd
+kubectl diff -k deploy/overlays/corvus-syd
 
-kubectl apply -k deploy/overlays/secretserver-syd
-kubectl -n secretserver wait --for=condition=Ready cluster/secretserver-postgres --timeout=300s
-kubectl -n secretserver rollout status deploy/secretserver-app --timeout=180s
+kubectl apply -k deploy/overlays/corvus-syd
+kubectl -n corvus wait --for=condition=Ready cluster/corvus-postgres --timeout=300s
+kubectl -n corvus rollout status deploy/corvus-app --timeout=180s
 ```
 
 App image upgrades: change `images[].newTag` in `kustomization.yaml` and
@@ -86,7 +86,7 @@ re-apply. The Deployment is `RollingUpdate` with `maxUnavailable: 0`.
 | `delete-netpol.yaml` | Base default-deny + component policies; this cluster skipped them. |
 | `delete-extras.yaml` | No object-store backup credentials; no Sentinel (single Redis). |
 | `postgres-spec.yaml` | Replaces the base Cluster spec with a 1.28-safe object (no fencing/podTemplate). |
-| `drop-priority-class.yaml` | Base sets `priorityClassName: secretserver-ha`; that CR is cluster-scoped and was deleted. |
+| `drop-priority-class.yaml` | Base sets `priorityClassName: corvus-ha`; that CR is cluster-scoped and was deleted. |
 | `drop-sts-maxsurge.yaml` | Redis StatefulSet rolling-update field not accepted on this API. |
 | `redis-runtime.yaml` | Stock `redis:7.2-alpine` instead of Bitnami; `--requirepass` from the Redis Secret. |
 | `redis-url.yaml` | App `REDIS_URL` points at `redis-master` with the password from that Secret. |

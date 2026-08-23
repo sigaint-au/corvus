@@ -1,15 +1,15 @@
 # Deploy guide
 
-Deploy Sigaint Secret Server end to end. Every step is a **copy-paste code
+Deploy Corvus end to end. Every step is a **copy-paste code
 block**: replace the `…` placeholders.
 
 Also see [configuration.md](configuration.md) for the full env/settings
 reference, [authentication.md](authentication.md) for auth flows, and
 [building.md](../dev/building.md) for building images.
 
-Kubernetes (kustomize) lives under [`deploy/`](../../deploy/README.md). Copy
+Kubernetes (kustomize) lives under [`deploy/`](https://git.sigaint.au/Sigaint/corvus/src/branch/main/deploy/README.md). Copy
 an overlay and change hostname, image tag, and `GLOBAL_ADMIN_EMAIL` — worked
-example: [`deploy/overlays/secretserver-syd/`](../../deploy/overlays/secretserver-syd/README.md).
+example: [`deploy/overlays/corvus-syd/`](https://git.sigaint.au/Sigaint/corvus/src/branch/main/deploy/overlays/corvus-syd/README.md).
 
 ---
 
@@ -181,8 +181,8 @@ flask --app app purge-audit --days 90
 Inside the running container:
 
 ```bash
-podman exec secretserver_app_1 flask --app app purge-audit --dry-run
-podman exec secretserver_app_1 flask --app app purge-audit
+podman exec corvus_app_1 flask --app app purge-audit --dry-run
+podman exec corvus_app_1 flask --app app purge-audit
 ```
 
 ### Host crontab
@@ -190,13 +190,13 @@ podman exec secretserver_app_1 flask --app app purge-audit
 Podman:
 
 ```cron
-15 3 * * * podman exec secretserver_app_1 flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
+15 3 * * * podman exec corvus_app_1 flask --app app purge-audit >> /var/log/corvus-purge-audit.log 2>&1
 ```
 
 Docker Compose:
 
 ```cron
-15 3 * * * cd /path/to/secretserver && docker compose exec -T app flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
+15 3 * * * cd /path/to/corvus && docker compose exec -T app flask --app app purge-audit >> /var/log/corvus-purge-audit.log 2>&1
 ```
 
 ### Kubernetes CronJob
@@ -206,9 +206,9 @@ Use the same app image and env as the Deployment. Full manifest:
 
 ```bash
 kubectl apply -f docs/openshift-purge-audit-cronjob.yaml
-kubectl get cronjobs -n secretserver
-kubectl create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
-kubectl logs job/purge-audit-manual -n secretserver
+kubectl get cronjobs -n corvus
+kubectl create job --from=cronjob/corvus-purge-audit purge-audit-manual -n corvus
+kubectl logs job/purge-audit-manual -n corvus
 ```
 
 ---
@@ -223,13 +223,17 @@ Tokens: [machine-tokens.md](machine-tokens.md).
 
 ---
 
+## Upgrades
+
+Existing databases upgrade in place — see [Upgrades](upgrades.md).
+
 ## Layout
 
 | Path | Role |
 |------|------|
 | `Dockerfile` | App image (build context = repo root) |
 | `compose.yml` | Postgres + PostgREST + app |
-| `deploy/` | Kubernetes kustomize base + overlays ([README](../../deploy/README.md)) |
+| `deploy/` | Kubernetes kustomize base + overlays ([README](https://git.sigaint.au/Sigaint/corvus/src/branch/main/deploy/README.md)) |
 | `db/migrations/` | Versioned SQL: `0001_init.sql` is the complete baseline (applied as `01-init.sql` on fresh volumes); later `NNNN_*.sql` files apply to existing databases at startup |
 | `app/` | Flask app; `core/migrations.py` applies pending migrations on startup |
 | `docs/` | This documentation set |

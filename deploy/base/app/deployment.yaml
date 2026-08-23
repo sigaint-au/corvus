@@ -1,11 +1,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: secretserver-app
+  name: corvus-app
   labels:
     app.kubernetes.io/name: app
     app.kubernetes.io/component: web
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   # Three replicas — survives a single node / pod loss and stays available
   # through rolling updates (maxUnavailable: 0).
@@ -19,17 +19,17 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: app
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
   template:
     metadata:
       labels:
         app.kubernetes.io/name: app
         app.kubernetes.io/component: web
-        app.kubernetes.io/part-of: secretserver
+        app.kubernetes.io/part-of: corvus
     spec:
-      serviceAccountName: secretserver-app
+      serviceAccountName: corvus-app
       automountServiceAccountToken: false
-      priorityClassName: secretserver-ha
+      priorityClassName: corvus-ha
       enableServiceLinks: false
       restartPolicy: Always
       # Image ships non-root (uid 10001) and gunicorn entrypoint — do not
@@ -50,14 +50,14 @@ spec:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: app
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: app
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -67,7 +67,7 @@ spec:
                 labelSelector:
                   matchLabels:
                     app.kubernetes.io/name: app
-                    app.kubernetes.io/part-of: secretserver
+                    app.kubernetes.io/part-of: corvus
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 50
@@ -81,7 +81,7 @@ spec:
       dnsPolicy: ClusterFirst
       containers:
         - name: app
-          image: ghcr.io/sigaint/secretserver/app:latest
+          image: ghcr.io/sigaint/corvus/app:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -89,33 +89,33 @@ spec:
               protocol: TCP
           envFrom:
             - configMapRef:
-                name: secretserver-app-env
+                name: corvus-app-env
           env:
             # Secrets are projected from operator-managed Secrets into these env vars.
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-app-secrets
+                  name: corvus-app-secrets
                   key: DATABASE_URL
             - name: DATABASE_ADMIN_URL
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-app-secrets
+                  name: corvus-app-secrets
                   key: DATABASE_ADMIN_URL
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-app-secrets
+                  name: corvus-app-secrets
                   key: JWT_SECRET
             - name: MASTER_KEY
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-app-secrets
+                  name: corvus-app-secrets
                   key: MASTER_KEY
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-app-secrets
+                  name: corvus-app-secrets
                   key: SECRET_KEY
           resources:
             requests:

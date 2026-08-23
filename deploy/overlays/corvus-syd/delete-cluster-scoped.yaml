@@ -15,7 +15,7 @@ $patch: delete
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
-  name: secretserver-ha
+  name: corvus-ha
 $patch: delete
 ---
 # Namespace already exists (Rancher-managed). Skip PSS labels that would
@@ -23,5 +23,5 @@ $patch: delete
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: secretserver
+  name: corvus
 $patch: delete

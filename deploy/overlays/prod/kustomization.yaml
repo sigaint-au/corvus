@@ -14,13 +14,13 @@ kind: Kustomization
 #   * Prometheus Operator (for PodMonitor CRDs)
 #
 # Bootstrap-time Secrets (DB / Redis / app) are NOT managed by this
-# overlay. Run `scripts/bootstrap-secrets.sh secretserver` once before
+# overlay. Run `scripts/bootstrap-secrets.sh corvus` once before
 # applying (see deploy/README.md → "Secrets bootstrap").
 #
 # Before applying: replace hostname and issuer email via patches below
 # or by editing this overlay.
 
-namespace: secretserver
+namespace: corvus
 
 resources:
   - ../../base
@@ -30,8 +30,8 @@ resources:
 # Pin the prod image to a tagged release. Update via the upgrade procedure
 # documented in the README.
 images:
-  - name: ghcr.io/sigaint/secretserver/app
-    newName: ghcr.io/sigaint/secretserver/app
+  - name: ghcr.io/sigaint/corvus/app
+    newName: ghcr.io/sigaint/corvus/app
     newTag: v1.0.0   # operators bump this for rollouts
   - name: postgrest/postgrest
     newName: postgrest/postgrest
@@ -55,15 +55,15 @@ patches:
   - path: ingress-patch.yaml
     target:
       kind: Ingress
-      name: secretserver
+      name: corvus
   - path: certificate-patch.yaml
     target:
       kind: Certificate
-      name: secretserver-tls
+      name: corvus-tls
   - path: postgres-storage-patch.yaml
     target:
       kind: Cluster
-      name: secretserver-postgres
+      name: corvus-postgres
   - path: redis-storage-patch.yaml
     target:
       kind: StatefulSet
@@ -79,7 +79,7 @@ patches:
   - path: app-resource-patch.yaml
     target:
       kind: Deployment
-      name: secretserver-app
+      name: corvus-app
 
 configurations:
   - kustomize-config.yaml

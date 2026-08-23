@@ -2,16 +2,16 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: secretserver-postgres-daily
-  namespace: secretserver
+  name: corvus-postgres-daily
+  namespace: corvus
 $patch: delete
 ---
 # CNPG enablePDB covers this; a second PDB on the same pods conflicts.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: secretserver-postgres
-  namespace: secretserver
+  name: corvus-postgres
+  namespace: corvus
 $patch: delete
 ---
 # Single Redis replica: skip Sentinel HA and the kubectl failover loop.
@@ -19,54 +19,54 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: redis-sentinel
-  namespace: secretserver
+  namespace: corvus
 $patch: delete
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: redis-sentinel
-  namespace: secretserver
+  namespace: corvus
 $patch: delete
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: redis-sentinel-headless
-  namespace: secretserver
+  namespace: corvus
 $patch: delete
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: secretserver-redis-sentinel
-  namespace: secretserver
+  name: corvus-redis-sentinel
+  namespace: corvus
 $patch: delete
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis-failover-controller
-  namespace: secretserver
+  namespace: corvus
 $patch: delete
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: redis-failover-controller
-  namespace: secretserver
+  namespace: corvus
 $patch: delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: redis-failover-controller
-  namespace: secretserver
+  namespace: corvus
 $patch: delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: redis-failover-controller
-  namespace: secretserver
+  namespace: corvus
 $patch: delete

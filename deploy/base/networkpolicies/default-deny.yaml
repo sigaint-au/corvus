@@ -1,13 +1,13 @@
-# Default-deny NetworkPolicy for the secretserver namespace.
+# Default-deny NetworkPolicy for the corvus namespace.
 # Each component policy (app/postgrest/postgres/redis) opens only the
 # minimal cross-component paths needed. This umbrella policy blocks
 # everything not explicitly allowed.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-default-deny
+  name: corvus-default-deny
   labels:
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   # Match all pods in the namespace.
   podSelector: {}
@@ -23,9 +23,9 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-allow-dns
+  name: corvus-allow-dns
   labels:
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   podSelector: {}
   policyTypes:

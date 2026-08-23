@@ -1,6 +1,6 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: secretserver-app
+  name: corvus-app
 spec:
   minAvailable: 1

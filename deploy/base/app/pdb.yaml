@@ -1,13 +1,13 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: secretserver-app
+  name: corvus-app
   labels:
     app.kubernetes.io/name: app
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   minAvailable: 2   # 2 of 3 — at most one voluntary disruption at a time
   selector:
     matchLabels:
       app.kubernetes.io/name: app
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus

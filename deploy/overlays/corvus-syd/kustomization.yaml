@@ -5,14 +5,14 @@ kind: Kustomization
 # directory). Copy this folder; change hostname, image tag, and
 # GLOBAL_ADMIN_EMAIL. Does not install ClusterIssuers or PriorityClasses.
 
-namespace: secretserver
+namespace: corvus
 
 resources:
   - ../../base
 
 images:
-  - name: ghcr.io/sigaint/secretserver/app
-    newName: quay.io/sigaint/secretserver
+  - name: ghcr.io/sigaint/corvus/app
+    newName: quay.io/sigaint/corvus
     newTag: "01b4964b"   # operators: bump this to roll the app image
   - name: bitnami/redis
     newName: docker.io/library/redis
@@ -36,44 +36,44 @@ patches:
       group: postgresql.cnpg.io
       version: v1
       kind: Cluster
-      name: secretserver-postgres
+      name: corvus-postgres
 
   - path: ingress-patch.yaml
     target:
       kind: Ingress
-      name: secretserver
+      name: corvus
   - path: certificate-patch.yaml
     target:
       kind: Certificate
-      name: secretserver-tls
+      name: corvus-tls
   - path: global-admin-email.yaml
     target:
       kind: ConfigMap
-      name: secretserver-app-env
+      name: corvus-app-env
   - path: app-replicas.yaml
     target:
       kind: Deployment
-      name: secretserver-app
+      name: corvus-app
   - path: postgrest-replicas.yaml
     target:
       kind: Deployment
-      name: secretserver-postgrest
+      name: corvus-postgrest
   - path: postgrest-probe.yaml
     target:
       kind: Deployment
-      name: secretserver-postgrest
+      name: corvus-postgrest
   - path: app-hpa.yaml
     target:
       kind: HorizontalPodAutoscaler
-      name: secretserver-app
+      name: corvus-app
   - path: postgrest-hpa.yaml
     target:
       kind: HorizontalPodAutoscaler
-      name: secretserver-postgrest
+      name: corvus-postgrest
   - path: app-pdb.yaml
     target:
       kind: PodDisruptionBudget
-      name: secretserver-app
+      name: corvus-app
   - path: redis-replicas.yaml
     target:
       kind: StatefulSet
@@ -89,27 +89,27 @@ patches:
   - path: redis-url.yaml
     target:
       kind: Deployment
-      name: secretserver-app
+      name: corvus-app
   - path: pull-secret-deploy.yaml
     target:
       kind: Deployment
-      name: secretserver-app
+      name: corvus-app
   - path: pull-secret-cronjob.yaml
     target:
       kind: CronJob
-      name: secretserver-purge-audit
+      name: corvus-purge-audit
   - path: pull-secret-cronjob.yaml
     target:
       kind: CronJob
-      name: secretserver-notify-due
+      name: corvus-notify-due
   - path: drop-priority-class.yaml
     target:
       kind: Deployment
-      name: secretserver-app
+      name: corvus-app
   - path: drop-priority-class.yaml
     target:
       kind: Deployment
-      name: secretserver-postgrest
+      name: corvus-postgrest
   - path: drop-priority-class.yaml
     target:
       kind: StatefulSet

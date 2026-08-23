@@ -8,12 +8,12 @@ Secrets out-of-band before applying the workloads.
 
 | Secret name                              | Consumed by          | Required keys                                                  |
 | ---------------------------------------- | -------------------- | -------------------------------------------------------------- |
-| `secretserver-app-secrets`               | app Deployment       | `DATABASE_URL`, `DATABASE_ADMIN_URL`, `JWT_SECRET`, `MASTER_KEY`, `SECRET_KEY` |
-| `secretserver-postgrest-secrets`         | postgrest Deployment | `PGRST_DB_URI`, `PGRST_JWT_SECRET`                             |
-| `secretserver-postgres-superuser`        | CNPG Cluster CR      | `username`, `password` (boots the cluster)                     |
-| `secretserver-postgres-authenticator`    | CNPG Cluster CR      | `username`, `password` (application DB role)                   |
-| `secretserver-redis-secrets`             | redis + sentinel     | `REDIS_PASSWORD`, `REDIS_SENTINEL_PASSWORD`                    |
-| `secretserver-postgres-backup` (opt)     | CNPG ScheduledBackup | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_BUCKET` |
+| `corvus-app-secrets`               | app Deployment       | `DATABASE_URL`, `DATABASE_ADMIN_URL`, `JWT_SECRET`, `MASTER_KEY`, `SECRET_KEY` |
+| `corvus-postgrest-secrets`         | postgrest Deployment | `PGRST_DB_URI`, `PGRST_JWT_SECRET`                             |
+| `corvus-postgres-superuser`        | CNPG Cluster CR      | `username`, `password` (boots the cluster)                     |
+| `corvus-postgres-authenticator`    | CNPG Cluster CR      | `username`, `password` (application DB role)                   |
+| `corvus-redis-secrets`             | redis + sentinel     | `REDIS_PASSWORD`, `REDIS_SENTINEL_PASSWORD`                    |
+| `corvus-postgres-backup` (opt)     | CNPG ScheduledBackup | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_BUCKET` |
 
 All values are plain `Opaque` Secrets. The Deployment manifests in
 `deploy/base/app/` and `deploy/base/postgrest/` reference these names
@@ -26,7 +26,7 @@ The recommended path is the helper script at the repo root:
 
 ```bash
 scripts/bootstrap-secrets.sh            # writes Secrets to the current namespace
-scripts/bootstrap-secrets.sh secretserver   # specify a namespace
+scripts/bootstrap-secrets.sh corvus   # specify a namespace
 ```
 
 The script generates random passwords (32-byte urlsafe-base64, suitable
@@ -40,8 +40,8 @@ NOT commit real Secret values.
 
 ## Key generation rules
 
-- `JWT_SECRET` / `PGRST_JWT_SECRET`: must match between `secretserver-app-secrets`
-  and `secretserver-postgrest-secrets`. PostgREST verifies HS256 tokens
+- `JWT_SECRET` / `PGRST_JWT_SECRET`: must match between `corvus-app-secrets`
+  and `corvus-postgrest-secrets`. PostgREST verifies HS256 tokens
   with this value; a mismatch means every API call 401s.
 - `MASTER_KEY`: 32+ random bytes (Fernet requires SHA-256 → 32 bytes →
   urlsafe-base64 → 44 bytes). Rotating it requires running

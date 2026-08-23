@@ -6,15 +6,15 @@ only what your cluster is different from the HA defaults**. You do not edit
 
 | Overlay | Intent |
 |---------|--------|
-| [`prod/`](prod/) | Full HA: nginx ingress, Let's Encrypt, 5 app / 3 Postgres / 3 Redis+Sentinel. Placeholders (`secretserver.example.com`). |
+| [`prod/`](prod/) | Full HA: nginx ingress, Let's Encrypt, 5 app / 3 Postgres / 3 Redis+Sentinel. Placeholders (`corvus.example.com`). |
 | [`staging/`](staging/) | Smaller replica counts, self-signed TLS, `ALLOW_INSECURE_DEFAULTS` for a disposable env. |
-| [`secretserver-syd/`](secretserver-syd/) | **Worked example** of a small existing cluster (Traefik, cert-manager already installed, CNPG 1.28, single Redis, no cluster-scoped objects). See [secretserver-syd/README.md](secretserver-syd/README.md). |
+| [`corvus-syd/`](corvus-syd/) | **Worked example** of a small existing cluster (Traefik, cert-manager already installed, CNPG 1.28, single Redis, no cluster-scoped objects). See [corvus-syd/README.md](corvus-syd/README.md). |
 
 Copy an overlay rather than mutating `prod/` in place:
 
 ```bash
-cp -r deploy/overlays/secretserver-syd deploy/overlays/my-cluster
-# edit my-cluster (table in secretserver-syd/README.md)
+cp -r deploy/overlays/corvus-syd deploy/overlays/my-cluster
+# edit my-cluster (table in corvus-syd/README.md)
 kubectl kustomize deploy/overlays/my-cluster | less
 kubectl apply -k deploy/overlays/my-cluster
 ```

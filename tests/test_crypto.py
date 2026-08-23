@@ -72,8 +72,8 @@ class TestProjectCrypto:
         with patch.object(crypto.cache, "redis_client", return_value=client):
             crypto.clear_project_key_cache()
         assert [call.args for call in client.incr.call_args_list] == [
-            ("secretserver:crypto:project-key:epoch",),
-            ("secretserver:crypto:hsm-slot:epoch",),
+            ("corvus:crypto:project-key:epoch",),
+            ("corvus:crypto:hsm-slot:epoch",),
         ]
 
     def test_master_fallback_when_no_key(self):

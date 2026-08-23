@@ -1,6 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: secretserver-app
+  name: corvus-app
 spec:
   replicas: 2

@@ -1,6 +1,6 @@
 # Auditing
 
-Sigaint Secret Server records two audit streams and provides an admin review
+Corvus records two audit streams and provides an admin review
 UI, export, and retention purge.
 
 ---
@@ -67,13 +67,13 @@ Purge targets: `api.secret_audit`, `api.org_audit`, `private.login_failures`.
 Podman:
 
 ```cron
-15 3 * * * podman exec secretserver_app_1 flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
+15 3 * * * podman exec corvus_app_1 flask --app app purge-audit >> /var/log/corvus-purge-audit.log 2>&1
 ```
 
 Docker Compose:
 
 ```cron
-15 3 * * * cd /path/to/secretserver && docker compose exec -T app flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
+15 3 * * * cd /path/to/corvus && docker compose exec -T app flask --app app purge-audit >> /var/log/corvus-purge-audit.log 2>&1
 ```
 
 ### Kubernetes CronJob
@@ -82,8 +82,8 @@ Full manifest: [openshift-purge-audit-cronjob.yaml](../openshift-purge-audit-cro
 
 ```bash
 kubectl apply -f docs/openshift-purge-audit-cronjob.yaml
-kubectl create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
-kubectl logs job/purge-audit-manual -n secretserver
+kubectl create job --from=cronjob/corvus-purge-audit purge-audit-manual -n corvus
+kubectl logs job/purge-audit-manual -n corvus
 ```
 
 ---

@@ -1,12 +1,12 @@
 # `deploy/` — Kubernetes HA deployment (Kustomize)
 
 Kustomize composition for a **highly-available** production deployment of
-Secret Server. Designed around Kubernetes best practices:
+Corvus. Designed around Kubernetes best practices:
 
 - **Pod Security Standards `restricted`** at the namespace level
   (no privileged, no host namespaces, drop ALL caps, runAsNonRoot,
   seccompProfile=RuntimeDefault).
-- **Stateless web tier** (`secretserver-app` + `secretserver-postgrest`)
+- **Stateless web tier** (`corvus-app` + `corvus-postgrest`)
   with HPA, anti-affinity, PodDisruptionBudget, topology-spread
   constraints.
 - **Stateful tier** run by **CloudNativePG** (HA Postgres with synchronous
@@ -35,7 +35,7 @@ deploy/
 ├── README.md                         # this file
 ├── base/                             # base composition (kustomize "base")
 │   ├── kustomization.yaml            # composes all base resources
-│   ├── namespace.yaml                # secretserver namespace + PSS labels
+│   ├── namespace.yaml                # corvus namespace + PSS labels
 │   ├── rbac/                         # PriorityClass + ServiceAccounts + RBAC
 │   ├── app/                          # Flask/gunicorn Deployment + HPA + PDB
 │   ├── postgrest/                    # PostgREST Deployment + HPA + PDB
@@ -48,11 +48,11 @@ deploy/
     ├── README.md                     # how overlays work; copy one to start
     ├── prod/                         # HA defaults + placeholder hostnames
     ├── staging/                      # smaller counts, insecure-defaults for lab
-    └── secretserver-syd/             # worked example (small cluster, Traefik)
+    └── corvus-syd/             # worked example (small cluster, Traefik)
 ```
 
 How to pick and customise an overlay: [overlays/README.md](overlays/README.md).
-Worked example (what each patch is for): [overlays/secretserver-syd/README.md](overlays/secretserver-syd/README.md).
+Worked example (what each patch is for): [overlays/corvus-syd/README.md](overlays/corvus-syd/README.md).
 
 ---
 
@@ -85,12 +85,12 @@ in the namespace before applying the workloads.
 
 | Secret name                          | Consumed by          | Required keys                                              |
 | ------------------------------------ | -------------------- | ---------------------------------------------------------- |
-| `secretserver-app-secrets`           | app Deployment       | `DATABASE_URL`, `DATABASE_ADMIN_URL`, `JWT_SECRET`, `MASTER_KEY`, `SECRET_KEY` |
-| `secretserver-postgrest-secrets`     | postgrest Deployment | `PGRST_DB_URI`, `PGRST_JWT_SECRET` (must match app's `JWT_SECRET`) |
-| `secretserver-postgres-superuser`    | CNPG Cluster CR      | `username`, `password` — bootstraps the cluster            |
-| `secretserver-postgres-authenticator`| CNPG Cluster CR      | `username`, `password` — application DB role               |
-| `secretserver-redis-secrets`         | redis + sentinel     | `REDIS_PASSWORD`, `REDIS_SENTINEL_PASSWORD`                |
-| `secretserver-postgres-backup` (opt) | CNPG ScheduledBackup | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_BUCKET` |
+| `corvus-app-secrets`           | app Deployment       | `DATABASE_URL`, `DATABASE_ADMIN_URL`, `JWT_SECRET`, `MASTER_KEY`, `SECRET_KEY` |
+| `corvus-postgrest-secrets`     | postgrest Deployment | `PGRST_DB_URI`, `PGRST_JWT_SECRET` (must match app's `JWT_SECRET`) |
+| `corvus-postgres-superuser`    | CNPG Cluster CR      | `username`, `password` — bootstraps the cluster            |
+| `corvus-postgres-authenticator`| CNPG Cluster CR      | `username`, `password` — application DB role               |
+| `corvus-redis-secrets`         | redis + sentinel     | `REDIS_PASSWORD`, `REDIS_SENTINEL_PASSWORD`                |
+| `corvus-postgres-backup` (opt) | CNPG ScheduledBackup | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_BUCKET` |
 
 `deploy/base/secrets/secrets.example.yaml` ships structural templates
 with empty `stringData:` blocks. **Do not apply it directly** — it is
@@ -101,12 +101,12 @@ a reference only.
 ```bash
 # Generates random passwords (32-byte urlsafe-base64 for Fernet keys,
 # 32-char alphanumeric for DB / Redis) and applies the Secrets.
-scripts/bootstrap-secrets.sh secretserver
+scripts/bootstrap-secrets.sh corvus
 # or for staging:
-scripts/bootstrap-secrets.sh secretserver-staging
+scripts/bootstrap-secrets.sh corvus-staging
 ```
 
-The script dumps the generated values to `/tmp/secretserver-bootstrap.env`
+The script dumps the generated values to `/tmp/corvus-bootstrap.env`
 (chmod 600, auto-deleted in 60s). **Back up `MASTER_KEY`** — losing it
 makes every encrypted secret unrecoverable.
 
@@ -124,14 +124,14 @@ Secrets — `kubectl apply` of an `Opaque` Secret is sufficient.
 
 ### Key rotation rules
 
-- `JWT_SECRET` in `secretserver-app-secrets` and `PGRST_JWT_SECRET` in
-  `secretserver-postgrest-secrets` **must be equal**. A mismatch makes
+- `JWT_SECRET` in `corvus-app-secrets` and `PGRST_JWT_SECRET` in
+  `corvus-postgrest-secrets` **must be equal**. A mismatch makes
   every PostgREST call 401.
 - `MASTER_KEY` rotation requires running the re-wrapping CLI tool (see
   runbook below).
 - DB password changes require updating both
-  `secretserver-postgres-authenticator` and `DATABASE_URL` in
-  `secretserver-app-secrets`.
+  `corvus-postgres-authenticator` and `DATABASE_URL` in
+  `corvus-app-secrets`.
 
 ---
 
@@ -147,19 +147,19 @@ Secrets — `kubectl apply` of an `Opaque` Secret is sufficient.
 | Bootstrap admin email | Overlay ConfigMap patch (`GLOBAL_ADMIN_EMAIL`) or leave empty |
 | App / Redis / DB **passwords and keys** | Kubernetes Secrets in the namespace — **never in git** |
 
-`prod/` still has example.com hostnames. `secretserver-syd/` is a complete
+`prod/` still has example.com hostnames. `corvus-syd/` is a complete
 copy-paste starting point for a cluster that already runs Traefik +
 cert-manager + CNPG.
 
 ## Build / apply
 
-Substitute your overlay directory (`prod`, `staging`, `secretserver-syd`,
+Substitute your overlay directory (`prod`, `staging`, `corvus-syd`,
 or a copy you made).
 
 ### Build & diff locally
 
 ```bash
-OVERLAY=deploy/overlays/secretserver-syd
+OVERLAY=deploy/overlays/corvus-syd
 
 kubectl kustomize "$OVERLAY"
 kubectl diff -k "$OVERLAY"
@@ -169,8 +169,8 @@ kubectl apply -k "$OVERLAY" --dry-run=server
 ### Apply in order
 
 ```bash
-OVERLAY=deploy/overlays/secretserver-syd
-NS=secretserver   # must match the overlay namespace:
+OVERLAY=deploy/overlays/corvus-syd
+NS=corvus   # must match the overlay namespace:
 
 # 1. Bootstrap secrets FIRST (workloads will fail to start without them)
 scripts/bootstrap-secrets.sh "$NS"
@@ -179,10 +179,10 @@ scripts/bootstrap-secrets.sh "$NS"
 kubectl apply -k "$OVERLAY"
 
 # 3. Wait for database readiness
-kubectl -n "$NS" wait --for=condition=Ready cluster/secretserver-postgres --timeout=300s
+kubectl -n "$NS" wait --for=condition=Ready cluster/corvus-postgres --timeout=300s
 
 # 4. Wait for app deployment
-kubectl -n "$NS" rollout status deploy/secretserver-app --timeout=180s
+kubectl -n "$NS" rollout status deploy/corvus-app --timeout=180s
 ```
 
 ### Scheduled operational jobs
@@ -190,18 +190,18 @@ kubectl -n "$NS" rollout status deploy/secretserver-app --timeout=180s
 The base app kustomization creates two UTC CronJobs using the same image and
 bootstrap Secret as the web Deployment:
 
-- `secretserver-purge-audit` — daily at 03:45 UTC; uses the configured
+- `corvus-purge-audit` — daily at 03:45 UTC; uses the configured
   `audit_retention_days` setting (`0` keeps audit rows forever).
-- `secretserver-notify-due` — daily at 08:00 UTC; emails global admins about
+- `corvus-notify-due` — daily at 08:00 UTC; emails global admins about
   due secrets, token expiry, and pending access approvals through SMTP settings.
 
 Both jobs use `concurrencyPolicy: Forbid`, retain three successful and failed
 Jobs, and stop after 15 minutes. Inspect or run a job manually:
 
 ```bash
-kubectl -n secretserver get cronjob secretserver-purge-audit secretserver-notify-due
-kubectl -n secretserver create job --from=cronjob/secretserver-purge-audit purge-audit-manual
-kubectl -n secretserver logs -f job/purge-audit-manual
+kubectl -n corvus get cronjob corvus-purge-audit corvus-notify-due
+kubectl -n corvus create job --from=cronjob/corvus-purge-audit purge-audit-manual
+kubectl -n corvus logs -f job/purge-audit-manual
 ```
 
 The staging overlay inherits these schedules under its own namespace.
@@ -215,23 +215,23 @@ The staging overlay inherits these schedules under its own namespace.
 ```bash
 # Admin is bootstrapped from the GLOBAL_ADMIN_EMAIL env var, not a CLI command.
 # Set it in deploy/base/app/configmap.yaml (or as a pod env var) and restart:
-kubectl -n secretserver rollout restart deploy/secretserver-app
+kubectl -n corvus rollout restart deploy/corvus-app
 # The email is promoted to global admin on startup when no admin exists yet.
 ```
 
 ### Rotate MASTER_KEY
 
 ```bash
-# 1. Replace the MASTER_KEY value in secretserver-app-secrets.
-kubectl -n secretserver patch secret secretserver-app-secrets \
+# 1. Replace the MASTER_KEY value in corvus-app-secrets.
+kubectl -n corvus patch secret corvus-app-secrets \
   --type=json \
   -p '[{"op":"replace","path":"/data/MASTER_KEY","value":"'"$(python3 -c 'import secrets;print(secrets.token_urlsafe(48))' | base64 -w0)"'"}]'
 
 # 2. Roll the Deployment so new pods pick up the new key.
-kubectl -n secretserver rollout restart deploy/secretserver-app
+kubectl -n corvus rollout restart deploy/corvus-app
 
 # 3. After pods come back, re-wrap project DEKs:
-kubectl -n secretserver exec deploy/secretserver-app -- \
+kubectl -n corvus exec deploy/corvus-app -- \
   flask --app app rekey-project-keys --old-master-key "$OLD_MASTER_KEY"
 ```
 
@@ -240,48 +240,48 @@ kubectl -n secretserver exec deploy/secretserver-app -- \
 ```bash
 # 1. Generate a new password and update both Secrets.
 NEW_PW=$(python3 -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(32)))')
-kubectl -n secretserver patch secret secretserver-postgres-authenticator \
+kubectl -n corvus patch secret corvus-postgres-authenticator \
   --type=json -p "[{\"op\":\"replace\",\"path\":\"/data/password\",\"value\":\"$(echo -n "$NEW_PW" | base64 -w0)\"}]"
-kubectl -n secretserver patch secret secretserver-app-secrets \
-  --type=json -p "[{\"op\":\"replace\",\"path\":\"/data/DATABASE_URL\",\"value\":\"$(echo -n "postgresql://secretserver-app:$NEW_PW@secretserver-postgres-rw:5432/secretserver" | base64 -w0)\"}]"
+kubectl -n corvus patch secret corvus-app-secrets \
+  --type=json -p "[{\"op\":\"replace\",\"path\":\"/data/DATABASE_URL\",\"value\":\"$(echo -n "postgresql://corvus-app:$NEW_PW@corvus-postgres-rw:5432/corvus" | base64 -w0)\"}]"
 
 # 2. Roll the deployments so new pods connect with the new password.
-kubectl -n secretserver rollout restart deploy/secretserver-app deploy/secretserver-postgrest
+kubectl -n corvus rollout restart deploy/corvus-app deploy/corvus-postgrest
 ```
 
 ### Postgres failover (manual)
 
 ```bash
-kubectl -n secretserver cnpg promote secretserver-postgres \
-  --target=secretserver-postgres-2
+kubectl -n corvus cnpg promote corvus-postgres \
+  --target=corvus-postgres-2
 ```
 
 ### Postgres restore (point-in-time)
 
 ```bash
-kubectl -n secretserver cnpg status secretserver-postgres
+kubectl -n corvus cnpg status corvus-postgres
 
-kubectl -n secretserver cnpg recovery secretserver-postgres \
-  --source=secretserver-postgres-daily-YYYYMMDDHHMMSS \
+kubectl -n corvus cnpg recovery corvus-postgres \
+  --source=corvus-postgres-daily-YYYYMMDDHHMMSS \
   --target-time="2025-01-15 03:00:00 UTC"
 ```
 
 ### Redis failover verification
 
 ```bash
-kubectl -n secretserver exec deploy/redis-failover-controller -- \
+kubectl -n corvus exec deploy/redis-failover-controller -- \
   redis-cli -h redis-sentinel -p 26379 -a "$SENTINEL_PW" \
-  SENTINEL get-master-addr-by-name secretserver-master
+  SENTINEL get-master-addr-by-name corvus-master
 
-kubectl -n secretserver cordon <node-running-redis-0>
-kubectl -n secretserver drain <node-running-redis-0> --ignore-errors
+kubectl -n corvus cordon <node-running-redis-0>
+kubectl -n corvus drain <node-running-redis-0> --ignore-errors
 ```
 
 ### Backup verification
 
 ```bash
-kubectl -n secretserver get scheduledbackup secretserver-postgres-daily
-kubectl -n secretserver get backup -l cnpg.io/cluster=secretserver-postgres
+kubectl -n corvus get scheduledbackup corvus-postgres-daily
+kubectl -n corvus get backup -l cnpg.io/cluster=corvus-postgres
 ```
 
 ---

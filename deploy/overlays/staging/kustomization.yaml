@@ -7,10 +7,10 @@ kind: Kustomization
 #   kubectl apply -k deploy/overlays/staging
 #
 # Bootstrap-time Secrets are NOT managed by this overlay. Run
-# `scripts/bootstrap-secrets.sh secretserver-staging` once before
+# `scripts/bootstrap-secrets.sh corvus-staging` once before
 # applying (see deploy/README.md → "Secrets bootstrap").
 
-namespace: secretserver-staging
+namespace: corvus-staging
 
 resources:
   - ../../base
@@ -21,23 +21,23 @@ patches:
   - path: app-replicas-patch.yaml
     target:
       kind: Deployment
-      name: secretserver-app
+      name: corvus-app
   - path: postgrest-replicas-patch.yaml
     target:
       kind: Deployment
-      name: secretserver-postgrest
+      name: corvus-postgrest
   - path: app-hpa-patch.yaml
     target:
       kind: HorizontalPodAutoscaler
-      name: secretserver-app
+      name: corvus-app
   - path: postgrest-hpa-patch.yaml
     target:
       kind: HorizontalPodAutoscaler
-      name: secretserver-postgrest
+      name: corvus-postgrest
   - path: postgres-instances-patch.yaml
     target:
       kind: Cluster
-      name: secretserver-postgres
+      name: corvus-postgres
   - path: redis-replica-patch.yaml
     target:
       kind: StatefulSet
@@ -49,15 +49,15 @@ patches:
   - path: ingress-patch.yaml
     target:
       kind: Ingress
-      name: secretserver
+      name: corvus
   - path: certificate-patch.yaml
     target:
       kind: Certificate
-      name: secretserver-tls
+      name: corvus-tls
   - path: enable-insecure-defaults.yaml
     target:
       kind: ConfigMap
-      name: secretserver-app-env
+      name: corvus-app-env
 
 configurations:
   - kustomize-config.yaml

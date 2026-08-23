@@ -82,14 +82,14 @@ sudo apt-get install softhsm2 opensc
 export SOFTHSM2_CONF=/etc/softhsm/softhsm2.conf
 
 # init a token
-softhsm2-util --init-token --free --label secretserver --so-pin 1234 --pin 1234
+softhsm2-util --init-token --free --label corvus --so-pin 1234 --pin 1234
 ```
 
 Then create a slot in **Server Settings → Encryption → HSM slots** with a
 PKCS#11 URL (see below), e.g.:
 
 ```
-pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-source=/hsm/tokens/hsm-pin
+pkcs11:token=corvus;object=byok-kek?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-source=/hsm/tokens/hsm-pin
 ```
 
 ---
@@ -115,7 +115,7 @@ pkcs11:token=<label>;object=<KEK label>[;slot-id=<n>]?module-path=<.so>[&pin-sou
 Example (SoftHSM2 dev, PIN in a file):
 
 ```
-pkcs11:token=secretserver;object=byok-kek?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-source=/run/secrets/hsm-pin
+pkcs11:token=corvus;object=byok-kek?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-source=/run/secrets/hsm-pin
 ```
 
 ## Multi-slot architecture

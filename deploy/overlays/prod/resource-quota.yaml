@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: secretserver-prod
-  namespace: secretserver
+  name: corvus-prod
+  namespace: corvus
   labels:
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   hard:
     # CPU / memory ceiling for the namespace.

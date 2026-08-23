@@ -6,8 +6,8 @@ machine token (`ss_…`).
 
 | Direction | ESO object | HTTP | Token role |
 |-----------|------------|------|------------|
-| **Pull** (Secret Server → cluster) | `ExternalSecret` | `GET` | `service-reveal` |
-| **Push** (cluster → Secret Server) | `PushSecret` | `PUT` | `service-write` |
+| **Pull** (Corvus → cluster) | `ExternalSecret` | `GET` | `service-reveal` |
+| **Push** (cluster → Corvus) | `PushSecret` | `PUT` | `service-write` |
 
 Use **two SecretStores**. A store’s `method` is shared: GET for pull, PUT for
 push. One store cannot do both.
@@ -27,7 +27,7 @@ HTTP API: [api.md](../dev/api.md).
 - ESO installed in the cluster (`SecretStore`, `ExternalSecret`, and
   `PushSecret` CRDs). Tested with ESO **v2.3** (`external-secrets.io/v1`
   stores; `PushSecret` is `v1alpha1`).
-- Secret Server reachable from ESO controller pods (in-cluster DNS or the
+- Corvus reachable from ESO controller pods (in-cluster DNS or the
   public HTTPS URL).
 - A **team → project** with the secrets you want to sync.
 - **Administration → Server settings → General → Server URL** set to the
@@ -49,10 +49,10 @@ export SS_TOKEN=pat_…          # your PAT, to create machine tokens
 export SS_PROJECT=<project-uuid>
 
 # Pull
-secretserver create token eso-pull --role service-reveal --expires-days 90
+corvus create token eso-pull --role service-reveal --expires-days 90
 
 # Push (separate token)
-secretserver create token eso-push --role service-write --expires-days 90
+corvus create token eso-push --role service-write --expires-days 90
 ```
 
 Copy each `ss_…` value immediately. Optional `--scope 'API_KEY,DB_*'` limits
@@ -83,7 +83,7 @@ manifest.
 
 | From | `{base}` example |
 |------|------------------|
-| Same cluster | `http://secretserver-app.secretserver.svc:8080` |
+| Same cluster | `http://corvus-app.corvus.svc:8080` |
 | Public TLS | `https://secrets.example.com` |
 
 Keep the `{{ .remoteRef.key }}` / `{{ .remoteRef.remoteKey }}` template on
@@ -102,7 +102,7 @@ ignored.
 
 ---
 
-## 4. Pull: Secret Server → cluster
+## 4. Pull: Corvus → cluster
 
 ESO `GET`s each key and writes a Kubernetes Secret.
 
@@ -117,7 +117,7 @@ Replace `PROJECT_ID`, `ss_…`, host, namespace, and key names.
 apiVersion: v1
 kind: Secret
 metadata:
-  name: secretserver-machine-token
+  name: corvus-machine-token
   namespace: default
   labels:
     external-secrets.io/type: webhook
@@ -127,7 +127,7 @@ stringData:
 apiVersion: external-secrets.io/v1
 kind: SecretStore
 metadata:
-  name: secretserver-webhook
+  name: corvus-webhook
   namespace: default
 spec:
   provider:
@@ -143,7 +143,7 @@ spec:
       secrets:
         - name: auth
           secretRef:
-            name: secretserver-machine-token
+            name: corvus-machine-token
             key: token
 ---
 apiVersion: external-secrets.io/v1
@@ -154,7 +154,7 @@ metadata:
 spec:
   refreshInterval: 1m
   secretStoreRef:
-    name: secretserver-webhook
+    name: corvus-webhook
     kind: SecretStore
   target:
     name: app-secrets
@@ -169,8 +169,8 @@ spec:
 ```
 
 ```bash
-kubectl apply -f secretserver-eso-pull.yaml
-kubectl get secretstore secretserver-webhook
+kubectl apply -f corvus-eso-pull.yaml
+kubectl get secretstore corvus-webhook
 kubectl get externalsecret app-secrets
 # STORE Ready, ExternalSecret SecretSynced
 kubectl get secret app-secrets
@@ -182,12 +182,12 @@ SecretStore (not the ExternalSecret). Paste keys into `spec.data` yourself.
 In-cluster (headless Service is fine — DNS returns pod IPs):
 
 ```yaml
-url: "http://secretserver-app.secretserver.svc:8080/eso/v1/projects/PROJECT_ID/secrets/{{ .remoteRef.key }}"
+url: "http://corvus-app.corvus.svc:8080/eso/v1/projects/PROJECT_ID/secrets/{{ .remoteRef.key }}"
 ```
 
 ---
 
-## 5. Push: cluster → Secret Server
+## 5. Push: cluster → Corvus
 
 ESO `PUT`s a Kubernetes Secret key to
 `/eso/v1/projects/{id}/secrets/{remoteKey}` with body `{"value":"…"}`.
@@ -200,7 +200,7 @@ ESO `PUT`s a Kubernetes Secret key to
 apiVersion: v1
 kind: Secret
 metadata:
-  name: secretserver-write-token
+  name: corvus-write-token
   namespace: default
   labels:
     external-secrets.io/type: webhook
@@ -218,7 +218,7 @@ stringData:
 apiVersion: external-secrets.io/v1
 kind: SecretStore
 metadata:
-  name: secretserver-webhook-push
+  name: corvus-webhook-push
   namespace: default
 spec:
   provider:
@@ -236,7 +236,7 @@ spec:
       secrets:
         - name: auth
           secretRef:
-            name: secretserver-write-token
+            name: corvus-write-token
             key: token
 ---
 apiVersion: external-secrets.io/v1alpha1
@@ -249,7 +249,7 @@ spec:
   updatePolicy: Replace
   deletionPolicy: None
   secretStoreRefs:
-    - name: secretserver-webhook-push
+    - name: corvus-webhook-push
       kind: SecretStore
   selector:
     secret:
@@ -264,16 +264,16 @@ spec:
 Full file: [../eso-push.yaml](../eso-push.yaml).
 
 ```bash
-kubectl apply -f secretserver-eso-push.yaml
-kubectl get secretstore secretserver-webhook-push
+kubectl apply -f corvus-eso-push.yaml
+kubectl get secretstore corvus-webhook-push
 kubectl get pushsecret app-push
 # STATUS Synced
 
-# Confirm in Secret Server (CLI or curl):
-secretserver get secret PUSH_KEY -o value
+# Confirm in Corvus (CLI or curl):
+corvus get secret PUSH_KEY -o value
 ```
 
-`deletionPolicy: None` leaves the Secret Server row when you delete the
+`deletionPolicy: None` leaves the Corvus row when you delete the
 PushSecret. `Delete` would require a DELETE mapping; this webhook store does
 not define one.
 
@@ -295,8 +295,8 @@ store. For `ClusterSecretStore`, every `secretRef` needs `namespace:`:
 secrets:
   - name: auth
     secretRef:
-      name: secretserver-machine-token
-      namespace: secretserver
+      name: corvus-machine-token
+      namespace: corvus
       key: token
 ```
 
@@ -331,6 +331,6 @@ project **Audit log** tab.
 - [machine-tokens.md](machine-tokens.md): roles, allow-lists, UI generator
 - [authentication.md](authentication.md): `ss_…` / `pat_…` flows
 - [api.md](../dev/api.md): `/eso/v1` GET, PUT, POST, DELETE
-- [cli.md](../user/cli.md): `secretserver create token` / `get secret`
+- [cli.md](../user/cli.md): `corvus create token` / `get secret`
 - [eso-pull.yaml](../eso-pull.yaml): pull manifests
 - [eso-push.yaml](../eso-push.yaml): push manifests

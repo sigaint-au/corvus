@@ -102,7 +102,7 @@ def refuse_insecure_defaults():
             )
 
 
-APP_NAME = "Sigaint Secret Server"
+APP_NAME = "Corvus"
 
 HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
 DEFAULT_SETTINGS = {
@@ -110,8 +110,8 @@ DEFAULT_SETTINGS = {
     # Used for OIDC redirect URI display and ESO webhook YAML defaults.
     "server_url": "",
     # Product branding (sidebar, page titles, mail/TOTP issuer fallbacks)
-    "brand_name": "Sigaint",
-    "brand_tagline": "Secret Server v0.1.0",
+    "brand_name": "Corvus",
+    "brand_tagline": "",
     "classification_enabled": "false",
     "classification_text": "OFFICIAL",
     "classification_color": "#677381",

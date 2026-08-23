@@ -1,6 +1,6 @@
 # Contributing
 
-Guidelines for contributing to Sigaint Secret Server.
+Guidelines for contributing to Corvus.
 
 ---
 
@@ -8,8 +8,8 @@ Guidelines for contributing to Sigaint Secret Server.
 
 ```bash
 # Clone
-git clone <repo-url> secretserver
-cd secretserver
+git clone <repo-url> corvus
+cd corvus
 
 # Install deps
 pip install -e ".[dev]"

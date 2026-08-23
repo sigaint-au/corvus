@@ -136,8 +136,8 @@ class TestSlotFunctions:
     def test_parse_in_wizard_slot_dropdown_ok(self):
         # sanity: a typical SoftHSM2 dev URL parses cleanly
         p = hsm.parse_pkcs11_url(
-            "pkcs11:token=secretserver;object=byok-kek"
+            "pkcs11:token=corvus;object=byok-kek"
             "?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-value=1234"
         )
-        assert p["token_label"] == "secretserver"
+        assert p["token_label"] == "corvus"
         assert p["kek_label"] == "byok-kek"

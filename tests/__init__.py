@@ -1,1 +1,1 @@
-"""Test package for secretserver unit tests."""
+"""Test package for Corvus unit tests."""

@@ -1,22 +1,22 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: secretserver
+  name: corvus
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: "secretserver.example.com"
+    external-dns.alpha.kubernetes.io/hostname: "corvus.example.com"
 spec:
   tls:
     - hosts:
-        - secretserver.example.com
-      secretName: secretserver-tls
+        - corvus.example.com
+      secretName: corvus-tls
   rules:
-    - host: secretserver.example.com
+    - host: corvus.example.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: secretserver-app
+                name: corvus-app
                 port:
                   name: http

@@ -8,6 +8,14 @@ form `YYYY.M.D.build`).
 
 ## [2026-08-23.1] - 2026-08-23
 
+### Changed
+
+- **Rebrand to Corvus**: product name, UI branding, package name (`corvus`),
+  compose project/DB/image names, Kubernetes namespace and resource names,
+  HSM token label default, Redis cache key prefixes, docs, and CLI examples.
+  Fresh install recommended — existing local volumes keep old names; recreate
+  with `scripts/reset.sh` (pre-release only).
+
 ### Added
 
 - **RBAC**: `rbac.roles` / `role_rules` / `bindings`, `api.can(verb, resource,

@@ -5,7 +5,7 @@ machine accounts, and scoped bindings (dev only).
 Password for every local account: password
 Run inside the app container (has MASTER_KEY + DB + crypto):
 
-  podman exec secretserver_app_1 python /tmp/seed_mock.py
+  podman exec corvus_app_1 python /tmp/seed_mock.py
 
 Or from host after copying the file in.
 
@@ -626,7 +626,7 @@ def seed_hsm_slot():
             INSERT INTO private.hsm_slots (name, pkcs11_url, description, is_default)
             VALUES (
                 'dev-hsm',
-                'pkcs11:token=secretserver;object=byok-kek'
+                'pkcs11:token=corvus;object=byok-kek'
                 '?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-source=/hsm/tokens/hsm-pin',
                 'Local SoftHSM2 development slot',
                 true

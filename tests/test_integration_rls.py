@@ -13,10 +13,10 @@ enforcement.
 Running::
 
     # 1. Create a throwaway database
-    createdb secretserver_itest
+    createdb corvus_itest
 
     # 2. Point the integration tests at it (superuser DSN)
-    export INTEGRATION_DATABASE_URL='postgres://postgres:pw@localhost/secretserver_itest'
+    export INTEGRATION_DATABASE_URL='postgres://postgres:pw@localhost/corvus_itest'
 
     # 3. Run only the integration tests
     pytest tests/test_integration_rls.py -v

@@ -34,7 +34,7 @@ def rate_limited(key: str, limit: int, window: int) -> bool:
     errors, so a cache outage never blocks requests.
 
     Args:
-        key: Rate-limit bucket key (e.g. ``secretserver:rl:<token-hash>``).
+        key: Rate-limit bucket key (e.g. ``corvus:rl:<token-hash>``).
         limit: Max allowed calls within the window.
         window: Sliding window length in seconds.
 
@@ -42,7 +42,7 @@ def rate_limited(key: str, limit: int, window: int) -> bool:
         True when the caller is over the limit; False otherwise.
 
     Example:
-        >>> if rate_limited("secretserver:rl:abc", 100, 60):
+        >>> if rate_limited("corvus:rl:abc", 100, 60):
         ...     return jsonify({"error": "rate limited"}), 429
     """
     client = redis_client()

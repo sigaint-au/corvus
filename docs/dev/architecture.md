@@ -1,6 +1,6 @@
 # Architecture
 
-How Sigaint Secret Server is put together and how a request flows through it.
+How Corvus is put together and how a request flows through it.
 
 ---
 
@@ -21,7 +21,7 @@ PostgREST (:3000) ◄── JWT (via /api/token) ──► Postgres (RLS)
 | **Flask app** | Browser UI (HTMX), session auth, `/eso/v1` API, `/api/token` |
 | **Postgres** | Source of truth; RLS is the access-control plane |
 | **PostgREST** | SQL-style API over the `api` schema, JWT auth |
-| **CLI** | Sibling repo `secretserver-cli`, talks to `/eso/v1` |
+| **CLI** | Sibling repo `corvus-cli`, talks to `/eso/v1` |
 | **ESO** | External Secrets Operator webhook to `/eso/v1` (pull and push) |
 
 ---

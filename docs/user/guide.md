@@ -1,6 +1,6 @@
 # User guide
 
-How to use Sigaint Secret Server day to day: teams, projects, secrets, reveal,
+How to use Corvus day to day: teams, projects, secrets, reveal,
 access requests, metadata, import/export.
 
 ---

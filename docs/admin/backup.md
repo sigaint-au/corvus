@@ -26,23 +26,23 @@ the database backup.
 
 ```bash
 # Dump the whole database
-pg_dump -h <db-host> -U <admin-user> -d secretserver \
-  -Fc -f secretserver.dump
+pg_dump -h <db-host> -U <admin-user> -d corvus \
+  -Fc -f corvus.dump
 
 # Or plain SQL
-pg_dump -h <db-host> -U <admin-user> -d secretserver -f secretserver.sql
+pg_dump -h <db-host> -U <admin-user> -d corvus -f corvus.sql
 ```
 
 ### In-container (Compose)
 
 ```bash
-podman exec <db-container> pg_dump -U postgres secretserver -Fc > secretserver.dump
+podman exec <db-container> pg_dump -U postgres corvus -Fc > corvus.dump
 ```
 
 ### Scheduled
 
 ```cron
-0 2 * * * pg_dump -h db -U postgres -Fc secretserver > /backups/secretserver-$(date +\%F).dump
+0 2 * * * pg_dump -h db -U postgres -Fc corvus > /backups/corvus-$(date +\%F).dump
 ```
 
 Keep a retention policy (e.g. 30 daily, 12 monthly) and test restores
@@ -54,13 +54,13 @@ periodically.
 
 ```bash
 # Create the database if needed
-createdb -h <db-host> -U <admin-user> secretserver
+createdb -h <db-host> -U <admin-user> corvus
 
 # Restore custom-format dump
-pg_restore -h <db-host> -U <admin-user> -d secretserver --clean --if-exists secretserver.dump
+pg_restore -h <db-host> -U <admin-user> -d corvus --clean --if-exists corvus.dump
 
 # Or restore plain SQL
-psql -h <db-host> -U <admin-user> -d secretserver -f secretserver.sql
+psql -h <db-host> -U <admin-user> -d corvus -f corvus.sql
 ```
 
 After restoring, set the same `MASTER_KEY`, `JWT_SECRET`, and `SECRET_KEY` in

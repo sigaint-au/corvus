@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "secretserver"
+name = "corvus"
 version = "2026.8.23.1"
-description = "Self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.ink UI)"
+description = "Self-hosted secrets management with role-based access control and audit logging"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
@@ -31,14 +31,17 @@ dev = [
     "ruff==0.16.3",
     "mypy==2.3.1",
 ]
+docs = [
+    "mkdocs-material==9.7.7",
+]
 
 [tool.setuptools.packages.find]
 where = ["app"]
 include = ["*"]
 
 [project.urls]
-Documentation = "https://github.com/mhahl/secretserver/blob/main/docs/"
-Source = "https://github.com/mhahl/secretserver"
+Documentation = "https://git.sigaint.au/Sigaint/corvus/src/branch/main/docs/"
+Source = "https://github.com/mhahl/corvus"
 
 # ── Ruff (replaces ruff.toml) ──────────────────────────────────────────
 [tool.ruff]

@@ -4,47 +4,47 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-default-deny
+  name: corvus-default-deny
 $patch: delete
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-allow-dns
+  name: corvus-allow-dns
 $patch: delete
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-app
+  name: corvus-app
 $patch: delete
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-postgrest
+  name: corvus-postgrest
 $patch: delete
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-postgres
+  name: corvus-postgres
 $patch: delete
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-redis
+  name: corvus-redis
 $patch: delete
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-redis-sentinel
+  name: corvus-redis-sentinel
 $patch: delete
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-redis-failover-controller
+  name: corvus-redis-failover-controller
 $patch: delete

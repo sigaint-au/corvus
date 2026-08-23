@@ -1,15 +1,15 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: secretserver-redis
+  name: corvus-redis
   labels:
     app.kubernetes.io/name: redis
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: redis
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
   podMetricsEndpoints:
     - port: metrics
       path: /metrics
@@ -17,4 +17,4 @@ spec:
       scrapeTimeout: 10s
   namespaceSelector:
     matchNames:
-      - secretserver
+      - corvus

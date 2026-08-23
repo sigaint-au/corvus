@@ -1,10 +1,10 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: secretserver-redis
+  name: corvus-redis
   labels:
     app.kubernetes.io/name: redis
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   # With 3 replicas + sentinel quorum=2, maxUnavailable=1 keeps a quorum
   # of sentinels and lets the cluster tolerate one voluntary disruption
@@ -13,18 +13,18 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: redis
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: secretserver-redis-sentinel
+  name: corvus-redis-sentinel
   labels:
     app.kubernetes.io/name: redis-sentinel
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: redis-sentinel
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus

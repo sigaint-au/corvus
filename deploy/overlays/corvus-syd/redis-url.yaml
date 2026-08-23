@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: secretserver-app
+  name: corvus-app
 spec:
   template:
     spec:
@@ -11,7 +11,7 @@ spec:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-redis-secrets
+                  name: corvus-redis-secrets
                   key: REDIS_PASSWORD
             - name: REDIS_URL
               value: redis://:$(REDIS_PASSWORD)@redis-master:6379/0

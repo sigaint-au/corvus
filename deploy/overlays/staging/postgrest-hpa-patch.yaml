@@ -1,7 +1,7 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: secretserver-postgrest
+  name: corvus-postgrest
 spec:
   minReplicas: 1
   maxReplicas: 3

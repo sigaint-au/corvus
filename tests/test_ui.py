@@ -22,8 +22,7 @@ class TestUIShell:
         assert b'class="auth"' in r.data
         assert b"auth-card" in r.data
         assert b'class="sidebar"' not in r.data
-        assert b"Sigaint" in r.data
-        assert b"Secret Server" in r.data
+        assert b"Corvus" in r.data
         assert b"static/app.css" in r.data
         # A missing '>' on <script integrity="..."> swallows the rest of the
         # page (the browser treats body markup as the script element).

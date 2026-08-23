@@ -1,10 +1,10 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: secretserver-tls
+  name: corvus-tls
 spec:
   dnsNames:
-    - secretserver.sigaint.au
+    - corvus.sigaint.au
   issuerRef:
     name: le-production
     kind: ClusterIssuer

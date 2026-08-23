@@ -6,18 +6,18 @@
     enableSuperuserAccess: true
     enablePDB: true
     superuserSecret:
-      name: secretserver-postgres-superuser
+      name: corvus-postgres-superuser
     bootstrap:
       initdb:
-        database: secretserver
-        owner: secretserver
+        database: corvus
+        owner: corvus
         encoding: UTF8
         localeCType: C
         localeCollate: C
         dataChecksums: true
         postInitApplicationSQLRefs:
           configMapRefs:
-            - name: secretserver-init-sql
+            - name: corvus-init-sql
               key: 0001_init.sql
     managed:
       roles:
@@ -35,7 +35,7 @@
             - anon
             - authenticated
           passwordSecret:
-            name: secretserver-postgres-authenticator
+            name: corvus-postgres-authenticator
     affinity:
       podAntiAffinityType: preferred
     storage:
@@ -54,7 +54,7 @@
       labels:
         app.kubernetes.io/name: postgres
         app.kubernetes.io/component: database
-        app.kubernetes.io/part-of: secretserver
+        app.kubernetes.io/part-of: corvus
     postgresql:
       parameters:
         max_connections: "200"

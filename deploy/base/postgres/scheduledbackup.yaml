@@ -4,13 +4,13 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: secretserver-postgres-daily
+  name: corvus-postgres-daily
   labels:
     app.kubernetes.io/name: postgres
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   cluster:
-    name: secretserver-postgres
+    name: corvus-postgres
   # Daily full at 03:30 UTC (low-traffic window). WAL streaming is
   # continuous regardless of this schedule.
   schedule: "30 3 * * *"

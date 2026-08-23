@@ -22,7 +22,7 @@ from core import cache, db, settings_svc
 log = logging.getLogger(__name__)
 
 _DISCOVERY_TTL_SEC = 3600
-_DISCOVERY_EPOCH_KEY = "secretserver:oidc:discovery:epoch"
+_DISCOVERY_EPOCH_KEY = "corvus:oidc:discovery:epoch"
 
 # Never accept symmetric/none algs from discovery (alg-confusion)
 _ALLOWED_ID_TOKEN_ALGS = frozenset(
@@ -174,7 +174,7 @@ def discover(issuer: str | None = None) -> dict:
     if client is not None:
         try:
             epoch = client.get(_DISCOVERY_EPOCH_KEY) or "0"
-            cached = client.get(f"secretserver:oidc:discovery:{epoch}:{issuer}")
+            cached = client.get(f"corvus:oidc:discovery:{epoch}:{issuer}")
             if cached is not None:
                 return json.loads(cached)
         except Exception as e:
@@ -186,7 +186,7 @@ def discover(issuer: str | None = None) -> dict:
     if client is not None:
         try:
             client.setex(
-                f"secretserver:oidc:discovery:{epoch}:{issuer}",
+                f"corvus:oidc:discovery:{epoch}:{issuer}",
                 _DISCOVERY_TTL_SEC,
                 json.dumps(doc),
             )
