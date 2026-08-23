@@ -14,17 +14,15 @@
     </label>
     <label>Tagline
       <input type="text" name="brand_tagline" maxlength="120"
-             value="{{ settings.brand_tagline if settings.brand_tagline is not none else 'Corvus' }}"
-             placeholder="Corvus">
+             value="{{ settings.brand_tagline or 'Keep your secrets.' }}"
+             placeholder="Keep your secrets.">
     </label>
     <p class="muted field-spacer">
       Preview:
       <strong>{{ settings.brand_name or 'Corvus' }}</strong>
-      {% if settings.brand_tagline %}
-      <span class="muted">{{ settings.brand_tagline }}</span>
-      {% endif %}
+      <span class="muted">{{ settings.brand_tagline or 'Keep your secrets.' }}</span>
       · page titles:
-      <code class="k">{{ settings.brand_name or 'Corvus' }}{% if settings.brand_tagline %} {{ settings.brand_tagline }}{% endif %}</code>
+      <code class="k">{{ settings.brand_name or 'Corvus' }} {{ settings.brand_tagline or 'Keep your secrets.' }}</code>
     </p>
     <p class="form-actions"><button type="submit">Save branding</button></p>
   </form>

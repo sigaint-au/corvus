@@ -13,8 +13,14 @@ form `YYYY.M.D.build`).
 - **Rebrand to Corvus**: product name, UI branding, package name (`corvus`),
   compose project/DB/image names, Kubernetes namespace and resource names,
   HSM token label default, Redis cache key prefixes, docs, and CLI examples.
-  Fresh install recommended — existing local volumes keep old names; recreate
-  with `scripts/reset.sh` (pre-release only).
+  Compose project/volume names changed: local stacks created as `secretserver`
+  should be recreated with `scripts/reset.sh`. Existing Postgres databases
+  keep their data and take additive migrations (`0002`–`0006`) in place —
+  do not edit released `0001`. Kubernetes namespace rename is an operator
+  choice.
+- Default brand tagline is `Keep your secrets.`
+- `scripts/build.sh` tags and pushes the app image to
+  `quay.io/sigaint/corvus` (`<pyproject version>` and `latest`)
 
 ### Added
 
@@ -39,6 +45,9 @@ form `YYYY.M.D.build`).
 - Kubernetes deploy overlays: kustomize base + overlay how-to (`deploy/`)
 - Migration `0005_sql_password_crypt.sql`: bcrypt-in-SQL helpers so databases
   bootstrapped from older baselines can run the current app in place
+- Migration `0006_smtp_from_name_corvus.sql`: rewrite leftover branding
+  defaults (`smtp_from_name` / `brand_name` / `brand_tagline`) without
+  editing `0001`
 
 ### Removed
 
@@ -64,7 +73,8 @@ form `YYYY.M.D.build`).
   project description / ACL / last_accessed columns, new `api.can_*` RPCs
 - `can_*` / `team_role` / `project_role` helpers evaluate RBAC bindings (legacy
   tables retained but not used for authorization on this branch)
-- CI workflows (Forgejo/GitHub Actions): unit tests + pylint
+- CI workflows (Forgejo/GitHub Actions): unit tests + pylint on `main`,
+  `release`, and tags
 - `SECURITY.md`, `CONTRIBUTING.md`, and this changelog
 - Machine token key allow-list (exact keys + `*` / `?` globs)
 - Team secrets / projects list pagination and filters
@@ -88,9 +98,9 @@ form `YYYY.M.D.build`).
   real errors; `routes/rbac.py` split into a package (helpers/roles/bindings/
   review); `routes/project_io.py` renamed `import_export.py`; shared
   `db.team()` and `paging.paged_rows()` helpers
-- Tree is mypy- and ruff-clean (enforced); pylint 10.00/10; dedupe
-  color-picker JS into a shared partial and extract the HTMX
-  partial-or-redirect tail in secret create/delete
+- Ruff-clean application tree (local `make format`); pylint in CI
+  (`tox -e lint`); dedupe color-picker JS into a shared partial and extract
+  the HTMX partial-or-redirect tail in secret create/delete
 
 ### Fixed
 
@@ -108,6 +118,8 @@ form `YYYY.M.D.build`).
 - Server-opened sidebar sections (e.g. Organisation → Role bindings) no longer
   collapse when navigating to pages whose endpoint default differs
 - Login no longer 500s at the email-verification gate
+- Leftover Sigaint product-name fallbacks in branding, error pages, and docs
+- Example overlay image tags pin to `2026.8.23.1` (not `v1.0.0` / an old SHA)
 - Copy pass: consistent permission-denied flashes (teams/RBAC), clearer audit
   retention message, sharper auth flashes and transactional emails, tightened
   secrets flash copy; dropped compliance claim from classification banner

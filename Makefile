@@ -1,4 +1,10 @@
-.PHONY: up down rebuild restart logs status test lint format clean
+.PHONY: up down rebuild restart logs status test lint format clean build push
+
+build:     ## Build the app image and push to quay.io/sigaint/corvus
+	scripts/build.sh
+
+push:      ## Alias for build (build + push)
+	scripts/build.sh
 
 up:        ## Build and start all containers (dev mode)
 	scripts/up.sh
@@ -36,4 +42,4 @@ typecheck:  ## Run mypy type checking
 
 clean:     ## Remove cache and build artifacts
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	rm -rf .pytest_cache .ruff_cache .tox
+	rm -rf .pytest_cache .ruff_cache .tox build

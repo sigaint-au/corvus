@@ -45,7 +45,7 @@ Configured under **Administration → Server settings**. Stored in
 |---------|---------|---------|
 | Server URL | `""` | Public base URL (no trailing slash); OIDC redirect + ESO YAML default |
 | Brand name | `Corvus` | Sidebar / page titles / mail / TOTP issuer |
-| Brand tagline | `Corvus` | Sidebar subtitle |
+| Brand tagline | `Keep your secrets.` | Sidebar subtitle |
 | Classification | `false` | Show a classification banner (text/color) |
 | Login banner | `false` | DoD/policy disclosure text + optional policy link on sign-in |
 | Reveal & clipboard | `30 / 30 / 15` | Clipboard auto-clear, auto-hide, reveal-grant minutes |
@@ -66,7 +66,7 @@ Configured under **Administration → Server settings**. Stored in
 | Host / Port | `""` / `587` | SMTP server |
 | Encryption | `starttls` | `none` \| `starttls` \| `ssl` |
 | Username / Password | — | SMTP auth |
-| From email / name | — | Sender |
+| From email / name | `""` / `Corvus` | Sender |
 | Login alerts | `false` | Email on new login |
 
 ### LDAP

@@ -25,6 +25,26 @@ compose_name() {
   printf '%s' "$_compose_cmd"
 }
 
+# Container CLI matching the compose runner (podman or docker).
+if [[ "$_compose_cmd" == "podman-compose" ]]; then
+  _container_cmd="podman"
+else
+  _container_cmd="docker"
+fi
+
+container_name() {
+  printf '%s' "$_container_cmd"
+}
+
+container() {
+  "$_container_cmd" "$@"
+}
+
+# Calendar version from pyproject.toml (e.g. 2026.8.23.1).
+app_version() {
+  sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT/pyproject.toml" | head -n1
+}
+
 # Run a compose subcommand via the resolved runner.
 compose() {
   # shellcheck disable=SC2086

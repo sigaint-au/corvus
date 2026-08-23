@@ -181,7 +181,7 @@ def apply_pending(cur) -> None:
     if not applied and not _squashed_baseline_exists(cur):
         raise RuntimeError(
             "database is not initialized with the squashed baseline; "
-            "recreate the database for this fresh-install-only branch"
+            "restore a backup taken after 0001, or recreate the database"
         )
     seed_baseline = not applied
 

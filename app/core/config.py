@@ -111,7 +111,7 @@ DEFAULT_SETTINGS = {
     "server_url": "",
     # Product branding (sidebar, page titles, mail/TOTP issuer fallbacks)
     "brand_name": "Corvus",
-    "brand_tagline": "",
+    "brand_tagline": "Keep your secrets.",
     "classification_enabled": "false",
     "classification_text": "OFFICIAL",
     "classification_color": "#677381",

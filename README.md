@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="app/static/logo.svg" alt="Corvus" width="96">
+</p>
+
 # Corvus
 
 Self-hosted secrets management for engineering teams. Centralize credentials,
@@ -5,6 +9,20 @@ certificates, and configuration with role-based access control enforced at the
 database level, full audit logging, and integrations for CI/CD and Kubernetes.
 
 This repository is a mirror of https://git.sigaint.au/Sigaint/corvus
+
+## Live demo
+
+Open **[https://secretserver-dev.sigaint.au](https://secretserver-dev.sigaint.au)** and sign in with the seeded mock accounts (password is `password` for all of them):
+
+| Role | Email |
+|------|-------|
+| Global admin | `admin@example.com` |
+| Engineer | `alice@example.com` |
+| Ops | `bob@example.com` |
+| Viewer | `carol@example.com` |
+| Contractor | `dave@example.com` |
+
+This instance is for evaluation only. Do not store real secrets there.
 
 ## Overview
 

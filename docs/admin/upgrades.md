@@ -1,6 +1,7 @@
 # Upgrades
 
-Existing databases upgrade in place. Do **not** recreate the volume.
+Existing databases take additive migrations **in place**. Do **not** recreate
+the Postgres volume to pick up `0002` and later.
 
 ## Procedure
 
@@ -25,11 +26,24 @@ Existing databases upgrade in place. Do **not** recreate the volume.
 ## How migrations work
 
 - Fresh volumes are bootstrapped by `docker-entrypoint-initdb.d` running the
-  complete squashed baseline `db/migrations/0001_init.sql`.
+  complete squashed baseline `db/migrations/0001_init.sql`. The app then
+  applies `0002` and later on first start.
 - Existing volumes skip that init and receive later `NNNN_*.sql` migrations
   at app startup, recorded in `private.schema_migrations`.
-- Migrations are additive and forward-only; never edit a released migration
-  file — add a new one instead.
+- Migrations are additive and forward-only. Never edit a released migration
+  file (including `0001`) — its checksum is recorded and drift refuses
+  startup. Add a new numbered file instead.
+
+## Local Compose rename (Corvus rebrand)
+
+The Compose project, database, and volume names changed from `secretserver`
+to `corvus`. That is a **local-dev rename**, not a production schema wipe.
+Stacks created under the old project name should be recreated with
+`scripts/reset.sh` so the new project owns the volume.
+
+Renaming a Kubernetes namespace (`secretserver` → `corvus`) is an operator
+choice. Applying a renamed overlay is not an in-place upgrade of an existing
+namespace.
 
 ## Rollback
 

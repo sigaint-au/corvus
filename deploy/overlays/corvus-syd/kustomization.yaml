@@ -13,7 +13,7 @@ resources:
 images:
   - name: ghcr.io/sigaint/corvus/app
     newName: quay.io/sigaint/corvus
-    newTag: "01b4964b"   # operators: bump this to roll the app image
+    newTag: "2026.8.23.1"   # operators: bump this to roll the app image
   - name: bitnami/redis
     newName: docker.io/library/redis
     newTag: 7.2-alpine

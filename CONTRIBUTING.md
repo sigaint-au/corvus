@@ -53,6 +53,21 @@ Layout:
 Open a pull request against `main` on
 [git.sigaint.au/Sigaint/corvus](https://git.sigaint.au/Sigaint/corvus).
 
+## Releases
+
+Cut from `release` when it matches `main`. Version is calendar
+`YYYY.M.D.build` in `pyproject.toml` (changelog form `YYYY-MM-DD.build`).
+Tag the same string after changelog and tests, for example:
+
+```bash
+git tag 2026.8.23.1
+git push origin 2026.8.23.1
+scripts/build.sh    # quay.io/sigaint/corvus:2026.8.23.1 and :latest
+```
+
+Do not rewrite already-tagged migration files. Overlay image tags in
+`deploy/overlays/` should match the git tag you push.
+
 ## Security
 
 Do **not** file public issues for vulnerabilities. See [SECURITY.md](SECURITY.md).

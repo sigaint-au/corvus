@@ -35,7 +35,7 @@ one Redis replica with AOF, Ingress + Certificate, CronJobs, HPAs, PDBs.
 | File / field | Example value here | You set |
 |--------------|--------------------|---------|
 | `kustomization.yaml` → `namespace` | `corvus` | Target namespace |
-| `kustomization.yaml` → `images[].newName` / `newTag` | `quay.io/sigaint/corvus` / a build tag | Registry and tag you built ([building.md](../../../docs/dev/building.md)) |
+| `kustomization.yaml` → `images[].newName` / `newTag` | `quay.io/sigaint/corvus` / `2026.8.23.1` | Registry and tag you built ([building.md](../../../docs/dev/building.md)) |
 | `ingress-patch.yaml` | host `corvus.sigaint.au`, class `traefik`, issuer `le-production` | Your DNS name, IngressClass, cert-manager issuer |
 | `certificate-patch.yaml` | same DNS + `le-production` | Must match Ingress TLS host |
 | `global-admin-email.yaml` | `admin@sigaint.au` | Email that is promoted to global admin **once**, when that user exists and no admin exists yet. Empty string disables promotion. |

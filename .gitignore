@@ -11,6 +11,7 @@ venv/
 .tox/
 .coverage
 htmlcov/
+build/
 
 # JetBrains IDEs
 .idea/

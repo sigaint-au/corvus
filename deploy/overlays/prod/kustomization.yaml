@@ -32,7 +32,7 @@ resources:
 images:
   - name: ghcr.io/sigaint/corvus/app
     newName: ghcr.io/sigaint/corvus/app
-    newTag: v1.0.0   # operators bump this for rollouts
+    newTag: "2026.8.23.1"   # operators bump this for rollouts
   - name: postgrest/postgrest
     newName: postgrest/postgrest
     newTag: v12.2.3

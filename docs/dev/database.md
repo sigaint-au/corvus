@@ -16,11 +16,12 @@ and applied by the migration runner (`app/core/migrations.py`).
   functions, policies, grants, and security hardening.
 - **Every startup** the app checks migrations via `migrations.apply_pending()`
   (requires `DATABASE_ADMIN_URL`), serialized by a `pg_advisory_lock`. It seeds
-  the `0001` baseline as applied, then applies any newer numbered migrations (e.g.
-  `0002_rls_authz_hardening.sql`). Versions and sha256 checksums are recorded in
+  the `0001` baseline as applied, then applies any newer numbered migrations
+  (`0002` …). Versions and sha256 checksums are recorded in
   `private.schema_migrations`.
-- This branch uses a **fresh-install-only squash**. Existing databases must be
-  recreated; there is no compatibility upgrade path from older schemas.
+- Existing databases **upgrade in place** through additive files. Recreating
+  the volume is only for local Compose project/volume renames (see
+  [upgrades.md](../admin/upgrades.md)), not for schema changes.
 
 > Do **not** edit an already-released migration file. Its checksum is recorded
 > and drift fails startup. Add a new numbered migration instead.
@@ -29,8 +30,12 @@ and applied by the migration runner (`app/core/migrations.py`).
 
 | File | Contains | Does NOT contain |
 |------|----------|------------------|
-| `0001_init.sql` | Complete squashed schema and security baseline | None |
+| `0001_init.sql` | Complete squashed schema and security baseline | Later additive changes |
 | `0002_rls_authz_hardening.sql` | Additive RLS / authz hardening (pin `project.team_id`, guard secret/team-owner updates, restrict admin assignment) | Schema DDL for new tables |
+| `0003_email_verification.sql` | Email verification columns and `verify_user` updates | — |
+| `0004_email_verify_backfill.sql` | Backfill + `verify_user` return type | — |
+| `0005_sql_password_crypt.sql` | bcrypt-in-SQL password helpers for older volumes | — |
+| `0006_smtp_from_name_corvus.sql` | Rewrite leftover branding defaults | — |
 
 The squashed `0001` file preserves the original dependency order internally. Do
 not split it into new numbered files without defining a replacement upgrade plan.
@@ -39,9 +44,8 @@ not split it into new numbered files without defining a replacement upgrade plan
 
 Create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it
 idempotent where possible, and run the test/lint checks. It is applied by
-`migrations.apply_pending()` at startup. For fresh-only development databases
-you may instead edit `0001_init.sql` directly and recreate the volume. Do not
-apply this baseline to an existing database.
+`migrations.apply_pending()` at startup. Do not edit `0001_init.sql` after it
+has been released.
 
 ---
 

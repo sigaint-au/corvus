@@ -233,8 +233,8 @@ def branding() -> dict:
     from core.config import APP_NAME
 
     s = get_settings()
-    name = (s.get("brand_name") or DEFAULT_SETTINGS.get("brand_name") or "Corvus").strip()
-    name = name or "Corvus"
+    name = (s.get("brand_name") or DEFAULT_SETTINGS.get("brand_name") or APP_NAME).strip()
+    name = name or APP_NAME
     tagline = (s.get("brand_tagline") or DEFAULT_SETTINGS.get("brand_tagline") or "").strip()
     full = f"{name} {tagline}".strip() if tagline else name
     if not full:

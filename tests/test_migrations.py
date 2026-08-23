@@ -43,10 +43,24 @@ def test_migrations_ship_in_order():
         "0003_email_verification.sql",
         "0004_email_verify_backfill.sql",
         "0005_sql_password_crypt.sql",
+        "0006_smtp_from_name_corvus.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
         assert name[4] == "_"
+
+
+def test_smtp_from_name_rebrand_migration():
+    """0006 rewrites leftover 0001 defaults without editing the baseline."""
+    sql = (migrations.MIGRATIONS_DIR / "0006_smtp_from_name_corvus.sql").read_text()
+    assert "smtp_from_name" in sql
+    assert "brand_name" in sql
+    assert "brand_tagline" in sql
+    assert "Sigaint Secret Server" in sql
+    assert "Secret Server v0.1.0" in sql
+    assert "Keep your secrets." in sql
+    assert "Corvus" in sql
+    assert "UPDATE" in sql.upper()
 
 
 def test_squashed_baseline_contains_all_schema_layers():

@@ -42,10 +42,9 @@ Dockerfile      # App image
 1. **Write a failing test first** where possible. Tests live in `tests/` and
    mock the DB, so no live Postgres is needed.
 2. **Schema changes are a migration story.** The fresh-install baseline lives
-   in `db/migrations/0001_init.sql` (edit only for unreleased fresh-install
-   revisions, then recreate the volume). For existing databases, add a new
-   idempotent `db/migrations/NNNN_slug.sql` — `app/core/migrations.py`
-   applies it at startup.
+   in `db/migrations/0001_init.sql`. Do not edit it after release. For
+   existing databases, add a new idempotent `db/migrations/NNNN_slug.sql` —
+   `app/core/migrations.py` applies it at startup.
 3. **Run the full suite and lint** before submitting:
    ```bash
    pytest

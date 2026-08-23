@@ -2,8 +2,9 @@
 
 ## Supported versions
 
-Security fixes are applied to the latest commit on `main`. If you deploy from a
-tag or fork, rebase onto `main` regularly.
+Security fixes land on `main` and are cut to `release` as calendar-version
+tags (for example `2026.8.23.1`, matching `pyproject.toml`). If you deploy
+from a tag or fork, pull the latest tag or rebase onto `main` regularly.
 
 ## Reporting a vulnerability
 
