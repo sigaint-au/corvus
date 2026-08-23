@@ -60,7 +60,11 @@ services:
       retries: 20
 
   app:
-    build: .
+    build:
+      context: .
+      # Dev image includes SoftHSM2 (EPEL); prod image (Dockerfile default
+      # target) ships without it.
+      target: dev
     image: localhost/corvus_app:latest
     depends_on:
       db:
