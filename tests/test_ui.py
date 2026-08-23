@@ -29,6 +29,14 @@ class TestUIShell:
         # page (the browser treats body markup as the script element).
         assert not re.search(rb'integrity="[^"]*"</script>', r.data)
         assert re.search(rb'<script\s+src="[^"]*htmx\.min\.js"[^>]*></script>', r.data)
+        assert b"auth-source" in r.data
+        assert b"AGPL-3.0" in r.data
+
+    def test_register_has_no_agpl_source_link(self):
+        conn, _ = _conn(fetchall=[])
+        with patch.object(db, "connect_admin", return_value=conn):
+            r = store.app.test_client().get("/register")
+        assert b"auth-source" not in r.data
 
     def test_app_js_is_plain_javascript(self):
         # Leftover HTML <script> wrappers from the base.html extraction make
