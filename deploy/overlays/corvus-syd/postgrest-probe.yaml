@@ -1,0 +1,8 @@
+- op: replace
+  path: /spec/template/spec/containers/0/readinessProbe
+  value:
+    tcpSocket:
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3

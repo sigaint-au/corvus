@@ -116,7 +116,7 @@ def send_due_notifications(days: int = 14, *, dry_run: bool = False) -> dict[str
             continue
         ok, _err = mailer.send_email(
             email,
-            "Secret Server due items",
+            "Corvus due items",
             "These items need attention:\n\n" + "\n".join(f"- {line}" for line in lines),
         )
         if ok:

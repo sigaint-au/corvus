@@ -9,7 +9,7 @@ metadata:
   labels:
     app.kubernetes.io/name: redis-sentinel
     app.kubernetes.io/component: cache
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   serviceName: redis-sentinel-headless
   replicas: 3
@@ -23,16 +23,16 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: redis-sentinel
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
   template:
     metadata:
       labels:
         app.kubernetes.io/name: redis-sentinel
         app.kubernetes.io/component: cache
-        app.kubernetes.io/part-of: secretserver
+        app.kubernetes.io/part-of: corvus
     spec:
       automountServiceAccountToken: false
-      priorityClassName: secretserver-ha
+      priorityClassName: corvus-ha
       enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
@@ -48,14 +48,14 @@ spec:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: redis-sentinel
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: redis-sentinel
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -63,7 +63,7 @@ spec:
               labelSelector:
                 matchLabels:
                   app.kubernetes.io/name: redis-sentinel
-                  app.kubernetes.io/part-of: secretserver
+                  app.kubernetes.io/part-of: corvus
       terminationGracePeriodSeconds: 30
       containers:
         - name: sentinel
@@ -81,12 +81,12 @@ spec:
               cat > /tmp/sentinel.conf <<EOF
               port 26379
               dir /tmp
-              sentinel monitor secretserver-master redis-0.redis-headless.secretserver.svc.cluster.local 6379 2
-              sentinel down-after-milliseconds secretserver-master 5000
-              sentinel parallel-syncs secretserver-master 1
-              sentinel failover-timeout secretserver-master 10000
+              sentinel monitor corvus-master redis-0.redis-headless.corvus.svc.cluster.local 6379 2
+              sentinel down-after-milliseconds corvus-master 5000
+              sentinel parallel-syncs corvus-master 1
+              sentinel failover-timeout corvus-master 10000
               sentinel announce-ip $(hostname -i)
-              sentinel auth-pass secretserver-master ${REDIS_PASSWORD}
+              sentinel auth-pass corvus-master ${REDIS_PASSWORD}
               requirepass ${REDIS_SENTINEL_PASSWORD}
               EOF
               exec redis-server /tmp/sentinel.conf --sentinel
@@ -98,12 +98,12 @@ spec:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-redis-secrets
+                  name: corvus-redis-secrets
                   key: REDIS_PASSWORD
             - name: REDIS_SENTINEL_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-redis-secrets
+                  name: corvus-redis-secrets
                   key: REDIS_SENTINEL_PASSWORD
           resources:
             requests:

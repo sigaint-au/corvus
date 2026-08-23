@@ -2,19 +2,43 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project aims to follow [Semantic Versioning](https://semver.org/) for
-tagged releases.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versions use calendar versioning: `<year>-<month>-<day>.<build>` (pip-normalized
+form `YYYY.M.D.build`).
 
-## [Unreleased]
+## [2026-08-23.1] - 2026-08-23
+
+### Changed
+
+- **Rebrand to Corvus**: product name, UI branding, package name (`corvus`),
+  compose project/DB/image names, Kubernetes namespace and resource names,
+  HSM token label default, Redis cache key prefixes, docs, and CLI examples.
+  Fresh install recommended — existing local volumes keep old names; recreate
+  with `scripts/reset.sh` (pre-release only).
 
 ### Added
 
-- **Kubernetes-style RBAC** (branch `feature/k8s-rbac`): `rbac.roles` /
-  `role_rules` / `bindings`, `api.can(verb, resource, scope…)`, scope chain
-  cluster→team→project→secret, built-in roles, admin UI (Roles, Bindings,
-  Access review). Start-fresh: no data migration from legacy membership tables.
+- **RBAC**: `rbac.roles` / `role_rules` / `bindings`, `api.can(verb, resource,
+  scope…)`, scope chain cluster→team→project→secret, built-in roles, admin UI
+  (Roles, Bindings, Access review). Start-fresh: no data migration from legacy
+  membership tables.
 - Pytest suite under `tests/` (domain modules) run via `tox -e py`
+- **Configurable DoD/policy login banner** on all sign-in pages: new server
+  settings `login_banner_enabled` / `_text` / `_link_text` / `_link_url`
+  (Server settings → General) with URL validation; plain text only, no HTML
+- Themed error pages (400/403/404/405/413/429/500/502/503 + catch-all 500):
+  sidebar layout signed-in, auth card signed-out; API/ESO/mgmt and HTMX/JSON
+  callers get JSON instead of a page
+- Search filter on the machine accounts list
+- Reusable empty-state component applied to teams, projects, machine accounts,
+  trash, shared/secrets, and global search
+- **Email verification for local signups**: verification email after signup,
+  `/verify-email` page shown on unverified sign-in (no standalone resend route)
+- **External Secrets Operator guides** (`docs/admin/external-secrets.md`):
+  pull and push setups with example manifests; generic Kubernetes ESO wording
+- Kubernetes deploy overlays: kustomize base + overlay how-to (`deploy/`)
+- Migration `0005_sql_password_crypt.sql`: bcrypt-in-SQL helpers so databases
+  bootstrapped from older baselines can run the current app in place
 
 ### Removed
 
@@ -47,15 +71,26 @@ tagged releases.
 - Secret Metadata tab (last accessed, custom fields)
 - Org RBAC: team-scoped groups (manual / LDAP / OIDC maps)
 - Per-secret ACL modes and reveal-approval workflow
-
-### Changed
-
 - UI modernisation (oat.ink components, machine accounts table layout)
 - Project access helpers simplified (`api.team_role` / `api.project_role`)
 - Unit tests moved out of `app/` so the container image stays deploy-only
 - Vendor `oat` + `htmx` under `app/static/vendor` and reference them self-hosted
 - API JWTs shortened to a 1-hour lifetime (was 24h) so revoked/disabled users
   lose API access within an hour; `/api/token` reflects `expires_in: 3600`
+- Clipboard-clear, reveal auto-hide, and reveal access-grant windows are now
+  **DB-backed server settings** (Settings → General) instead of env vars;
+  deploy-bound config (DB/Redis/crypto/bootstrap/DoS guard) stays env-based
+- Login banner layout: plain-text disclosure beside the auth card
+  (left-third card layout; centered when banner disabled); on mobile it is a
+  fixed bottom bar; subtle dot-matrix tiling on the auth background
+- Error/exception layer simplified: secret service raises Werkzeug
+  `Forbidden`/`NotFound` directly instead of a wrapping hierarchy that masked
+  real errors; `routes/rbac.py` split into a package (helpers/roles/bindings/
+  review); `routes/project_io.py` renamed `import_export.py`; shared
+  `db.team()` and `paging.paged_rows()` helpers
+- Tree is mypy- and ruff-clean (enforced); pylint 10.00/10; dedupe
+  color-picker JS into a shared partial and extract the HTMX
+  partial-or-redirect tail in secret create/delete
 
 ### Fixed
 
@@ -66,6 +101,16 @@ tagged releases.
 - Screenshot filename: `login-classification-banner.png`
 - LDAP authentication now verifies the server TLS certificate (no MITM-prone
   blind TLS); permanent trash purge requires project admin
+- Leftover `</script><script>` wrappers in `app.js` broke sidebar group
+  persistence (SyntaxError)
+- Vendored `oat.min.css` SRI hash typo made browsers refuse the stylesheet;
+  regression test guards the HTMX `<script>` tag close
+- Server-opened sidebar sections (e.g. Organisation → Role bindings) no longer
+  collapse when navigating to pages whose endpoint default differs
+- Login no longer 500s at the email-verification gate
+- Copy pass: consistent permission-denied flashes (teams/RBAC), clearer audit
+  retention message, sharper auth flashes and transactional emails, tightened
+  secrets flash copy; dropped compliance claim from classification banner
 
 ## [0.1.0] - 2026-01-01
 

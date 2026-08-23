@@ -1,0 +1,74 @@
+# External Secrets Operator — push (cluster → Corvus)
+# Webhook provider. Replace PROJECT_ID, the ss_… write token, host, and keys.
+#
+# Token role: service-write (service-reveal returns 403 on PUT)
+# Apply: kubectl apply -f docs/eso-push.yaml
+#
+# Use a second SecretStore. Do not reuse the pull store (that one is GET).
+# Keep the url template on one line.
+#
+# In-cluster URL example:
+#   http://corvus-app.corvus.svc:8080/eso/v1/projects/PROJECT_ID/secrets/{{ .remoteRef.remoteKey }}
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: corvus-write-token
+  namespace: default
+  labels:
+    external-secrets.io/type: webhook
+stringData:
+  token: "ss_REPLACE_WITH_WRITE_TOKEN"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-push-src
+  namespace: default
+stringData:
+  PUSH_KEY: "replace-me"
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: corvus-webhook-push
+  namespace: default
+spec:
+  provider:
+    webhook:
+      url: "https://secrets.example.com/eso/v1/projects/PROJECT_ID/secrets/{{ .remoteRef.remoteKey }}"
+      method: PUT
+      timeout: "10s"
+      result:
+        jsonPath: "$.value"
+      body: '{"value": "{{ index .remoteRef .remoteRef.remoteKey }}"}'
+      headers:
+        Authorization: "Bearer {{ .auth.token }}"
+        Accept: "application/json"
+        Content-Type: "application/json"
+      secrets:
+        - name: auth
+          secretRef:
+            name: corvus-write-token
+            key: token
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  name: app-push
+  namespace: default
+spec:
+  refreshInterval: 1m
+  updatePolicy: Replace
+  deletionPolicy: None
+  secretStoreRefs:
+    - name: corvus-webhook-push
+      kind: SecretStore
+  selector:
+    secret:
+      name: app-push-src
+  data:
+    - match:
+        secretKey: PUSH_KEY
+        remoteRef:
+          remoteKey: PUSH_KEY

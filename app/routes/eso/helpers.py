@@ -108,7 +108,7 @@ def _require_auth():
     if kind is None:
         return None, (jsonify({"error": "unauthorized"}), 401)
     if kind == "machine" and cache.rate_limited(
-        f"secretserver:rl:{ident}", limit=_ESO_RATE_LIMIT, window=_ESO_RATE_WINDOW
+        f"corvus:rl:{ident}", limit=_ESO_RATE_LIMIT, window=_ESO_RATE_WINDOW
     ):
         return None, (jsonify({"error": "rate limited"}), 429)
     return (kind, ident), None

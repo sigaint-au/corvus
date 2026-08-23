@@ -1,6 +1,6 @@
 # Contributing
 
-Guidelines for contributing to Sigaint Secret Server.
+Guidelines for contributing to Corvus.
 
 ---
 
@@ -8,8 +8,8 @@ Guidelines for contributing to Sigaint Secret Server.
 
 ```bash
 # Clone
-git clone <repo-url> secretserver
-cd secretserver
+git clone <repo-url> corvus
+cd corvus
 
 # Install deps
 pip install -e ".[dev]"
@@ -41,11 +41,11 @@ Dockerfile      # App image
 
 1. **Write a failing test first** where possible. Tests live in `tests/` and
    mock the DB, so no live Postgres is needed.
-2. **Schema changes update the fresh-install baseline.** This branch uses a
-   fresh-install-only squash: update the ordered content in
-   `db/migrations/0001_init.sql` and recreate the database volume
-   recreate the database volume. Existing databases are not supported by this
-   baseline.
+2. **Schema changes are a migration story.** The fresh-install baseline lives
+   in `db/migrations/0001_init.sql` (edit only for unreleased fresh-install
+   revisions, then recreate the volume). For existing databases, add a new
+   idempotent `db/migrations/NNNN_slug.sql` — `app/core/migrations.py`
+   applies it at startup.
 3. **Run the full suite and lint** before submitting:
    ```bash
    pytest

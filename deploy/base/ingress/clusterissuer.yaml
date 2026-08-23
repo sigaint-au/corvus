@@ -6,7 +6,7 @@ kind: ClusterIssuer
 metadata:
   name: letsencrypt-prod
   labels:
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
     cert-manager.io/issuer-type: acme
 spec:
   acme:
@@ -25,7 +25,7 @@ kind: ClusterIssuer
 metadata:
   name: ca-self-signed
   labels:
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
     cert-manager.io/issuer-type: ca
 spec:
   selfSigned: {}

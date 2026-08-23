@@ -1,13 +1,66 @@
-# Sigaint Secret Server
+# Corvus
 
-A self-hosted **team secrets store** for people and platforms: team → project →
-key/value secrets, enforced with **Postgres Row-Level Security (RLS)**. Ships a
-browser UI, an OpenShift External Secrets Operator (ESO) webhook API, a CLI, and
-PostgREST for API clients. Secret values are encrypted at rest with `MASTER_KEY`.
+Self-hosted secrets management for engineering teams. Centralize credentials,
+certificates, and configuration with role-based access control enforced at the
+database level, full audit logging, and integrations for CI/CD and Kubernetes.
 
-This repository is a mirror of https://git.sigaint.au/Sigaint/secretserver
+This repository is a mirror of https://git.sigaint.au/Sigaint/corvus
 
----
+## Overview
+
+Corvus organizes access around a `team → project → secret` hierarchy.
+Authorization is enforced by PostgreSQL Row-Level Security (RLS), not
+application code alone: the database itself rejects rows a caller is not
+allowed to read or write. Secret values are encrypted at rest with a managed
+master key; projects can optionally use their own dedicated encryption key.
+
+Access is available through three interfaces:
+
+- **Browser UI** for daily operations: search, bulk actions, version history,
+  reveal approvals, import/export
+- **Unified secret API** (`/eso/v1`) for machines and pipelines, using machine
+  tokens or personal access tokens
+- **PostgREST API** for SQL-style queries from metadata and org tooling, plus
+  an External Secrets Operator webhook provider for Kubernetes
+
+## Key capabilities
+
+**Access control**
+
+- Role-based access control at team, project, and secret scope, backed by
+  directory groups over LDAP/OIDC
+- Per-secret modes: inherit project permissions, or restrict to explicit
+  bindings only
+- Reveal approval workflow with time-limited grants
+- Personal access tokens and scoped machine accounts with key allow-lists
+- TOTP two-factor authentication with single-use recovery codes
+
+**Operations**
+
+- Secret expiry with overdue/soon dashboards
+- Soft-delete trash, version history, structured kinds (database URL,
+  certificate, SSH key, key/value)
+- Custom searchable metadata per secret
+- Bulk import/export in `.env`, JSON, and CSV formats
+- Audit logs with access review, export, and retention purge
+- Optional classification banners per server or team
+
+**Integrations**
+
+- External Secrets Operator: pull (`ExternalSecret`), push (`PushSecret`)
+- LDAP and OIDC single sign-on with group mapping
+- SMTP notifications: password reset, login alerts, verification emails
+
+## Security model
+
+| Layer | Control |
+|-------|---------|
+| Encryption | Fernet (AES-128-CBC + HMAC) at rest via `MASTER_KEY`; optional per-project data-encryption keys |
+| Authorization | PostgreSQL RLS policies; `SECURITY DEFINER` functions for auth flows |
+| Sessions | Server-side sessions with per-device revocation |
+| Hardening | Login lockout (5 attempts / 5 minutes), bcrypt password hashing in SQL |
+
+For responsible disclosure, see [SECURITY.md](SECURITY.md).
 
 ## Quick start (local)
 
@@ -18,8 +71,10 @@ ALLOW_INSECURE_DEFAULTS=1 podman-compose up -d --build
 # PostgREST: http://localhost:3000
 ```
 
-To discard local PostgreSQL data, rebuild the images, restart the stack, and
-seed mock data:
+`ALLOW_INSECURE_DEFAULTS=1` is for local evaluation only. Production deploys
+require strong generated secrets; the app refuses to start without them.
+
+To discard local data and reseed:
 
 ```bash
 scripts/reset.sh       # asks for confirmation
@@ -28,14 +83,17 @@ scripts/reset.sh --yes # non-interactive
 
 This removes only `pgdata`; HSM state remains in `hsmdata`.
 
-For production setup (strong secrets, OIDC/LDAP, audit retention) see
-[docs/admin/deploy.md](docs/admin/deploy.md).
+## Deployment
 
----
+- **Docker / Podman Compose**: see [docs/admin/deploy.md](docs/admin/deploy.md)
+- **Kubernetes**: kustomize base + overlays in
+  [deploy/README.md](deploy/README.md); worked example in
+  [deploy/overlays/corvus-syd/README.md](deploy/overlays/corvus-syd/README.md)
 
-## Documentation index
+Schema changes ship as ordered SQL migrations applied automatically at startup;
+existing databases upgrade in place.
 
-Documentation is organised by audience.
+## Documentation
 
 ### Users
 
@@ -48,11 +106,12 @@ Documentation is organised by audience.
 
 | Doc | Contents |
 |-----|----------|
-| [docs/admin/deploy.md](docs/admin/deploy.md) | Deploy, first-run bootstrap, OpenShift |
+| [docs/admin/deploy.md](docs/admin/deploy.md) | Deploy, first-run bootstrap, Kubernetes |
 | [docs/admin/configuration.md](docs/admin/configuration.md) | All environment variables and server settings |
 | [docs/admin/rbac.md](docs/admin/rbac.md) | Roles, groups, project/secret permissions, setup checklist |
 | [docs/admin/authentication.md](docs/admin/authentication.md) | Session, PAT, JWT, machine token, OIDC, LDAP, SMTP, password reset |
-| [docs/admin/machine-tokens.md](docs/admin/machine-tokens.md) | Machine accounts, key allow-lists, ESO integration |
+| [docs/admin/machine-tokens.md](docs/admin/machine-tokens.md) | Machine accounts, key allow-lists |
+| [docs/admin/external-secrets.md](docs/admin/external-secrets.md) | External Secrets Operator: pull, push, copy-paste YAML |
 | [docs/admin/audit.md](docs/admin/audit.md) | Audit logs, access review, export, retention |
 | [docs/admin/backup.md](docs/admin/backup.md) | Backup and restore |
 
@@ -65,52 +124,19 @@ Documentation is organised by audience.
 | [docs/dev/api.md](docs/dev/api.md) | API reference: `/eso/v1`, PostgREST, app JSON |
 | [docs/dev/building.md](docs/dev/building.md) | Build & push container images |
 | [docs/dev/testing.md](docs/dev/testing.md) | Running tests and lint |
+| [docs/dev/docs-site.md](docs/dev/docs-site.md) | MkDocs documentation site: preview, build, deploy |
 | [docs/dev/contributing.md](docs/dev/contributing.md) | Contribution guide |
 
----
+## Development
 
-## Feature summary
-
-| Feature | Description |
-|---------|-------------|
-| Team / project / secret store | `team → project → key/value`; optional project description |
-| Org groups RBAC | Team-scoped groups (manual or LDAP/OIDC-mapped) at team, project, and secret level |
-| Per-secret access | Modes: `inherit` (project/team RBAC) / `restricted` (secret-scope bindings only) |
-| Secret metadata | System (created, updated, last accessed) + custom searchable key/values |
-| Structured kinds | Plain, database URL, certificate (PEM), SSH key, key/value pairs |
-| Browser UI | Bulk actions, trash, version history, search (incl. metadata), pins, mobile nav |
-| Postgres RLS | Access control enforced by the database itself |
-| Unified secret API | `/eso/v1` with `ss_…` (machine) or `pat_…` (PAT): list, get, create, update, soft-delete |
-| PostgREST API | SQL-style API with JWT auth for metadata / org clients |
-| ESO integration | Machine API powers OpenShift External Secrets Operator webhooks |
-| Personal access tokens | `pat_…` for `/eso/v1` and `/api/token` → PostgREST JWT |
-| TOTP 2FA | Per-user 2FA with single-use recovery codes |
-| LDAP & OIDC / SSO | Directory groups → team maps, first-class groups, global-admin maps |
-| SMTP | Password-reset emails and login alerts |
-| Auditing | Secret & org audit logs, access review, export, retention purge |
-| Reveal access approval | Project default + per-secret override; time-limited grants (machine/ESO exempt) |
-| Secret expiry | Optional per-secret expiry with overdue/soon dashboard |
-| Import / export | `.env`, JSON, CSV bulk import and export |
-| Classification banner | Optional per-server / per-team banner |
-| Server-side sessions | Multi-device sign-out and per-session revocation |
-| Login lockout | 5 failed attempts lock out for 5 minutes |
-
----
-
-## Tests
-
-Unit tests live under `tests/` (not shipped in the container image). They use
-**pytest** with a mocked DB, so Postgres is not required.
+Unit tests use pytest against a mocked database; no Postgres required.
 
 ```bash
 pip install -e ".[dev]"
 pytest
-# or: tox -e py
 ```
 
 See [docs/dev/testing.md](docs/dev/testing.md).
-
----
 
 ## License
 

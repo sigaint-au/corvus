@@ -12,7 +12,7 @@ tag or fork, rebase onto `main` regularly.
 Report privately so we can assess impact and ship a fix before disclosure:
 
 1. **Email:** [security@sigaint.au](mailto:security@sigaint.au)  
-   Use a clear subject (e.g. `secretserver: …`). Include:
+   Use a clear subject (e.g. `corvus: …`). Include:
    - Affected component (UI, `/eso/v1`, PostgREST, CLI, schema/RLS, deploy)
    - Version or commit hash if known
    - Steps to reproduce and expected vs actual behaviour
@@ -21,7 +21,7 @@ Report privately so we can assess impact and ship a fix before disclosure:
 
 2. **Gitea private channel:** if you have access to the Sigaint org, open a
    **private** security report / confidential issue against
-   [Sigaint/secretserver](https://git.sigaint.au/Sigaint/secretserver).
+   [Sigaint/corvus](https://git.sigaint.au/Sigaint/corvus).
 
 We aim to acknowledge reports within **5 business days** and to provide a
 status update within **14 days**. Coordinated disclosure is preferred; please
@@ -39,7 +39,7 @@ In scope:
 
 Out of scope (unless they enable a product vulnerability):
 
-- Issues only in third-party images (Postgres, PostgREST) with no secretserver config
+- Issues only in third-party images (Postgres, PostgREST) with no corvus config
 - Social engineering or physical access
 - Denial of service that requires overwhelming infrastructure resources
 

@@ -1,6 +1,6 @@
 # Configuration reference
 
-All environment variables and server settings for Sigaint Secret Server.
+All environment variables and server settings for Corvus.
 
 ---
 
@@ -13,8 +13,8 @@ All environment variables and server settings for Sigaint Secret Server.
 | `JWT_SECRET` | Flask ↔ PostgREST JWT signing (HS256) | 64 hex chars |
 | `MASTER_KEY` | Fernet key for secret values | 64 hex chars |
 | `SECRET_KEY` | Flask session cookie (+ TOTP recovery HMAC) | 64 hex chars |
-| `DATABASE_URL` | App role (`authenticator`); RLS applies | `postgres://authenticator:…@db:5432/secretserver` |
-| `DATABASE_ADMIN_URL` | Superuser DSN for schema upgrades (**required**) | `postgres://postgres:…@db:5432/secretserver` |
+| `DATABASE_URL` | App role (`authenticator`); RLS applies | `postgres://authenticator:…@db:5432/corvus` |
+| `DATABASE_ADMIN_URL` | Superuser DSN for schema upgrades (**required**) | `postgres://postgres:…@db:5432/corvus` |
 
 ### Optional
 
@@ -45,7 +45,7 @@ Configured under **Administration → Server settings**. Stored in
 |---------|---------|---------|
 | Server URL | `""` | Public base URL (no trailing slash); OIDC redirect + ESO YAML default |
 | Brand name | `Sigaint` | Sidebar / page titles / mail / TOTP issuer |
-| Brand tagline | `Secret Server` | Sidebar subtitle |
+| Brand tagline | `Corvus` | Sidebar subtitle |
 | Classification | `false` | Show a classification banner (text/color) |
 | Login banner | `false` | DoD/policy disclosure text + optional policy link on sign-in |
 | Reveal & clipboard | `30 / 30 / 15` | Clipboard auto-clear, auto-hide, reveal-grant minutes |

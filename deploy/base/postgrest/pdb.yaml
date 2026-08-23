@@ -1,13 +1,13 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: secretserver-postgrest
+  name: corvus-postgrest
   labels:
     app.kubernetes.io/name: postgrest
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   minAvailable: 1   # at least one PostgREST pod always serving
   selector:
     matchLabels:
       app.kubernetes.io/name: postgrest
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus

@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: corvus
+  annotations:
+    cert-manager.io/cluster-issuer: le-production
+    external-dns.alpha.kubernetes.io/hostname: corvus.sigaint.au
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - corvus.sigaint.au
+      secretName: corvus-tls
+  rules:
+    - host: corvus.sigaint.au
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: corvus-app
+                port:
+                  name: http

@@ -1,15 +1,15 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: secretserver-app-env
+  name: corvus-app-env
   labels:
     app.kubernetes.io/name: app
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 data:
   # Non-secret runtime env for the Flask app. Sensitive values (DB creds,
   # MASTER_KEY / JWT_SECRET / SECRET_KEY) are sourced from operator-managed
   # Secrets and referenced via env.valueFrom.secretKeyRef in deployment.yaml.
-  POSTGREST_URL: "http://secretserver-postgrest:3000"
+  POSTGREST_URL: "http://corvus-postgrest:3000"
   # Redis cache connection: points to the redis-master ClusterIP Service.
   # The redis-failover-controller updates the redis-master Service selector
   # automatically whenever Sentinel elects a new master.

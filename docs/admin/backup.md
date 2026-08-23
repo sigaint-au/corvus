@@ -26,23 +26,23 @@ the database backup.
 
 ```bash
 # Dump the whole database
-pg_dump -h <db-host> -U <admin-user> -d secretserver \
-  -Fc -f secretserver.dump
+pg_dump -h <db-host> -U <admin-user> -d corvus \
+  -Fc -f corvus.dump
 
 # Or plain SQL
-pg_dump -h <db-host> -U <admin-user> -d secretserver -f secretserver.sql
+pg_dump -h <db-host> -U <admin-user> -d corvus -f corvus.sql
 ```
 
 ### In-container (Compose)
 
 ```bash
-podman exec <db-container> pg_dump -U postgres secretserver -Fc > secretserver.dump
+podman exec <db-container> pg_dump -U postgres corvus -Fc > corvus.dump
 ```
 
 ### Scheduled
 
 ```cron
-0 2 * * * pg_dump -h db -U postgres -Fc secretserver > /backups/secretserver-$(date +\%F).dump
+0 2 * * * pg_dump -h db -U postgres -Fc corvus > /backups/corvus-$(date +\%F).dump
 ```
 
 Keep a retention policy (e.g. 30 daily, 12 monthly) and test restores
@@ -54,23 +54,23 @@ periodically.
 
 ```bash
 # Create the database if needed
-createdb -h <db-host> -U <admin-user> secretserver
+createdb -h <db-host> -U <admin-user> corvus
 
 # Restore custom-format dump
-pg_restore -h <db-host> -U <admin-user> -d secretserver --clean --if-exists secretserver.dump
+pg_restore -h <db-host> -U <admin-user> -d corvus --clean --if-exists corvus.dump
 
 # Or restore plain SQL
-psql -h <db-host> -U <admin-user> -d secretserver -f secretserver.sql
+psql -h <db-host> -U <admin-user> -d corvus -f corvus.sql
 ```
 
 After restoring, set the same `MASTER_KEY`, `JWT_SECRET`, and `SECRET_KEY` in
 the app environment so existing ciphertext and tokens remain valid.
 
-> `0001_init.sql` / `0002_rls_authz_hardening.sql` are for a **first** database init and fresh installs only.
-> This branch uses a fresh-install-only squashed baseline; recreate the database
-> before applying it and do not use it as an upgrade script for an existing DB.
-> This branch is **fresh-install-only squash**: existing databases must be
-> recreated; do **not** re-run the baseline migrations over a restored database.
+> `0001_init.sql` is the fresh-install baseline (applied by
+> `docker-entrypoint-initdb.d` on a first init only). Existing databases are
+> upgraded in place by `app/core/migrations.py`, which applies pending
+> `NNNN_*.sql` migrations at startup — never re-run baseline migrations over
+> a restored database.
 
 ---
 

@@ -1,15 +1,15 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-postgres
+  name: corvus-postgres
   labels:
     app.kubernetes.io/name: postgres
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: postgres
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
   policyTypes:
     - Ingress
     - Egress
@@ -19,7 +19,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: app
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 5432
           protocol: TCP
@@ -28,7 +28,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: postgrest
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 5432
           protocol: TCP
@@ -37,7 +37,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: postgres
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 5432
           protocol: TCP
@@ -94,7 +94,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: postgres
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 5432
           protocol: TCP

@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock
 
-# Repo root (…/secretserver) and flat app module tree (…/secretserver/app).
+# Repo root (…/corvus) and flat app module tree (…/corvus/app).
 REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = REPO_ROOT / "app"
 

@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: redis
+          command:
+            - /bin/sh
+            - -c
+            - redis-server /etc/redis/conf/redis.conf --requirepass "$REDIS_PASSWORD" --masterauth "$REDIS_PASSWORD" --dir /data --maxmemory 256mb
+          volumeMounts:
+            - name: data
+              mountPath: /data
+        - name: exporter
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

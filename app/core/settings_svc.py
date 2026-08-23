@@ -51,6 +51,7 @@ def get_settings() -> dict:
 
 
 def token_expiry_policy(kind: str) -> tuple[bool, int]:
+    """Return (required, max_days) for a PAT or machine-token kind."""
     settings = get_settings()
     if kind == "pat":
         require_key = "require_pat_expiry"

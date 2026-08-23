@@ -1,11 +1,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: secretserver-postgrest
+  name: corvus-postgrest
   labels:
     app.kubernetes.io/name: postgrest
     app.kubernetes.io/component: api
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   # Two replicas — survives rolling updates without downtime and can absorb
   # a single pod loss.
@@ -19,21 +19,21 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: postgrest
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
   template:
     metadata:
       labels:
         app.kubernetes.io/name: postgrest
         app.kubernetes.io/component: api
-        app.kubernetes.io/part-of: secretserver
+        app.kubernetes.io/part-of: corvus
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "3000"
         prometheus.io/path: "/metrics"
     spec:
-      serviceAccountName: secretserver-postgrest
+      serviceAccountName: corvus-postgrest
       automountServiceAccountToken: false
-      priorityClassName: secretserver-ha
+      priorityClassName: corvus-ha
       enableServiceLinks: false
       restartPolicy: Always
       securityContext:
@@ -50,14 +50,14 @@ spec:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: postgrest
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: postgrest
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -65,7 +65,7 @@ spec:
               labelSelector:
                 matchLabels:
                   app.kubernetes.io/name: postgrest
-                  app.kubernetes.io/part-of: secretserver
+                  app.kubernetes.io/part-of: corvus
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 50
@@ -85,17 +85,17 @@ spec:
               protocol: TCP
           envFrom:
             - configMapRef:
-                name: secretserver-postgrest-env
+                name: corvus-postgrest-env
           env:
             - name: PGRST_DB_URI
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-postgrest-secrets
+                  name: corvus-postgrest-secrets
                   key: PGRST_DB_URI
             - name: PGRST_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-postgrest-secrets
+                  name: corvus-postgrest-secrets
                   key: PGRST_JWT_SECRET
           # postgrest expects these envs to be string types even when empty;
           # ConfigMap envFrom covers the schema/anon_role keys.

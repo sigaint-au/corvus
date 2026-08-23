@@ -1,0 +1,50 @@
+# Node INTERNAL-IPs are public (51.161/139.99). Default-deny plus the
+# base netpols (private CIDRs + nginx namespace) would drop Traefik
+# hostNetwork traffic and kubelet probes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: corvus-default-deny
+$patch: delete
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: corvus-allow-dns
+$patch: delete
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: corvus-app
+$patch: delete
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: corvus-postgrest
+$patch: delete
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: corvus-postgres
+$patch: delete
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: corvus-redis
+$patch: delete
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: corvus-redis-sentinel
+$patch: delete
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: corvus-redis-failover-controller
+$patch: delete

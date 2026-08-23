@@ -407,7 +407,7 @@ def server_settings():
             link_url = (request.form.get("login_banner_link_url") or "").strip()[:500]
             if enabled == "true" and not text:
                 flash("Banner text is required when the login banner is enabled", "error")
-            elif link_url and not (link_url.startswith(("/", "http://", "https://"))):
+            elif link_url and not link_url.startswith(("/", "http://", "https://")):
                 flash("Policy link must be an http(s) URL or a relative path", "error")
             else:
                 settings_svc.set_setting("login_banner_enabled", enabled)

@@ -1,15 +1,15 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: secretserver-postgrest
+  name: corvus-postgrest
   labels:
     app.kubernetes.io/name: postgrest
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: secretserver-postgrest
+    name: corvus-postgrest
   minReplicas: 2
   maxReplicas: 6
   behavior:

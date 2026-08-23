@@ -12,11 +12,11 @@ Secret server: self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.i
 ## Run the app / dev containers
 
 - `scripts/_lib.sh` picks `podman-compose` or `docker compose` (whichever exists), roots the repo, loads `.env`.
-- `scripts/up.sh` (build+start, `ALLOW_INSECURE_DEFAULTS=1` for local dev), `rebuild.sh`, `restart.sh`, `down.sh`, `logs.sh`, `status.sh`. Fresh DB is bootstrapped by `docker-entrypoint-initdb.d` running the complete squashed `db/migrations/0001_init.sql`. This branch is fresh-install-only; recreate existing databases after baseline changes.
+- `scripts/up.sh` (build+start, `ALLOW_INSECURE_DEFAULTS=1` for local dev), `rebuild.sh`, `restart.sh`, `down.sh`, `logs.sh`, `status.sh`. Fresh DB is bootstrapped by `docker-entrypoint-initdb.d` running the complete squashed `db/migrations/0001_init.sql`; existing databases get later `NNNN_` migrations applied at startup by `app/core/migrations.py` — do not recreate a DB to pick up additive migrations.
 
 ## DB / RLS / RBAC / migrations (hard-earned)
 
-- **Migrations are the sole source of truth for DDL.** The fresh-install baseline lives in `db/migrations/0001_init.sql`. Existing databases are not supported by this squashed baseline.
+- **Migrations are the sole source of truth for DDL.** The fresh-install baseline lives in `db/migrations/0001_init.sql`; later `NNNN_` migrations upgrade existing databases at startup.
 - **Adding migrations is allowed and is the preferred way to change the schema — do it when a change needs one.** Create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it idempotent where possible, and run `pytest` + `tox -e lint`. Never edit an already-released migration file whose checksum is recorded — add a new `NNNN_` migration instead.
 - **Keep the squashed baseline ordered** — RBAC definitions live inside `db/migrations/0001_init.sql`; do not create a second baseline definition. Do not edit the baseline unless the change is part of an unreleased fresh-install revision (and then recreate the database).
 - Machine-token `role` column uses `service-read`/`service-reveal`/`service-write`.

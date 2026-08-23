@@ -5,13 +5,13 @@ metadata:
   name: redis-sentinel-headless
   labels:
     app.kubernetes.io/name: redis-sentinel
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   type: ClusterIP
   clusterIP: None
   selector:
     app.kubernetes.io/name: redis-sentinel
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
   ports:
     - name: sentinel
       port: 26379
@@ -27,12 +27,12 @@ metadata:
   name: redis-sentinel
   labels:
     app.kubernetes.io/name: redis-sentinel
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   type: ClusterIP
   selector:
     app.kubernetes.io/name: redis-sentinel
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
   ports:
     - name: sentinel
       port: 26379

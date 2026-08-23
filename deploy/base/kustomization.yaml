@@ -1,14 +1,14 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# High-availability base composition for Secret Server.
+# High-availability base composition for Corvus.
 # This application IS the secrets store for other systems — it does NOT
 # fetch its own bootstrap credentials from an external store. The DATABASE
 # / REDIS / POSTGREST bootstrap Secrets must exist in the namespace before
 # the workloads reconcile (see deploy/README.md → "Secrets bootstrap").
 # Overlay (e.g. overlays/prod) is where replicas, ingress hostnames,
 # resource quotas, and replica-count tuning belong.
-namespace: secretserver
+namespace: corvus
 
 # Labels propagated to every resource. `includeSelectors: false` keeps
 # matchLabels/clusterIP selectors unchanged so we don't accidentally broaden
@@ -16,7 +16,7 @@ namespace: secretserver
 labels:
   - includeSelectors: false
     pairs:
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
       app.kubernetes.io/managed-by: kustomize
 
 resources:

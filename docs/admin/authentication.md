@@ -407,4 +407,5 @@ for any local user from **Administration → Users**.
 
 - Full HTTP / ESO / PostgREST reference: [api.md](../dev/api.md)
 - Deploy, env vars, bootstrap, OIDC/LDAP config: [deploy.md](deploy.md)
-- Machine accounts & ESO: [machine-tokens.md](machine-tokens.md)
+- Machine accounts: [machine-tokens.md](machine-tokens.md)
+- ESO pull and push: [external-secrets.md](external-secrets.md)

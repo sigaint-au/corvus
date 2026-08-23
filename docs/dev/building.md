@@ -1,6 +1,6 @@
 # Building and pushing container images
 
-Build the Sigaint Secret Server container image and push it to a registry.
+Build the Corvus container image and push it to a registry.
 Every step is a **copy-paste code block**: replace the `…` placeholders.
 
 ---
@@ -9,7 +9,7 @@ Every step is a **copy-paste code block**: replace the `…` placeholders.
 
 | Image | Source | Build or pull? |
 |-------|--------|----------------|
-| **app** (`secretserver`) | `Dockerfile` at repo root | **Build locally** (this guide) |
+| **app** (`corvus`) | `Dockerfile` at repo root | **Build locally** (this guide) |
 | Postgres | `docker.io/library/postgres:16-alpine` | Pulled (from `compose.yml`) |
 | PostgREST | `docker.io/postgrest/postgrest:v12.2.3` | Pulled (from `compose.yml`) |
 | Redis | `docker.io/library/redis:7-alpine` | Pulled (from `compose.yml`) |
@@ -39,10 +39,10 @@ docker --version   # or: podman --version
 
 ```bash
 # From the repo root (build context = .)
-docker build -t secretserver:latest .
+docker build -t corvus:latest .
 
 # Tagged build (recommended)
-docker build -t secretserver:1.2.0 -t secretserver:latest .
+docker build -t corvus:1.2.0 -t corvus:latest .
 
 # Via Compose (builds + starts the stack)
 docker compose up -d --build
@@ -51,7 +51,7 @@ docker compose up -d --build
 Podman:
 
 ```bash
-podman build -t secretserver:latest .
+podman build -t corvus:latest .
 podman-compose up -d --build
 ```
 
@@ -60,13 +60,13 @@ podman-compose up -d --build
 ## 3. Verify the image
 
 ```bash
-docker images | grep secretserver
+docker images | grep corvus
 
-docker inspect secretserver:latest \
+docker inspect corvus:latest \
   --format '{{.Config.User}} | {{.Config.Cmd}} | {{.Config.ExposedPorts}}'
 # → 10001 | [gunicorn -b 0.0.0.0:8080 -w 2 --timeout 60 app:app] | map[8080/tcp:{}]
 
-docker run --rm secretserver:latest python -c "import app; print('ok')"
+docker run --rm corvus:latest python -c "import app; print('ok')"
 ```
 
 ---
@@ -87,21 +87,21 @@ docker login quay.io
 
 ```bash
 # Docker Hub
-docker tag secretserver:1.2.0 <dockerhub-user>/secretserver:1.2.0
-docker tag secretserver:latest <dockerhub-user>/secretserver:latest
+docker tag corvus:1.2.0 <dockerhub-user>/corvus:1.2.0
+docker tag corvus:latest <dockerhub-user>/corvus:latest
 
 # GHCR
-docker tag secretserver:1.2.0 ghcr.io/<org>/secretserver:1.2.0
+docker tag corvus:1.2.0 ghcr.io/<org>/corvus:1.2.0
 
 # Quay
-docker tag secretserver:1.2.0 quay.io/<org>/secretserver:1.2.0
+docker tag corvus:1.2.0 quay.io/<org>/corvus:1.2.0
 ```
 
 ### Push
 
 ```bash
-docker push <registry>/<org>/secretserver:1.2.0
-docker push <registry>/<org>/secretserver:latest
+docker push <registry>/<org>/corvus:1.2.0
+docker push <registry>/<org>/corvus:latest
 ```
 
 ---
@@ -112,8 +112,8 @@ docker push <registry>/<org>/secretserver:latest
 docker buildx create --use
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t <registry>/<org>/secretserver:1.2.0 \
-  -t <registry>/<org>/secretserver:latest \
+  -t <registry>/<org>/corvus:1.2.0 \
+  -t <registry>/<org>/corvus:latest \
   --push .
 ```
 
@@ -122,21 +122,20 @@ Podman / Buildah:
 ```bash
 podman build \
   --platform linux/amd64,linux/arm64 \
-  -t <registry>/<org>/secretserver:1.2.0 \
-  -t <registry>/<org>/secretserver:latest \
-  --manifest secretserver \
+  -t <registry>/<org>/corvus:1.2.0 \
+  -t <registry>/<org>/corvus:latest \
+  --manifest corvus \
   .
 
-podman manifest push --all secretserver \
-  docker://<registry>/<org>/secretserver:latest
+podman manifest push --all corvus \
+  docker://<registry>/<org>/corvus:latest
 ```
 
 ---
 
-## 6. OpenShift
+## 6. Kubernetes
 
-Use the internal registry and an ImageStream so Deployments can pull by tag.
-See [deploy.md](../admin/deploy.md) for the full OpenShift setup.
+See [deploy.md](../admin/deploy.md) for cluster deployment.
 
 ---
 

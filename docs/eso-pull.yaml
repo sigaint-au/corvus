@@ -1,0 +1,64 @@
+# External Secrets Operator — pull (Corvus → cluster)
+# Webhook provider. Replace PROJECT_ID, the ss_… token, host, namespace, and keys.
+#
+# Token role: service-reveal
+# Apply: kubectl apply -f docs/eso-pull.yaml
+#
+# Pair with docs/eso-push.yaml if the cluster must also write secrets back.
+# Pull and push cannot share one SecretStore (GET vs PUT).
+#
+# In-cluster URL example:
+#   http://corvus-app.corvus.svc:8080/eso/v1/projects/PROJECT_ID/secrets/{{ .remoteRef.key }}
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: corvus-machine-token
+  namespace: default
+  labels:
+    external-secrets.io/type: webhook
+stringData:
+  token: "ss_REPLACE_WITH_REVEAL_TOKEN"
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: corvus-webhook
+  namespace: default
+spec:
+  provider:
+    webhook:
+      url: "https://secrets.example.com/eso/v1/projects/PROJECT_ID/secrets/{{ .remoteRef.key }}"
+      method: GET
+      timeout: "10s"
+      result:
+        jsonPath: "$.value"
+      headers:
+        Authorization: "Bearer {{ .auth.token }}"
+        Accept: "application/json"
+      secrets:
+        - name: auth
+          secretRef:
+            name: corvus-machine-token
+            key: token
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: app-secrets
+  namespace: default
+spec:
+  refreshInterval: 1m
+  secretStoreRef:
+    name: corvus-webhook
+    kind: SecretStore
+  target:
+    name: app-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: DATABASE_URL
+      remoteRef:
+        key: DATABASE_URL
+    - secretKey: API_KEY
+      remoteRef:
+        key: API_KEY

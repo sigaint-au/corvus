@@ -10,7 +10,7 @@ metadata:
   labels:
     app.kubernetes.io/name: redis
     app.kubernetes.io/component: cache
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   serviceName: redis-headless
   replicas: 3
@@ -24,20 +24,20 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: redis
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
   template:
     metadata:
       labels:
         app.kubernetes.io/name: redis
         app.kubernetes.io/component: cache
-        app.kubernetes.io/part-of: secretserver
+        app.kubernetes.io/part-of: corvus
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9121"
         prometheus.io/path: "/metrics"
     spec:
       automountServiceAccountToken: false
-      priorityClassName: secretserver-ha
+      priorityClassName: corvus-ha
       enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
@@ -53,14 +53,14 @@ spec:
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: redis
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: redis
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -68,7 +68,7 @@ spec:
               labelSelector:
                 matchLabels:
                   app.kubernetes.io/name: redis
-                  app.kubernetes.io/part-of: secretserver
+                  app.kubernetes.io/part-of: corvus
       terminationGracePeriodSeconds: 30
       dnsPolicy: ClusterFirst
       initContainers:
@@ -126,12 +126,12 @@ spec:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-redis-secrets
+                  name: corvus-redis-secrets
                   key: REDIS_PASSWORD
             - name: REDIS_SENTINEL_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-redis-secrets
+                  name: corvus-redis-secrets
                   key: REDIS_SENTINEL_PASSWORD
           resources:
             requests:
@@ -191,7 +191,7 @@ spec:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: secretserver-redis-secrets
+                  name: corvus-redis-secrets
                   key: REDIS_PASSWORD
           resources:
             requests:
@@ -226,7 +226,7 @@ spec:
         name: data
         labels:
           app.kubernetes.io/name: redis
-          app.kubernetes.io/part-of: secretserver
+          app.kubernetes.io/part-of: corvus
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:

@@ -139,6 +139,17 @@
       flex: 1;
       min-width: 0;
     }
+    /* Raven mark: mask of static/logo.svg. Sidebar is always dark → cream
+       fill (#f4f1ea). Auth card follows color-scheme (black / cream). */
+    .brand-logo {
+      display: block;
+      flex: 0 0 auto;
+      width: 1.5rem;
+      height: calc(1.5rem * 474 / 500);
+      background-color: currentColor;
+      -webkit-mask: url("logo.svg") center / contain no-repeat;
+      mask: url("logo.svg") center / contain no-repeat;
+    }
     /* HTMX loading on secrets list (create/delete) */
     #secrets-list {
       position: relative;
@@ -196,20 +207,34 @@
       top: 2.2rem;
     }
     .sidebar a.brand {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
       color: var(--side-ink);
       font-weight: 700;
       font-size: .95rem;
       text-decoration: none;
       letter-spacing: -.02em;
-      padding: .3rem .55rem .75rem;
+      padding: .2rem .45rem .7rem .35rem;
       line-height: 1.25;
       border-radius: 6px;
       transition: color .12s ease, background .12s ease;
+    }
+    .sidebar a.brand .brand-logo {
+      color: #f4f1ea;
+    }
+    .sidebar a.brand .brand-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .sidebar a.brand:hover {
       text-decoration: none;
       color: #fff;
       background: transparent;
+    }
+    .sidebar a.brand:hover .brand-logo {
+      color: #fff;
     }
     .sidebar a.brand .brand-sub {
       display: block;
@@ -1161,15 +1186,23 @@
       margin-top: 1rem;
     }
     .auth-brand {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .55rem;
       text-align: center;
       font-weight: 700;
       color: var(--foreground);
       text-decoration: none;
-      margin-bottom: 1.25rem;
-      font-size: 1.1rem;
+      margin-bottom: 1.15rem;
+      font-size: 1.05rem;
     }
-    .auth-brand:hover { text-decoration: none; opacity: .75; }
+    .auth-brand .brand-logo {
+      width: 2.15rem;
+      height: calc(2.15rem * 474 / 500);
+      color: light-dark(#0c0c0b, #f4f1ea);
+    }
+    .auth-brand:hover { text-decoration: none; opacity: .8; }
     .auth-brand .brand-sub {
       display: block;
       font-weight: 500;
@@ -1177,7 +1210,7 @@
       letter-spacing: .06em;
       text-transform: uppercase;
       color: var(--muted-foreground);
-      margin-top: .2rem;
+      margin-top: .15rem;
     }
     .auth-sso {
       display: inline-block;

@@ -23,7 +23,6 @@ from werkzeug.exceptions import Forbidden, NotFound
 
 import audit
 import crypto
-from core import db  # noqa: F401  (re-exported for adapters that import from here)
 from secret_svc.secret_ops import _upsert_secret
 
 log = logging.getLogger(__name__)

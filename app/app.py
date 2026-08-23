@@ -1,4 +1,4 @@
-"""Sigaint Secret Server: Flask+HTMX UI, PostgREST JWT, OpenShift ESO webhook API.
+"""Corvus: Flask+HTMX UI, PostgREST JWT, OpenShift ESO webhook API.
 
 Application factory pattern: ``create_app()`` builds and configures the Flask
 app. The module-level ``app`` instance is kept for backward compatibility

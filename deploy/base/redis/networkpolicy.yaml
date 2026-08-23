@@ -1,15 +1,15 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-redis
+  name: corvus-redis
   labels:
     app.kubernetes.io/name: redis
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: redis
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
   policyTypes:
     - Ingress
     - Egress
@@ -19,7 +19,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: app
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 6379
           protocol: TCP
@@ -28,7 +28,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis-sentinel
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 6379
           protocol: TCP
@@ -39,7 +39,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis-failover-controller
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 6379
           protocol: TCP
@@ -76,7 +76,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 6379
           protocol: TCP
@@ -85,7 +85,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis-sentinel
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 26379
           protocol: TCP
@@ -93,15 +93,15 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-redis-sentinel
+  name: corvus-redis-sentinel
   labels:
     app.kubernetes.io/name: redis-sentinel
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: redis-sentinel
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
   policyTypes:
     - Ingress
     - Egress
@@ -111,7 +111,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: app
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 26379
           protocol: TCP
@@ -120,7 +120,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis-sentinel
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 26379
           protocol: TCP
@@ -129,7 +129,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 26379
           protocol: TCP
@@ -138,7 +138,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis-failover-controller
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 26379
           protocol: TCP
@@ -170,7 +170,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 6379
           protocol: TCP
@@ -178,7 +178,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis-sentinel
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 26379
           protocol: TCP
@@ -186,15 +186,15 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: secretserver-redis-failover-controller
+  name: corvus-redis-failover-controller
   labels:
     app.kubernetes.io/name: redis-failover-controller
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: redis-failover-controller
-      app.kubernetes.io/part-of: secretserver
+      app.kubernetes.io/part-of: corvus
   policyTypes:
     - Egress
   egress:
@@ -216,7 +216,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis-sentinel
-              app.kubernetes.io/part-of: secretserver
+              app.kubernetes.io/part-of: corvus
       ports:
         - port: 26379
           protocol: TCP

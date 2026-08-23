@@ -1,13 +1,13 @@
 # Contributing
 
-Thanks for helping improve Sigaint Secret Server.
+Thanks for helping improve Corvus.
 
 ## Development setup
 
 ```bash
 # Clone
-git clone https://git.sigaint.au/Sigaint/secretserver.git
-cd secretserver
+git clone https://git.sigaint.au/Sigaint/corvus.git
+cd corvus
 
 # Optional local stack (Postgres + app)
 export GLOBAL_ADMIN_EMAIL=you@example.com
@@ -51,7 +51,7 @@ Layout:
 5. Prefer small commits with clear messages.
 
 Open a pull request against `main` on
-[git.sigaint.au/Sigaint/secretserver](https://git.sigaint.au/Sigaint/secretserver).
+[git.sigaint.au/Sigaint/corvus](https://git.sigaint.au/Sigaint/corvus).
 
 ## Security
 

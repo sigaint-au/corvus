@@ -24,7 +24,7 @@ def test_clear_discovery_cache_advances_shared_epoch():
     client = MagicMock()
     with patch.object(oidc_auth.cache, "redis_client", return_value=client):
         oidc_auth.clear_discovery_cache()
-    client.incr.assert_called_once_with("secretserver:oidc:discovery:epoch")
+    client.incr.assert_called_once_with("corvus:oidc:discovery:epoch")
 
 
 def test_rate_limited_sliding_window():
@@ -38,8 +38,8 @@ def test_rate_limited_sliding_window():
         return client
 
     with patch.object(cache, "redis_client", return_value=pipe_with(5)):
-        assert cache.rate_limited("secretserver:rl:x", limit=10, window=60) is False
+        assert cache.rate_limited("corvus:rl:x", limit=10, window=60) is False
     with patch.object(cache, "redis_client", return_value=pipe_with(11)):
-        assert cache.rate_limited("secretserver:rl:x", limit=10, window=60) is True
+        assert cache.rate_limited("corvus:rl:x", limit=10, window=60) is True
     with patch.object(cache, "redis_client", return_value=None):
-        assert cache.rate_limited("secretserver:rl:x", limit=10, window=60) is False
+        assert cache.rate_limited("corvus:rl:x", limit=10, window=60) is False

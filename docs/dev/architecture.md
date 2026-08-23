@@ -1,6 +1,6 @@
 # Architecture
 
-How Sigaint Secret Server is put together and how a request flows through it.
+How Corvus is put together and how a request flows through it.
 
 ---
 
@@ -21,8 +21,8 @@ PostgREST (:3000) ◄── JWT (via /api/token) ──► Postgres (RLS)
 | **Flask app** | Browser UI (HTMX), session auth, `/eso/v1` API, `/api/token` |
 | **Postgres** | Source of truth; RLS is the access-control plane |
 | **PostgREST** | SQL-style API over the `api` schema, JWT auth |
-| **CLI** | Sibling repo `secretserver-cli`, talks to `/eso/v1` |
-| **ESO** | OpenShift External Secrets Operator, webhook to `/eso/v1` |
+| **CLI** | Sibling repo `corvus-cli`, talks to `/eso/v1` |
+| **ESO** | External Secrets Operator webhook to `/eso/v1` (pull and push) |
 
 ---
 
@@ -175,5 +175,5 @@ transactional outbox if that failure mode must be eliminated.
 - [api.md](api.md): API reference
 - [testing.md](testing.md): tests
 - [contributing.md](contributing.md): how to contribute
-- [../admin/rbac.md](../admin/rbac.md): RBAC access model
-- [../admin/rbac-k8s.md](../admin/rbac-k8s.md): K8s RBAC model
+- [../admin/rbac.md](../admin/rbac.md): roles and bindings
+- [../admin/external-secrets.md](../admin/external-secrets.md): External Secrets Operator

@@ -1,0 +1,56 @@
+site_name: Corvus
+site_description: Self-hosted secrets management with role-based access control and audit logging
+repo_url: https://git.sigaint.au/Sigaint/corvus
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Users:
+      - User guide: user/guide.md
+      - CLI: user/cli.md
+  - Administrators:
+      - Deployment: admin/deploy.md
+      - Configuration: admin/configuration.md
+      - Upgrades: admin/upgrades.md
+      - Backup and restore: admin/backup.md
+      - Access control (RBAC): admin/rbac.md
+      - Authentication: admin/authentication.md
+      - Machine tokens: admin/machine-tokens.md
+      - External Secrets Operator: admin/external-secrets.md
+      - Project encryption keys (BYOK): admin/byok.md
+      - Audit and retention: admin/audit.md
+  - Developers:
+      - Architecture: dev/architecture.md
+      - Database and RLS: dev/database.md
+      - RBAC internals: admin/rbac-internals.md
+      - HSM integration: dev/hsm.md
+      - API reference: dev/api.md
+      - Building images: dev/building.md
+      - Testing: dev/testing.md
+      - Docs site: dev/docs-site.md
+      - Contributing: dev/contributing.md

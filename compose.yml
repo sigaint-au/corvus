@@ -1,4 +1,4 @@
-name: secretserver
+name: corvus
 
 services:
   db:
@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: secretserver
+      POSTGRES_DB: corvus
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/migrations/0001_init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro,Z
@@ -21,7 +21,7 @@ services:
       context: .
       dockerfile: softhsm2/Dockerfile
     environment:
-      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-secretserver}
+      HSM_TOKEN_LABEL: ${HSM_TOKEN_LABEL:-corvus}
       HSM_SO_PIN: ${HSM_SO_PIN:-1234}
       HSM_PIN: ${HSM_PIN:-1234}
       # Shared volume path must be world-traversable for appuser (uid 10001).
@@ -43,7 +43,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      PGRST_DB_URI: postgres://authenticator:authenticator@db:5432/secretserver
+      PGRST_DB_URI: postgres://authenticator:authenticator@db:5432/corvus
       PGRST_DB_SCHEMAS: api
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-32chars!!}
@@ -61,7 +61,7 @@ services:
 
   app:
     build: .
-    image: localhost/secretserver_app:latest
+    image: localhost/corvus_app:latest
     depends_on:
       db:
         condition: service_healthy
@@ -72,8 +72,8 @@ services:
       softhsm2:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://authenticator:authenticator@db:5432/secretserver
-      DATABASE_ADMIN_URL: postgres://postgres:postgres@db:5432/secretserver
+      DATABASE_URL: postgres://authenticator:authenticator@db:5432/corvus
+      DATABASE_ADMIN_URL: postgres://postgres:postgres@db:5432/corvus
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-32chars!!}
       MASTER_KEY: ${MASTER_KEY:-dev-master-key-change-in-prod!!}
       SECRET_KEY: ${SECRET_KEY:-flask-session-secret-change-me}

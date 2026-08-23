@@ -75,7 +75,7 @@ HSM access is configured per **named slot** (a PKCS#11 URL). Add one in
 **Server Settings → Encryption → HSM slots**:
 
 ```text
-pkcs11:token=secretserver;object=byok-kek?module-path=/path/to/module.so&pin-source=/run/secrets/hsm-pin
+pkcs11:token=corvus;object=byok-kek?module-path=/path/to/module.so&pin-source=/run/secrets/hsm-pin
 ```
 
 See [Configuring multiple HSMs](#configuring-multiple-hsms-named-slots) below
@@ -231,7 +231,7 @@ stringData:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: secretserver
+  name: corvus
 spec:
   template:
     spec:

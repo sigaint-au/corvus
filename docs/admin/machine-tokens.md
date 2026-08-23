@@ -1,7 +1,7 @@
 # Machine accounts and ESO
 
-Machine tokens (`ss_…`) let automation (CI, OpenShift External Secrets
-Operator) read and write secrets without a browser session.
+Machine tokens (`ss_…`) let automation (CI, External Secrets Operator)
+read and write secrets without a browser session.
 
 ---
 
@@ -26,7 +26,7 @@ Tokens are **project-scoped** (a token only ever sees one project). The raw
 Project → **Integrations** (or **Machine accounts**):
 
 ```text
-Name: openshift-prod
+Name: eso-prod
 Role: service-reveal    (or service-write)
 Expires (days): 90      (optional)
 [Create machine account]
@@ -61,34 +61,22 @@ body `scope: ["API_KEY", "prod/*"]`.
 
 ---
 
-## ESO integration (OpenShift)
+## ESO integration
 
-The machine API powers the External Secrets Operator webhook provider.
+The machine API is the External Secrets Operator **webhook** backend.
 
-### 1. Create a service-reveal machine token
+- **Pull** (`ExternalSecret`, `GET`) needs **`service-reveal`**.
+- **Push** (`PushSecret`, `PUT`) needs **`service-write`** and a **second**
+  SecretStore (a store’s HTTP method is shared).
 
-Project → **Integrations** → create a **service-reveal** token for the cluster.
+Full setup, troubleshooting, and copy-paste YAML:
+[external-secrets.md](external-secrets.md).
 
-### 2. Generate the manifests
+Samples: [eso-pull.yaml](../eso-pull.yaml) (pull),
+[eso-push.yaml](../eso-push.yaml) (push).
 
-On the **Integrations** tab, paste the token and set the base URL, namespace,
-and resource name prefix. The UI generates the `Secret` + `SecretStore` YAML.
-
-### 3. Apply in the cluster
-
-```bash
-oc apply -f generated-secretserver.yaml
-```
-
-Sample manifest: [openshift-eso.yaml](../openshift-eso.yaml).
-
-The webhook URL is:
-
-```text
-{server_url}/eso/v1/projects/{project_id}/secrets/{key}
-```
-
-with `Authorization: Bearer {token}` and `jsonPath: $.value`.
+Project → **Integrations** generates the pull token Secret + SecretStore. Add
+the `ExternalSecret` `spec.data` keys yourself.
 
 ---
 
@@ -118,4 +106,6 @@ control; rotate tokens on a schedule.
 - [authentication.md](authentication.md): machine token auth flow and curl
 - [cli.md](../user/cli.md): CLI usage
 - [api.md](../dev/api.md): `/eso/v1` endpoint reference
-- [openshift-eso.yaml](../openshift-eso.yaml): sample ESO manifest
+- [external-secrets.md](external-secrets.md): ESO pull and push setup
+- [eso-pull.yaml](../eso-pull.yaml): pull manifests
+- [eso-push.yaml](../eso-push.yaml): push manifests

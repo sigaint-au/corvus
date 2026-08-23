@@ -1,10 +1,10 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: secretserver-postgres
+  name: corvus-postgres
   labels:
     app.kubernetes.io/name: postgres
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   # With 3 instances and synchronous replication quorum, maxUnavailable=1
   # allows rolling node drains while always leaving 2/3 of the cluster
@@ -13,5 +13,5 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: postgres
-      app.kubernetes.io/part-of: secretserver
-      cnpg.io/cluster: secretserver-postgres
+      app.kubernetes.io/part-of: corvus
+      cnpg.io/cluster: corvus-postgres

@@ -1,6 +1,6 @@
 # API reference
 
-Sigaint Secret Server exposes three machine-facing surfaces:
+Corvus exposes three machine-facing surfaces:
 
 | Surface | Base | Auth | Plaintext secrets? |
 |---------|------|------|--------------------|
@@ -18,7 +18,7 @@ Sigaint Secret Server exposes three machine-facing surfaces:
 | Goal | Recommended API | Token |
 |------|-----------------|-------|
 | **CLI / CI: list, get, create, update, delete secrets (plaintext)** | `/eso/v1` secret API | `ss_…` (**write** to mutate) **or** `pat_…` (user write access) |
-| **OpenShift External Secrets Operator pull** | `GET /eso/v1/…/secrets/{key}` | Machine account `ss_…` (`reveal` reads values) |
+| **External Secrets Operator pull** | `GET /eso/v1/…/secrets/{key}` | Machine account `ss_…` (`reveal` reads values) |
 | **Scripts: list teams/projects/metadata under user RLS** | PostgREST **or** `GET /eso/v1/projects` (PAT) | PAT → JWT via `/api/token`, or PAT on `/eso/v1` |
 | **Browser UI** | HTML session routes | Cookie session |
 
@@ -458,14 +458,14 @@ export SS_URL="https://secrets.example.com"
 export SS_TOKEN="ss_…"          # or pat_…
 export SS_PROJECT="<project-uuid-or-name>"
 
-secretserver get secrets                         # metadata table (no values)
-secretserver get secrets -l platform-team        # q= key/note/custom meta
-secretserver get secret API_KEY -o value         # scripts
-secretserver get secret API_KEY -o json          # + metadata, last_accessed_*
-secretserver get secret prod/db/password -o value  # hierarchical keys OK
-printf '%s' "$NEW" | secretserver apply secret API_KEY --from-file=-
-secretserver apply secret API_KEY --from-env=NEW_API_KEY --note 'ci rotate'
-secretserver delete secret API_KEY
+corvus get secrets                         # metadata table (no values)
+corvus get secrets -l platform-team        # q= key/note/custom meta
+corvus get secret API_KEY -o value         # scripts
+corvus get secret API_KEY -o json          # + metadata, last_accessed_*
+corvus get secret prod/db/password -o value  # hierarchical keys OK
+printf '%s' "$NEW" | corvus apply secret API_KEY --from-file=-
+corvus apply secret API_KEY --from-env=NEW_API_KEY --note 'ci rotate'
+corvus delete secret API_KEY
 ```
 
 ### Error reference (machine API)
@@ -523,10 +523,10 @@ Default grant duration is **15 minutes**. Allowed choices: 15, 60, 240, 1440.
 **CLI:**
 
 ```bash
-secretserver reveal secret API_KEY --reason "debugging #1234"
-secretserver get requests
-secretserver approve <request-id> --minutes 15
-secretserver get secret API_KEY -o value
+corvus reveal secret API_KEY --reason "debugging #1234"
+corvus get requests
+corvus approve <request-id> --minutes 15
+corvus get secret API_KEY -o value
 ```
 
 ### Audit actions written by the machine API
@@ -551,7 +551,7 @@ Failed auth (401/403) and not-found (404) do **not** write audit rows.
 
 PAT-only routes under `/api/v1/manage` for org automation. **Machine tokens
 (`ss_…`) cannot call these.** Server settings (SMTP, LDAP, OIDC, banners) are
-**not** exposed. Used by **secretserver-cli** on `main`.
+**not** exposed. Used by **corvus-cli** on `main`.
 
 Auth: `Authorization: Bearer pat_…`. Team/project refs: UUID or unique name.
 
@@ -604,30 +604,30 @@ management API above, project-scope Group grants still go through the Web UI.
 ### Management CLI examples
 
 ```bash
-secretserver get teams
-secretserver create team Platform
-secretserver create project ios-app --team Platform
-secretserver create member bob@example.com --team Platform --role team-member
-secretserver create member dave@example.com --role project-write   # current project
-secretserver get tokens
-secretserver create token ci --role service-write             # prints ss_… once
-secretserver get trash
-secretserver restore trash <secret-uuid>
-secretserver get history API_KEY
-secretserver get users -l alice                            # global admin
-secretserver get audit --source org                        # global admin
-secretserver apply secret API_KEY --meta owner=team --meta env=prod   # custom metadata (PAT)
-secretserver apply secret API_KEY --delete-meta env
-secretserver apply secret API_KEY --access-mode restricted --requires-approval on
-secretserver grant secret API_KEY --to alice@example.com --role secret-reveal
-secretserver unbind secret API_KEY <binding-id>
-secretserver settings --require-reveal-approval on --default-access-mode inherit
-secretserver export -o env
-secretserver restore trash --all            # bulk restore
-secretserver delete trash --all             # bulk purge
-secretserver get groups --team Platform
-secretserver create group admins --team Platform
-secretserver create group-member bob@example.com --team Platform --group admins
+corvus get teams
+corvus create team Platform
+corvus create project ios-app --team Platform
+corvus create member bob@example.com --team Platform --role team-member
+corvus create member dave@example.com --role project-write   # current project
+corvus get tokens
+corvus create token ci --role service-write             # prints ss_… once
+corvus get trash
+corvus restore trash <secret-uuid>
+corvus get history API_KEY
+corvus get users -l alice                            # global admin
+corvus get audit --source org                        # global admin
+corvus apply secret API_KEY --meta owner=team --meta env=prod   # custom metadata (PAT)
+corvus apply secret API_KEY --delete-meta env
+corvus apply secret API_KEY --access-mode restricted --requires-approval on
+corvus grant secret API_KEY --to alice@example.com --role secret-reveal
+corvus unbind secret API_KEY <binding-id>
+corvus settings --require-reveal-approval on --default-access-mode inherit
+corvus export -o env
+corvus restore trash --all            # bulk restore
+corvus delete trash --all             # bulk purge
+corvus get groups --team Platform
+corvus create group admins --team Platform
+corvus create group-member bob@example.com --team Platform --group admins
 ```
 
 ---
@@ -750,5 +750,6 @@ Full flows: [authentication.md](../admin/authentication.md).
 - Authentication flows & token lifecycle: [authentication.md](../admin/authentication.md)
 - Org RBAC, groups, Permissions/Metadata UI: [rbac.md](../admin/rbac.md)
 - Deploy, env, OIDC, audit purge: [deploy.md](../admin/deploy.md)
-- Machine accounts & ESO: [machine-tokens.md](../admin/machine-tokens.md)
-- ESO manifests: [openshift-eso.yaml](../openshift-eso.yaml)
+- Machine accounts: [machine-tokens.md](../admin/machine-tokens.md)
+- ESO pull and push: [external-secrets.md](../admin/external-secrets.md)
+- ESO manifests: [eso-pull.yaml](../eso-pull.yaml), [eso-push.yaml](../eso-push.yaml)

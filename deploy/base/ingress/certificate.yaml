@@ -3,19 +3,19 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: secretserver-tls
+  name: corvus-tls
   labels:
     app.kubernetes.io/name: app
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
-  secretName: secretserver-tls
+  secretName: corvus-tls
   # Issuer name varies by overlay (prod → letsencrypt-prod, staging → ca-self-signed).
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
     group: cert-manager.io
   dnsNames:
-    - secretserver.example.internal
+    - corvus.example.internal
   # Renewal threshold — reissue 30 days before expiry.
   duration: 2160h   # 90 days
   renewBefore: 720h # 30 days

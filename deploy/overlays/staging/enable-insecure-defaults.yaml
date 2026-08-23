@@ -4,7 +4,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: secretserver-app-env
+  name: corvus-app-env
 data:
   ALLOW_INSECURE_DEFAULTS: "1"
   FLASK_ENV: "development"

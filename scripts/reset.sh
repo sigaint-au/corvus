@@ -28,7 +28,7 @@ if [[ $# -gt 0 ]]; then
   exit 2
 fi
 
-PG_VOLUME="secretserver_pgdata"
+PG_VOLUME="corvus_pgdata"
 
 echo "==> Stopping stack with $(compose_name)"
 compose down

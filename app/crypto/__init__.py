@@ -17,8 +17,8 @@ from core import cache, db
 from core.config import MASTER_KEY, REDIS_DEK_CACHE_TTL
 
 log = logging.getLogger(__name__)
-_REDIS_EPOCH_KEY = "secretserver:crypto:project-key:epoch"
-_SLOT_EPOCH_KEY = "secretserver:crypto:hsm-slot:epoch"
+_REDIS_EPOCH_KEY = "corvus:crypto:project-key:epoch"
+_SLOT_EPOCH_KEY = "corvus:crypto:hsm-slot:epoch"
 def _cache_epoch(client) -> str:
     """Return the shared project-key cache epoch."""
     return client.get(_REDIS_EPOCH_KEY) or "0"
@@ -144,7 +144,7 @@ def _project_key(project_id: str) -> dict | None:
         client = cache.redis_client()
         if client is not None:
             epoch = _cache_epoch(client)
-            cache_key = f"secretserver:crypto:project-key:{epoch}:{project_id}"
+            cache_key = f"corvus:crypto:project-key:{epoch}:{project_id}"
             cached = client.get(cache_key)
             if cached is not None:
                 return json.loads(cached)
@@ -189,7 +189,7 @@ def _slot_url(slot_id: str) -> str | None:
             epoch = client.get(_SLOT_EPOCH_KEY) or "0"
         else:
             epoch = "0"
-        key = f"secretserver:crypto:hsm-slot:{epoch}:{slot_id}"
+        key = f"corvus:crypto:hsm-slot:{epoch}:{slot_id}"
         if client is not None:
             try:
                 cached = client.get(key)

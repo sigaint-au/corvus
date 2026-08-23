@@ -265,5 +265,5 @@ INSERT INTO api.machine_token_scope (token_id, key_pattern) VALUES (tok, 'prod/*
 - [../admin/rbac.md](../admin/rbac.md): access rules in plain terms
 - [../admin/byok.md](../admin/byok.md): per-project encryption keys (BYOK)
 - [hsm.md](hsm.md): external HSM (SoftHSM2) key management for BYOK
-- [rbac-k8s.md](../admin/rbac-k8s.md): K8s RBAC model
+- [../admin/rbac-internals.md](../admin/rbac-internals.md): RBAC schema and SQL examples
 - [api.md](api.md): API reference

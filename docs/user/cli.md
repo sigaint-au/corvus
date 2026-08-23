@@ -1,6 +1,6 @@
 # CLI guide
 
-A kubectl-style CLI for Sigaint Secret Server (`/eso/v1`). Python 3 stdlib only,
+A kubectl-style CLI for Corvus (`/eso/v1`). Python 3 stdlib only,
 RHEL 9+.
 
 ---
@@ -8,16 +8,16 @@ RHEL 9+.
 ## Install
 
 ```bash
-sudo install -m 0755 secretserver /usr/bin/secretserver
+sudo install -m 0755 corvus /usr/bin/corvus
 # or build an RPM:
-make rpm && sudo dnf install -y dist/secretserver-cli-*.noarch.rpm
+make rpm && sudo dnf install -y dist/corvus-cli-*.noarch.rpm
 ```
 
 ---
 
 ## Credentials
 
-Env **or** `~/.config/secretserver/config` (`0600`). **Env wins.**
+Env **or** `~/.config/corvus/config` (`0600`). **Env wins.**
 
 | Env | Meaning |
 |-----|---------|
@@ -33,13 +33,13 @@ Env **or** `~/.config/secretserver/config` (`0600`). **Env wins.**
 
 ```bash
 # Machine token
-secretserver login \
+corvus login \
   --url https://secrets.example.com \
   --token ss_… \
   --project 31a70875-7d6a-40a7-a315-751f8a7ee38f
 
 # PAT (name ok)
-secretserver login \
+corvus login \
   --url https://secrets.example.com \
   --token pat_… \
   --project ios-app
@@ -57,8 +57,8 @@ export SS_PROJECT=<uuid>
 ## Project
 
 ```bash
-secretserver project              # show current
-secretserver project ios-app      # switch (PAT: name; machine: UUID)
+corvus project              # show current
+corvus project ios-app      # switch (PAT: name; machine: UUID)
 ```
 
 ---
@@ -66,9 +66,9 @@ secretserver project ios-app      # switch (PAT: name; machine: UUID)
 ## List secrets (metadata only)
 
 ```bash
-secretserver get secrets
-secretserver get secrets -l api      # filter key/note/metadata
-secretserver get secrets -o json
+corvus get secrets
+corvus get secrets -l api      # filter key/note/metadata
+corvus get secrets -o json
 ```
 
 Values are **not** listed (metadata only).
@@ -78,10 +78,10 @@ Values are **not** listed (metadata only).
 ## Get one secret
 
 ```bash
-secretserver get secret API_KEY              # table (default)
-secretserver get secret API_KEY -o value     # scripts: value only
-secretserver get secret API_KEY -o json
-secretserver get secret API_KEY -o name
+corvus get secret API_KEY              # table (default)
+corvus get secret API_KEY -o value     # scripts: value only
+corvus get secret API_KEY -o json
+corvus get secret API_KEY -o name
 ```
 
 If the project/secret **requires approval**, a PAT `get` returns 403 until an
@@ -93,15 +93,15 @@ admin approves. Machine tokens (`ss_…`) are not gated.
 
 ```bash
 # Request access (PAT)
-secretserver reveal secret API_KEY --reason "debugging prod auth #1234"
+corvus reveal secret API_KEY --reason "debugging prod auth #1234"
 
 # Approver (project admin / team owner, PAT)
-secretserver get requests
-secretserver approve <request-id> --minutes 15
-# secretserver deny <request-id>
+corvus get requests
+corvus approve <request-id> --minutes 15
+# corvus deny <request-id>
 
 # Then fetch the value
-secretserver get secret API_KEY -o value
+corvus get secret API_KEY -o value
 ```
 
 `approve --minutes` must be one of: `15`, `60`, `240`, `1440`.
@@ -112,16 +112,16 @@ secretserver get secret API_KEY -o value
 
 ```bash
 # History-safe (preferred)
-printf '%s' "$NEW" | secretserver apply secret API_KEY --from-file=-
-secretserver apply secret API_KEY --from-env=NEW_API_KEY
-secretserver apply secret API_KEY --from-file=./api.key
+printf '%s' "$NEW" | corvus apply secret API_KEY --from-file=-
+corvus apply secret API_KEY --from-env=NEW_API_KEY
+corvus apply secret API_KEY --from-file=./api.key
 
 # Metadata only
-secretserver apply secret API_KEY --note 'rotated in CI'
-secretserver apply secret API_KEY --kind plain --expires-days 90 --from-env=V
+corvus apply secret API_KEY --note 'rotated in CI'
+corvus apply secret API_KEY --kind plain --expires-days 90 --from-env=V
 
 # Avoid in interactive shells (lands in history):
-# secretserver apply secret API_KEY --value 'literal'
+# corvus apply secret API_KEY --value 'literal'
 ```
 
 Aliases: `create`, `set` → `apply`. Success output **omits** the secret value.
@@ -131,7 +131,7 @@ Aliases: `create`, `set` → `apply`. Success output **omits** the secret value.
 ## Delete
 
 ```bash
-secretserver delete secret API_KEY
+corvus delete secret API_KEY
 ```
 
 Soft-delete (restorable in the UI trash).
@@ -141,19 +141,19 @@ Soft-delete (restorable in the UI trash).
 ## Other resources
 
 ```bash
-secretserver get projects
-secretserver get teams
-secretserver get members --team Platform
-secretserver create team Platform
-secretserver create project demo --team Platform
-secretserver create member alice@example.com --team Platform --role team-member
-secretserver get tokens
-secretserver create token ci --role service-write
-secretserver get trash
-secretserver restore trash <secret-id>
-secretserver get users              # global admin + PAT
-secretserver get audit --source org # global admin + PAT
-secretserver transfer team NAME --email user@x
+corvus get projects
+corvus get teams
+corvus get members --team Platform
+corvus create team Platform
+corvus create project demo --team Platform
+corvus create member alice@example.com --team Platform --role team-member
+corvus get tokens
+corvus create token ci --role service-write
+corvus get trash
+corvus restore trash <secret-id>
+corvus get users              # global admin + PAT
+corvus get audit --source org # global admin + PAT
+corvus transfer team NAME --email user@x
 ```
 
 ---
@@ -185,7 +185,7 @@ export SS_TOKEN="${SS_TOKEN:?}"        # from CI secret
 export SS_PROJECT=<project-uuid>
 
 # Read a value into an env var without exposing it in the shell history
-DB_URL=$(secretserver get secret DATABASE_URL -o value)
+DB_URL=$(corvus get secret DATABASE_URL -o value)
 ```
 
 ---
@@ -193,8 +193,8 @@ DB_URL=$(secretserver get secret DATABASE_URL -o value)
 ## Help
 
 ```bash
-secretserver help
-secretserver <command> --help
+corvus help
+corvus <command> --help
 ```
 
 ---
@@ -203,4 +203,5 @@ secretserver <command> --help
 
 - [guide.md](guide.md): web UI guide
 - [../admin/machine-tokens.md](../admin/machine-tokens.md): machine accounts
+- [../admin/external-secrets.md](../admin/external-secrets.md): External Secrets Operator
 - [../admin/authentication.md](../admin/authentication.md): auth flows

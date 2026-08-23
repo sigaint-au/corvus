@@ -10,11 +10,11 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: secretserver-postgres
+  name: corvus-postgres
   labels:
     app.kubernetes.io/name: postgres
     app.kubernetes.io/component: database
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
 spec:
   # 3 instances — primary + 2 replicas. Survives loss of one node.
   instances: 3
@@ -57,9 +57,9 @@ spec:
       labels:
         app.kubernetes.io/name: postgres
         app.kubernetes.io/component: database
-        app.kubernetes.io/part-of: secretserver
+        app.kubernetes.io/part-of: corvus
     spec:
-      priorityClassName: secretserver-ha
+      priorityClassName: corvus-ha
       automountServiceAccountToken: false
       enableServiceLinks: false
       # Operator sets restartPolicy; we just enforce security context.
@@ -120,16 +120,16 @@ spec:
   managed:
     roles:
       # The application's authenticator role — used for app connections.
-      - name: secretserver-app
+      - name: corvus-app
         ensure: present
         login: true
         passwordSecret:
-          name: secretserver-postgres-authenticator
+          name: corvus-postgres-authenticator
           key: password
         inRoles:
           - authenticator
-          - secretserver
-      - name: secretserver
+          - corvus
+      - name: corvus
         ensure: present
         login: false
         # Owner of the public and api schemas.
@@ -139,16 +139,16 @@ spec:
         ensure: present
         login: false
         inRoles:
-          - secretserver
+          - corvus
       - name: anon
         ensure: present
         login: false
         # The anonymous role PostgREST publishes — no privileges on tables.
   serviceAccountTemplate:
     metadata:
-      name: secretserver-postgres
+      name: corvus-postgres
       labels:
         app.kubernetes.io/name: postgres
-        app.kubernetes.io/part-of: secretserver
+        app.kubernetes.io/part-of: corvus
     # CNPG needs API access for backups (s3 secret refs) and fencing.
     automountServiceAccountToken: true

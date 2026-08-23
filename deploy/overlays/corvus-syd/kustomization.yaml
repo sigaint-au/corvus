@@ -1,0 +1,123 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Example overlay for a small existing cluster (see README.md in this
+# directory). Copy this folder; change hostname, image tag, and
+# GLOBAL_ADMIN_EMAIL. Does not install ClusterIssuers or PriorityClasses.
+
+namespace: corvus
+
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/sigaint/corvus/app
+    newName: quay.io/sigaint/corvus
+    newTag: "01b4964b"   # operators: bump this to roll the app image
+  - name: bitnami/redis
+    newName: docker.io/library/redis
+    newTag: 7.2-alpine
+  - name: bitnami/redis-exporter
+    newName: docker.io/bitnamilegacy/redis-exporter
+    newTag: "1.58.0"
+  - name: postgrest/postgrest
+    newName: docker.io/postgrest/postgrest
+    newTag: v12.2.3
+
+patches:
+  # Drop cluster-scoped and incompatible resources.
+  - path: delete-cluster-scoped.yaml
+  - path: delete-netpol.yaml
+  - path: delete-extras.yaml
+
+  # Replace CNPG Cluster spec with a 1.28-compatible object (no fencing/podTemplate).
+  - path: postgres-spec.yaml
+    target:
+      group: postgresql.cnpg.io
+      version: v1
+      kind: Cluster
+      name: corvus-postgres
+
+  - path: ingress-patch.yaml
+    target:
+      kind: Ingress
+      name: corvus
+  - path: certificate-patch.yaml
+    target:
+      kind: Certificate
+      name: corvus-tls
+  - path: global-admin-email.yaml
+    target:
+      kind: ConfigMap
+      name: corvus-app-env
+  - path: app-replicas.yaml
+    target:
+      kind: Deployment
+      name: corvus-app
+  - path: postgrest-replicas.yaml
+    target:
+      kind: Deployment
+      name: corvus-postgrest
+  - path: postgrest-probe.yaml
+    target:
+      kind: Deployment
+      name: corvus-postgrest
+  - path: app-hpa.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: corvus-app
+  - path: postgrest-hpa.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: corvus-postgrest
+  - path: app-pdb.yaml
+    target:
+      kind: PodDisruptionBudget
+      name: corvus-app
+  - path: redis-replicas.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+  - path: redis-runtime.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+  - path: redis-svc-selector.yaml
+    target:
+      kind: Service
+      name: redis
+  - path: redis-url.yaml
+    target:
+      kind: Deployment
+      name: corvus-app
+  - path: pull-secret-deploy.yaml
+    target:
+      kind: Deployment
+      name: corvus-app
+  - path: pull-secret-cronjob.yaml
+    target:
+      kind: CronJob
+      name: corvus-purge-audit
+  - path: pull-secret-cronjob.yaml
+    target:
+      kind: CronJob
+      name: corvus-notify-due
+  - path: drop-priority-class.yaml
+    target:
+      kind: Deployment
+      name: corvus-app
+  - path: drop-priority-class.yaml
+    target:
+      kind: Deployment
+      name: corvus-postgrest
+  - path: drop-priority-class.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+  - path: drop-sts-maxsurge.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+
+configurations:
+  - kustomize-config.yaml

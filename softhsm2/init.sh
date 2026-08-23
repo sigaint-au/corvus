@@ -1,11 +1,11 @@
 #!/bin/sh
-# Initialise a SoftHSM2 token for the secretserver app, write a shared conf
+# Initialise a SoftHSM2 token for the corvus app, write a shared conf
 # into the token volume, then keep the container alive so the volume stays
 # mounted for the app container.
 set -e
 
 TOKEN_DIR="${SOFTHSM2_TOKEN_DIR:-/hsm/tokens}"
-TOKEN_LABEL="${HSM_TOKEN_LABEL:-secretserver}"
+TOKEN_LABEL="${HSM_TOKEN_LABEL:-corvus}"
 SO_PIN="${HSM_SO_PIN:-1234}"
 USER_PIN="${HSM_PIN:-1234}"
 # Conf lives on the shared volume so the app container can mount the same file.

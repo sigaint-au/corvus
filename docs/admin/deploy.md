@@ -1,11 +1,15 @@
 # Deploy guide
 
-Deploy Sigaint Secret Server end to end. Every step is a **copy-paste code
+Deploy Corvus end to end. Every step is a **copy-paste code
 block**: replace the `…` placeholders.
 
 Also see [configuration.md](configuration.md) for the full env/settings
 reference, [authentication.md](authentication.md) for auth flows, and
 [building.md](../dev/building.md) for building images.
+
+Kubernetes (kustomize) lives under [`deploy/`](https://git.sigaint.au/Sigaint/corvus/src/branch/main/deploy/README.md). Copy
+an overlay and change hostname, image tag, and `GLOBAL_ADMIN_EMAIL` — worked
+example: [`deploy/overlays/corvus-syd/`](https://git.sigaint.au/Sigaint/corvus/src/branch/main/deploy/overlays/corvus-syd/README.md).
 
 ---
 
@@ -177,8 +181,8 @@ flask --app app purge-audit --days 90
 Inside the running container:
 
 ```bash
-podman exec secretserver_app_1 flask --app app purge-audit --dry-run
-podman exec secretserver_app_1 flask --app app purge-audit
+podman exec corvus_app_1 flask --app app purge-audit --dry-run
+podman exec corvus_app_1 flask --app app purge-audit
 ```
 
 ### Host crontab
@@ -186,35 +190,42 @@ podman exec secretserver_app_1 flask --app app purge-audit
 Podman:
 
 ```cron
-15 3 * * * podman exec secretserver_app_1 flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
+15 3 * * * podman exec corvus_app_1 flask --app app purge-audit >> /var/log/corvus-purge-audit.log 2>&1
 ```
 
 Docker Compose:
 
 ```cron
-15 3 * * * cd /path/to/secretserver && docker compose exec -T app flask --app app purge-audit >> /var/log/secretserver-purge-audit.log 2>&1
+15 3 * * * cd /path/to/corvus && docker compose exec -T app flask --app app purge-audit >> /var/log/corvus-purge-audit.log 2>&1
 ```
 
-### OpenShift CronJob
+### Kubernetes CronJob
 
 Use the same app image and env as the Deployment. Full manifest:
 [openshift-purge-audit-cronjob.yaml](../openshift-purge-audit-cronjob.yaml).
 
 ```bash
-oc apply -f docs/openshift-purge-audit-cronjob.yaml
-oc get cronjobs -n secretserver
-oc create job --from=cronjob/secretserver-purge-audit purge-audit-manual -n secretserver
-oc logs job/purge-audit-manual -n secretserver
+kubectl apply -f docs/openshift-purge-audit-cronjob.yaml
+kubectl get cronjobs -n corvus
+kubectl create job --from=cronjob/corvus-purge-audit purge-audit-manual -n corvus
+kubectl logs job/purge-audit-manual -n corvus
 ```
 
 ---
 
-## 9. OpenShift (ESO)
+## 9. External Secrets Operator
 
-See [machine-tokens.md](machine-tokens.md) for ESO setup and the sample
-manifest [openshift-eso.yaml](../openshift-eso.yaml).
+See [external-secrets.md](external-secrets.md) for pull (`ExternalSecret`) and
+push (`PushSecret`) setup, plus copy-paste YAML.
+Samples: [eso-pull.yaml](../eso-pull.yaml),
+[eso-push.yaml](../eso-push.yaml).
+Tokens: [machine-tokens.md](machine-tokens.md).
 
 ---
+
+## Upgrades
+
+Existing databases upgrade in place — see [Upgrades](upgrades.md).
 
 ## Layout
 
@@ -222,7 +233,7 @@ manifest [openshift-eso.yaml](../openshift-eso.yaml).
 |------|------|
 | `Dockerfile` | App image (build context = repo root) |
 | `compose.yml` | Postgres + PostgREST + app |
-| `db/migrations/0001_init.sql` | Complete schema/security baseline (applied as `01-init.sql`) |
-| `db/migrations/0002_rls_authz_hardening.sql` | Additive RLS/authz hardening (applied by `core/migrations.py` at startup) |
+| `deploy/` | Kubernetes kustomize base + overlays ([README](https://git.sigaint.au/Sigaint/corvus/src/branch/main/deploy/README.md)) |
+| `db/migrations/` | Versioned SQL: `0001_init.sql` is the complete baseline (applied as `01-init.sql` on fresh volumes); later `NNNN_*.sql` files apply to existing databases at startup |
 | `app/` | Flask app; `core/migrations.py` applies pending migrations on startup |
 | `docs/` | This documentation set |

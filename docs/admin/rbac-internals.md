@@ -1,4 +1,4 @@
-# Kubernetes-style RBAC
+# RBAC internals
 
 **Subjects** (User, Group, ServiceAccount) + **Roles** (verbs × resources) +
 **Bindings** (subject + role + scope).
@@ -173,4 +173,5 @@ ON CONFLICT DO NOTHING;
 
 - [rbac.md](rbac.md): access rules in plain terms
 - [machine-tokens.md](machine-tokens.md): machine accounts and service roles
+- [external-secrets.md](external-secrets.md): External Secrets Operator pull and push
 - [database.md](../dev/database.md): schema, RLS, functions

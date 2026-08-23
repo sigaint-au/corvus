@@ -3,10 +3,10 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: secretserver
+  name: corvus
   labels:
     app.kubernetes.io/name: app
-    app.kubernetes.io/part-of: secretserver
+    app.kubernetes.io/part-of: corvus
   annotations:
     # Tight TLS: only TLS 1.2/1.3, modern ciphers.
     nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.2 TLSv1.3"
@@ -25,21 +25,21 @@ metadata:
     nginx.ingress.kubernetes.io/hsts-max-age: "31536000"
     nginx.ingress.kubernetes.io/hsts-include-subdomains: "true"
     # ExternalDNS sync.
-    external-dns.alpha.kubernetes.io/hostname: "secretserver.example.internal"
+    external-dns.alpha.kubernetes.io/hostname: "corvus.example.internal"
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - secretserver.example.internal
-      secretName: secretserver-tls
+        - corvus.example.internal
+      secretName: corvus-tls
   rules:
-    - host: secretserver.example.internal
+    - host: corvus.example.internal
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: secretserver-app
+                name: corvus-app
                 port:
                   name: http
