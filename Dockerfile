@@ -3,6 +3,8 @@
 # HSM flow (see compose.yml and docs/dev/hsm.md).
 FROM registry.access.redhat.com/ubi9/python-312 AS builder
 
+# Image defaults to non-root; package installs need root.
+USER root
 # Toolchain only for compiling wheels without manylinux coverage
 # (python-pkcs11). Nothing here reaches the runtime stage.
 RUN dnf install -y gcc gcc-c++ python3-devel \
@@ -14,6 +16,8 @@ RUN pip wheel --no-cache-dir -r requirements.txt -w /wheels
 
 FROM registry.access.redhat.com/ubi9/python-312-minimal AS runtime
 
+# Image defaults to non-root (uid 1001); user/pip setup needs root.
+USER root
 # Same uid/name as before so K8s securityContexts (runAsUser 10001) and
 # Compose tmpfs mounts (/home/appuser) stay valid.
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
