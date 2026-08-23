@@ -120,6 +120,9 @@
     {% include "partials/flash_messages.html" %}
 
     {% block body %}{% endblock %}
+    {% if not session.get('user_id') %}
+    <p class="muted auth-source"><a href="https://git.sigaint.au/Sigaint/corvus">Source code</a> (AGPL-3.0)</p>
+    {% endif %}
   </div>
   {% if login_banner and login_banner.enabled %}
   <aside class="login-note" role="status">

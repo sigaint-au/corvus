@@ -159,3 +159,5 @@ See [docs/dev/testing.md](docs/dev/testing.md).
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
+Corresponding source is this repository. Third-party works shipped with the
+app (htmx, Oat, Python libraries) are listed in [THIRD_PARTY.md](THIRD_PARTY.md).

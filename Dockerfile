@@ -22,6 +22,8 @@ COPY --chown=appuser:appuser app/ .
 # Migration SQL (read by app/core/migrations.py at runtime)
 COPY --chown=appuser:appuser db/migrations/ /db/migrations/
 
+COPY --chown=appuser:appuser LICENSE THIRD_PARTY.md /app/
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
