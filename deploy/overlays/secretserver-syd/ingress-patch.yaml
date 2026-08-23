@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: secretserver
+  annotations:
+    cert-manager.io/cluster-issuer: le-production
+    external-dns.alpha.kubernetes.io/hostname: secretserver.sigaint.au
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - secretserver.sigaint.au
+      secretName: secretserver-tls
+  rules:
+    - host: secretserver.sigaint.au
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: secretserver-app
+                port:
+                  name: http

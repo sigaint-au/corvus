@@ -7,6 +7,10 @@ Also see [configuration.md](configuration.md) for the full env/settings
 reference, [authentication.md](authentication.md) for auth flows, and
 [building.md](../dev/building.md) for building images.
 
+Kubernetes (kustomize) lives under [`deploy/`](../../deploy/README.md). Copy
+an overlay and change hostname, image tag, and `GLOBAL_ADMIN_EMAIL` — worked
+example: [`deploy/overlays/secretserver-syd/`](../../deploy/overlays/secretserver-syd/README.md).
+
 ---
 
 ## 1. Quick start (local, single host)
@@ -225,6 +229,7 @@ Tokens: [machine-tokens.md](machine-tokens.md).
 |------|------|
 | `Dockerfile` | App image (build context = repo root) |
 | `compose.yml` | Postgres + PostgREST + app |
+| `deploy/` | Kubernetes kustomize base + overlays ([README](../../deploy/README.md)) |
 | `db/migrations/0001_init.sql` | Complete schema/security baseline (applied as `01-init.sql`) |
 | `db/migrations/0002_rls_authz_hardening.sql` | Additive RLS/authz hardening (applied by `core/migrations.py` at startup) |
 | `app/` | Flask app; `core/migrations.py` applies pending migrations on startup |

@@ -22,8 +22,9 @@ Secret Server. Designed around Kubernetes best practices:
 - **Default-deny** NetworkPolicy in the namespace; per-component
   policies open only the minimum required paths.
 - **PodMonitor** for Prometheus scraping of stateful metrics.
-- **Overlays** for prod and staging (different hostnames, replica counts,
-  storage classes).
+- **Overlays** per environment (hostname, replica counts, ingress class,
+  storage). Copy an overlay; do not edit `base/` for site-specific values.
+  See [overlays/README.md](overlays/README.md).
 
 ---
 
@@ -44,9 +45,14 @@ deploy/
 │   ├── ingress/                      # Ingress + Certificate + ClusterIssuer
 │   └── networkpolicies/              # default-deny umbrella policy
 └── overlays/
-    ├── prod/                         # prod: 5 app / 3 pg / 3 redis, SSD, Let's Encrypt
-    └── staging/                      # staging: smaller counts, self-signed cert
+    ├── README.md                     # how overlays work; copy one to start
+    ├── prod/                         # HA defaults + placeholder hostnames
+    ├── staging/                      # smaller counts, insecure-defaults for lab
+    └── secretserver-syd/             # worked example (small cluster, Traefik)
 ```
+
+How to pick and customise an overlay: [overlays/README.md](overlays/README.md).
+Worked example (what each patch is for): [overlays/secretserver-syd/README.md](overlays/secretserver-syd/README.md).
 
 ---
 
@@ -129,35 +135,54 @@ Secrets — `kubectl apply` of an `Opaque` Secret is sufficient.
 
 ---
 
+## What you change (do not edit `base/` for this)
+
+| Concern | Where |
+|---------|--------|
+| DNS name / TLS issuer / IngressClass | Overlay `ingress-patch.yaml` + `certificate-patch.yaml` |
+| Container image registry and tag | Overlay `kustomization.yaml` → `images:` |
+| Namespace | Overlay `kustomization.yaml` → `namespace:` |
+| Replica counts / HPA | Overlay `*-replicas*.yaml` / `*-hpa*.yaml` |
+| Postgres size / instance count | Overlay Cluster patch (`postgres-*.yaml`) |
+| Bootstrap admin email | Overlay ConfigMap patch (`GLOBAL_ADMIN_EMAIL`) or leave empty |
+| App / Redis / DB **passwords and keys** | Kubernetes Secrets in the namespace — **never in git** |
+
+`prod/` still has example.com hostnames. `secretserver-syd/` is a complete
+copy-paste starting point for a cluster that already runs Traefik +
+cert-manager + CNPG.
+
 ## Build / apply
+
+Substitute your overlay directory (`prod`, `staging`, `secretserver-syd`,
+or a copy you made).
 
 ### Build & diff locally
 
 ```bash
-# Render prod overlay to stdout
-kubectl kustomize deploy/overlays/prod
+OVERLAY=deploy/overlays/secretserver-syd
 
-# Diff against what's currently in the cluster
-kubectl diff -k deploy/overlays/prod
-
-# Dry-run validation against the live API
-kubectl apply -k deploy/overlays/prod --dry-run=server
+kubectl kustomize "$OVERLAY"
+kubectl diff -k "$OVERLAY"
+kubectl apply -k "$OVERLAY" --dry-run=server
 ```
 
 ### Apply in order
 
 ```bash
+OVERLAY=deploy/overlays/secretserver-syd
+NS=secretserver   # must match the overlay namespace:
+
 # 1. Bootstrap secrets FIRST (workloads will fail to start without them)
-scripts/bootstrap-secrets.sh secretserver
+scripts/bootstrap-secrets.sh "$NS"
 
 # 2. Apply the overlay
-kubectl apply -k deploy/overlays/prod
+kubectl apply -k "$OVERLAY"
 
 # 3. Wait for database readiness
-kubectl -n secretserver wait --for=condition=Ready cluster/secretserver-postgres --timeout=300s
+kubectl -n "$NS" wait --for=condition=Ready cluster/secretserver-postgres --timeout=300s
 
 # 4. Wait for app deployment
-kubectl -n secretserver rollout status deploy/secretserver-app --timeout=180s
+kubectl -n "$NS" rollout status deploy/secretserver-app --timeout=180s
 ```
 
 ### Scheduled operational jobs

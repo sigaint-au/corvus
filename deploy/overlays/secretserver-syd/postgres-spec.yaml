@@ -1,0 +1,66 @@
+- op: replace
+  path: /spec
+  value:
+    instances: 2
+    imageName: ghcr.io/cloudnative-pg/postgresql:16
+    enableSuperuserAccess: true
+    enablePDB: true
+    superuserSecret:
+      name: secretserver-postgres-superuser
+    bootstrap:
+      initdb:
+        database: secretserver
+        owner: secretserver
+        encoding: UTF8
+        localeCType: C
+        localeCollate: C
+        dataChecksums: true
+        postInitApplicationSQLRefs:
+          configMapRefs:
+            - name: secretserver-init-sql
+              key: 0001_init.sql
+    managed:
+      roles:
+        - name: anon
+          ensure: present
+          login: false
+        - name: authenticated
+          ensure: present
+          login: false
+        - name: authenticator
+          ensure: present
+          login: true
+          inherit: false
+          inRoles:
+            - anon
+            - authenticated
+          passwordSecret:
+            name: secretserver-postgres-authenticator
+    affinity:
+      podAntiAffinityType: preferred
+    storage:
+      size: 10Gi
+      resizeInUseVolumes: true
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "512Mi"
+      limits:
+        cpu: "2"
+        memory: "2Gi"
+    postgresUID: 26
+    postgresGID: 26
+    inheritedMetadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: secretserver
+    postgresql:
+      parameters:
+        max_connections: "200"
+        shared_buffers: "256MB"
+        wal_level: "replica"
+        row_security: "on"
+        statement_timeout: "60s"
+        ssl_min_protocol_version: "TLSv1.2"
+        ssl_max_protocol_version: "TLSv1.3"

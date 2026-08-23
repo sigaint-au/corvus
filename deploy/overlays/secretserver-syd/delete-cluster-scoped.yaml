@@ -1,0 +1,27 @@
+# Do not create cluster-wide objects. cert-manager and CNPG already run
+# in this cluster; PriorityClass would be cluster-scoped.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+$patch: delete
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: ca-self-signed
+$patch: delete
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: secretserver-ha
+$patch: delete
+---
+# Namespace already exists (Rancher-managed). Skip PSS labels that would
+# block bitnami/CNPG pods on this cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secretserver
+$patch: delete

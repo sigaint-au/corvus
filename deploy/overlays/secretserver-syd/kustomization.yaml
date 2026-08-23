@@ -1,0 +1,123 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Example overlay for a small existing cluster (see README.md in this
+# directory). Copy this folder; change hostname, image tag, and
+# GLOBAL_ADMIN_EMAIL. Does not install ClusterIssuers or PriorityClasses.
+
+namespace: secretserver
+
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/sigaint/secretserver/app
+    newName: quay.io/sigaint/secretserver
+    newTag: "01b4964b"   # operators: bump this to roll the app image
+  - name: bitnami/redis
+    newName: docker.io/library/redis
+    newTag: 7.2-alpine
+  - name: bitnami/redis-exporter
+    newName: docker.io/bitnamilegacy/redis-exporter
+    newTag: "1.58.0"
+  - name: postgrest/postgrest
+    newName: docker.io/postgrest/postgrest
+    newTag: v12.2.3
+
+patches:
+  # Drop cluster-scoped and incompatible resources.
+  - path: delete-cluster-scoped.yaml
+  - path: delete-netpol.yaml
+  - path: delete-extras.yaml
+
+  # Replace CNPG Cluster spec with a 1.28-compatible object (no fencing/podTemplate).
+  - path: postgres-spec.yaml
+    target:
+      group: postgresql.cnpg.io
+      version: v1
+      kind: Cluster
+      name: secretserver-postgres
+
+  - path: ingress-patch.yaml
+    target:
+      kind: Ingress
+      name: secretserver
+  - path: certificate-patch.yaml
+    target:
+      kind: Certificate
+      name: secretserver-tls
+  - path: global-admin-email.yaml
+    target:
+      kind: ConfigMap
+      name: secretserver-app-env
+  - path: app-replicas.yaml
+    target:
+      kind: Deployment
+      name: secretserver-app
+  - path: postgrest-replicas.yaml
+    target:
+      kind: Deployment
+      name: secretserver-postgrest
+  - path: postgrest-probe.yaml
+    target:
+      kind: Deployment
+      name: secretserver-postgrest
+  - path: app-hpa.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: secretserver-app
+  - path: postgrest-hpa.yaml
+    target:
+      kind: HorizontalPodAutoscaler
+      name: secretserver-postgrest
+  - path: app-pdb.yaml
+    target:
+      kind: PodDisruptionBudget
+      name: secretserver-app
+  - path: redis-replicas.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+  - path: redis-runtime.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+  - path: redis-svc-selector.yaml
+    target:
+      kind: Service
+      name: redis
+  - path: redis-url.yaml
+    target:
+      kind: Deployment
+      name: secretserver-app
+  - path: pull-secret-deploy.yaml
+    target:
+      kind: Deployment
+      name: secretserver-app
+  - path: pull-secret-cronjob.yaml
+    target:
+      kind: CronJob
+      name: secretserver-purge-audit
+  - path: pull-secret-cronjob.yaml
+    target:
+      kind: CronJob
+      name: secretserver-notify-due
+  - path: drop-priority-class.yaml
+    target:
+      kind: Deployment
+      name: secretserver-app
+  - path: drop-priority-class.yaml
+    target:
+      kind: Deployment
+      name: secretserver-postgrest
+  - path: drop-priority-class.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+  - path: drop-sts-maxsurge.yaml
+    target:
+      kind: StatefulSet
+      name: redis
+
+configurations:
+  - kustomize-config.yaml

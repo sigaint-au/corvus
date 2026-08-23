@@ -29,7 +29,9 @@ scripts/reset.sh --yes # non-interactive
 This removes only `pgdata`; HSM state remains in `hsmdata`.
 
 For production setup (strong secrets, OIDC/LDAP, audit retention) see
-[docs/admin/deploy.md](docs/admin/deploy.md).
+[docs/admin/deploy.md](docs/admin/deploy.md). Kubernetes manifests:
+[deploy/README.md](deploy/README.md) (copy an overlay; example
+[deploy/overlays/secretserver-syd/](deploy/overlays/secretserver-syd/README.md)).
 
 ---
 

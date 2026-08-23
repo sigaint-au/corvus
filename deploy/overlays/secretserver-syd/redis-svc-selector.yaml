@@ -1,0 +1,6 @@
+- op: replace
+  path: /spec/selector
+  value:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: secretserver
+    statefulset.kubernetes.io/pod-name: redis-0
