@@ -118,7 +118,7 @@ podman manifest push --all corvus \
 
 Point the overlay `images[].newName` / `newTag` at `quay.io/sigaint/corvus`
 and the version you pushed. See [deploy.md](../admin/deploy.md) and
-[corvus-syd](../../deploy/overlays/corvus-syd/README.md).
+[corvus-syd overlay](https://git.sigaint.au/Sigaint/corvus/src/branch/main/deploy/overlays/corvus-syd/README.md).
 
 ---
 
