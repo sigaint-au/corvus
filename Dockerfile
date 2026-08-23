@@ -1,6 +1,6 @@
 # Red Hat UBI9-based image. Prod runtime is minimal (no shell toolchain,
-# no SoftHSM); the `dev` target adds SoftHSM2/OpenSC for the local Compose
-# HSM flow (see compose.yml and docs/dev/hsm.md).
+# no SoftHSM); the `dev` target adds SoftHSM for the local Compose HSM
+# flow (see compose.yml and docs/dev/hsm.md).
 FROM registry.access.redhat.com/ubi9/python-312 AS builder
 
 # Image defaults to non-root; package installs need root.
@@ -44,13 +44,23 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=10s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')" || exit 1
 CMD ["gunicorn", "-b", "0.0.0.0:8080", "-w", "2", "--timeout", "60", "--graceful-timeout", "30", "--keep-alive", "5", "app:app"]
 
-# Dev-only: SoftHSM2 lives in EPEL, not UBI — kept out of the prod image.
-# libsofthsm2.so installs to /usr/lib64/softhsm/ on EL (Debian used /usr/lib).
+# Dev-only: SoftHSM is in RHEL AppStream, not UBI or EPEL 9. Pull the EL9
+# package from AlmaLinux AppStream so local Compose can load
+# /usr/lib64/libsofthsm2.so. Prod image stays without it.
 FROM runtime AS dev
 USER root
-RUN rpm -Uvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
-    && microdnf install -y softhsm2 opensc \
-    && microdnf clean all
+RUN rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-9 \
+    && cat > /etc/yum.repos.d/almalinux-appstream.repo <<'EOF'
+[almalinux-appstream]
+name=AlmaLinux 9 AppStream
+baseurl=https://repo.almalinux.org/almalinux/9/AppStream/$basearch/os/
+enabled=1
+gpgcheck=1
+gpgkey=https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux-9
+EOF
+RUN microdnf install -y softhsm \
+    && microdnf clean all \
+    && rm -f /etc/yum.repos.d/almalinux-appstream.repo
 USER appuser
 
 # Default target: prod.

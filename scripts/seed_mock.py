@@ -627,7 +627,7 @@ def seed_hsm_slot():
             VALUES (
                 'dev-hsm',
                 'pkcs11:token=corvus;object=byok-kek'
-                '?module-path=/usr/lib64/softhsm/libsofthsm2.so&pin-source=/hsm/tokens/hsm-pin',
+                '?module-path=/usr/lib64/libsofthsm2.so&pin-source=/hsm/tokens/hsm-pin',
                 'Local SoftHSM2 development slot',
                 true
             )
