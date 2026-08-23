@@ -23,6 +23,7 @@ class TestUIShell:
         assert b"auth-card" in r.data
         assert b'class="sidebar"' not in r.data
         assert b"Corvus" in r.data
+        assert b"brand-logo" in r.data
         assert b"static/app.css" in r.data
         # A missing '>' on <script integrity="..."> swallows the rest of the
         # page (the browser treats body markup as the script element).
@@ -52,6 +53,7 @@ class TestUIShell:
             r = c.get("/teams")
         assert b'class="app"' in r.data
         assert b"sidebar" in r.data
+        assert b"brand-logo" in r.data
         assert b"x@y.z" in r.data
         assert b"Log out" in r.data
         assert b"Projects" in r.data
