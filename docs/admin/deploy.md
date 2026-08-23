@@ -230,7 +230,6 @@ Tokens: [machine-tokens.md](machine-tokens.md).
 | `Dockerfile` | App image (build context = repo root) |
 | `compose.yml` | Postgres + PostgREST + app |
 | `deploy/` | Kubernetes kustomize base + overlays ([README](../../deploy/README.md)) |
-| `db/migrations/0001_init.sql` | Complete schema/security baseline (applied as `01-init.sql`) |
-| `db/migrations/0002_rls_authz_hardening.sql` | Additive RLS/authz hardening (applied by `core/migrations.py` at startup) |
+| `db/migrations/` | Versioned SQL: `0001_init.sql` is the complete baseline (applied as `01-init.sql` on fresh volumes); later `NNNN_*.sql` files apply to existing databases at startup |
 | `app/` | Flask app; `core/migrations.py` applies pending migrations on startup |
 | `docs/` | This documentation set |

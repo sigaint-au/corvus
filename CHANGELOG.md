@@ -2,11 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project aims to follow [Semantic Versioning](https://semver.org/) for
-tagged releases.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versions use calendar versioning: `<year>-<month>-<day>.<build>` (pip-normalized
+form `YYYY.M.D.build`).
 
-## [Unreleased]
+## [2026-08-23.1] - 2026-08-23
 
 ### Added
 
@@ -24,6 +24,13 @@ tagged releases.
 - Search filter on the machine accounts list
 - Reusable empty-state component applied to teams, projects, machine accounts,
   trash, shared/secrets, and global search
+- **Email verification for local signups**: verification email after signup,
+  `/verify-email` page shown on unverified sign-in (no standalone resend route)
+- **External Secrets Operator guides** (`docs/admin/external-secrets.md`):
+  pull and push setups with example manifests; generic Kubernetes ESO wording
+- Kubernetes deploy overlays: kustomize base + overlay how-to (`deploy/`)
+- Migration `0005_sql_password_crypt.sql`: bcrypt-in-SQL helpers so databases
+  bootstrapped from older baselines can run the current app in place
 
 ### Removed
 
@@ -92,6 +99,10 @@ tagged releases.
   regression test guards the HTMX `<script>` tag close
 - Server-opened sidebar sections (e.g. Organisation → Role bindings) no longer
   collapse when navigating to pages whose endpoint default differs
+- Login no longer 500s at the email-verification gate
+- Copy pass: consistent permission-denied flashes (teams/RBAC), clearer audit
+  retention message, sharper auth flashes and transactional emails, tightened
+  secrets flash copy; dropped compliance claim from classification banner
 
 ## [0.1.0] - 2026-01-01
 

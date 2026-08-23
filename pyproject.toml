@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secretserver"
-version = "0.1.0"
+version = "2026.8.23.1"
 description = "Self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.ink UI)"
 readme = "README.md"
 license = {file = "LICENSE"}

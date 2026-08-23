@@ -66,11 +66,11 @@ psql -h <db-host> -U <admin-user> -d secretserver -f secretserver.sql
 After restoring, set the same `MASTER_KEY`, `JWT_SECRET`, and `SECRET_KEY` in
 the app environment so existing ciphertext and tokens remain valid.
 
-> `0001_init.sql` / `0002_rls_authz_hardening.sql` are for a **first** database init and fresh installs only.
-> This branch uses a fresh-install-only squashed baseline; recreate the database
-> before applying it and do not use it as an upgrade script for an existing DB.
-> This branch is **fresh-install-only squash**: existing databases must be
-> recreated; do **not** re-run the baseline migrations over a restored database.
+> `0001_init.sql` is the fresh-install baseline (applied by
+> `docker-entrypoint-initdb.d` on a first init only). Existing databases are
+> upgraded in place by `app/core/migrations.py`, which applies pending
+> `NNNN_*.sql` migrations at startup — never re-run baseline migrations over
+> a restored database.
 
 ---
 
