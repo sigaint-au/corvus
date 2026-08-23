@@ -236,3 +236,4 @@ of creates vs updates before anything is written. Requires write access.
 - [cli.md](cli.md): CLI guide
 - [../admin/rbac.md](../admin/rbac.md): RBAC access model
 - [../admin/machine-tokens.md](../admin/machine-tokens.md): machine accounts
+- [../admin/external-secrets.md](../admin/external-secrets.md): External Secrets Operator pull and push

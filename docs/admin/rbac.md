@@ -262,5 +262,6 @@ Permission rank: `read` < `reveal` < `write`.
 - [rbac-k8s.md](rbac-k8s.md): K8s RBAC model details
 - [deploy.md](deploy.md): env vars, bootstrap admin, OIDC/LDAP server config
 - [authentication.md](authentication.md): login flows, PAT, machine tokens, JWT
-- [machine-tokens.md](machine-tokens.md): machine accounts, key allow-lists, ESO
+- [machine-tokens.md](machine-tokens.md): machine accounts, key allow-lists
+- [external-secrets.md](external-secrets.md): External Secrets Operator pull and push
 - [api.md](../dev/api.md): secret API, access modes, PostgREST

@@ -750,5 +750,6 @@ Full flows: [authentication.md](../admin/authentication.md).
 - Authentication flows & token lifecycle: [authentication.md](../admin/authentication.md)
 - Org RBAC, groups, Permissions/Metadata UI: [rbac.md](../admin/rbac.md)
 - Deploy, env, OIDC, audit purge: [deploy.md](../admin/deploy.md)
-- Machine accounts & ESO: [machine-tokens.md](../admin/machine-tokens.md)
-- ESO manifests: [openshift-eso.yaml](../openshift-eso.yaml)
+- Machine accounts: [machine-tokens.md](../admin/machine-tokens.md)
+- ESO pull and push: [external-secrets.md](../admin/external-secrets.md)
+- ESO manifests: [openshift-eso.yaml](../openshift-eso.yaml), [eso-push.yaml](../eso-push.yaml)

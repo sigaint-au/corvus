@@ -203,4 +203,5 @@ secretserver <command> --help
 
 - [guide.md](guide.md): web UI guide
 - [../admin/machine-tokens.md](../admin/machine-tokens.md): machine accounts
+- [../admin/external-secrets.md](../admin/external-secrets.md): External Secrets Operator
 - [../admin/authentication.md](../admin/authentication.md): auth flows

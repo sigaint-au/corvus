@@ -52,7 +52,8 @@ Documentation is organised by audience.
 | [docs/admin/configuration.md](docs/admin/configuration.md) | All environment variables and server settings |
 | [docs/admin/rbac.md](docs/admin/rbac.md) | Roles, groups, project/secret permissions, setup checklist |
 | [docs/admin/authentication.md](docs/admin/authentication.md) | Session, PAT, JWT, machine token, OIDC, LDAP, SMTP, password reset |
-| [docs/admin/machine-tokens.md](docs/admin/machine-tokens.md) | Machine accounts, key allow-lists, ESO integration |
+| [docs/admin/machine-tokens.md](docs/admin/machine-tokens.md) | Machine accounts, key allow-lists |
+| [docs/admin/external-secrets.md](docs/admin/external-secrets.md) | External Secrets Operator: pull, push, copy-paste YAML |
 | [docs/admin/audit.md](docs/admin/audit.md) | Audit logs, access review, export, retention |
 | [docs/admin/backup.md](docs/admin/backup.md) | Backup and restore |
 
@@ -82,7 +83,7 @@ Documentation is organised by audience.
 | Postgres RLS | Access control enforced by the database itself |
 | Unified secret API | `/eso/v1` with `ss_…` (machine) or `pat_…` (PAT): list, get, create, update, soft-delete |
 | PostgREST API | SQL-style API with JWT auth for metadata / org clients |
-| ESO integration | Machine API powers OpenShift External Secrets Operator webhooks |
+| ESO integration | Webhook provider: pull (`ExternalSecret`) and push (`PushSecret`) |
 | Personal access tokens | `pat_…` for `/eso/v1` and `/api/token` → PostgREST JWT |
 | TOTP 2FA | Per-user 2FA with single-use recovery codes |
 | LDAP & OIDC / SSO | Directory groups → team maps, first-class groups, global-admin maps |

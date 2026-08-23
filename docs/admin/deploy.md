@@ -209,10 +209,13 @@ oc logs job/purge-audit-manual -n secretserver
 
 ---
 
-## 9. OpenShift (ESO)
+## 9. External Secrets Operator
 
-See [machine-tokens.md](machine-tokens.md) for ESO setup and the sample
-manifest [openshift-eso.yaml](../openshift-eso.yaml).
+See [external-secrets.md](external-secrets.md) for pull (`ExternalSecret`) and
+push (`PushSecret`) setup, plus copy-paste YAML.
+Samples: [openshift-eso.yaml](../openshift-eso.yaml),
+[eso-push.yaml](../eso-push.yaml).
+Tokens: [machine-tokens.md](machine-tokens.md).
 
 ---
 
