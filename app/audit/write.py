@@ -2,9 +2,30 @@
 
 from __future__ import annotations
 
+import json
+import logging
+from datetime import datetime, timezone
+
 from flask import session
 
 from .constants import ACTIONS
+
+# One JSON line per audit event on stdout, so container log shippers
+# (rsyslog, Splunk HEC/forwarder, journald) can relay to a SIEM.
+audit_console = logging.getLogger("corvus.audit")
+
+
+def _emit_console(kind: str, **fields) -> None:
+    """Mirror an audit row as a single-line JSON record on stdout."""
+    payload = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        "event": kind,
+        **{k: v for k, v in fields.items() if v},
+    }
+    try:
+        audit_console.info(json.dumps(payload, separators=(",", ":")))
+    except Exception:
+        logging.getLogger(__name__).exception("audit console log failed")
 
 
 def log_secret(
@@ -54,6 +75,14 @@ def log_secret(
             email or "",
         ),
     )
+    _emit_console(
+        "secret_audit",
+        action=action,
+        actor=email,
+        project_id=str(project_id) if project_id else None,
+        secret_id=str(secret_id) if secret_id else None,
+        secret_key=secret_key or None,
+    )
 
 
 def log_org(
@@ -97,4 +126,12 @@ def log_org(
             detail or "",
             email or "",
         ),
+    )
+    _emit_console(
+        "org_audit",
+        action=action,
+        actor=email,
+        team_id=str(team_id) if team_id else None,
+        project_id=str(project_id) if project_id else None,
+        detail=detail or None,
     )

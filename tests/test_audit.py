@@ -64,6 +64,37 @@ class TestAudit:
         assert 'INSERT INTO api.secret_audit' not in sql
         assert params[-1] == 'a@b.c'
 
+    def test_log_secret_emits_console_json(self):
+        import json
+        import logging
+        cur = MagicMock()
+        pid, sid = (uuid4(), uuid4())
+        records: list[logging.LogRecord] = []
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                records.append(record)
+
+        logger = logging.getLogger('corvus.audit')
+        cap = Capture()
+        logger.addHandler(cap)
+        try:
+            with store.app.test_request_context('/'):
+                from flask import session
+                session['email'] = 'siem@b.c'
+                audit.log_secret(cur, project_id=pid, secret_key='API_KEY', action='revealed')
+        finally:
+            logger.removeHandler(cap)
+        assert len(records) == 1
+        payload = json.loads(records[0].getMessage())
+        assert payload['event'] == 'secret_audit'
+        assert payload['action'] == 'revealed'
+        assert payload['actor'] == 'siem@b.c'
+        assert payload['project_id'] == str(pid)
+        assert payload['secret_key'] == 'API_KEY'
+        # single line — SIEM shippers parse one event per line
+        assert '\n' not in records[0].getMessage()
+
     def test_schema_revokes_secret_audit_insert(self):
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'REVOKE INSERT ON api.secret_audit FROM authenticated' in init
