@@ -3,9 +3,10 @@
      data-secret-id="{{ secret_id }}">
    {% if state == 'denied' %}
    <p class="reveal-access-msg">
-     <strong>Reveal permission required</strong> - ask a project admin to grant
-     <code class="k">secret-reveal</code> access.
+     <strong>Reveal access required</strong>
    </p>
+   <p class="muted reveal-access-hint">Ask a project admin to grant you
+     <code class="k">secret-reveal</code> access.</p>
    {% elif state == 'pending' %}
    <p class="reveal-access-msg">
     <strong>Access requested</strong> - waiting for a project admin or team owner to approve

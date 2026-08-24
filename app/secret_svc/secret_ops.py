@@ -90,6 +90,7 @@ def _load_secrets_page(cur, project_id, page, q):
                s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                s.requires_approval, s.access_mode,
                s.last_accessed_at,
+               api.can_access_secret(s.id, 'reveal') AS can_reveal,
                CASE
                  WHEN s.requires_approval IS TRUE THEN true
                  WHEN s.requires_approval IS FALSE THEN false
@@ -147,7 +148,10 @@ def _load_secrets_page(cur, project_id, page, q):
         needs = bool(r.get("needs_approval"))
         r["needs_approval"] = needs
         grant = grants.get(str(r["id"]))
-        if is_admin or not needs:
+        if not bool(r.get("can_reveal", True)):
+            r["reveal_access"] = "denied"
+            r["approved_until"] = None
+        elif is_admin or not needs:
             r["reveal_access"] = "allowed"
             r["approved_until"] = None
         elif grant and grant["status"] == "approved":
@@ -250,7 +254,8 @@ def _load_team_secrets_page(
         f"""
         SELECT s.id, s.key, s.note, s.kind, s.updated_at, s.expires_at,
                s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
-               s.access_mode, p.id AS project_id, p.name AS project_name
+               s.access_mode, p.id AS project_id, p.name AS project_name,
+               api.can_access_secret(s.id, 'reveal') AS can_reveal
         FROM api.secrets s
         JOIN api.projects p ON p.id = s.project_id
         WHERE {where}
@@ -266,6 +271,7 @@ def _load_team_secrets_page(
         mode = (r.get("access_mode") or "inherit").strip() or "inherit"
         r["access_mode"] = mode
         r["access_restricted"] = mode != "inherit"
+        r["reveal_access"] = "allowed" if bool(r.get("can_reveal", True)) else "denied"
     cur.execute(
         """
         SELECT id, name FROM api.projects

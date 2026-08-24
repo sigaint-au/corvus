@@ -6,6 +6,7 @@ with ``gunicorn app:app`` and ``import app as store`` in tests.
 """
 import logging
 import os
+import sys
 
 from flask import Flask, get_flashed_messages, jsonify, render_template, request
 
@@ -18,6 +19,22 @@ from ui.nav import inject_nav
 log = logging.getLogger(__name__)
 
 config.refuse_insecure_defaults()
+
+
+def _setup_audit_console() -> None:
+    """Send audit events as JSON lines to stdout for log shippers/SIEM.
+
+    Idempotent; isolated from the root logger so audit records stay
+    machine-parseable (no gunicorn prefixes).
+    """
+    audit_logger = logging.getLogger("corvus.audit")
+    if audit_logger.handlers:
+        return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    audit_logger.addHandler(handler)
+    audit_logger.setLevel(logging.INFO)
+    audit_logger.propagate = False
 
 
 # User-facing messages for HTTP errors rendered as WebUI pages.
@@ -90,6 +107,7 @@ def create_app():
         >>> client = app.test_client()
     """
     app = Flask(__name__)
+    _setup_audit_console()
     app.secret_key = config.SECRET_KEY
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,

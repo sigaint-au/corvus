@@ -89,7 +89,7 @@ Then create a slot in **Server Settings → Encryption → HSM slots** with a
 PKCS#11 URL (see below), e.g.:
 
 ```
-pkcs11:token=corvus;object=byok-kek?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-source=/hsm/tokens/hsm-pin
+pkcs11:token=corvus;object=byok-kek?module-path=/usr/lib64/libsofthsm2.so&pin-source=/hsm/tokens/hsm-pin
 ```
 
 ---
@@ -115,7 +115,7 @@ pkcs11:token=<label>;object=<KEK label>[;slot-id=<n>]?module-path=<.so>[&pin-sou
 Example (SoftHSM2 dev, PIN in a file):
 
 ```
-pkcs11:token=corvus;object=byok-kek?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-source=/run/secrets/hsm-pin
+pkcs11:token=corvus;object=byok-kek?module-path=/usr/lib64/libsofthsm2.so&pin-source=/run/secrets/hsm-pin
 ```
 
 ## Multi-slot architecture

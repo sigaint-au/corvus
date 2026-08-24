@@ -70,6 +70,7 @@ ship inside the installed wheels.
 
 ## Container extras
 
-The app image is `python:3.12-slim-bookworm` plus Debian `softhsm2` and
-`opensc` (SoftHSM2 is BSD-style; OpenSC is LGPL). Those packages keep their
-own copyright files in the image under `/usr/share/doc/`.
+The production app image is Red Hat UBI 9 (`ubi9/python-312-minimal`).
+The Compose `dev` target additionally installs AlmaLinux 9 `softhsm`
+(BSD-style; binary-compatible with UBI9 because SoftHSM is not in UBI
+or EPEL 9). RPM copyright files stay under `/usr/share/doc/`.

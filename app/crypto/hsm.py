@@ -167,7 +167,9 @@ def _pkcs11():
 
 def _allowed_module_path(module_path: str) -> bool:
     """Return whether a PKCS#11 module is inside the configured allow-list."""
-    configured = os.environ.get("HSM_ALLOWED_MODULE_DIRS", "/usr/lib,/usr/local/lib,/lib")
+    configured = os.environ.get(
+        "HSM_ALLOWED_MODULE_DIRS", "/usr/lib64,/usr/lib,/usr/local/lib,/lib"
+    )
     real_path = os.path.realpath(module_path)
     return any(
         real_path == directory or real_path.startswith(directory + os.sep)

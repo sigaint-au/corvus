@@ -605,7 +605,7 @@
     .pin-btn.pinned { color: var(--warning); }
     .pin-btn:hover { color: var(--foreground); }
     #side-pins.is-empty { display: none; }
-    .copy-btn { font-size: .7rem; font-weight: 400; width: auto !important; padding: 0 .45rem !important; }
+    .copy-btn:not(.button) { font-size: .7rem; font-weight: 400; width: auto !important; padding: 0 .45rem !important; }
     .side-team label {
       display: block;
       font-size: .65rem;

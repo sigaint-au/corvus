@@ -74,7 +74,7 @@ def reveal_secret(project_id, secret_id):
                 secret_key=row["key"],
                 state="denied",
                 cell=cell,
-            ), 403
+            )
         access_state, access_row = _reveal_access_state(
             cur, project_id, secret_id, session["user_id"]
         )
@@ -345,6 +345,7 @@ def secret_view(project_id, secret_id):
                     active_tab="secret",
                 )
                 return body, code
+            enc, provider = crypto.encrypt_for_project(project_id, value)
             cur.execute(
                 """
                 UPDATE api.secrets
@@ -352,10 +353,11 @@ def secret_view(project_id, secret_id):
                 WHERE id = %s AND project_id = %s AND deleted_at IS NULL
                 """,
                 (
-                    *crypto.encrypt_for_project(project_id, value),
+                    enc,
                     note,
                     expires_at,
                     kind,
+                    provider,
                     str(secret_id),
                     str(project_id),
                 ),
