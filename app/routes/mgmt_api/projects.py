@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from flask import (
     jsonify,
     request,
@@ -18,6 +20,8 @@ from .helpers import (
     _resolve_team,
     _row,
 )
+
+log = logging.getLogger(__name__)
 
 
 def mgmt_create_project(team_ref):
@@ -47,8 +51,9 @@ def mgmt_create_project(team_ref):
             if not row:
                 return jsonify({"error": "forbidden"}), 403
             conn.commit()
-        except Exception as e:
-            return jsonify({"error": str(e)}), 400
+        except Exception:
+            log.exception("mgmt create project failed")
+            return jsonify({"error": "internal error"}), 400
     if encryption in ("byok", "project"):
         from crypto import project_keys
 

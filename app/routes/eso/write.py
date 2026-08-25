@@ -245,9 +245,12 @@ def eso_patch_secret(project_ref, key):
                 already_enc=True,
                 crypto_provider=enc_provider,
             )
-        except Exception as e:
+        except HTTPException as e:
+            log.warning("pat patch rejected: %s", e.code)
+            return jsonify({"error": e.description}), e.code
+        except Exception:
             log.exception("pat patch failed")
-            return jsonify({"error": str(e) or "forbidden"}), 403
+            return jsonify({"error": "internal error"}), 403
         _audit(
             cur,
             project_id=pid,
