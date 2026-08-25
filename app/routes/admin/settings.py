@@ -364,7 +364,7 @@ def server_settings():
     ldap_test = None
     oidc_test = None
     if request.method == "POST":
-        action = request.form.get("action") or "classification"
+        action = (request.form.get("action") or "").strip()
         if action == "ldap_test":
             ldap_test = _ldap_test_probe(request.form)
         elif action == "oidc_test":
@@ -917,7 +917,11 @@ def server_settings():
             "token_policy": "general",
         }
         if ldap_test is None and oidc_test is None:
-            tab = tab_for.get(action, "general")
+            tab = tab_for.get(action)
+            if not tab:
+                tab = (request.args.get("tab") or "general").strip().lower()
+                if tab not in ALL_TABS:
+                    tab = "general"
             return redirect(url_for("server_settings", tab=tab))
 
     tab = (request.args.get("tab") or "general").strip().lower()

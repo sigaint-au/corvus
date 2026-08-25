@@ -510,3 +510,26 @@ class TestConnectionTests:
             r = self.client.post('/settings?tab=ldap', data={'action': 'ldap'}, follow_redirects=False)
         assert r.status_code == 302
         assert 'tab=ldap' in r.location
+
+    def test_missing_action_does_not_trigger_classification_error(self):
+        """A POST with no action (disabled submitter omitted) must not run banner save."""
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4], \
+             patch.object(settings_svc, 'set_setting') as set_setting:
+            r = self.client.post('/settings?tab=oidc', data={
+                'oidc_issuer': 'https://idp.example',
+            }, follow_redirects=True)
+        assert r.status_code == 200
+        assert b'Banner colour must be a hex value' not in r.data
+        assert b'OIDC / SSO settings saved' not in r.data
+        assert not set_setting.called
+
+    def test_missing_action_stays_on_requested_tab(self):
+        mocks = self._render_mocks()
+        with mocks[0], mocks[1], mocks[2], mocks[3], mocks[4]:
+            r = self.client.post('/settings?tab=oidc', data={
+                'oidc_issuer': 'https://idp.example',
+            }, follow_redirects=False)
+        assert r.status_code == 302
+        assert 'tab=oidc' in r.location
+        assert 'tab=banner' not in r.location
