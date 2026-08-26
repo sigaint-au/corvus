@@ -7,6 +7,7 @@ from .account import (
     profile,
     revoke_other_sessions,
     revoke_session,
+    update_login_alerts,
 )
 from .login import (
     forgot_password,
@@ -55,6 +56,7 @@ def register(app):
     app.post("/profile/tokens")(create_personal_token)
     app.post("/profile/tokens/<uuid:token_id>/delete")(delete_personal_token)
     app.post("/profile/password")(change_password)
+    app.post("/profile/login-alerts")(update_login_alerts)
     app.post("/profile/sessions/revoke-others")(revoke_other_sessions)
     app.post("/profile/sessions/<uuid:session_id>/revoke")(revoke_session)
     app.get("/profile/2fa")(totp_setup)

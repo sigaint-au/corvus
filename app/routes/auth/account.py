@@ -14,12 +14,46 @@ from flask import (
 )
 
 from auth import authz, passwords, pats, totp_svc, user_sessions
-from core import config, db
+from core import config, db, settings_svc
+from integrations import mailer
 from ui import paging, pins
 
 log = logging.getLogger(__name__)
 
 PROFILE_TABS = ("account", "security", "myaccess", "teams", "projects", "activity")
+
+
+@authz.login_required
+def update_login_alerts():
+    """Save the current user's login-alert email preference.
+
+    Ignored when server settings disable alerts or force them on.
+    """
+    uid = session["user_id"]
+    smtp = mailer.smtp_cfg()
+    if not settings_svc.truthy(smtp.get("smtp_login_alerts")):
+        flash("Login alerts are disabled by an administrator", "error")
+        return redirect(url_for("profile", tab="account"))
+    if mailer.login_alerts_forced(smtp):
+        flash("Login alerts are required by server settings", "error")
+        return redirect(url_for("profile", tab="account"))
+    enabled = bool(request.form.get("login_alerts"))
+    try:
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE private.users SET login_alerts = %s WHERE id = %s::uuid",
+                (enabled, uid),
+            )
+            conn.commit()
+    except Exception:
+        log.exception("profile: save login alerts failed")
+        flash("Could not save login alert preference", "error")
+        return redirect(url_for("profile", tab="account"))
+    flash(
+        "Login alert emails enabled" if enabled else "Login alert emails disabled",
+        "ok",
+    )
+    return redirect(url_for("profile", tab="account"))
 
 
 @authz.login_required
@@ -129,18 +163,34 @@ def profile():
 
     uid = session["user_id"]
     user = None
+    groups = []
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT id, email, name, is_global_admin, auth_source, created_at,
-                       totp_enabled_at
+                       totp_enabled_at, login_alerts
                 FROM private.users
                 WHERE id = %s::uuid
                 """,
                 (uid,),
             )
             user = cur.fetchone()
+            if tab == "account":
+                cur.execute(
+                    """
+                    SELECT g.id, g.name, g.source, g.external_key,
+                           gm.source AS member_source,
+                           t.id AS team_id, t.name AS team_name
+                    FROM api.group_members gm
+                    JOIN api.groups g ON g.id = gm.group_id
+                    JOIN api.teams t ON t.id = g.team_id
+                    WHERE gm.user_id = %s::uuid
+                    ORDER BY t.name, g.name
+                    """,
+                    (uid,),
+                )
+                groups = cur.fetchall() or []
     except Exception:
         log.exception("profile: load user failed")
     if not user:
@@ -288,9 +338,22 @@ def profile():
         if rows:
             my_access_groups.append((_scope_labels[kind], rows))
 
+    smtp = mailer.smtp_cfg()
+    alerts_allowed = settings_svc.truthy(smtp.get("smtp_login_alerts"))
+    alerts_forced = mailer.login_alerts_forced(smtp)
+    user_alerts = True if user.get("login_alerts") is None else bool(user.get("login_alerts"))
+
     return render_template(
         "profile.html",
         user=user,
+        groups=groups,
+        login_alerts={
+            "allowed": alerts_allowed,
+            "forced": alerts_forced,
+            "smtp_ok": mailer.smtp_configured(smtp),
+            "user": user_alerts,
+            "can_edit": alerts_allowed and not alerts_forced,
+        },
         teams=teams if tab == "teams" else [],
         projects=projects if tab == "projects" else [],
         pending_joins=pending if tab == "teams" else [],

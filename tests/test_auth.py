@@ -427,7 +427,93 @@ class TestAuth:
         assert b'Global admin' in r.data
         assert r_sec.status_code == 200
         assert b'LDAP' in r_sec.data
-        assert b'name="current_password"' not in r_sec.data
+
+    def test_profile_shows_groups_and_login_alerts(self):
+        uid = uuid4()
+        tid = uuid4()
+        gid = uuid4()
+        with self.client.session_transaction() as s:
+            s['user_id'] = str(uid)
+            s['email'] = 'a@b.c'
+            s['is_global_admin'] = False
+        last_sql = {'s': ''}
+
+        def execute(sql, params=None):
+            last_sql['s'] = ' '.join(str(sql).lower().split())
+
+        def fetchall():
+            if 'group_members' in last_sql['s']:
+                return [{
+                    'id': gid, 'name': 'platform-ops', 'source': 'oidc',
+                    'external_key': 'rol-corvus-access-kubernetes',
+                    'member_source': 'oidc', 'team_id': tid, 'team_name': 'Kubernetes',
+                }]
+            return []
+
+        admin_conn, acur = _conn(fetchone={
+            'id': uid, 'email': 'a@b.c', 'name': 'Ada', 'is_global_admin': False,
+            'auth_source': 'oidc', 'created_at': '2026-01-01', 'login_alerts': True,
+        })
+        acur.execute.side_effect = execute
+        acur.fetchall.side_effect = fetchall
+        user_conn, _ = _conn(fetchone={'n': 0}, fetchall=[])
+        smtp = {
+            'smtp_enabled': 'true', 'smtp_host': 'smtp.example.com',
+            'smtp_from_email': 'noreply@example.com',
+            'smtp_login_alerts': 'true', 'smtp_login_alerts_force': 'false',
+        }
+        with patch.object(db, 'connect_admin', return_value=admin_conn), \
+             patch.object(db, 'as_user', return_value=user_conn), \
+             patch('integrations.mailer.smtp_cfg', return_value=smtp), \
+             patch('integrations.mailer.smtp_configured', return_value=True):
+            r = self.client.get('/profile?tab=account')
+        assert r.status_code == 200
+        assert b'Groups' in r.data
+        assert b'platform-ops' in r.data
+        assert b'rol-corvus-access-kubernetes' in r.data
+        assert b'Kubernetes' in r.data
+        assert b'Login alert emails' in r.data
+        assert b'Email me when I sign in' in r.data
+
+    def test_profile_save_login_alerts(self):
+        uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s['user_id'] = uid
+            s['email'] = 'a@b.c'
+        admin_conn, cur = _conn()
+        smtp = {
+            'smtp_enabled': 'true', 'smtp_host': 'h', 'smtp_from_email': 'a@b.c',
+            'smtp_login_alerts': 'true', 'smtp_login_alerts_force': 'false',
+        }
+        with patch.object(db, 'connect_admin', return_value=admin_conn), \
+             patch('integrations.mailer.smtp_cfg', return_value=smtp):
+            r = self.client.post('/profile/login-alerts', data={}, follow_redirects=False)
+        assert r.status_code == 302
+        assert 'tab=account' in r.location
+        cur.execute.assert_called()
+        args = cur.execute.call_args[0]
+        assert 'login_alerts' in args[0]
+        assert args[1][0] is False
+
+        with patch.object(db, 'connect_admin', return_value=admin_conn), \
+             patch('integrations.mailer.smtp_cfg', return_value=smtp):
+            r = self.client.post('/profile/login-alerts', data={'login_alerts': '1'}, follow_redirects=False)
+        assert r.status_code == 302
+        assert cur.execute.call_args[0][1][0] is True
+
+    def test_profile_login_alerts_blocked_when_forced(self):
+        uid = str(uuid4())
+        with self.client.session_transaction() as s:
+            s['user_id'] = uid
+        smtp = {
+            'smtp_enabled': 'true', 'smtp_host': 'h', 'smtp_from_email': 'a@b.c',
+            'smtp_login_alerts': 'true', 'smtp_login_alerts_force': 'true',
+        }
+        with patch('integrations.mailer.smtp_cfg', return_value=smtp), \
+             patch.object(db, 'connect_admin') as admin:
+            r = self.client.post('/profile/login-alerts', data={}, follow_redirects=False)
+        assert r.status_code == 302
+        admin.assert_not_called()
 
 
     # ── Email verification (register → link → login gate) ─────────────

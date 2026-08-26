@@ -100,6 +100,77 @@ def login_alerts_enabled(cfg: dict | None = None) -> bool:
     return smtp_configured(c) and truthy(c.get("smtp_login_alerts"))
 
 
+def login_alerts_forced(cfg: dict | None = None) -> bool:
+    """Return whether login alerts are required for every user.
+
+    Args:
+        cfg: Optional SMTP settings dict; when None, loads via ``smtp_cfg()``.
+
+    Returns:
+        True when the server override is on.
+
+    Example:
+        >>> login_alerts_forced({"smtp_login_alerts_force": "true"})
+        True
+    """
+    c = cfg if cfg is not None else smtp_cfg()
+    return truthy(c.get("smtp_login_alerts_force"))
+
+
+def _user_login_alerts_pref(user: dict | None = None, user_id=None) -> bool:
+    """Return the user's login-alert preference, defaulting to True."""
+    if user is not None and "login_alerts" in user and user.get("login_alerts") is not None:
+        return bool(user["login_alerts"])
+    uid = user_id or ((user or {}).get("id") if user is not None else None)
+    if not uid:
+        return True
+    try:
+        from core import db
+
+        with db.connect_admin() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT login_alerts FROM private.users WHERE id = %s::uuid",
+                (str(uid),),
+            )
+            row = cur.fetchone() or {}
+        if "login_alerts" not in row or row.get("login_alerts") is None:
+            return True
+        return bool(row["login_alerts"])
+    except Exception:
+        log.exception("login-alert preference lookup failed")
+        return True
+
+
+def should_send_login_alert(user: dict | None = None, *, user_id=None, cfg: dict | None = None) -> bool:
+    """Return whether a login-alert email should be sent for this user.
+
+    Global ``smtp_login_alerts`` (and working SMTP) must be on. When
+    ``smtp_login_alerts_force`` is on, the user preference is ignored.
+
+    Args:
+        user: Optional user mapping that may include ``login_alerts``.
+        user_id: User UUID used when ``user`` has no preference field.
+        cfg: Optional SMTP settings dict.
+
+    Returns:
+        True when an alert should be sent.
+
+    Example:
+        >>> should_send_login_alert(
+        ...     {"login_alerts": False},
+        ...     cfg={"smtp_enabled": "true", "smtp_host": "h",
+        ...          "smtp_from_email": "a@b.c", "smtp_login_alerts": "true"},
+        ... )
+        False
+    """
+    c = cfg if cfg is not None else smtp_cfg()
+    if not login_alerts_enabled(c):
+        return False
+    if login_alerts_forced(c):
+        return True
+    return _user_login_alerts_pref(user, user_id)
+
+
 def _port(cfg: dict) -> int:
     """Parse and validate the SMTP port from settings.
 

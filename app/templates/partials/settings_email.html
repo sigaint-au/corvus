@@ -56,8 +56,14 @@
              {% if settings.smtp_login_alerts in ('true', '1', 'yes', 'on') %}checked{% endif %}>
       Send login alert emails on successful sign-in
     </label>
+    <label class="check-row">
+      <input type="checkbox" name="smtp_login_alerts_force" value="1"
+             {% if settings.smtp_login_alerts_force in ('true', '1', 'yes', 'on') %}checked{% endif %}>
+      Require login alerts for every user (override profile preference)
+    </label>
     <p class="muted field-spacer">
       Password reset emails are sent when SMTP is enabled; login alerts require the checkbox above.
+      Users can turn alerts off on their profile unless the override is on.
     </p>
     <p class="form-actions"><button type="submit">Save email settings</button></p>
   </form>

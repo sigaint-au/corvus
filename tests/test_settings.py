@@ -181,6 +181,7 @@ class TestSettings:
         assert d['smtp_encryption'] == 'ssl'
         assert d['smtp_password'] == 'encrypted-pw'
         assert d['smtp_login_alerts'] == 'true'
+        assert d['smtp_login_alerts_force'] == 'false'
 
     def test_smtp_test_action(self):
         with self.client.session_transaction() as s:

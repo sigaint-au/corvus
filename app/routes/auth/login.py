@@ -215,7 +215,7 @@ def login_2fa():
                 f"Signed in with a recovery code. {left} remaining. Regenerate codes from your profile.",
                 "ok",
             )
-        if mailer.login_alerts_enabled():
+        if mailer.should_send_login_alert(user_id=uid):
             try:
                 ua, ip = user_sessions.client_meta()
                 when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")

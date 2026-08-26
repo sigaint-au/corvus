@@ -44,6 +44,7 @@ def test_migrations_ship_in_order():
         "0004_email_verify_backfill.sql",
         "0005_sql_password_crypt.sql",
         "0006_smtp_from_name_corvus.sql",
+        "0007_login_alerts_pref.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -61,6 +62,13 @@ def test_smtp_from_name_rebrand_migration():
     assert "Keep your secrets." in sql
     assert "Corvus" in sql
     assert "UPDATE" in sql.upper()
+
+
+def test_login_alerts_pref_migration():
+    sql = (migrations.MIGRATIONS_DIR / "0007_login_alerts_pref.sql").read_text()
+    assert "login_alerts" in sql
+    assert "smtp_login_alerts_force" in sql
+    assert "private.users" in sql
 
 
 def test_squashed_baseline_contains_all_schema_layers():

@@ -25,6 +25,19 @@ class TestMailer:
         assert not mailer.login_alerts_enabled({'smtp_enabled': 'true', 'smtp_host': 'h', 'smtp_from_email': 'a@b.c', 'smtp_login_alerts': 'false'})
         assert mailer.login_alerts_enabled({'smtp_enabled': 'true', 'smtp_host': 'h', 'smtp_from_email': 'a@b.c', 'smtp_login_alerts': 'true'})
 
+    def test_should_send_login_alert_honors_user_and_force(self):
+        from integrations import mailer
+        on = {
+            'smtp_enabled': 'true', 'smtp_host': 'h', 'smtp_from_email': 'a@b.c',
+            'smtp_login_alerts': 'true', 'smtp_login_alerts_force': 'false',
+        }
+        assert mailer.should_send_login_alert({'login_alerts': True}, cfg=on)
+        assert not mailer.should_send_login_alert({'login_alerts': False}, cfg=on)
+        forced = dict(on, smtp_login_alerts_force='true')
+        assert mailer.should_send_login_alert({'login_alerts': False}, cfg=forced)
+        off = dict(on, smtp_login_alerts='false')
+        assert not mailer.should_send_login_alert({'login_alerts': True}, cfg=off)
+
     def test_send_email_not_configured(self):
         from integrations import mailer
         ok, err = mailer.send_email('a@b.c', 'subj', 'body', cfg={'smtp_enabled': 'false', 'smtp_host': '', 'smtp_from_email': ''})
