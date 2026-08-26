@@ -460,6 +460,16 @@
       background: var(--card);
       box-sizing: border-box;
     }
+    /* Secret view page: the reveal-wrap is the main value surface, not a
+       toast/list cell — span the panel and let readouts carry their own chrome */
+    .secret-view-panel .reveal-wrap {
+      width: 100%;
+      max-width: none;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      gap: 0;
+    }
     .reveal-wrap .input-with-btn { flex: 1; min-width: 0; }
     .reveal-actions {
       flex: 0 0 auto;
@@ -1993,7 +2003,7 @@
     .secret-summary-card {
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      background: var(--background);
+      background: var(--card);
       padding: .85rem 1rem;
       margin: 0 0 1.25rem;
     }
@@ -2090,13 +2100,22 @@
       box-sizing: border-box;
     }
     /* Plain / full-width value fields on secret page: full width, no muted fill */
-    .secret-view-form .value-field > input.secret-value,
-    .secret-view .value-field > input.secret-value {
+    .secret-view-form .value-field > input.secret-value {
       width: 100%;
       max-width: none;
       background: var(--background);
       overflow: visible;
       text-overflow: clip;
+    }
+    /* View-mode readouts (secret detail page): full width, scroll not truncate.
+       Wraps in .secret-view-panel on the detail page; the old `.secret-view`
+       selector matched nothing and values fell back to 16rem list-cell caps. */
+    .secret-view-panel .value-field > input.secret-value {
+      width: 100%;
+      max-width: none;
+      background: var(--muted);
+      white-space: nowrap;
+      overflow-x: auto;
     }
     .kv-row .kv-val.value-field {
       flex: 1 1 14rem;
@@ -2189,7 +2208,7 @@
       box-sizing: border-box;
       border: 1px solid var(--border);
       border-radius: 4px;
-      background: var(--background);
+      background: var(--muted);
       word-break: break-all;
     }
     @media (max-width: 640px) {
