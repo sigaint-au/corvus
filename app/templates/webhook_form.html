@@ -57,11 +57,15 @@
           <input name="url" type="url" required
                  value="{{ webhook.url if webhook else '' }}"
                  placeholder="https://example.internal/hooks/corvus">
+          {% if mode == 'create' %}
+          <span class="field-hint">Payloads are signed with HMAC-SHA256 in the <code>X-Corvus-Signature</code> header.</span>
+          {% endif %}
         </label>
         {% if mode == 'create' %}
         <label class="span-2">Signing secret
           <input name="secret_token" autocomplete="off"
                  placeholder="Leave blank to generate">
+          <span class="field-hint">Shown once after you add the webhook.</span>
         </label>
         {% endif %}
       </div>
@@ -124,11 +128,6 @@
       });
     })();
   </script>
-
-  {% if mode == 'create' %}
-  <p class="muted">Payloads are signed with HMAC-SHA256 in the <code>X-Corvus-Signature</code> header.
-  The signing secret is shown once after you add the webhook.</p>
-  {% endif %}
 
   {% if mode == 'edit' %}
   <details class="card danger-zone">
