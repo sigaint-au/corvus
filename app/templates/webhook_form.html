@@ -11,60 +11,16 @@
   {% if scope == 'project' %}(project){% elif scope == 'team' %}(team){% else %}(cluster){% endif %}
 </p>
 
+<style>
+  .wh-events { border: 1px solid var(--border, #d8dde3); border-radius: .5rem; padding: .75rem 1rem; margin: .5rem 0 1rem; }
+  .wh-events legend { font-weight: 600; padding: 0 .35rem; }
+  .wh-group { margin-bottom: .75rem; }
+  .wh-group h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #677381); margin: 0 0 .35rem; }
+  .wh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .25rem 1rem; }
+  .wh-grid label { display: flex; align-items: center; gap: .45rem; font-size: .9rem; }
+</style>
+
 <div class="page-panel">
-  <form method="post"
-        action="{{ url_for('webhook_create') if mode == 'create' else url_for('webhook_update', webhook_id=webhook.id) }}">
-    <input type="hidden" name="back" value="{{ back }}">
-    {% if mode == 'create' %}
-    <input type="hidden" name="scope" value="{{ scope }}">
-    <input type="hidden" name="scope_id" value="{{ scope_id or '' }}">
-    {% endif %}
-
-    <label for="wh-name">Name</label>
-    <input id="wh-name" name="name" maxlength="80" required
-           value="{{ webhook.name if webhook else '' }}" placeholder="deploy-hook">
-
-    <label for="wh-url">Payload URL</label>
-    <input id="wh-url" name="url" type="url" required
-           value="{{ webhook.url if webhook else '' }}"
-           placeholder="https://example.internal/hooks/corvus">
-
-    {% if mode == 'create' %}
-    <label for="wh-secret">Signing secret</label>
-    <input id="wh-secret" name="secret_token" autocomplete="off"
-           placeholder="Leave blank to generate">
-    <p class="muted">Payloads are signed with HMAC-SHA256 in the <code>X-Corvus-Signature</code> header.</p>
-    {% endif %}
-
-    <fieldset>
-      <legend>Events</legend>
-      {% set selected = webhook.events if webhook else [] %}
-      {% for group, events in WEBHOOK_EVENTS.items() %}
-      <p class="muted">{{ group }}</p>
-      {% for ev in events %}
-      <label class="check">
-        <input type="checkbox" name="events" value="{{ ev }}"
-               {% if ev in selected %}checked{% endif %}> <code>{{ ev }}</code>
-      </label>
-      {% endfor %}
-      {% endfor %}
-    </fieldset>
-
-    <label class="check">
-      <input type="checkbox" name="ssl_verify"
-             {% if mode == 'edit' %}{% if webhook.ssl_verify %}checked{% endif %}{% else %}checked{% endif %}>
-      Verify SSL certificate
-    </label>
-
-    {% if mode == 'edit' %}
-    <label class="check">
-      <input type="checkbox" name="active" {% if webhook.active %}checked{% endif %}> Active
-    </label>
-    {% endif %}
-
-    <button type="submit" class="button">{{ 'Save changes' if mode == 'edit' else 'Add webhook' }}</button>
-  </form>
-
   {% if mode == 'edit' and deliveries is defined %}
   <h2>Recent deliveries</h2>
   {% if deliveries %}
@@ -90,11 +46,76 @@
   {% endif %}
   {% endif %}
 
+  <h2>{{ 'Settings' if mode == 'edit' else 'New webhook' }}</h2>
+  <form method="post"
+        action="{{ url_for('webhook_create') if mode == 'create' else url_for('webhook_update', webhook_id=webhook.id) }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="back" value="{{ back }}">
+    {% if mode == 'create' %}
+    <input type="hidden" name="scope" value="{{ scope }}">
+    <input type="hidden" name="scope_id" value="{{ scope_id or '' }}">
+    {% endif %}
+
+    <fieldset class="wh-events">
+      <legend>Endpoint</legend>
+      <label for="wh-name">Name</label>
+      <input id="wh-name" name="name" maxlength="80" required
+             value="{{ webhook.name if webhook else '' }}" placeholder="deploy-hook">
+
+      <label for="wh-url">Payload URL</label>
+      <input id="wh-url" name="url" type="url" required
+             value="{{ webhook.url if webhook else '' }}"
+             placeholder="https://example.internal/hooks/corvus">
+
+      {% if mode == 'create' %}
+      <label for="wh-secret">Signing secret</label>
+      <input id="wh-secret" name="secret_token" autocomplete="off"
+             placeholder="Leave blank to generate">
+      {% endif %}
+    </fieldset>
+
+    <fieldset class="wh-events">
+      <legend>Events</legend>
+      {% set selected = webhook.events if webhook else [] %}
+      <div class="wh-group">
+        {% for group, events in WEBHOOK_EVENTS.items() %}
+        <h3>{{ group }}</h3>
+        <div class="wh-grid">
+          {% for ev in events %}
+          <label><input type="checkbox" name="events" value="{{ ev }}"
+                 {% if ev in selected %}checked{% endif %}> <code>{{ ev }}</code></label>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <fieldset class="wh-events">
+      <legend>Options</legend>
+      <div class="wh-grid">
+        <label><input type="checkbox" name="ssl_verify"
+               {% if mode == 'create' or webhook.ssl_verify %}checked{% endif %}>
+          Verify SSL certificate</label>
+        {% if mode == 'edit' %}
+        <label><input type="checkbox" name="active" {% if webhook.active %}checked{% endif %}> Active</label>
+        {% endif %}
+      </div>
+    </fieldset>
+
+    <button type="submit" class="button">{{ 'Save changes' if mode == 'edit' else 'Add webhook' }}</button>
+  </form>
+
+  {% if mode == 'create' %}
+  <p class="muted">Payloads are signed with HMAC-SHA256 in the <code>X-Corvus-Signature</code> header.
+  The signing secret is shown once after you add the webhook.</p>
+  {% endif %}
+
   {% if mode == 'edit' %}
   <details class="card danger-zone">
     <summary>Danger zone</summary>
     <div class="card-body">
       <form method="post" action="{{ url_for('webhook_delete', webhook_id=webhook.id) }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <input type="hidden" name="back" value="{{ back }}">
         <button type="submit" class="button danger">Delete webhook</button>
       </form>
