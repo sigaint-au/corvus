@@ -1101,6 +1101,7 @@ def server_settings():
         health_probe=health_probe,
         webhooks=cluster_webhooks,
         webhook_filter=webhook_filter,
+        scope_kind="cluster",
         search_q=(request.args.get("q") or "").strip(),
         ldap_test=ldap_test,
         oidc_test=oidc_test,

@@ -4,15 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ code }} · {{ app_name }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/oat.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body class="err-page">
+  {% set home = url_for('projects_list') if session.get('user_id') else url_for('login') %}
   <main class="error-standalone">
-    <p class="error-brand">{{ brand_name or 'Corvus' }}</p>
+    <a class="auth-brand" href="{{ home }}">
+      {% include "partials/brand_logo.html" %}
+      <span class="brand-text">{{ brand_name or 'Corvus' }}</span>
+    </a>
     <p class="error-code" role="status">{{ code }}</p>
-    <p class="error-title">{{ title }}</p>
-    <p><a href="{{ url_for('login') }}">Back to sign in</a></p>
+    <h1 class="error-title">{{ title }}</h1>
+    {% if message %}<p class="error-text">{{ message }}</p>{% endif %}
+    <p class="error-action">
+      <a class="button" href="{{ home }}">
+        {% if session.get('user_id') %}Back to projects{% else %}Back to sign in{% endif %}
+      </a>
+    </p>
   </main>
 </body>
 </html>

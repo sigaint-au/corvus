@@ -1426,27 +1426,42 @@
       min-height: 100vh;
       display: grid;
       place-items: center;
+      padding: 1.5rem;
+      background-image: radial-gradient(circle at 1px 1px, rgba(0, 0, 0, .08) 1px, transparent 0);
+      background-size: 22px 22px;
     }
     .error-standalone {
+      width: 100%;
+      max-width: 24rem;
       text-align: center;
-      padding: 2rem;
-    }
-    .error-brand {
-      margin: 0 0 1rem;
-      font-weight: 600;
-      color: var(--muted-foreground);
+      padding: 2.5rem 2rem 2.25rem;
+      background: var(--card);
+      color: var(--card-foreground);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
     }
     .error-code {
-      font-size: 5rem;
+      margin: .5rem 0 .35rem;
+      font-size: 3.5rem;
       font-weight: 700;
       line-height: 1;
-      color: var(--muted-foreground);
-      margin: 0 0 .5rem;
-    }
-    .error-title {
-      margin: 0;
       color: var(--foreground);
     }
+    .error-title {
+      margin: 0 0 .45rem;
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+    .error-text {
+      margin: 0 0 1.5rem;
+      font-size: .9rem;
+      line-height: 1.5;
+      color: var(--muted-foreground);
+    }
+    .error-action { margin: 0; }
+    .error-action .button { width: 100%; }
     .list-panel,
     .crypto-panel {
       background: var(--card);
@@ -2442,7 +2457,8 @@
       padding: 1.1rem 1.15rem;
       margin: 1rem 0 1.25rem;
     }
-    .tabs + section {
+    .tabs + section,
+    .tabs + .section-tools {
       margin-top: .85rem;
     }
     .muted { color: var(--muted-foreground); font-size: .9em; }

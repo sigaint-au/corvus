@@ -26,13 +26,23 @@ class TestErrorPages:
         assert r.status_code == 404
         assert b"sidebar" not in r.data
 
-    def test_404_has_no_action_buttons(self):
+    def test_404_signed_in_has_one_recovery_link(self):
         c = store.app.test_client()
         with c.session_transaction() as s:
             s["user_id"] = str(uuid4())
         r = c.get("/definitely/not/a/route")
-        assert b"Back to Projects" not in r.data
-        assert b"Sign in" not in r.data
+        assert r.status_code == 404
+        assert b"sidebar" not in r.data
+        assert b'class="error-action"' in r.data
+        assert b"Back to projects" in r.data
+        assert b'href="/projects"' in r.data
+
+    def test_404_guest_links_to_sign_in(self):
+        c = store.app.test_client()
+        r = c.get("/definitely/not/a/route")
+        assert r.status_code == 404
+        assert b"Back to sign in" in r.data
+        assert b'href="/login"' in r.data
 
     def test_404_api_returns_json(self):
         c = store.app.test_client()
