@@ -530,7 +530,8 @@ document.addEventListener('htmx:configRequest', function (e) {
        flight so a double-click cannot submit twice. Dialog and HTMX forms
        manage their own request state. Runs in the bubble phase (after inline
        onsubmit) so a canceled confirm (defaultPrevented) leaves the form
-       untouched. */
+       untouched. Disabled controls are omitted from the POST, so copy the
+       clicked submitter into a hidden field first (OIDC/LDAP/HSM test vs save). */
     document.addEventListener('submit', function (e) {
       var form = e.target;
       if (e.defaultPrevented || !form || form.tagName !== 'FORM') return;
@@ -542,6 +543,14 @@ document.addEventListener('htmx:configRequest', function (e) {
         if (String(attrs[i].name).indexOf('hx-') === 0) return;
       }
       form.classList.add('submitting');
+      var submitter = e.submitter;
+      if (submitter && submitter.name) {
+        var stamped = document.createElement('input');
+        stamped.type = 'hidden';
+        stamped.name = submitter.name;
+        stamped.value = submitter.value;
+        form.appendChild(stamped);
+      }
       var sub = form.querySelectorAll('button[type="submit"]');
       for (i = 0; i < sub.length; i += 1) {
         if (!sub[i].disabled) {

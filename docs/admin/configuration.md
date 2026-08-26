@@ -67,7 +67,8 @@ Configured under **Administration → Server settings**. Stored in
 | Encryption | `starttls` | `none` \| `starttls` \| `ssl` |
 | Username / Password | — | SMTP auth |
 | From email / name | `""` / `Corvus` | Sender |
-| Login alerts | `false` | Email on new login |
+| Login alerts | `false` | Email on new login (users can opt out on their profile) |
+| Force login alerts | `false` | Ignore the profile preference and always send |
 
 ### LDAP
 

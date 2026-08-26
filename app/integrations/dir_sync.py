@@ -229,7 +229,7 @@ def fetch_user_row(cur, uid) -> dict:
         >>> session["email"] = row["email"]
     """
     cur.execute(
-        "SELECT id, email, name, is_global_admin FROM private.users WHERE id = %s",
+        "SELECT id, email, name, is_global_admin, login_alerts FROM private.users WHERE id = %s",
         (str(uid),),
     )
     return cur.fetchone()

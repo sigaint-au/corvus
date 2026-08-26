@@ -150,6 +150,8 @@ DEFAULT_SETTINGS = {
     "smtp_from_email": "",
     "smtp_from_name": APP_NAME,
     "smtp_login_alerts": "false",
+    # When true (and smtp_login_alerts is on), users cannot opt out of login emails
+    "smtp_login_alerts_force": "false",
     "totp_enforce_global_admins": "false",
     "require_pat_expiry": "false",
     "max_pat_lifetime_days": "3650",
@@ -295,5 +297,6 @@ SMTP_SETTING_KEYS = (
     "smtp_from_email",
     "smtp_from_name",
     "smtp_login_alerts",
+    "smtp_login_alerts_force",
 )
 SMTP_ENCRYPTION_MODES = ("none", "starttls", "ssl")

@@ -364,7 +364,7 @@ def server_settings():
     ldap_test = None
     oidc_test = None
     if request.method == "POST":
-        action = request.form.get("action") or "classification"
+        action = (request.form.get("action") or "").strip()
         if action == "ldap_test":
             ldap_test = _ldap_test_probe(request.form)
         elif action == "oidc_test":
@@ -619,6 +619,9 @@ def server_settings():
             from_email = (request.form.get("smtp_from_email") or "").strip()
             from_name = (request.form.get("smtp_from_name") or "").strip() or config.APP_NAME
             login_alerts = "true" if request.form.get("smtp_login_alerts") else "false"
+            login_alerts_force = (
+                "true" if request.form.get("smtp_login_alerts_force") else "false"
+            )
             try:
                 port = int(port_raw)
                 if port < 1 or port > 65535:
@@ -637,6 +640,7 @@ def server_settings():
                 settings_svc.set_setting("smtp_from_email", from_email)
                 settings_svc.set_setting("smtp_from_name", from_name)
                 settings_svc.set_setting("smtp_login_alerts", login_alerts)
+                settings_svc.set_setting("smtp_login_alerts_force", login_alerts_force)
                 flash("Email (SMTP) settings saved", "ok")
         elif action == "smtp_test":
             to_email = (request.form.get("test_email") or "").strip() or (
@@ -917,7 +921,11 @@ def server_settings():
             "token_policy": "general",
         }
         if ldap_test is None and oidc_test is None:
-            tab = tab_for.get(action, "general")
+            tab = tab_for.get(action)
+            if not tab:
+                tab = (request.args.get("tab") or "general").strip().lower()
+                if tab not in ALL_TABS:
+                    tab = "general"
             return redirect(url_for("server_settings", tab=tab))
 
     tab = (request.args.get("tab") or "general").strip().lower()

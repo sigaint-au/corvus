@@ -234,7 +234,7 @@ def _post_password_login(user):
         flash("Global admins must enable two-factor authentication.", "error")
         return redirect(url_for("totp_setup"))
     _establish_session(user["id"], user["email"], user.get("name") or "", is_admin)
-    if mailer.login_alerts_enabled():
+    if mailer.should_send_login_alert(user, user_id=user.get("id")):
         try:
             ua, ip = user_sessions.client_meta()
             when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")

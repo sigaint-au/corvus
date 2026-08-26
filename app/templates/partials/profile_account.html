@@ -41,6 +41,76 @@
 </section>
 
 <section>
+  <h2>Login alert emails</h2>
+  <p class="muted">Email you when this account signs in successfully.</p>
+  {% if not login_alerts.allowed %}
+  <p class="empty">Login alerts are turned off by an administrator.</p>
+  {% elif login_alerts.forced %}
+  <p>
+    <span class="badge" data-variant="secondary">Required</span>
+    Server settings require a login alert email for every sign-in.
+    {% if not login_alerts.smtp_ok %}
+    SMTP is not fully configured, so messages may not send until email is set up.
+    {% endif %}
+  </p>
+  {% else %}
+  <form method="post" action="{{ url_for('update_login_alerts') }}" class="settings-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label class="check-row">
+      <input type="checkbox" name="login_alerts" value="1"
+             {% if login_alerts.user %}checked{% endif %}>
+      Email me when I sign in
+    </label>
+    {% if not login_alerts.smtp_ok %}
+    <p class="muted field-hint">SMTP is not fully configured, so messages may not send until email is set up.</p>
+    {% endif %}
+    <p class="form-actions"><button type="submit">Save</button></p>
+  </form>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Groups</h2>
+  <p class="muted">
+    Team groups you belong to (manual, LDAP, or OIDC). Useful when debugging access.
+  </p>
+  {% if groups %}
+  <div class="table"><table>
+    <thead>
+      <tr>
+        <th>Team</th>
+        <th>Group</th>
+        <th>Source</th>
+        <th>Member via</th>
+        <th>Directory key</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for g in groups %}
+      <tr>
+        <td>
+          {% if g.team_id %}
+          <a href="{{ url_for('team_detail', team_id=g.team_id) }}">{{ g.team_name }}</a>
+          {% else %}{{ g.team_name or '-' }}{% endif %}
+        </td>
+        <td>
+          {% if g.team_id and g.id %}
+          <a href="{{ url_for('team_group_detail', team_id=g.team_id, group_id=g.id) }}">{{ g.name }}</a>
+          {% else %}{{ g.name }}{% endif %}
+        </td>
+        <td><span class="badge" data-variant="secondary">{{ g.source }}</span></td>
+        <td class="muted">{{ g.member_source }}</td>
+        <td class="muted"><code class="k">{{ g.external_key or '-' }}</code></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">You are not a member of any groups.</p>
+  {% endif %}
+</section>
+
+<section>
   <h2>At a glance</h2>
   <div class="profile-stats">
     <div class="profile-stat">
