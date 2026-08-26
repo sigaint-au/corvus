@@ -53,6 +53,7 @@ def test_migrations_ship_in_order():
         "0013_webhooks.sql",
         "0014_webhook_deliveries.sql",
         "0015_webhook_grants.sql",
+        "0016_brand_name_corvus.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -68,6 +69,15 @@ def test_smtp_from_name_rebrand_migration():
     assert "Sigaint Secret Server" in sql
     assert "Secret Server v0.1.0" in sql
     assert "Keep your secrets." in sql
+    assert "Corvus" in sql
+    assert "UPDATE" in sql.upper()
+
+
+def test_brand_name_secret_server_migration():
+    """0016 rewrites a brand_name that 0006 missed (plain 'Secret Server')."""
+    sql = (migrations.MIGRATIONS_DIR / "0016_brand_name_corvus.sql").read_text()
+    assert "brand_name" in sql
+    assert "Secret Server" in sql
     assert "Corvus" in sql
     assert "UPDATE" in sql.upper()
 

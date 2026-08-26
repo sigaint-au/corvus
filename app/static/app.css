@@ -659,6 +659,7 @@
     .settings-form > .check-row:first-child {
       margin-top: 0;
     }
+    .settings-form > .form-actions { margin-top: 0; }
     .field-group {
       margin: 0;
       padding: .85rem 1rem 1rem;
@@ -705,6 +706,24 @@
     .field-group .check-row:first-of-type {
       margin-top: .15rem;
     }
+    /* Webhook form: event picker grid with group labels */
+    .event-groups h3 {
+      margin: 1.1rem 0 .4rem;
+      font-size: .72rem;
+      font-weight: 650;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+    }
+    .event-groups h3:first-child { margin-top: .15rem; }
+    .event-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+      gap: .1rem 1.25rem;
+      align-items: start;
+    }
+    .event-grid .check-row { margin: .35rem 0; }
+    .form-error { margin: 0; }
     /* Project encryption (settings + new-project wizard) */
     .crypto-panel .section-head { margin-bottom: .85rem; }
     .crypto-overview {
