@@ -134,3 +134,29 @@ Configured under **Administration → Server settings**. Stored in
 - [deploy.md](deploy.md): deployment guide
 - [rbac.md](rbac.md): RBAC access model
 - [authentication.md](authentication.md): auth flows
+
+## Webhooks
+
+Corvus can stream audit events (secret reveal, update, etc.) to external HTTPS endpoints.
+
+### Delivery mechanism
+
+Webhooks are enqueued in the database during the audit transaction and delivered by a background worker. This ensures zero event loss even if the web server or the receiver is down.
+
+Run the background worker as a sidecar process:
+
+```bash
+flask --app app work-webhooks
+```
+
+The worker uses `FOR UPDATE SKIP LOCKED` in Postgres, so multiple replicas can safely poll the same queue for high throughput in Kubernetes.
+
+### Events
+
+Supported event types:
+- `secret.revealed`, `secret.created`, `secret.updated`, `secret.deleted`
+- `org.member_added`, `org.project_created`, `org.settings_updated`
+
+### Security
+
+Payloads include an `X-Corvus-Signature` header containing an HMAC-SHA256 signature of the JSON body, keyed by the webhook's `secret_token`. Always verify this signature on the receiver side.

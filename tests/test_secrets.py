@@ -340,7 +340,7 @@ class TestSecrets:
         sid = uuid4()
         enc = crypto.encrypt('open-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'FEATURE_FLAG', 'expires_at': None}, {'a': False, 'r': True}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': False}]
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'FEATURE_FLAG', 'expires_at': None}, {'a': False, 'r': True}, None, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': False}]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
         assert r.status_code == 200
@@ -350,11 +350,37 @@ class TestSecrets:
         sid = uuid4()
         enc = crypto.encrypt('granted-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'expires_at': None}, {'a': False, 'r': True}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': False}]
+        cur.fetchone.side_effect = [
+            {'id': sid, 'key': 'API_KEY', 'expires_at': None},
+            {'a': False, 'r': True},
+            {'status': 'approved', 'approved_until': '2026-09-01T00:00:00Z', 'id': uuid4()},
+            {'value_enc': enc, 'crypto_provider': 'master'},
+            {'w': False},
+        ]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
         assert r.status_code == 200
         assert b'granted-secret' in r.data
+
+    def test_reveal_access_state_keeps_grant_row_when_allowed(self):
+        """Allowed via can_reveal_secret still surfaces an approved grant's expiry."""
+        from routes.secrets.helpers import _reveal_access_state
+        cur = MagicMock()
+        cur.fetchone.side_effect = [
+            {'r': True, 'a': False},
+            {'status': 'approved', 'approved_until': '2026-09-01T00:00:00Z'},
+        ]
+        state, row = _reveal_access_state(cur, str(uuid4()), str(uuid4()), str(uuid4()))
+        assert state == 'allowed'
+        assert row is not None and row['status'] == 'approved'
+
+    def test_reveal_access_state_admin_skips_grant_lookup(self):
+        cur = MagicMock()
+        cur.fetchone.side_effect = [{'r': False, 'a': True}]
+        from routes.secrets.helpers import _reveal_access_state
+        state, row = _reveal_access_state(cur, str(uuid4()), str(uuid4()), str(uuid4()))
+        assert state == 'allowed'
+        assert row is None
 
     def test_request_secret_access(self):
         sid = uuid4()

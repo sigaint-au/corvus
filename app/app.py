@@ -235,6 +235,26 @@ import click  # noqa: E402
 from core import settings_svc  # noqa: E402
 
 
+@app.cli.command("work-webhooks")
+def work_webhooks_command():
+    """Background worker for delivering webhook events from the DB queue.
+
+    Intended for a sidecar container or background process.
+    """
+    import time
+    from integrations import webhooks
+    click.echo("Webhook worker started. Polling for events...")
+    try:
+        while True:
+            processed = webhooks.process_queue()
+            if processed == 0:
+                time.sleep(5)
+            else:
+                click.echo(f"Delivered {processed} events")
+    except KeyboardInterrupt:
+        click.echo("Worker stopping...")
+
+
 @app.cli.command("purge-audit")
 @click.option(
     "--days",
