@@ -1,9 +1,10 @@
-import hmac
 import hashlib
+import hmac
 import json
 import logging
-import time
-import requests
+import urllib.error
+import urllib.request
+
 from core import db
 
 log = logging.getLogger(__name__)
@@ -16,17 +17,17 @@ def deliver_webhook(webhook_url: str, secret_token: str, payload: dict) -> bool:
         data.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
-    
+
     headers = {
         'Content-Type': 'application/json',
         'X-Corvus-Signature': signature,
         'User-Agent': 'Corvus-Webhooks/1.0'
     }
-    
+
     try:
-        r = requests.post(webhook_url, data=data, headers=headers, timeout=10)
-        r.raise_for_status()
-        return True
+        req = urllib.request.Request(webhook_url, data=data.encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return 200 <= resp.status < 300
     except Exception as e:
         log.warning("webhook delivery failed to %s: %s", webhook_url, e)
         return False
@@ -59,7 +60,7 @@ def process_queue():
             conn.commit()
 
             success = deliver_webhook(row['url'], row['secret_token'], row['payload'])
-            
+
             if success:
                 cur.execute("DELETE FROM private.webhook_delivery_queue WHERE id = %s", (qid,))
             else:
@@ -72,8 +73,8 @@ def process_queue():
                 else:
                     cur.execute(
                         """
-                        UPDATE private.webhook_delivery_queue 
-                        SET attempts = %s, 
+                        UPDATE private.webhook_delivery_queue
+                        SET attempts = %s,
                             next_retry_at = now() + (%s || ' seconds')::interval,
                             locked_until = NULL
                         WHERE id = %s
@@ -81,5 +82,5 @@ def process_queue():
                         (attempts, delay, qid)
                     )
             conn.commit()
-            
+
         return len(rows)
