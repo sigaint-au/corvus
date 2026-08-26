@@ -65,7 +65,7 @@
       <p class="muted">Payloads are signed with HMAC-SHA256 in the <code>X-Corvus-Signature</code> header.</p>
       <fieldset>
         <legend>Events</legend>
-        {% for group, events in config.WEBHOOK_EVENTS.items() %}
+        {% for group, events in WEBHOOK_EVENTS.items() %}
         <p class="muted">{{ group }}</p>
         {% for ev in events %}
         <label class="check"><input type="checkbox" name="events" value="{{ ev }}"> <code>{{ ev }}</code></label>

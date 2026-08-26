@@ -130,6 +130,8 @@ def create_app():
     from crypto import hsm as _hsm  # noqa: E402
 
     app.jinja_env.filters["redact_pin"] = _hsm.redact_pkcs11_url
+    # Template "config" is Flask's app.config; expose core settings constants directly.
+    app.jinja_env.globals["WEBHOOK_EVENTS"] = config.WEBHOOK_EVENTS
 
     # ── Schema bootstrap (runs once per process) ───────────────────────
     _schema_ready = False
