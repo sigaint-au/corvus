@@ -167,6 +167,7 @@ def test_load_team_secrets_page_applies_filters():
                 "project_name": "api",
             }
         ],
+        [],
         [{"id": uuid4(), "name": "api"}],
     ]
     tid = str(uuid4())

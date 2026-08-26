@@ -59,7 +59,10 @@ def _active_reveal_grant(cur, secret_id, user_id):
         """,
         (str(secret_id), str(user_id)),
     )
-    return cur.fetchone()
+    row = cur.fetchone()
+    if not row or row.get("status") not in ("pending", "approved"):
+        return None
+    return row
 
 
 def _reveal_access_state(cur, project_id, secret_id, user_id):

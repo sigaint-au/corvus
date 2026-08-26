@@ -31,7 +31,13 @@ def _load_reveal_grants(cur, ids: list[str]) -> dict:
     if not ids:
         return {}
     cur.execute(_GRANT_SQL, (ids,))
-    return {str(g["secret_id"]): g for g in (cur.fetchall() or [])}
+    out = {}
+    for g in cur.fetchall() or []:
+        sid = g.get("secret_id") if isinstance(g, dict) else None
+        if not sid or g.get("status") not in ("pending", "approved"):
+            continue
+        out[str(sid)] = g
+    return out
 
 
 def _set_row_reveal_access(r, *, is_admin: bool, grant, allow_requests: bool = True) -> None:
@@ -41,10 +47,10 @@ def _set_row_reveal_access(r, *, is_admin: bool, grant, allow_requests: bool = T
     if is_admin or (has_reveal and not needs):
         r["reveal_access"] = "allowed"
         r["approved_until"] = None
-    elif grant and grant["status"] == "approved":
+    elif grant and grant.get("status") == "approved":
         r["reveal_access"] = "granted"
         r["approved_until"] = grant.get("approved_until")
-    elif grant and grant["status"] == "pending":
+    elif grant and grant.get("status") == "pending":
         r["reveal_access"] = "pending"
         r["approved_until"] = None
     elif has_reveal or allow_requests:
