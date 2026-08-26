@@ -15,7 +15,7 @@
   .wh-events { border: 1px solid var(--border, #d8dde3); border-radius: .5rem; padding: .75rem 1rem; margin: .5rem 0 1rem; }
   .wh-events legend { font-weight: 600; padding: 0 .35rem; }
   .wh-group { margin-bottom: .75rem; }
-  .wh-group h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #677381); margin: 0 0 .35rem; }
+  .wh-group h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin: 0 0 .35rem; }
   .wh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .25rem 1rem; }
   .wh-grid label { display: flex; align-items: center; gap: .45rem; font-size: .9rem; }
 </style>
@@ -102,8 +102,25 @@
       </div>
     </fieldset>
 
+    <p id="wh-events-error" hidden class="badge danger" style="margin: .25rem 0;">Select at least one event before saving.</p>
+
     <button type="submit" class="button">{{ 'Save changes' if mode == 'edit' else 'Add webhook' }}</button>
   </form>
+  <script>
+    (function () {
+      var form = document.querySelector('.page-panel form');
+      if (!form) return;
+      form.addEventListener('submit', function (e) {
+        var err = document.getElementById('wh-events-error');
+        if (!form.querySelector('input[name="events"]:checked')) {
+          e.preventDefault();
+          err.hidden = false;
+        } else {
+          err.hidden = true;
+        }
+      });
+    })();
+  </script>
 
   {% if mode == 'create' %}
   <p class="muted">Payloads are signed with HMAC-SHA256 in the <code>X-Corvus-Signature</code> header.

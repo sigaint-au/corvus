@@ -37,7 +37,7 @@ def load_scope_webhooks(cur, scope_kind: str, scope_id) -> list[dict]:
     sql = """
         SELECT id, name, url, events, active, ssl_verify, created_at
         FROM api.webhooks
-        WHERE scope_kind = %s AND scope_id %s::uuid
+        WHERE scope_kind = %s AND scope_id = %s::uuid
     """
     args: list = [scope_kind]
     if scope_id is None:

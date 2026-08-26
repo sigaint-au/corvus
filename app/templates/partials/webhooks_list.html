@@ -1,4 +1,12 @@
 {# Shared webhook list: expects webhooks, add_url, back (path), search action path #}
+{% if webhook_filter is defined %}
+<div class="section-tools" style="margin-bottom: .5rem;">
+  <a class="button small {{ 'outline' if webhook_filter == 'cluster' else 'ghost' }}"
+     href="{{ url_for('server_settings', tab='webhooks', filter='cluster') }}">Cluster wide</a>
+  <a class="button small {{ 'outline' if webhook_filter == 'all' else 'ghost' }}"
+     href="{{ url_for('server_settings', tab='webhooks', filter='all') }}">All webhooks</a>
+</div>
+{% endif %}
 <div class="section-tools">
   <form method="get" class="toolbar" role="search">
     <fieldset class="group search-input">
@@ -8,13 +16,15 @@
     </fieldset>
     {% if search_q %}<a class="button ghost small" href="{{ list_url }}">Clear</a>{% endif %}
   </form>
+  {% if scope_kind %}
   <a class="button outline small" href="{{ url_for('webhook_new', scope=scope_kind, scope_id=scope_ref or '', back=list_url) }}">+ Add webhook</a>
+  {% endif %}
 </div>
 {% if webhooks %}
 <div class="table"><table class="table-spaced">
   <thead>
     <tr>
-      <th>Name</th><th>Endpoint</th><th>Events</th><th>Status</th><th>Last delivery</th>
+      <th>Name</th><th>Endpoint</th><th>Events</th>{% if show_scope %}<th>Scope</th>{% endif %}<th>Status</th><th>Last delivery</th>
     </tr>
   </thead>
   <tbody>
@@ -23,6 +33,7 @@
       <td><a href="{{ url_for('webhook_view', webhook_id=w.id, back=list_url) }}"><strong>{{ w.name }}</strong></a></td>
       <td class="mono muted" style="max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ w.url }}</td>
       <td class="muted">{{ w.events | length }} event{{ 's' if w.events | length != 1 }}</td>
+      {% if show_scope %}<td class="muted">{{ w.scope_label or w.scope_kind }} <span class="badge muted">{{ w.scope_kind }}</span></td>{% endif %}
       <td><span class="badge {% if w.active %}success{% else %}muted{% endif %}">{{ 'Active' if w.active else 'Paused' }}</span></td>
       <td class="muted">
         {% set d = w.deliveries[0] if w.deliveries else None %}

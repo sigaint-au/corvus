@@ -27,7 +27,8 @@
 {% elif active_tab == 'email' %}{% include "partials/settings_email.html" %}
 {% elif active_tab == 'encryption' %}{% include "partials/settings_encryption.html" %}
 {% elif active_tab == 'webhooks' %}
-{% set scope_kind = 'cluster' %}{% set scope_ref = None %}{% set list_url = url_for('server_settings', tab='webhooks') %}
+{% if webhook_filter == 'all' %}{% set show_scope = True %}{% endif %}
+{% set list_url = url_for('server_settings', tab='webhooks', filter=webhook_filter, q=search_q or none) %}
 {% include "partials/webhooks_list.html" %}
 
 {% endif %}

@@ -349,22 +349,29 @@ SETTINGS_CATEGORIES = [
 ALL_TABS = tuple(t for _, _, subs in SETTINGS_CATEGORIES for t, _ in subs)
 
 
-def _cluster_webhooks() -> list[dict]:
-    """Cluster-scope webhooks + recent deliveries for the admin tab."""
+def _admin_webhooks(show_all: bool) -> list[dict]:
+    """Cluster-scope or all webhooks + last delivery, for the admin tab."""
     from integrations import webhooks as wh
 
+    sql = """
+        SELECT w.id, w.name, w.url, w.events, w.active, w.ssl_verify,
+               w.created_at, w.scope_kind,
+               CASE w.scope_kind
+                 WHEN 'project' THEN (SELECT p.name FROM api.projects p WHERE p.id = w.scope_id)
+                 WHEN 'team' THEN (SELECT t.name FROM api.teams t WHERE t.id = w.scope_id)
+                 ELSE 'Corvus'
+               END AS scope_label
+        FROM api.webhooks w
+    """
+    if not show_all:
+        sql += " WHERE w.scope_kind = 'cluster'"
+    sql += " ORDER BY w.created_at DESC"
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, name, url, events, active, ssl_verify, created_at
-                FROM api.webhooks WHERE scope_kind = 'cluster'
-                ORDER BY created_at DESC
-                """
-            )
+            cur.execute(sql)
             rows = list(cur.fetchall() or [])
             for r in rows:
-                r["deliveries"] = wh.recent_deliveries(cur, str(r["id"]))
+                r["deliveries"] = wh.recent_deliveries(cur, str(r["id"]), limit=1)
             return rows
     except Exception:
         logging.getLogger(__name__).exception("webhook listing failed")
@@ -967,7 +974,10 @@ def server_settings():
         # Keep typed-but-unsaved values on screen after a connection test.
         _overlay_probe_form(settings, request.form)
     users, all_users, ldap_role_maps, oidc_role_maps = [], [], [], []
-    cluster_webhooks = _cluster_webhooks() if tab == "webhooks" else []
+    webhook_filter = (request.args.get("filter") or "cluster").strip().lower()
+    if webhook_filter not in ("cluster", "all"):
+        webhook_filter = "cluster"
+    cluster_webhooks = _admin_webhooks(webhook_filter == "all") if tab == "webhooks" else []
     with db.connect_admin() as conn, conn.cursor() as cur:
         if tab == "admins":
             cur.execute(
@@ -1090,6 +1100,7 @@ def server_settings():
         projects_pager=projects_pager,
         health_probe=health_probe,
         webhooks=cluster_webhooks,
+        webhook_filter=webhook_filter,
         search_q=(request.args.get("q") or "").strip(),
         ldap_test=ldap_test,
         oidc_test=oidc_test,
