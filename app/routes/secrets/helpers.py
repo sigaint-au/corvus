@@ -23,23 +23,6 @@ from secret_svc.secret_ops import _load_secrets_page
 from ui import paging
 
 
-def _secret_requires_approval(cur, secret_id) -> bool:
-    """Return whether this secret effectively requires reveal approval.
-
-    Per-secret ``requires_approval`` overrides the project
-    ``require_reveal_approval`` default when not NULL.
-
-    Args:
-        cur: Open DB cursor.
-        secret_id: UUID of the secret.
-
-    Returns:
-        bool: True when non-admins need an approved grant to reveal.
-    """
-    cur.execute("SELECT api.secret_requires_approval(%s) AS r", (str(secret_id),))
-    return bool((cur.fetchone() or {}).get("r"))
-
-
 def _active_reveal_grant(cur, secret_id, user_id):
     """Return the current pending request or unexpired approved grant, if any."""
     cur.execute(
@@ -68,10 +51,10 @@ def _active_reveal_grant(cur, secret_id, user_id):
 def _reveal_access_state(cur, project_id, secret_id, user_id):
     """Return whether the user may reveal a secret without further approval.
 
-    Project admins always reveal. Users with reveal ACL may reveal when the
-    secret does not require extra approval. Everyone else who can see the
-    secret (list/get) may hold an approved grant, a pending request, or
-    need to request access — including team-members who have no reveal verb.
+    ``api.can_reveal_secret`` is the source of truth (same gate as ciphertext
+    fetch). Project admins / team-owners / global admins are also allowed via
+    ``can_admin_project``. Everyone else who can see the secret may hold an
+    approved grant, a pending request, or need to request access.
 
     Args:
         cur: Open DB cursor under the caller's RLS context.
@@ -90,22 +73,26 @@ def _reveal_access_state(cur, project_id, secret_id, user_id):
         >>> state in ("allowed", "pending", "need_request")
         True
     """
-    cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
-    if (cur.fetchone() or {}).get("a"):
-        return "allowed", None
     cur.execute(
-        "SELECT api.can_access_secret(%s, 'reveal') AS r",
-        (str(secret_id),),
+        """
+        SELECT api.can_reveal_secret(%s) AS r,
+               api.can_admin_project(%s) AS a
+        """,
+        (str(secret_id), str(project_id)),
     )
-    has_reveal = bool((cur.fetchone() or {}).get("r"))
-    if has_reveal and not _secret_requires_approval(cur, secret_id):
+    flags = cur.fetchone() or {}
+    if flags.get("r") or flags.get("a"):
         return "allowed", None
     row = _active_reveal_grant(cur, secret_id, user_id)
     if row and row["status"] == "approved":
         return "allowed", row
     if row and row["status"] == "pending":
         return "pending", row
-    if has_reveal:
+    cur.execute(
+        "SELECT api.can_access_secret(%s, 'reveal') AS r",
+        (str(secret_id),),
+    )
+    if (cur.fetchone() or {}).get("r"):
         return "need_request", None
     cur.execute(
         "SELECT api.team_allows_reveal_requests(%s) AS ok",

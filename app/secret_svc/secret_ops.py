@@ -279,6 +279,7 @@ def _load_team_secrets_page(
                s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                s.access_mode, p.id AS project_id, p.name AS project_name,
                api.can_access_secret(s.id, 'reveal') AS can_reveal,
+               api.can_admin_project(s.project_id) AS is_admin,
                CASE
                  WHEN s.requires_approval IS TRUE THEN true
                  WHEN s.requires_approval IS FALSE THEN false
@@ -305,7 +306,7 @@ def _load_team_secrets_page(
         r["needs_approval"] = bool(r.get("needs_approval"))
         _set_row_reveal_access(
             r,
-            is_admin=False,
+            is_admin=bool(r.get("is_admin")),
             grant=grants.get(str(r["id"])),
             allow_requests=bool(r.get("allow_reveal_requests", True)),
         )
