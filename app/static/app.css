@@ -2440,6 +2440,8 @@
     .secrets-toolbar .bulk-toolbar {
       margin-left: 0;
     }
+    /* No phantom strip when bulk mode is idle (its only child is [hidden]) */
+    .secrets-toolbar:has(.bulk-toolbar[hidden]) { margin-bottom: 0; }
     .input-with-btn {
       display: flex;
       align-items: stretch;
