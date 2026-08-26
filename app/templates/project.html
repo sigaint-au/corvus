@@ -64,6 +64,11 @@
   <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='integrations') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='integrations') }}"
      class="page-subnav-link {% if active_tab == 'integrations' %}active{% endif %}"{% if active_tab == 'integrations' %} aria-current="page"{% endif %}
   >Integrations</a>
+  {% if can_admin %}
+  <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='webhooks') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='webhooks') }}"
+     class="page-subnav-link {% if active_tab == 'webhooks' %}active{% endif %}"{% if active_tab == 'webhooks' %} aria-current="page"{% endif %}
+  >Webhooks</a>
+  {% endif %}
   {% if can_settings %}
   <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='settings') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='settings') }}"
      class="page-subnav-link {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}

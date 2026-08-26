@@ -51,6 +51,7 @@ def test_migrations_ship_in_order():
         "0011_machine_token_scope_deny.sql",
         "0012_reveal_deleted_guard.sql",
         "0013_webhooks.sql",
+        "0014_webhook_deliveries.sql",
     ]
     for name in files:
         assert name[:4].isdigit()

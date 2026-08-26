@@ -124,6 +124,7 @@ def project_detail(project_id):
         "tokens",
         "import",
         "integrations",
+        "webhooks",
         "settings",
     ):
         tab = "secrets"
@@ -189,6 +190,9 @@ def project_detail(project_id):
         if tab == "access" and not can_admin:
             # Old Access tab was reveal requests; non-admins land on Requests
             tab = "requests"
+        if tab == "webhooks" and not can_admin:
+            tab = "secrets"
+        webhooks = []
         due_overdue, due_soon, rotation_overdue, rotation_soon = [], [], [], []
         if tab == "secrets":
             secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
@@ -302,6 +306,10 @@ def project_detail(project_id):
                 project_secret_keys = [r["key"] for r in (cur.fetchall() or [])]
             except Exception:
                 project_secret_keys = []
+        elif tab == "webhooks":
+            from routes.webhooks_ui import load_scope_webhooks
+
+            webhooks = load_scope_webhooks(cur, "project", project_id)
         elif tab == "settings":
             from crypto import project_keys
 
@@ -441,6 +449,7 @@ def project_detail(project_id):
         "can_delete": can_delete,
         "can_settings": can_settings,
         "can_manage_keys": can_manage_keys,
+        "webhooks": webhooks if tab == "webhooks" else [],
         "active_tab": tab,
         "search_q": q,
         "audit_actor": audit_actor,

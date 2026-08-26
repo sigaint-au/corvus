@@ -242,6 +242,7 @@ def work_webhooks_command():
     Intended for a sidecar container or background process.
     """
     import time
+
     from integrations import webhooks
     click.echo("Webhook worker started. Polling for events...")
     try:

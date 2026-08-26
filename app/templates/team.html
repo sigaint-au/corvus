@@ -40,6 +40,9 @@
   <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}"
      class="page-subnav-link {% if active_tab == 'access' %}active{% endif %}"{% if active_tab == 'access' %} aria-current="page"{% endif %}
      title="Role bindings for this team">Access</a>
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='webhooks') }}"
+     class="page-subnav-link {% if active_tab == 'webhooks' %}active{% endif %}"{% if active_tab == 'webhooks' %} aria-current="page"{% endif %}
+  >Webhooks</a>
   <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
      class="page-subnav-link {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
   >Settings</a>
@@ -49,6 +52,7 @@
 
 {% if active_tab == 'projects' %}{% include "partials/team_projects.html" %}
 {% elif active_tab == 'access' and is_admin %}{% include "partials/team_access.html" %}
+{% elif active_tab == 'webhooks' and is_admin %}{% include "partials/team_webhooks.html" %}
 {% elif active_tab == 'members' %}{% include "partials/team_members.html" %}
 {% elif active_tab == 'groups' %}{% include "partials/team_groups.html" %}
 {% elif active_tab == 'activity' %}{% include "partials/team_activity.html" %}

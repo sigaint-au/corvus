@@ -262,6 +262,42 @@ ACCESS_MODE_LABELS = {
     "inherit": "Inherit project access",
     "restricted": "Restricted (role bindings only)",
 }
+# Webhook trigger events. Keys match what the audit triggers enqueue
+# ('secret.'||secret_audit.action, 'org.'||org_audit.action).
+WEBHOOK_EVENTS: dict[str, list[str]] = {
+    "Secret events": [
+        "secret.created",
+        "secret.updated",
+        "secret.revealed",
+        "secret.deleted",
+        "secret.restored",
+        "secret.purged",
+        "secret.machine_upsert",
+        "secret.exported",
+        "secret.access_requested",
+        "secret.access_approved",
+        "secret.access_denied",
+    ],
+    "Team events": [
+        "org.member_add",
+        "org.member_remove",
+        "org.member_role",
+        "org.invite_create",
+        "org.invite_revoke",
+        "org.join_request",
+        "org.join_approve",
+        "org.join_reject",
+        "org.team_settings",
+    ],
+    "Project events": [
+        "org.project_member_add",
+        "org.project_member_remove",
+        "org.project_member_role",
+        "org.project_key_created",
+        "org.hsm_kek_rotated",
+    ],
+}
+ALL_WEBHOOK_EVENTS = tuple(e for evs in WEBHOOK_EVENTS.values() for e in evs)
 # Upper bounds for optional expiry (secrets, machine tokens, team defaults)
 MAX_EXPIRY_DAYS = 3650  # ~10 years
 # Request body / secret import file cap (bytes) — memory DoS guard

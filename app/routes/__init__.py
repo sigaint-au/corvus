@@ -32,6 +32,7 @@ def register_all(app):
         rbac,
         secrets,
         teams,
+        webhooks_ui,
     )
 
     auth.register(app)
@@ -40,6 +41,7 @@ def register_all(app):
     secrets.register(app)
     import_export.register(app)
     project_tokens.register(app)
+    webhooks_ui.register(app)
     rbac.register(app)
     admin.register(app)
     api.register(app)

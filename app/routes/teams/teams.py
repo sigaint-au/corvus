@@ -98,8 +98,9 @@ def team_detail(team_id):
     """
     session["team_id"] = str(team_id)
     tab = (request.args.get("tab") or "projects").strip().lower()
-    if tab not in ("projects", "members", "groups", "activity", "access", "settings"):
+    if tab not in ("projects", "members", "groups", "activity", "access", "settings", "webhooks"):
         tab = "projects"
+    webhooks = []
     q = (request.args.get("q") or "").strip()
     page = paging.page_arg("page")
     members, projects, ldap_maps, oidc_maps = [], [], [], []
@@ -129,7 +130,7 @@ def team_detail(team_id):
             or bool(session.get("is_global_admin"))
             or can_edit_access
         )
-        if tab in ("settings", "access") and not is_admin:
+        if tab in ("settings", "access", "webhooks") and not is_admin:
             tab = "projects"
 
         if tab == "projects":
@@ -203,6 +204,10 @@ def team_detail(team_id):
                     (str(team_id),),
                 )
                 join_requests = cur.fetchall() or []
+        elif tab == "webhooks" and is_admin:
+            from routes.webhooks_ui import load_scope_webhooks
+
+            webhooks = load_scope_webhooks(cur, "team", team_id)
         elif tab == "access" and is_admin:
             # All team-scope bindings (users, groups, machine accounts)
             access_bindings = rbac_sync.list_scope_bindings(cur, "team", team_id)
@@ -325,6 +330,7 @@ def team_detail(team_id):
         activity_pager=activity_pager,
         access_bindings=access_bindings,
         access_groups=access_groups,
+        webhooks=webhooks if tab == "webhooks" else [],
         can_edit_access=can_edit_access or is_admin,
         team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
         role_descriptions=role_descriptions,
