@@ -92,6 +92,36 @@ class TestTeams:
         sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
         assert 'from api.projects' in sql
 
+    def test_team_settings_tab_panels(self):
+        tid = uuid4()
+        last_sql = {'s': ''}
+
+        def execute(sql, params=None):
+            last_sql['s'] = ' '.join(str(sql).lower().split())
+
+        def fetchone():
+            s = last_sql['s']
+            if 'from api.teams' in s and 'where id' in s:
+                return {
+                    'id': tid, 'name': 'T', 'default_token_days': 30,
+                    'allow_reveal_requests': True, 'classification_enabled': None,
+                }
+            if 'api.team_role' in s:
+                return {'r': 'team-owner'}
+            return None
+
+        conn, cur = _conn(fetchone=fetchone, fetchall=[])
+        cur.execute.side_effect = execute
+        with patch.object(db, 'as_user', return_value=conn), \
+             patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}):
+            r = self.client.get(f'/teams/{tid}?tab=settings')
+        assert r.status_code == 200
+        assert b'>Access<' in r.data
+        assert b'Classification banner' in r.data
+        assert b'Directory groups' in r.data
+        assert b'Danger zone' in r.data
+        assert b'Reveal requests' in r.data
+
     def test_update_team_settings_reveal_requests(self):
         tid = uuid4()
         last = {'sql': '', 'params': None}
