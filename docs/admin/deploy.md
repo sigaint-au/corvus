@@ -211,6 +211,28 @@ kubectl create job --from=cronjob/corvus-purge-audit purge-audit-manual -n corvu
 kubectl logs job/purge-audit-manual -n corvus
 ```
 
+### Webhook Background Worker
+
+For webhooks to be delivered, a background worker process must be running.
+
+**Docker Compose:**
+
+Add a second service to your `docker-compose.yml`:
+
+```yaml
+  worker:
+    image: corvus-app
+    env_file: .env
+    command: flask --app app work-webhooks
+    restart: always
+    depends_on:
+      - db
+```
+
+**Kubernetes:**
+
+Deploy as a separate Deployment (e.g. `corvus-worker`) using the same image and environment as the main app. You can scale the worker Deployment to multiple replicas; database-level locking ensures no double-delivery.
+
 ---
 
 ## 9. External Secrets Operator

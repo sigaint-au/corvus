@@ -112,6 +112,34 @@ services:
       - /tmp:size=64M,mode=1777
       - /home/appuser:size=16M,mode=1777
 
+  worker:
+    image: localhost/corvus_app:latest
+    depends_on:
+      db:
+        condition: service_healthy
+      softhsm2:
+        condition: service_healthy
+    command: flask --app app work-webhooks
+    environment:
+      DATABASE_URL: postgres://authenticator:authenticator@db:5432/corvus
+      DATABASE_ADMIN_URL: postgres://postgres:postgres@db:5432/corvus
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-32chars!!}
+      MASTER_KEY: ${MASTER_KEY:-dev-master-key-change-in-prod!!}
+      SECRET_KEY: ${SECRET_KEY:-flask-session-secret-change-me}
+      SOFTHSM2_CONF: /hsm/tokens/softhsm2.conf
+      HSM_ALLOWED_MODULE_DIRS: /usr/lib64,/usr/lib,/usr/local/lib,/lib
+      ALLOW_INSECURE_DEFAULTS: ${ALLOW_INSECURE_DEFAULTS:-0}
+    volumes:
+      - hsmdata:/hsm/tokens
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+      - /home/appuser:size=16M,mode=1777
+
 volumes:
   pgdata:
   hsmdata:

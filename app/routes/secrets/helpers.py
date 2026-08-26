@@ -81,7 +81,14 @@ def _reveal_access_state(cur, project_id, secret_id, user_id):
         (str(secret_id), str(project_id)),
     )
     flags = cur.fetchone() or {}
-    if flags.get("r") or flags.get("a"):
+    if flags.get("a"):
+        return "allowed", None
+    if flags.get("r"):
+        # can_reveal_secret may pass because of an approved grant; keep its
+        # row so callers can show the expiry.
+        grant = _active_reveal_grant(cur, secret_id, user_id)
+        if grant and grant["status"] == "approved":
+            return "allowed", grant
         return "allowed", None
     row = _active_reveal_grant(cur, secret_id, user_id)
     if row and row["status"] == "approved":

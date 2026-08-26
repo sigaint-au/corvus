@@ -49,6 +49,8 @@ def test_migrations_ship_in_order():
         "0009_team_reveal_requests.sql",
         "0010_fix_can_reveal_secret.sql",
         "0011_machine_token_scope_deny.sql",
+        "0012_reveal_deleted_guard.sql",
+        "0013_webhooks.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -97,6 +99,14 @@ def test_machine_token_scope_deny_migration():
     assert "array_remove(rr.resources, 'machine_tokens')" in sql
     assert "team-member" in sql
     assert "project-write" in sql
+
+
+def test_reveal_deleted_guard_migration():
+    """0012 blocks global admins from revealing soft-deleted secrets."""
+    sql = (migrations.MIGRATIONS_DIR / "0012_reveal_deleted_guard.sql").read_text()
+    assert "deleted_at IS NULL" in sql
+    body = sql[sql.index("$$") + 2:]
+    assert body.index("deleted_at IS NULL") < body.index("is_global_admin()")
 
 
 def test_login_alerts_pref_migration():
@@ -249,3 +259,10 @@ class TestApplyPending:
         i_inherit = joined.index("access_mode = 'inherit'")
         i_drop = joined.index("DROP COLUMN IF EXISTS acl_mode")
         assert i_restricted < i_inherit < i_drop
+
+def test_webhooks_migration():
+    sql = (migrations.MIGRATIONS_DIR / "0013_webhooks.sql").read_text()
+    assert "api.webhooks" in sql
+    assert "private.webhook_delivery_queue" in sql
+    assert "private.enqueue_webhooks" in sql
+    assert "tr_webhook_secret_audit" in sql
