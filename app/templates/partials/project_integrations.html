@@ -6,12 +6,12 @@
     <h2>External Secrets Operator</h2>
   </div>
 
-  {% if can_write %}
+  {% if can_admin %}
     {% with form_id='eso-token-form', default_name='eso', return_tab='integrations', compact=true %}
       {% include "partials/token_create_form.html" %}
     {% endwith %}
   {% else %}
-  <p class="muted">You need write access to create a machine account. Paste an existing token below to generate manifests.</p>
+  <p class="muted">A project admin or team admin has to create the machine account. You can still paste an existing token below to generate manifests.</p>
   {% endif %}
 
   <section class="eso-yaml-config">

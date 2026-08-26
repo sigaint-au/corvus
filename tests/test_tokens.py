@@ -22,18 +22,23 @@ class TestTokens:
             s['email'] = 'u@ex.com'
 
     def test_create_token(self):
-        conn, cur = _conn(fetchone={'w': True})
+        tid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'w': True}, {}, {'id': tid}]
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'openshift'}, follow_redirects=False)
         assert r.status_code == 302
         with self.client.session_transaction() as s:
             assert s.get('new_token', '').startswith('ss_')
-        sql = ' '.join(str(c) for c in cur.execute.call_args_list)
-        assert 'reveal' in sql
+        insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
+        assert insert_calls[0].args[1][4] == 'service-read'
+        scope_calls = [c for c in cur.execute.call_args_list if c.args and 'machine_token_scope' in str(c.args[0])]
+        assert scope_calls and any('*' in str(c.args[1]) for c in scope_calls)
 
     def test_create_token_write_role(self):
-        conn, cur = _conn(fetchone={'w': True})
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'w': True}, {}, {'id': uuid4()}]
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'ci-writer', 'role': 'service-write'}, follow_redirects=False)
@@ -42,14 +47,15 @@ class TestTokens:
         assert insert_calls
         assert insert_calls[0].args[1][4] == 'service-write'
 
-    def test_create_token_invalid_role_defaults_reveal(self):
-        conn, cur = _conn(fetchone={'w': True})
+    def test_create_token_invalid_role_defaults_read(self):
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'w': True}, {}, {'id': uuid4()}]
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'x', 'role': 'owner'}, follow_redirects=False)
         assert r.status_code == 302
         insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
-        assert insert_calls[0].args[1][4] == 'service-reveal'
+        assert insert_calls[0].args[1][4] == 'service-read'
 
     def test_create_token_reveal_denied(self):
         conn, _ = _conn(fetchone={'w': False})
@@ -88,6 +94,19 @@ class TestTokens:
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/tokens/{uuid4()}/delete', follow_redirects=False)
         assert r.status_code == 302
+
+    def test_mgmt_delete_token_requires_admin(self):
+        from routes.mgmt_api import tokens as mgmt_tokens
+
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'id': str(self.pid)}, {'w': False}]
+        with store.app.test_request_context('/x', method='DELETE'):
+            with patch.object(mgmt_tokens, '_require_pat', return_value=(str(uuid4()), None)), \
+                 patch.object(db, 'as_user', return_value=conn):
+                r = mgmt_tokens.mgmt_delete_token(str(self.pid), str(uuid4()))
+        resp, status = r
+        assert status == 403
+        assert resp.get_json()['error'] == 'forbidden'
 
     def test_delete_token_reveal_denied(self):
         conn, _ = _conn(fetchone={'w': False})

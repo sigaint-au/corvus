@@ -74,9 +74,9 @@ def mgmt_create_token(project_ref):
         return err
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "machine").strip() or "machine"
-    role = (body.get("role") or "service-reveal").strip()
+    role = (body.get("role") or "service-read").strip()
     if role not in config.MACHINE_TOKEN_ROLES:
-        role = "service-reveal"
+        role = "service-read"
     expires_at = None
     require_expiry, max_days = settings_svc.token_expiry_policy("machine")
     days = body.get("expires_days")
@@ -120,8 +120,7 @@ def mgmt_create_token(project_ref):
         row = cur.fetchone()
         if not row:
             return jsonify({"error": "forbidden"}), 403
-        if scopes:
-            insert_token_scopes(cur, str(row["id"]), scopes)
+        insert_token_scopes(cur, str(row["id"]), scopes)
         conn.commit()
     out = _row(row) or {}
     out["ok"] = True
@@ -141,6 +140,9 @@ def mgmt_delete_token(project_ref, token_id):
         pid = _resolve_project(cur, project_ref)
         if not pid:
             return jsonify({"error": "not found"}), 404
+        cur.execute("SELECT api.can_admin_project(%s) AS w", (pid,))
+        if not (cur.fetchone() or {}).get("w"):
+            return jsonify({"error": "forbidden"}), 403
         cur.execute(
             """
             DELETE FROM api.machine_tokens

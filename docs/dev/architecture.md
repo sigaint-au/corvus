@@ -137,11 +137,9 @@ transactional outbox if that failure mode must be eliminated.
 2. `_parse_auth()` resolves the token:
    - `ss_…` → machine token hash → SECURITY DEFINER helpers (bypass RLS).
    - `pat_…` → user id → `db.as_user()` → RLS.
-3. Machine helpers gate on `auth_machine(project, hash)` (validity + expiry)
-   and the token role (`service-read`/`service-reveal`/`service-write`).
-   `service-read` tokens are rejected at both the DB function level
-   (``machine_get_row`` / ``machine_list_enc`` return no rows) and the app
-   layer (explicit 403 before decryption). They can only list metadata.
+3. Machine helpers gate on `auth_machine(project, hash)` (validity + expiry),
+   `machine_key_allowed` (allow-list; empty denies; `*` skips restricted
+   secrets), and the token role. `service-read` cannot decrypt.
 4. Secret values are decrypted with the project DEK (or ``MASTER_KEY``)
    and returned as plaintext. Only ``service-reveal`` and ``service-write``
    tokens receive plaintext.

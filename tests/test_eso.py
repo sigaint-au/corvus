@@ -261,7 +261,8 @@ class TestESO:
         with c.session_transaction() as s:
             s['user_id'] = str(uuid4())
             s['email'] = 'u@ex.com'
-        conn, cur = _conn(fetchone={'w': True})
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'w': True}, {'id': uuid4()}]
         cur.rowcount = 1
         with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
             r = c.post(f'/projects/{self.pid}/tokens', data={'name': 'eso', 'role': 'reveal', 'expires_days': '30'}, follow_redirects=False)

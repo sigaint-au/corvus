@@ -148,7 +148,7 @@ corvus create team Platform
 corvus create project demo --team Platform
 corvus create member alice@example.com --team Platform --role team-member
 corvus get tokens
-corvus create token ci --role service-write
+corvus create token ci --role service-write --scope 'API_KEY'
 corvus get trash
 corvus restore trash <secret-id>
 corvus get users              # global admin + PAT

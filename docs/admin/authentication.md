@@ -142,7 +142,9 @@ Machine tokens (`ss_…`) are **project-scoped** and authenticate `/eso/v1`.
 **PATs** (`pat_…`) also authenticate `/eso/v1` under user RLS (project UUID or
 unique name).
 
-Create a token on a project under **Integrations** (or **Tokens**). Roles:
+Create a token on a project under **Integrations** (or **Tokens**). Project
+or team admins only. Name the keys on the allow-list (`*` skips restricted
+secrets). Roles:
 
 | Role | Metadata | Reveal values | Write |
 |------|----------|---------------|-------|

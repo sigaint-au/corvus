@@ -180,10 +180,12 @@ document.addEventListener('htmx:configRequest', function (e) {
       var hidden = form.querySelector('[data-scope-hidden]');
       var roleSel = form.querySelector('[data-token-role]');
       var writeWarn = form.querySelector('[data-token-write-warn]');
+      var emptyErr = form.querySelector('[data-scope-empty-err]');
       function syncScope() {
         var on = toggle && toggle.checked;
         if (body) body.hidden = !on;
         if (openMsg) openMsg.hidden = !!on;
+        if (emptyErr) emptyErr.hidden = true;
         if (!on && tags) setTags(tags, []);
       }
       function syncRole() {
@@ -201,11 +203,14 @@ document.addEventListener('htmx:configRequest', function (e) {
           addTag(tags, btn.getAttribute('data-scope-preset'));
         });
       });
-      form.addEventListener('submit', function () {
+      form.addEventListener('submit', function (e) {
         if (hidden) {
-          var list = (toggle && toggle.checked) ? tagsOf(tags) : [];
-          /* '*' alone means full project - treat as unrestricted */
-          if (list.length === 1 && list[0] === '*') list = [];
+          var list = (toggle && toggle.checked) ? tagsOf(tags) : ['*'];
+          if (toggle && toggle.checked && list.length === 0) {
+            e.preventDefault();
+            if (emptyErr) emptyErr.hidden = false;
+            return;
+          }
           hidden.value = list.join('\n');
         }
       });

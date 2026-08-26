@@ -13,7 +13,7 @@
            <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
            <td><code class="k">{{ t.id }}</code></td>
            <td><code class="k">{{ t.token_prefix }}…</code></td>
-          <td><span class="badge" data-variant="secondary">{{ t.role or 'service-reveal' }}</span></td>
+          <td><span class="badge" data-variant="secondary">{{ t.role or 'service-read' }}</span></td>
           <td class="muted" title="{% if t.last_used_at %}{{ t.last_used_at|time_when }}{% endif %}">{% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}never{% endif %}</td>
           <td class="muted" title="{{ t.created_at|time_when }}">{{ t.created_at|time_ago }}</td>
           <td class="muted"{% if t.expires_at %} title="{{ t.expires_at|time_when }}"{% endif %}>

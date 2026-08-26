@@ -48,6 +48,7 @@ def test_migrations_ship_in_order():
         "0008_reveal_grant_without_acl.sql",
         "0009_team_reveal_requests.sql",
         "0010_fix_can_reveal_secret.sql",
+        "0011_machine_token_scope_deny.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -88,6 +89,14 @@ def test_fix_can_reveal_secret_migration():
     assert "can_access_secret(sid, 'get')" not in sql
     assert "is_global_admin()" in sql
     assert "can_admin_project" in sql
+
+
+def test_machine_token_scope_deny_migration():
+    sql = (migrations.MIGRATIONS_DIR / "0011_machine_token_scope_deny.sql").read_text()
+    assert "machine_key_allowed" in sql
+    assert "array_remove(rr.resources, 'machine_tokens')" in sql
+    assert "team-member" in sql
+    assert "project-write" in sql
 
 
 def test_login_alerts_pref_migration():

@@ -36,7 +36,7 @@ Cluster
 |------|-----|
 | `team-owner` | Full team control; delete team; always project admin/write |
 | `team-admin` | Manage members, groups, settings; always project admin/write |
-| `team-member` | Create projects; write secrets (no reveal — request access to see values) |
+| `team-member` | Create projects; write secrets (no reveal — request access to see values). Cannot mint machine tokens |
 | `team-viewer` | Read-only (metadata, no plaintext; can request a reveal grant) |
 
 Only `team-owner` can assign the `team-owner` role.
@@ -46,7 +46,7 @@ Only `team-owner` can assign the `team-owner` role.
 | Role | Can |
 |------|-----|
 | `project-admin` | Write secrets + manage project/secret role bindings + approval settings |
-| `project-write` | Create, update, delete, reveal secrets |
+| `project-write` | Create, update, delete, reveal secrets. Cannot mint machine tokens |
 | `project-reveal` | Read + reveal (no edit/create/delete) |
 | `project-read` | Read metadata only |
 
@@ -95,9 +95,10 @@ Users who can see a secret but not reveal it can **request access** when the tea
 
 **Always full access:** global admins and anyone with `can_admin_project`.
 
-**Machine tokens** (`ss_…`) bypass per-secret human bindings and
-reveal-approval (SECURITY DEFINER helpers). Use a **key allow-list** or
-**separate project** for sensitive values. See [machine-tokens.md](machine-tokens.md).
+**Machine tokens** (`ss_…`) skip human reveal-approval. They still honour
+the token allow-list: empty list denies; `*` is inherit keys only;
+restricted secrets need an exact key. Only project/team admins mint them.
+See [machine-tokens.md](machine-tokens.md).
 
 ### Reveal approval (separate from RBAC)
 
@@ -238,7 +239,7 @@ Permission rank: `read` < `reveal` < `write`.
 | User has directory group but no access | Wrong `external_key`; user has not logged in since map created; team role empty and no project/secret grant |
 | Manual member disappeared | They were directory-sourced only and no longer match maps |
 | Can see project but not secret value | Secret `access_mode = restricted`; or reveal approval pending |
-| Machine token ignores restricted mode | By design. Use a separate project or a key allow-list |
+| Machine token misses a restricted secret | Restricted keys need an exact allow-list entry; `*` is not enough |
 | `ensure_schema` fails at startup | `DATABASE_ADMIN_URL` must be a superuser DSN |
 
 ---

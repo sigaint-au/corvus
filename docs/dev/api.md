@@ -81,8 +81,9 @@ Also available in the UI: **My profile → Security → API access → Show JWT*
 
 ### 4. Machine tokens (ESO / CLI / CI)
 
-Create on a project (**Integrations** / machine accounts). Format: `ss_…`
-(shown once). Scoped to **one project**.
+Create on a project (**Integrations** / machine accounts). Project or team
+admins only. Format: `ss_…` (shown once). Scoped to **one project** and an
+allow-list (`*` = inherit keys; restricted secrets need exact keys).
 
 | Role | Metadata | Reveal values | Write |
 |------|----------|---------------|-------|
@@ -243,14 +244,14 @@ System fields are not set via API body. Custom `metadata` is managed in the UI
 
 **Always full access:** global admins and users with `can_admin_project`.
 
-**Machine tokens / ESO** use SECURITY DEFINER helpers and are **not** gated by
-per-secret human role bindings or reveal-approval. Prefer a **separate project**
-and/or **key allow-list** for sensitive values.
+**Machine tokens / ESO** skip reveal-approval. They use the token allow-list:
+no rows deny; `*` is inherit keys only; restricted secrets need an exact key.
+Only project/team admins can mint tokens.
 
-**Key allow-list (optional):** each token may list exact keys and/or glob
-patterns (`prod/*`, `DB_*`, `?.api-key`). Empty allow-list = all keys. Create
-via UI or PAT API body `scope: ["API_KEY", "prod/*"]`. Scoped tokens get
-**404/empty** for other keys. See [machine-tokens.md](../admin/machine-tokens.md).
+**Key allow-list:** exact keys and/or globs (`prod/*`, `DB_*`). Create via UI
+or PAT API body `scope: ["API_KEY", "prod/*"]`. Omit `scope` and the server
+stores `*`. Other keys return **404/empty**.
+See [machine-tokens.md](../admin/machine-tokens.md).
 
 **PAT bulk list with values** only includes secrets the caller may
 `can_access_secret(…, 'reveal')` and `can_reveal_secret` (approval).
@@ -610,7 +611,7 @@ corvus create project ios-app --team Platform
 corvus create member bob@example.com --team Platform --role team-member
 corvus create member dave@example.com --role project-write   # current project
 corvus get tokens
-corvus create token ci --role service-write             # prints ss_… once
+corvus create token ci --role service-write --scope 'API_KEY'  # prints ss_… once
 corvus get trash
 corvus restore trash <secret-uuid>
 corvus get history API_KEY

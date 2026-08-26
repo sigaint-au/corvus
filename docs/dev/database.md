@@ -244,7 +244,8 @@ hash and granted only to `authenticator` (not `authenticated`).
 ## Machine token scopes
 
 `api.machine_token_scope` stores exact keys and/or glob patterns per token.
-The machine read functions filter by scope; an empty scope = all keys.
+The machine read functions filter by scope. Empty scope denies. `*` matches
+inherit keys only; restricted secrets need an exact `secret_key` row.
 
 ```sql
 -- example scope rows
