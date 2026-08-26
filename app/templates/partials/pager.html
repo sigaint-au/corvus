@@ -15,7 +15,7 @@
 } %}
 {% if pager and pager.total > pager.per_page %}
 <nav class="pager hstack" aria-label="Pagination">
-  <span class="muted pager-summary" style="font-size: var(--text-7);">
+  <span class="muted pager-summary">
     Showing {{ pager.start }}–{{ pager.end }} of {{ pager.total }}
   </span>
   {# oat.ink pagination: menu.buttons + .button / native <button disabled> #}

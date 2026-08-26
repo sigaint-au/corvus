@@ -42,7 +42,7 @@
     <a class="button outline small" href="{{ url_for('hsm_slot_new_wizard') }}">+ Add HSM slot</a>
   </div>
   {% if encryption.hsm_slots %}
-  <div class="table" style="overflow: visible"><table>
+  <div class="table table-unclipped"><table>
     <thead><tr><th>Name</th><th>PKCS#11 URL</th><th>Status</th><th class="acts-menu"></th></tr></thead>
     <tbody>
     {% for slot in encryption.hsm_slots %}
