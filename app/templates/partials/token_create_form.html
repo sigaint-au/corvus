@@ -7,7 +7,7 @@
 <section class="token-create-card" id="{{ form_id }}-card">
   {% if compact %}
   <div class="section-head"><h3>Machine account for ESO</h3></div>
-  <p class="muted">Create a <strong>reveal</strong> token for the cluster to pull secrets.</p>
+  <p class="muted">Create a reveal token and name the keys the cluster will pull.</p>
   {% endif %}
   <form method="post"
         action="{{ url_for('create_token', project_id=project.id) }}"
@@ -26,8 +26,8 @@
         </label>
         <label>Role
           <select name="role" data-token-role aria-label="Token role">
-            <option value="service-read">Read: metadata only, no plaintext</option>
-            <option value="service-reveal" selected>Reveal (fetch secrets for ESO)</option>
+            <option value="service-read"{% if not compact %} selected{% endif %}>Read: metadata only, no plaintext</option>
+            <option value="service-reveal"{% if compact %} selected{% endif %}>Reveal (fetch secrets for ESO)</option>
             <option value="service-write">Write (fetch and update)</option>
           </select>
         </label>
@@ -45,11 +45,12 @@
           <p class="muted token-scope-hint">Limit which secret keys this token can use.</p>
         </div>
         <label class="token-scope-switch">
-          <input type="checkbox" role="switch" data-scope-toggle aria-controls="{{ form_id }}-scope-body">
+          <input type="checkbox" role="switch" data-scope-toggle
+                 aria-controls="{{ form_id }}-scope-body" checked>
           Restrict keys
         </label>
       </div>
-      <div class="token-scope-body" id="{{ form_id }}-scope-body" data-scope-body hidden>
+      <div class="token-scope-body" id="{{ form_id }}-scope-body" data-scope-body>
         <div class="token-scope-chips">
           <ot-taginput data-scope-tags>
             <input type="text"
@@ -75,13 +76,15 @@
           {% endfor %}
         </div>
         <p class="muted token-scope-help">
-          Chips are <strong>exact keys</strong> or <strong>globs</strong> (<code class="k">*</code> any run, <code class="k">?</code> one char).
-          Restricted tokens cannot access keys outside this list.
-          A lone <code class="k">*</code> means <strong>all keys</strong> (equal to leaving keys unrestricted).
+          Exact keys or globs (<code class="k">*</code>, <code class="k">?</code>).
+          Restricted secrets need an exact key; <code class="k">*</code> does not cover them.
+        </p>
+        <p class="token-scope-empty" data-scope-empty-err hidden>
+          Add at least one key or glob, or turn restrict off to allow every non-restricted key.
         </p>
       </div>
-      <p class="token-scope-open muted" data-scope-open-msg>
-        This token can access <strong>all keys</strong> in the project.
+      <p class="token-scope-open muted" data-scope-open-msg hidden>
+        This token can access every <strong>non-restricted</strong> key. Restricted secrets stay closed unless you name them.
       </p>
     </div>
 

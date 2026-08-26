@@ -2,6 +2,7 @@
 # Webhook provider. Replace PROJECT_ID, the ss_… token, host, namespace, and keys.
 #
 # Token role: service-reveal
+# Allow-list the keys in spec.data (restricted secrets need exact keys, not *).
 # Apply: kubectl apply -f docs/eso-pull.yaml
 #
 # Pair with docs/eso-push.yaml if the cluster must also write secrets back.

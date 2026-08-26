@@ -231,12 +231,9 @@ class TestOrgAccess:
         assert 'tab="access"' in src
 
     def test_eso_pat_checks_acl_before_reveal(self):
-        """ESO/PAT get-secret must check can_access_secret reveal before approval."""
+        """ESO/PAT get-secret uses can_reveal_secret (ACL or approved grant)."""
         src = (APP_ROOT / 'routes' / 'eso' / 'secrets.py').read_text()
-        i_acl = src.index("can_access_secret(%s, 'reveal')")
-        i_rev = src.index('can_reveal_secret(%s)')
-        assert i_acl < i_rev
-        assert '"error": "forbidden"' in src
+        assert 'can_reveal_secret(%s)' in src
         assert '"error": "approval_required"' in src
 
     def test_eso_pat_bulk_export_filters_reveal_acl(self):

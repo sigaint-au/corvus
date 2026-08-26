@@ -39,7 +39,9 @@ def parse_token_scope_lines(raw: str) -> list[tuple[str, str]]:
 
 
 def insert_token_scopes(cur, token_id: str, scopes: list[tuple[str, str]]) -> None:
-    """Insert scope rows for a newly created machine token."""
+    """Insert scope rows. Empty list becomes ``*`` (all non-restricted keys)."""
+    if not scopes:
+        scopes = [("pattern", "*")]
     for kind, val in scopes:
         if kind == "pattern":
             cur.execute(
@@ -133,9 +135,9 @@ def create_token(project_id):
         POST /projects/<project_id>/tokens with name, role, expires_days form fields
     """
     name = request.form.get("name", "machine").strip() or "machine"
-    role = (request.form.get("role") or "service-reveal").strip()
+    role = (request.form.get("role") or "service-read").strip()
     if role not in config.MACHINE_TOKEN_ROLES:
-        role = "service-reveal"
+        role = "service-read"
     return_tab = (request.form.get("return_tab") or "tokens").strip().lower()
     if return_tab not in (
         "secrets",
@@ -214,17 +216,17 @@ def create_token(project_id):
                 flash("You don't have permission to do that", "error")
                 conn.rollback()
                 return _token_redirect()
-            if scopes:
-                insert_token_scopes(cur, str(row["id"]), scopes)
+            insert_token_scopes(cur, str(row["id"]), scopes)
             conn.commit()
         except Exception:
             flash("Could not complete the request. Try again.", "error")
             return _token_redirect()
     session["new_token"] = raw  # shown once
+    stored = scopes or [("pattern", "*")]
     scope_note = (
-        f" scoped to {len(scopes)} key rule{'s' if len(scopes) != 1 else ''}"
-        if scopes
-        else " with full project access"
+        " for all non-restricted keys"
+        if stored == [("pattern", "*")]
+        else f" scoped to {len(stored)} key rule{'s' if len(stored) != 1 else ''}"
     )
     flash(
         f"Machine account created{scope_note}. Copy the token now. It is shown only once.",

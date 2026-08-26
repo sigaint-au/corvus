@@ -13,11 +13,13 @@ read and write secrets without a browser session.
 | `service-reveal` | yes | yes | no |
 | `service-write` | yes | yes | yes |
 
-- Prefer **`service-reveal`** for ESO pull and automation that needs values.
+- Default for a new token is **`service-read`**.
+- Prefer **`service-reveal`** for ESO pull (pick it explicitly).
 - Use **`service-write`** only if automation must create, rotate, or delete.
 
-Tokens are **project-scoped** (a token only ever sees one project). The raw
-`ss_…` value is shown once at creation; only a SHA-256 hash is stored.
+Only a **project admin** or **team-owner / team-admin** can create or revoke
+tokens. Tokens are **project-scoped**. The raw `ss_…` value is shown once at
+creation; only a SHA-256 hash is stored.
 
 ---
 
@@ -27,7 +29,7 @@ Project → **Integrations** (or **Machine accounts**):
 
 ```text
 Name: eso-prod
-Role: service-reveal    (or service-write)
+Role: service-reveal    (default is service-read)
 Expires (days): 90      (optional)
 [Create machine account]
 ```
@@ -36,28 +38,27 @@ Copy the `ss_…` value immediately; it shows only this once.
 
 ---
 
-## Key allow-lists (limit what a token can read)
+## Key allow-lists
 
-By default a token can read **every** secret in the project. To restrict it,
-set a **key allow-list** on the token: exact secret keys and/or glob patterns.
+A token only sees keys on its allow-list. No rows means **nothing**. Creating
+a token with no list stores `*` (every **non-restricted** key).
 
 | Pattern | Matches |
 |----------|---------|
 | `API_KEY` | exactly `API_KEY` |
 | `prod/*` | `prod/db`, `prod/api-key`, … |
 | `DB_*` | `DB_PASSWORD`, `DB_USER`, … |
+| `*` | every inherit key in the project; **not** restricted secrets |
 | `?.api-key` | `a.api-key`, `b.api-key`, … |
 
-Empty allow-list = **all** keys in the project. A scoped token gets
-**404/empty** for keys outside its allow-list.
+Secrets with `access_mode = restricted` need an **exact** key on the list.
+Globs and `*` never open them. Keys outside the list return **404/empty**.
 
-Create via the UI (**Key allow-list** on Machine accounts) or via the PAT API
-body `scope: ["API_KEY", "prod/*"]`.
+Create via the UI (Restrict keys) or the PAT API body
+`scope: ["API_KEY", "prod/*"]`.
 
-> **Security note:** machine tokens bypass per-secret human role bindings and
-> reveal-approval (they use SECURITY DEFINER helpers). Use a **key allow-list**
-> or a **separate project** when automation must not see every secret in a
-> shared project.
+Put automation in its own project if the list would otherwise be most of
+the vault.
 
 ---
 

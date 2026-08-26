@@ -99,24 +99,7 @@ def eso_get_secret(project_ref, key):
         if not row:
             return jsonify({"error": "not found"}), 404
         row = dict(row)
-        # PAT human path: per-secret ACL then reveal-approval (machine tokens exempt)
-        cur.execute(
-            "SELECT api.can_access_secret(%s, 'reveal') AS ok",
-            (str(row["id"]),),
-        )
-        if not (cur.fetchone() or {}).get("ok"):
-            return (
-                jsonify(
-                    {
-                        "error": "forbidden",
-                        "message": (
-                            "You do not have permission to reveal this secret"
-                        ),
-                        "key": row["key"],
-                    }
-                ),
-                403,
-            )
+        # PAT human path: reveal ACL or an approved time-limited grant
         cur.execute(
             "SELECT api.can_reveal_secret(%s) AS ok", (str(row["id"]),)
         )

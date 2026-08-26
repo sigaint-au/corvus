@@ -48,15 +48,15 @@ export SS_URL=https://secrets.example.com
 export SS_TOKEN=pat_…          # your PAT, to create machine tokens
 export SS_PROJECT=<project-uuid>
 
-# Pull
-corvus create token eso-pull --role service-reveal --expires-days 90
+# Pull — name the keys ESO will fetch
+corvus create token eso-pull --role service-reveal --expires-days 90 --scope 'API_KEY,DB_*'
 
 # Push (separate token)
-corvus create token eso-push --role service-write --expires-days 90
+corvus create token eso-push --role service-write --expires-days 90 --scope 'API_KEY,DB_*'
 ```
 
-Copy each `ss_…` value immediately. Optional `--scope 'API_KEY,DB_*'` limits
-keys. Empty allow-list = every key in the project.
+Copy each `ss_…` value immediately. No `--scope` stores `*` (every
+non-restricted key). Restricted secrets still need an exact key on the list.
 
 | Role | Pull values | Push / rotate |
 |------|-------------|---------------|
@@ -64,8 +64,9 @@ keys. Empty allow-list = every key in the project.
 | `service-reveal` | **yes** | no (403 on PUT) |
 | `service-write` | yes | **yes** |
 
-Machine tokens skip per-secret human ACLs and reveal-approval. Prefer a
-**dedicated project** and/or a **key allow-list**.
+Only a project or team admin can create the token. Restricted secrets stay
+closed unless you list those keys exactly. A dedicated project is still the
+simplest split between human-only and automation secrets.
 
 The Kubernetes Secret that holds the token **must** be labelled
 `external-secrets.io/type: webhook` or the webhook provider refuses it.

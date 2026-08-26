@@ -9,6 +9,57 @@ from core import config
 from secret_svc.secret_kinds import expires_status, secret_due_status
 from ui import paging
 
+_GRANT_SQL = """
+        SELECT DISTINCT ON (secret_id)
+               secret_id, status, approved_until
+        FROM api.secret_access_requests
+        WHERE user_id = api.current_user_id()
+          AND secret_id = ANY(%s::uuid[])
+          AND (
+            status = 'pending'
+            OR (status = 'approved' AND approved_until IS NOT NULL
+                AND approved_until > now())
+          )
+        ORDER BY secret_id,
+          CASE status WHEN 'approved' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+          created_at DESC
+        """
+
+
+def _load_reveal_grants(cur, ids: list[str]) -> dict:
+    """Map secret_id → pending/approved access-request row for the current user."""
+    if not ids:
+        return {}
+    cur.execute(_GRANT_SQL, (ids,))
+    out = {}
+    for g in cur.fetchall() or []:
+        sid = g.get("secret_id") if isinstance(g, dict) else None
+        if not sid or g.get("status") not in ("pending", "approved"):
+            continue
+        out[str(sid)] = g
+    return out
+
+
+def _set_row_reveal_access(r, *, is_admin: bool, grant, allow_requests: bool = True) -> None:
+    """Set ``reveal_access`` / ``approved_until`` on a list row."""
+    has_reveal = bool(r.get("can_reveal", True))
+    needs = bool(r.get("needs_approval"))
+    if is_admin or (has_reveal and not needs):
+        r["reveal_access"] = "allowed"
+        r["approved_until"] = None
+    elif grant and grant.get("status") == "approved":
+        r["reveal_access"] = "granted"
+        r["approved_until"] = grant.get("approved_until")
+    elif grant and grant.get("status") == "pending":
+        r["reveal_access"] = "pending"
+        r["approved_until"] = None
+    elif has_reveal or allow_requests:
+        r["reveal_access"] = "locked"
+        r["approved_until"] = None
+    else:
+        r["reveal_access"] = "denied"
+        r["approved_until"] = None
+
 
 def fetch_secret_enc(cur, secret_id):
     """Return ``{value_enc, crypto_provider}`` when the caller may reveal."""
@@ -95,9 +146,11 @@ def _load_secrets_page(cur, project_id, page, q):
                  WHEN s.requires_approval IS TRUE THEN true
                  WHEN s.requires_approval IS FALSE THEN false
                  ELSE COALESCE(p.require_reveal_approval, false)
-               END AS needs_approval
+               END AS needs_approval,
+               COALESCE(t.allow_reveal_requests, true) AS allow_reveal_requests
         FROM api.secrets s
         JOIN api.projects p ON p.id = s.project_id
+        JOIN api.teams t ON t.id = p.team_id
         WHERE {where}
         ORDER BY s.key
         LIMIT %s OFFSET %s
@@ -119,50 +172,20 @@ def _load_secrets_page(cur, project_id, page, q):
             (ids,),
         )
         pinned = {str(x["secret_id"]) for x in (cur.fetchall() or [])}
-        cur.execute(
-            """
-            SELECT DISTINCT ON (secret_id)
-                   secret_id, status, approved_until
-            FROM api.secret_access_requests
-            WHERE user_id = api.current_user_id()
-              AND secret_id = ANY(%s::uuid[])
-              AND (
-                status = 'pending'
-                OR (status = 'approved' AND approved_until IS NOT NULL
-                    AND approved_until > now())
-              )
-            ORDER BY secret_id,
-              CASE status WHEN 'approved' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
-              created_at DESC
-            """,
-            (ids,),
-        )
-        for g in cur.fetchall() or []:
-            grants[str(g["secret_id"])] = g
+        grants = _load_reveal_grants(cur, ids)
     cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
     is_admin = bool((cur.fetchone() or {}).get("a"))
     for r in rows:
         r["due"] = secret_due_status(r)
         r["rotation_due"] = expires_status(r.get("rotation_next_at"))
         r["is_pinned"] = str(r["id"]) in pinned
-        needs = bool(r.get("needs_approval"))
-        r["needs_approval"] = needs
-        grant = grants.get(str(r["id"]))
-        if not bool(r.get("can_reveal", True)):
-            r["reveal_access"] = "denied"
-            r["approved_until"] = None
-        elif is_admin or not needs:
-            r["reveal_access"] = "allowed"
-            r["approved_until"] = None
-        elif grant and grant["status"] == "approved":
-            r["reveal_access"] = "granted"
-            r["approved_until"] = grant.get("approved_until")
-        elif grant and grant["status"] == "pending":
-            r["reveal_access"] = "pending"
-            r["approved_until"] = None
-        else:
-            r["reveal_access"] = "locked"
-            r["approved_until"] = None
+        r["needs_approval"] = bool(r.get("needs_approval"))
+        _set_row_reveal_access(
+            r,
+            is_admin=is_admin,
+            grant=grants.get(str(r["id"])),
+            allow_requests=bool(r.get("allow_reveal_requests", True)),
+        )
         mode = (r.get("access_mode") or "inherit").strip() or "inherit"
         r["access_mode"] = mode
         r["access_restricted"] = mode != "inherit"
@@ -255,9 +278,17 @@ def _load_team_secrets_page(
         SELECT s.id, s.key, s.note, s.kind, s.updated_at, s.expires_at,
                s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                s.access_mode, p.id AS project_id, p.name AS project_name,
-               api.can_access_secret(s.id, 'reveal') AS can_reveal
+               api.can_access_secret(s.id, 'reveal') AS can_reveal,
+               api.can_admin_project(s.project_id) AS is_admin,
+               CASE
+                 WHEN s.requires_approval IS TRUE THEN true
+                 WHEN s.requires_approval IS FALSE THEN false
+                 ELSE COALESCE(p.require_reveal_approval, false)
+               END AS needs_approval,
+               COALESCE(t.allow_reveal_requests, true) AS allow_reveal_requests
         FROM api.secrets s
         JOIN api.projects p ON p.id = s.project_id
+        JOIN api.teams t ON t.id = p.team_id
         WHERE {where}
         ORDER BY p.name, s.key
         LIMIT %s OFFSET %s
@@ -265,13 +296,20 @@ def _load_team_secrets_page(
         (*params, pager["limit"], pager["offset"]),
     )
     rows = cur.fetchall() or []
+    grants = _load_reveal_grants(cur, [str(r["id"]) for r in rows])
     for r in rows:
         r["due"] = secret_due_status(r)
         r["rotation_due"] = expires_status(r.get("rotation_next_at"))
         mode = (r.get("access_mode") or "inherit").strip() or "inherit"
         r["access_mode"] = mode
         r["access_restricted"] = mode != "inherit"
-        r["reveal_access"] = "allowed" if bool(r.get("can_reveal", True)) else "denied"
+        r["needs_approval"] = bool(r.get("needs_approval"))
+        _set_row_reveal_access(
+            r,
+            is_admin=bool(r.get("is_admin")),
+            grant=grants.get(str(r["id"])),
+            allow_requests=bool(r.get("allow_reveal_requests", True)),
+        )
     cur.execute(
         """
         SELECT id, name FROM api.projects

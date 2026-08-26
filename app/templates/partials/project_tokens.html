@@ -5,10 +5,11 @@
     </div>
   </div>
   <p class="page-desc muted">
-    Project-scoped tokens for ESO and CI. Use a <strong>key allow-list</strong> to limit which secrets automation can see.
+    Project-scoped tokens for ESO and CI. Name the keys they may use.
+    Restricted secrets are never covered by globs or <code class="k">*</code>.
   </p>
 
-  {% if can_write %}
+  {% if can_admin %}
   {% with form_id='token-form', default_name='machine', compact=false %}
     {% include "partials/token_create_form.html" %}
   {% endwith %}
@@ -38,7 +39,7 @@
            <td>{{ t.name }}</td>
            <td><code class="k">{{ t.id }}</code></td>
            <td><code class="k">{{ t.token_prefix }}…</code></td>
-          <td><span class="badge" data-variant="secondary">{{ t.role or 'service-reveal' }}</span></td>
+          <td><span class="badge" data-variant="secondary">{{ t.role or 'service-read' }}</span></td>
           <td class="col-note">
             {% if t.scopes %}
             <div class="token-scope-badges"
@@ -53,11 +54,11 @@
               <span class="muted">+{{ t.scopes|length - 8 }} more</span>
               {% endif %}
               {% if t.scopes|length == 1 and (t.scopes[0].key_pattern|default('')) == '*' %}
-              <span class="muted">all keys</span>
+              <span class="muted">all non-restricted keys</span>
               {% endif %}
             </div>
             {% else %}
-            <span class="badge" data-variant="secondary">all keys</span>
+            <span class="badge" data-variant="warning">no keys</span>
             {% endif %}
           </td>
           <td class="muted" title="{% if t.last_used_at %}{{ t.last_used_at|time_when }}{% endif %}">{% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}never{% endif %}</td>
@@ -68,7 +69,7 @@
             {% elif t.due == 'soon' %}<span class="badge" data-variant="warning">expiring soon</span>{% endif %}
           </td>
           <td class="acts">
-            {% if can_write %}
+            {% if can_admin %}
             <form method="post" action="{{ url_for('delete_token', project_id=project.id, token_id=t.id) }}" class="inline"
                   onsubmit="return confirm('Revoke token “{{ t.name }}”?')">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">

@@ -45,6 +45,10 @@ def test_migrations_ship_in_order():
         "0005_sql_password_crypt.sql",
         "0006_smtp_from_name_corvus.sql",
         "0007_login_alerts_pref.sql",
+        "0008_reveal_grant_without_acl.sql",
+        "0009_team_reveal_requests.sql",
+        "0010_fix_can_reveal_secret.sql",
+        "0011_machine_token_scope_deny.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -62,6 +66,37 @@ def test_smtp_from_name_rebrand_migration():
     assert "Keep your secrets." in sql
     assert "Corvus" in sql
     assert "UPDATE" in sql.upper()
+
+
+def test_team_reveal_requests_migration():
+    sql = (migrations.MIGRATIONS_DIR / "0009_team_reveal_requests.sql").read_text()
+    assert "allow_reveal_requests" in sql
+    assert "team_allows_reveal_requests" in sql
+
+
+def test_reveal_grant_without_acl_migration():
+    sql = (migrations.MIGRATIONS_DIR / "0008_reveal_grant_without_acl.sql").read_text()
+    assert "can_reveal_secret" in sql
+    assert "can_access_secret(sid, 'get')" in sql
+    assert "secret_access_requests" in sql
+
+
+def test_fix_can_reveal_secret_migration():
+    """0010 undoes 0008's invalid 'get' need so owners/admins can decrypt."""
+    sql = (migrations.MIGRATIONS_DIR / "0010_fix_can_reveal_secret.sql").read_text()
+    assert "can_reveal_secret" in sql
+    assert "can_access_secret(sid, 'read')" in sql
+    assert "can_access_secret(sid, 'get')" not in sql
+    assert "is_global_admin()" in sql
+    assert "can_admin_project" in sql
+
+
+def test_machine_token_scope_deny_migration():
+    sql = (migrations.MIGRATIONS_DIR / "0011_machine_token_scope_deny.sql").read_text()
+    assert "machine_key_allowed" in sql
+    assert "array_remove(rr.resources, 'machine_tokens')" in sql
+    assert "team-member" in sql
+    assert "project-write" in sql
 
 
 def test_login_alerts_pref_migration():

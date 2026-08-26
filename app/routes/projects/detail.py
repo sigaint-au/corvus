@@ -268,7 +268,7 @@ def project_detail(project_id):
                     (str(project_id),),
                 )
                 tokens = annotate_token_expiry(cur.fetchall())
-                # Attach scope allow-list summary (empty = unrestricted)
+                # Attach allow-list (empty = no keys after 0011)
                 tids = [str(t["id"]) for t in tokens]
                 scope_map: dict = {}
                 if tids:

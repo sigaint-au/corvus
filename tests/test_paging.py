@@ -167,6 +167,7 @@ def test_load_team_secrets_page_applies_filters():
                 "project_name": "api",
             }
         ],
+        [],
         [{"id": uuid4(), "name": "api"}],
     ]
     tid = str(uuid4())
@@ -210,17 +211,17 @@ def test_secret_kinds_config():
     assert "plain" in config.SECRET_KINDS
 
 
-def test_machine_key_allowed_empty_scope_is_full_access():
-    """Schema: no scope rows ⇒ machine_key_allowed allows any key (when auth ok)."""
+def test_machine_key_allowed_empty_scope_denies():
+    """0011: no scope rows deny; restricted keys need an exact secret_key."""
     from tests.helpers import REPO_ROOT
 
-    init = (REPO_ROOT / "db" / "migrations" / "0001_init.sql").read_text()
-    start = init.index("CREATE OR REPLACE FUNCTION private.machine_key_allowed")
-    end = init.index("$$;", start) + 3
-    body = init[start:end]
-    # empty allow-list → true; explicit match → true; else false
-    assert "NOT EXISTS" in body
-    assert "THEN true" in body
+    sql = (REPO_ROOT / "db" / "migrations" / "0011_machine_token_scope_deny.sql").read_text()
+    start = sql.index("CREATE OR REPLACE FUNCTION private.machine_key_allowed")
+    end = sql.index("$$;", start) + 3
+    body = sql[start:end]
+    assert "THEN false" in body
+    assert "access_mode" in body
+    assert "'restricted'" in body
     assert "glob_to_like" in body
     assert "secret_key = p_key" in body
 

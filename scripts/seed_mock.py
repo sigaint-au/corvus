@@ -181,7 +181,7 @@ CUSTOM_BINDINGS = [
 
 # Machine accounts (ServiceAccount subjects): (team, project, name, role, scope keys|None)
 # role must match api.machine_tokens CHECK: service-read | service-reveal | service-write
-# None scope keys = full project access; otherwise a key allow-list.
+# None scope keys = * (inherit keys). Restricted secrets need an exact key.
 MACHINE_TOKENS = [
     ("Platform", "demo-api", "ci-demo", "service-reveal", ["API_KEY", "DATABASE_URL"]),
     ("Payments", "billing-api", "eso-billing", "service-reveal", None),
@@ -532,10 +532,10 @@ def main() -> None:
             if not live_machine_token:
                 live_machine_token = raw
                 live_machine_project_id = pid
+            cur.execute(
+                "DELETE FROM api.machine_token_scope WHERE token_id = %s::uuid", (token_id,)
+            )
             if scope_keys:
-                cur.execute(
-                    "DELETE FROM api.machine_token_scope WHERE token_id = %s::uuid", (token_id,)
-                )
                 for k in scope_keys:
                     cur.execute(
                         """
@@ -545,13 +545,22 @@ def main() -> None:
                         """,
                         (token_id, k),
                     )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO api.machine_token_scope (token_id, key_pattern)
+                    VALUES (%s::uuid, '*')
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (token_id,),
+                )
             # ServiceAccount binding at project scope (service-* role)
             bind_sa(
                 SERVICE_ROLE_MAP.get(role, "service-reveal"),
                 token_id, "project", pid,
                 uids.get("admin@example.com") or next(iter(uids.values())),
             )
-            print(f"token {team_name}/{proj_name}/{name}  {raw}  (scope={'allow-list' if scope_keys else 'all keys'})")
+            print(f"token {team_name}/{proj_name}/{name}  {raw}  (scope={'allow-list' if scope_keys else '*'})")
 
         # Secret-scope bindings (restricted access_mode)
         for team_name, proj_name, key, user_email, gname, role_name in SECRET_BINDINGS:

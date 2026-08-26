@@ -76,7 +76,7 @@ class TestSecrets:
         assert b'Projects' not in r.data
         assert b'Add secret' in r.data
 
-    def test_viewer_cannot_click_masked_secret_without_reveal_access(self):
+    def test_viewer_can_request_reveal_without_reveal_acl(self):
         sid = uuid4()
         secret = {
             'id': sid, 'key': 'API_KEY', 'note': '', 'kind': 'plain',
@@ -84,7 +84,7 @@ class TestSecrets:
             'rotation_next_at': None, 'rotation_owner': None, 'rotated_at': None,
             'is_pinned': False, 'due': None, 'rotation_due': None,
             'access_mode': 'inherit', 'access_restricted': False,
-            'reveal_access': 'denied', 'needs_approval': False,
+            'reveal_access': 'locked', 'needs_approval': False,
             'can_reveal': False,
         }
         with patch.object(
@@ -95,9 +95,27 @@ class TestSecrets:
         ):
             r = self.client.get(f'/projects/{self.pid}?tab=secrets')
         assert r.status_code == 200
-        assert b'class="k secret-masked"' in r.data
         assert f'/projects/{self.pid}/secrets/{sid}/reveal'.encode() not in r.data
-        assert b'data-open-dialog=' not in r.data
+        assert b'data-open-dialog=' in r.data
+        assert b'Request access' in r.data
+
+    def test_list_row_without_reveal_acl_is_requestable(self):
+        from secret_svc.secret_ops import _set_row_reveal_access
+        r = {'can_reveal': False, 'needs_approval': False}
+        _set_row_reveal_access(r, is_admin=False, grant=None)
+        assert r['reveal_access'] == 'locked'
+        r = {'can_reveal': False, 'needs_approval': False}
+        _set_row_reveal_access(
+            r, is_admin=False,
+            grant={'status': 'approved', 'approved_until': '2099-01-01'},
+        )
+        assert r['reveal_access'] == 'granted'
+        r = {'can_reveal': False, 'needs_approval': False}
+        _set_row_reveal_access(r, is_admin=False, grant=None, allow_requests=False)
+        assert r['reveal_access'] == 'denied'
+        r = {'can_reveal': False, 'needs_approval': False}
+        _set_row_reveal_access(r, is_admin=True, grant=None, allow_requests=False)
+        assert r['reveal_access'] == 'allowed'
 
     def test_project_access_tab(self):
         reqs = [{'id': uuid4(), 'secret_id': uuid4(), 'secret_key': 'API_KEY', 'user_id': self.uid, 'email': 'u@ex.com', 'name': 'User', 'status': 'pending', 'reason': 'debug prod', 'created_at': '2026-01-01', 'resolved_at': None, 'approved_until': None, 'resolver_email': ''}]
@@ -226,7 +244,7 @@ class TestSecrets:
         sid = uuid4()
         enc = crypto.encrypt('super-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'expires_at': None}, {'ok': True}, {'a': True}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': True}]
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'expires_at': None}, {'a': True, 'r': True}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': True}]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
         assert r.status_code == 200
@@ -245,11 +263,34 @@ class TestSecrets:
         assert b'class="reveal-toggle ghost"' in r.data
         assert b'name="expires_at"' not in r.data
 
-    def test_reveal_secret_denied_shows_permission_message(self):
+    def test_reveal_secret_owner_without_reveal_acl(self):
+        """Team-owner / project admin may reveal even without secret-reveal ACL."""
+        sid = uuid4()
+        enc = crypto.encrypt('owner-secret')
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': sid, 'key': 'API_KEY', 'expires_at': None},
+            {'a': True, 'r': False},
+            {'value_enc': enc, 'crypto_provider': 'master'},
+            {'w': True},
+        ]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(
+                f'/projects/{self.pid}/secrets/{sid}/reveal',
+                headers={'HX-Request': 'true'},
+            )
+        assert r.status_code == 200
+        assert b'owner-secret' in r.data
+        assert b'Reveal access required' not in r.data
+
+    def test_reveal_secret_denied_when_team_disables_requests(self):
         sid = uuid4()
         conn, cur = _conn()
         cur.fetchone.side_effect = [
             {'id': sid, 'key': 'API_KEY', 'expires_at': None},
+            {'a': False, 'r': False},
+            None,
+            {'r': False},
             {'ok': False},
         ]
         with patch.object(db, 'as_user', return_value=conn):
@@ -259,13 +300,33 @@ class TestSecrets:
             )
         assert r.status_code == 200
         assert b'Reveal access required' in r.data
+        assert b'secret-reveal' in r.data
+        assert b'Request access' not in r.data
+
+    def test_reveal_secret_denied_shows_permission_message(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': sid, 'key': 'API_KEY', 'expires_at': None},
+            {'a': False, 'r': False},
+            None,
+            {'r': False},
+            {'ok': True},
+        ]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(
+                f'/projects/{self.pid}/secrets/{sid}/reveal',
+                headers={'HX-Request': 'true'},
+            )
+        assert r.status_code == 200
+        assert b'Request access' in r.data
         assert b'The action failed' not in r.data
 
     def test_reveal_secret_requires_access_request(self):
         sid = uuid4()
         enc = crypto.encrypt('super-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'expires_at': None}, {'ok': True}, {'a': False}, {'r': True}, None]
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'value_enc': enc, 'expires_at': None}, {'a': False, 'r': False}, None, {'r': True}]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
         assert r.status_code == 200
@@ -279,7 +340,7 @@ class TestSecrets:
         sid = uuid4()
         enc = crypto.encrypt('open-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'FEATURE_FLAG', 'expires_at': None}, {'ok': True}, {'a': False}, {'r': False}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': False}]
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'FEATURE_FLAG', 'expires_at': None}, {'a': False, 'r': True}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': False}]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
         assert r.status_code == 200
@@ -289,7 +350,7 @@ class TestSecrets:
         sid = uuid4()
         enc = crypto.encrypt('granted-secret')
         conn, cur = _conn()
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'expires_at': None}, {'ok': True}, {'a': False}, {'r': True}, {'id': uuid4(), 'status': 'approved', 'approved_until': '2099-01-01', 'created_at': '2026-01-01', 'reason': ''}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': False}]
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY', 'expires_at': None}, {'a': False, 'r': True}, {'value_enc': enc, 'crypto_provider': 'master'}, {'w': False}]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}/secrets/{sid}/reveal', headers={'HX-Request': 'true'})
         assert r.status_code == 200
@@ -299,7 +360,7 @@ class TestSecrets:
         sid = uuid4()
         conn, cur = _conn()
         created = {'id': uuid4(), 'status': 'pending', 'created_at': '2026-01-01', 'reason': 'need it'}
-        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY'}, {'a': False}, {'r': True}, None, created]
+        cur.fetchone.side_effect = [{'id': sid, 'key': 'API_KEY'}, {'a': False, 'r': False}, None, {'r': False}, {'ok': True}, created]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.post(f'/projects/{self.pid}/secrets/{sid}/access-request', data={'reason': 'need it', 'dialog': '1'}, headers={'HX-Request': 'true'})
         assert r.status_code == 200
@@ -310,6 +371,23 @@ class TestSecrets:
         assert 'secret_access_requests' in sql
         audit_args = ' '.join(str(c.args) for c in cur.execute.call_args_list if c.args)
         assert 'access_requested' in audit_args
+
+    def test_request_secret_access_blocked_when_team_disables(self):
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': sid, 'key': 'API_KEY'}, {'a': False, 'r': False}, None, {'r': False}, {'ok': False},
+        ]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/projects/{self.pid}/secrets/{sid}/access-request',
+                data={'reason': 'need it'},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        conn.commit.assert_not_called()
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
+        assert 'INSERT INTO api.secret_access_requests' not in sql
 
     def test_approve_secret_access(self):
         rid, sid = (uuid4(), uuid4())
@@ -356,9 +434,9 @@ class TestSecrets:
             'project_name': 'prod', 'require_reveal_approval': False,
         }
         # as_user cursor fetchone order:
-        #   [secret row, can_write, can_reveal_acl, helper can_admin, can_admin, secret_enc]
+        #   [secret row, can_write, helper can_admin, can_admin, secret_enc]
         cur.fetchone.side_effect = [
-            row, {'w': True}, {'r': True}, {'a': True}, {'a': True},
+            row, {'w': True}, {'a': True}, {'a': True},
             {'value_enc': enc, 'crypto_provider': 'master'},
         ]
         bindings = [{'id': sid, 'subject_kind': 'User', 'subject_id': binder_uid,
@@ -396,7 +474,7 @@ class TestSecrets:
             'project_name': 'prod', 'require_reveal_approval': False,
         }
         cur.fetchone.side_effect = [
-            row, {'w': True}, {'r': True}, {'a': True}, {'a': False},
+            row, {'w': True}, {'a': True}, {'a': False},
             {'value_enc': enc, 'crypto_provider': 'master'},
         ]
         cur.fetchall.side_effect = [[], [], []]
@@ -424,7 +502,7 @@ class TestSecrets:
             'project_name': 'prod', 'require_reveal_approval': False,
         }
         cur.fetchone.side_effect = [
-            row, {'w': True}, {'r': True}, {'a': True}, {'a': True},
+            row, {'w': True}, {'a': True}, {'a': True},
         ]
         cur.fetchall.side_effect = [[], [], [], []]
         cur.rowcount = 1

@@ -62,11 +62,10 @@ def reveal_secret(project_id, secret_id):
         row = get_secret_brief(cur, secret_id, project_id)
         if not row:
             return "Not found", 404
-        cur.execute(
-            "SELECT api.can_access_secret(%s, 'reveal') AS ok",
-            (str(secret_id),),
+        access_state, access_row = _reveal_access_state(
+            cur, project_id, secret_id, session["user_id"]
         )
-        if not (cur.fetchone() or {}).get("ok"):
+        if access_state == "denied":
             return render_template(
                 "partials/reveal_access.html",
                 project_id=project_id,
@@ -75,9 +74,6 @@ def reveal_secret(project_id, secret_id):
                 state="denied",
                 cell=cell,
             )
-        access_state, access_row = _reveal_access_state(
-            cur, project_id, secret_id, session["user_id"]
-        )
         if access_state != "allowed":
             return _render_reveal_access_panel(
                 project_id=project_id,
@@ -213,15 +209,10 @@ def secret_view(project_id, secret_id):
             (str(secret_id),),
         )
         can_write = bool((cur.fetchone() or {}).get("w"))
-        cur.execute(
-            "SELECT api.can_access_secret(%s, 'reveal') AS r",
-            (str(secret_id),),
-        )
-        can_reveal_perm = bool((cur.fetchone() or {}).get("r"))
         access_state, access_row = _reveal_access_state(
             cur, project_id, secret_id, session["user_id"]
         )
-        can_reveal = can_reveal_perm and access_state == "allowed"
+        can_reveal = access_state == "allowed"
         cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
         can_admin = bool((cur.fetchone() or {}).get("a"))
         custom_meta = []
@@ -401,7 +392,7 @@ def secret_view(project_id, secret_id):
                 team_groups=team_groups,
                 effective_access=effective_access,
                 active_tab=active_tab,
-                access_blocked=can_reveal_perm and access_state != "allowed",
+                access_blocked=access_state in ("pending", "need_request"),
                 access_state=access_state,
                 access_request=access_row,
                 custom_meta=custom_meta,
@@ -424,7 +415,7 @@ def secret_view(project_id, secret_id):
                 team_groups=team_groups if can_admin else [],
                 effective_access=effective_access,
                 active_tab="meta" if active_tab == "meta" else "secret",
-                access_blocked=can_reveal_perm and access_state != "allowed",
+                access_blocked=access_state in ("pending", "need_request"),
                 access_state=access_state,
                 access_request=access_row,
                 custom_meta=custom_meta,

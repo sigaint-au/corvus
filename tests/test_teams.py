@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import app as store
+import audit
 from core import config, db, settings_svc
 from integrations import ldap_auth
 from tests.helpers import REPO_ROOT
@@ -90,6 +91,40 @@ class TestTeams:
         assert b'?tab=settings' in r.data
         sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
         assert 'from api.projects' in sql
+
+    def test_update_team_settings_reveal_requests(self):
+        tid = uuid4()
+        last = {'sql': '', 'params': None}
+
+        def execute(sql, params=None):
+            last['sql'] = ' '.join(str(sql).lower().split())
+            last['params'] = params
+
+        def fetchone():
+            if 'team_role' in last['sql']:
+                return {'r': 'team-owner'}
+            return None
+
+        conn, cur = _conn(fetchone=fetchone)
+        cur.execute.side_effect = execute
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn), patch.object(audit, 'log_org'):
+            r = self.client.post(
+                f'/teams/{tid}/settings',
+                data={'allow_reveal_requests': '1'},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        assert 'allow_reveal_requests' in last['sql']
+        assert last['params'][-2] is True
+
+        with patch.object(db, 'as_user', return_value=conn), patch.object(audit, 'log_org'):
+            r = self.client.post(
+                f'/teams/{tid}/settings',
+                data={},
+                follow_redirects=False,
+            )
+        assert last['params'][-2] is False
 
     def test_team_detail_members_tab(self):
         tid = uuid4()
