@@ -36,8 +36,8 @@ Cluster
 |------|-----|
 | `team-owner` | Full team control; delete team; always project admin/write |
 | `team-admin` | Manage members, groups, settings; always project admin/write |
-| `team-member` | Create projects; write secrets (reveal granted separately) |
-| `team-viewer` | Read-only (metadata, no plaintext) |
+| `team-member` | Create projects; write secrets (no reveal — request access to see values) |
+| `team-viewer` | Read-only (metadata, no plaintext; can request a reveal grant) |
 
 Only `team-owner` can assign the `team-owner` role.
 
@@ -55,8 +55,10 @@ If a user has **no** project-scope binding, access falls back to their team role
 | Team role | Effective project access (no project binding) |
 |-----------|-----------------------------------------------|
 | `team-owner` / `team-admin` | `project-admin` |
-| `team-member` | `project-write` |
-| `team-viewer` | `project-read` |
+| `team-member` | get/list/create/update secrets (no reveal) |
+| `team-viewer` | `project-read` (metadata only) |
+
+Users who can see a secret but not reveal it can **request access** when the team setting **Allow members to request reveal** is on (default). An owner or project admin grants a time-limited reveal (default 15 minutes). The same request flow applies when a secret or project has **require reveal approval** even for users who already have the reveal verb.
 
 ### Secret roles
 

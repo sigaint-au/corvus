@@ -75,6 +75,17 @@ def request_secret_access(project_id, secret_id):
                 )
             flash("You already have access to reveal this secret", "ok")
             return redirect(url_for("project_detail", project_id=project_id, tab="requests"))
+        if access_state == "denied":
+            if wants_htmx:
+                return _render_reveal_access_panel(
+                    project_id=project_id,
+                    secret_id=secret_id,
+                    secret_key=row["key"],
+                    state="denied",
+                    cell=cell,
+                )
+            flash("This team does not allow reveal access requests", "error")
+            return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
         if access_state == "pending":
             if wants_htmx:
                 return _render_reveal_access_panel(

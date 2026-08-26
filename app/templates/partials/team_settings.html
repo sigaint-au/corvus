@@ -10,6 +10,17 @@
     </div>
     <p class="muted">Leave blank to use no default (tokens never expire unless set per token).</p>
 
+    <h3>Reveal requests</h3>
+    <p class="muted">
+      Members and viewers can see secret names. When this is on, they can ask
+      an owner or admin for a time-limited reveal of the value.
+    </p>
+    <label class="check-row">
+      <input type="checkbox" name="allow_reveal_requests" value="1"
+             {% if team.allow_reveal_requests is not defined or team.allow_reveal_requests %}checked{% endif %}>
+      Allow members to request reveal of secrets they can see but not open
+    </label>
+
     <h3>Classification banner</h3>
     <p class="muted">Optional override of the server-wide banner while this team is selected in the sidebar.</p>
     <label class="check-row">

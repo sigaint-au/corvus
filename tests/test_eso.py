@@ -314,7 +314,6 @@ class TestESO:
                 'updated_at': None,
                 'last_accessed_at': None,
             },
-            {'ok': True},  # can_access_secret
             {'ok': True},  # can_reveal_secret
             {'value_enc': enc, 'crypto_provider': 'master'},
         ]

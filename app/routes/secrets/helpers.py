@@ -40,35 +40,8 @@ def _secret_requires_approval(cur, secret_id) -> bool:
     return bool((cur.fetchone() or {}).get("r"))
 
 
-def _reveal_access_state(cur, project_id, secret_id, user_id):
-    """Return whether the user may reveal a secret without further approval.
-
-    Open secrets (effective policy off) and project admins / team owners
-    may always reveal. When approval is required, holders of an unexpired
-    approved grant may reveal; others must request access.
-
-    Args:
-        cur: Open DB cursor under the caller's RLS context.
-        project_id: UUID of the project that owns the secret.
-        secret_id: UUID of the secret.
-        user_id: UUID of the requesting user.
-
-    Returns:
-        tuple[str, dict | None]: ``(state, row)`` where state is one of
-        ``allowed``, ``pending``, or ``need_request``. ``row`` is the matching
-        access-request mapping when pending or an active grant exists.
-        When allowed via grant, ``row`` includes ``approved_until``.
-
-    Example:
-        >>> state, row = _reveal_access_state(cur, pid, sid, uid)
-        >>> state in ("allowed", "pending", "need_request")
-        True
-    """
-    cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
-    if (cur.fetchone() or {}).get("a"):
-        return "allowed", None
-    if not _secret_requires_approval(cur, secret_id):
-        return "allowed", None
+def _active_reveal_grant(cur, secret_id, user_id):
+    """Return the current pending request or unexpired approved grant, if any."""
     cur.execute(
         """
         SELECT id, status, approved_until, created_at, reason
@@ -86,12 +59,58 @@ def _reveal_access_state(cur, project_id, secret_id, user_id):
         """,
         (str(secret_id), str(user_id)),
     )
-    row = cur.fetchone()
-    if not row:
-        return "need_request", None
-    if row["status"] == "approved":
+    return cur.fetchone()
+
+
+def _reveal_access_state(cur, project_id, secret_id, user_id):
+    """Return whether the user may reveal a secret without further approval.
+
+    Project admins always reveal. Users with reveal ACL may reveal when the
+    secret does not require extra approval. Everyone else who can see the
+    secret (list/get) may hold an approved grant, a pending request, or
+    need to request access — including team-members who have no reveal verb.
+
+    Args:
+        cur: Open DB cursor under the caller's RLS context.
+        project_id: UUID of the project that owns the secret.
+        secret_id: UUID of the secret.
+        user_id: UUID of the requesting user.
+
+    Returns:
+        tuple[str, dict | None]: ``(state, row)`` where state is one of
+        ``allowed``, ``pending``, ``need_request``, or ``denied``. ``row`` is the matching
+        access-request mapping when pending or an active grant exists.
+        When allowed via grant, ``row`` includes ``approved_until``.
+
+    Example:
+        >>> state, row = _reveal_access_state(cur, pid, sid, uid)
+        >>> state in ("allowed", "pending", "need_request")
+        True
+    """
+    cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+    if (cur.fetchone() or {}).get("a"):
+        return "allowed", None
+    cur.execute(
+        "SELECT api.can_access_secret(%s, 'reveal') AS r",
+        (str(secret_id),),
+    )
+    has_reveal = bool((cur.fetchone() or {}).get("r"))
+    if has_reveal and not _secret_requires_approval(cur, secret_id):
+        return "allowed", None
+    row = _active_reveal_grant(cur, secret_id, user_id)
+    if row and row["status"] == "approved":
         return "allowed", row
-    return "pending", row
+    if row and row["status"] == "pending":
+        return "pending", row
+    if has_reveal:
+        return "need_request", None
+    cur.execute(
+        "SELECT api.team_allows_reveal_requests(%s) AS ok",
+        (str(project_id),),
+    )
+    if (cur.fetchone() or {}).get("ok"):
+        return "need_request", None
+    return "denied", None
 
 
 def _render_reveal_access_panel(

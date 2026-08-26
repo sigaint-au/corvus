@@ -45,6 +45,8 @@ def test_migrations_ship_in_order():
         "0005_sql_password_crypt.sql",
         "0006_smtp_from_name_corvus.sql",
         "0007_login_alerts_pref.sql",
+        "0008_reveal_grant_without_acl.sql",
+        "0009_team_reveal_requests.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -62,6 +64,19 @@ def test_smtp_from_name_rebrand_migration():
     assert "Keep your secrets." in sql
     assert "Corvus" in sql
     assert "UPDATE" in sql.upper()
+
+
+def test_team_reveal_requests_migration():
+    sql = (migrations.MIGRATIONS_DIR / "0009_team_reveal_requests.sql").read_text()
+    assert "allow_reveal_requests" in sql
+    assert "team_allows_reveal_requests" in sql
+
+
+def test_reveal_grant_without_acl_migration():
+    sql = (migrations.MIGRATIONS_DIR / "0008_reveal_grant_without_acl.sql").read_text()
+    assert "can_reveal_secret" in sql
+    assert "can_access_secret(sid, 'get')" in sql
+    assert "secret_access_requests" in sql
 
 
 def test_login_alerts_pref_migration():

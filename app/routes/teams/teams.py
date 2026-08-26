@@ -395,6 +395,7 @@ def update_team_settings(team_id):
                 flash("Banner text is required when the banner is shown", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             class_on_val = class_show
+        allow_reveal_requests = bool(request.form.get("allow_reveal_requests"))
         try:
             cur.execute(
                 """
@@ -403,7 +404,8 @@ def update_team_settings(team_id):
                   classification_enabled = %s,
                   classification_text = %s,
                   classification_color = %s,
-                  classification_fg = %s
+                  classification_fg = %s,
+                  allow_reveal_requests = %s
                 WHERE id = %s
                 """,
                 (
@@ -412,6 +414,7 @@ def update_team_settings(team_id):
                     class_text,
                     class_color,
                     class_fg,
+                    allow_reveal_requests,
                     str(team_id),
                 ),
             )
@@ -426,7 +429,8 @@ def update_team_settings(team_id):
                     detail=(
                         f"token_days={default_token_days or 'server'} "
                         f"class_override={class_on_val is not None} "
-                        f"class_enabled={class_on_val}"
+                        f"class_enabled={class_on_val} "
+                        f"allow_reveal_requests={allow_reveal_requests}"
                     ),
                 )
                 conn.commit()

@@ -116,15 +116,11 @@ def reveal_secret_version(project_id, secret_id, version_id):
         row = cur.fetchone()
         if not row:
             return "Not found", 404
-        cur.execute(
-            "SELECT api.can_access_secret(%s, 'reveal') AS ok",
-            (str(secret_id),),
-        )
-        if not (cur.fetchone() or {}).get("ok"):
-            return ("Forbidden", 403)
         access_state, access_row = _reveal_access_state(
             cur, project_id, secret_id, session["user_id"]
         )
+        if access_state == "denied":
+            return ("Forbidden", 403)
         if access_state != "allowed":
             return _render_reveal_access_panel(
                 project_id=project_id,

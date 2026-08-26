@@ -80,6 +80,26 @@ def eso_request_secret_access(project_ref, key):
                 }
             )
         cur.execute(
+            "SELECT api.can_access_secret(%s, 'reveal') AS r",
+            (str(row["id"]),),
+        )
+        if not (cur.fetchone() or {}).get("r"):
+            cur.execute(
+                "SELECT api.team_allows_reveal_requests(%s) AS ok",
+                (str(pid),),
+            )
+            if not (cur.fetchone() or {}).get("ok"):
+                return (
+                    jsonify(
+                        {
+                            "error": "forbidden",
+                            "message": "This team does not allow reveal access requests",
+                            "key": row["key"],
+                        }
+                    ),
+                    403,
+                )
+        cur.execute(
             """
             INSERT INTO api.secret_access_requests
               (project_id, secret_id, user_id, reason, status)
