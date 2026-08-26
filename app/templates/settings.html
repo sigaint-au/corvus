@@ -26,7 +26,9 @@
 {% elif active_tab == 'oidc' %}{% include "partials/settings_oidc.html" %}
 {% elif active_tab == 'email' %}{% include "partials/settings_email.html" %}
 {% elif active_tab == 'encryption' %}{% include "partials/settings_encryption.html" %}
-{% elif active_tab == 'webhooks' %}{% include "partials/settings_webhooks.html" %}
+{% elif active_tab == 'webhooks' %}
+{% set scope_kind = 'cluster' %}{% set scope_ref = None %}{% set list_url = url_for('server_settings', tab='webhooks') %}
+{% include "partials/webhooks_list.html" %}
 
 {% endif %}
 

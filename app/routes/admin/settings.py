@@ -349,56 +349,6 @@ SETTINGS_CATEGORIES = [
 ALL_TABS = tuple(t for _, _, subs in SETTINGS_CATEGORIES for t, _ in subs)
 
 
-def _admin_webhook_action(action: str) -> None:
-    """Create/delete/toggle a cluster-scope webhook from the settings form."""
-    import secrets as _secrets
-
-    from integrations import webhooks as wh
-
-    with db.connect_admin() as conn, conn.cursor() as cur:
-        if action == "webhook_create":
-            url, events, ssl_verify, err = wh.validate_webhook_input(request.form)
-            if err:
-                flash(err, "error")
-                return
-            token = (request.form.get("secret_token") or "").strip()
-            generated = False
-            if not token:
-                # ponytail: shown-once flash; rotate by re-creating
-                token = _secrets.token_hex(32)
-                generated = True
-            name = (request.form.get("name") or "").strip()[:80] or "webhook"
-            cur.execute(
-                """
-                INSERT INTO api.webhooks (name, url, secret_token, events, scope_kind, scope_id, ssl_verify)
-                VALUES (%s, %s, %s, %s, 'cluster', NULL, %s)
-                """,
-                (name, url, token, events, ssl_verify),
-            )
-            flash(
-                ("Signing secret (copy now, shown once): " + token) if generated
-                else "Webhook created",
-                "ok",
-            )
-        else:
-            webhook_id = (request.form.get("webhook_id") or "").strip()
-            if not webhook_id:
-                flash("Missing webhook", "error")
-                return
-            if action == "webhook_toggle":
-                cur.execute(
-                    "UPDATE api.webhooks SET active = NOT active WHERE id = %s::uuid AND scope_kind = 'cluster'",
-                    (webhook_id,),
-                )
-                flash("Webhook updated", "ok")
-            else:
-                cur.execute(
-                    "DELETE FROM api.webhooks WHERE id = %s::uuid AND scope_kind = 'cluster'",
-                    (webhook_id,),
-                )
-                flash("Webhook deleted", "ok")
-
-
 def _cluster_webhooks() -> list[dict]:
     """Cluster-scope webhooks + recent deliveries for the admin tab."""
     from integrations import webhooks as wh
@@ -438,10 +388,7 @@ def server_settings():
     oidc_test = None
     if request.method == "POST":
         action = (request.form.get("action") or "").strip()
-        if action in ("webhook_create", "webhook_delete", "webhook_toggle"):
-            _admin_webhook_action(action)
-            return redirect(url_for("server_settings", tab="webhooks"))
-        elif action == "ldap_test":
+        if action == "ldap_test":
             ldap_test = _ldap_test_probe(request.form)
         elif action == "oidc_test":
             oidc_test = _oidc_test_probe(request.form.get("oidc_issuer"))
@@ -1143,6 +1090,7 @@ def server_settings():
         projects_pager=projects_pager,
         health_probe=health_probe,
         webhooks=cluster_webhooks,
+        search_q=(request.args.get("q") or "").strip(),
         ldap_test=ldap_test,
         oidc_test=oidc_test,
     )

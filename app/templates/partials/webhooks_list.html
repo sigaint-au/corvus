@@ -1,0 +1,44 @@
+{# Shared webhook list: expects webhooks, add_url, back (path), search action path #}
+<div class="section-tools">
+  <form method="get" class="toolbar" role="search">
+    <fieldset class="group search-input">
+      {% include "partials/search_icon.html" %}
+      <input type="search" name="q" value="{{ search_q or '' }}"
+             placeholder="Search" autocomplete="off" aria-label="Search webhooks">
+    </fieldset>
+    {% if search_q %}<a class="button ghost small" href="{{ list_url }}">Clear</a>{% endif %}
+  </form>
+  <a class="button outline small" href="{{ url_for('webhook_new', scope=scope_kind, scope_id=scope_ref or '', back=list_url) }}">+ Add webhook</a>
+</div>
+{% if webhooks %}
+<div class="table"><table class="table-spaced">
+  <thead>
+    <tr>
+      <th>Name</th><th>Endpoint</th><th>Events</th><th>Status</th><th>Last delivery</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for w in webhooks %}
+    <tr>
+      <td><a href="{{ url_for('webhook_view', webhook_id=w.id, back=list_url) }}"><strong>{{ w.name }}</strong></a></td>
+      <td class="mono muted" style="max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ w.url }}</td>
+      <td class="muted">{{ w.events | length }} event{{ 's' if w.events | length != 1 }}</td>
+      <td><span class="badge {% if w.active %}success{% else %}muted{% endif %}">{{ 'Active' if w.active else 'Paused' }}</span></td>
+      <td class="muted">
+        {% set d = w.deliveries[0] if w.deliveries else None %}
+        {% if d %}
+          {{ d.created_at.strftime('%Y-%m-%d %H:%M') if d.created_at }} —
+          {% if d.ok %}<span class="badge success">{{ d.status_code }}</span>
+          {% else %}<span class="badge danger">{{ d.status_code or 'ERR' }}</span>{% endif %}
+        {% else %}never{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table></div>
+{% elif search_q %}
+<p class="empty">No webhooks match “{{ search_q }}”.</p>
+{% else %}
+{% set icon = 'settings' %}{% set title = 'No webhooks yet' %}{% set text = 'Add a webhook to push events to an external endpoint.' %}
+{% include "partials/empty_state.html" %}
+{% endif %}

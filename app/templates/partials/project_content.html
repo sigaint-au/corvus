@@ -5,7 +5,9 @@
 {% elif active_tab == 'audit' %}{% include "partials/project_audit.html" %}
 {% elif active_tab == 'tokens' %}{% include "partials/project_tokens.html" %}
 {% elif active_tab == 'integrations' %}{% include "partials/project_integrations.html" %}
-{% elif active_tab == 'webhooks' and can_admin %}{% include "partials/project_webhooks.html" %}
+{% elif active_tab == 'webhooks' and can_admin %}
+{% set scope_kind = 'project' %}{% set scope_ref = project.id %}{% set list_url = url_for('project_detail', project_id=project.id, tab='webhooks') %}
+{% include "partials/webhooks_list.html" %}
 {% elif active_tab == 'settings' and can_settings %}{% include "partials/project_settings.html" %}
 {% else %}{% include "partials/project_secrets.html" %}
 {% endif %}
