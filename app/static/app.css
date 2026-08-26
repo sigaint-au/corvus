@@ -24,7 +24,7 @@
       --muted-foreground:    light-dark(#57626e, #a3aab3);
 
       --faint:               light-dark(#fafafa, #111111);
-      --faint-foreground:    light-dark(#64707c, #737a84);
+      --faint-foreground:    light-dark(#5a6670, #838a98);
 
       --accent:              light-dark(#eef0f1, #1a1e22);
 
@@ -48,7 +48,8 @@
       --side-bg:             #0c0e10;
       --side-ink:            #e8eaed;
       --side-muted:          #9aa1a9;
-      --side-faint:          #6b727a;
+      --side-faint:          #828a92;
+      --side-brand:          #f4f1ea;
       --side-hover:          #161a1f;
       --side-active:         #1a2228;
       --side-accent:         #47817F;
@@ -102,8 +103,8 @@
       display: none;
       align-items: center;
       justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
+      width: 2.75rem;
+      height: 2.75rem;
       padding: 0;
       border: 1px solid var(--side-border);
       border-radius: 6px;
@@ -140,7 +141,7 @@
       min-width: 0;
     }
     /* Raven mark: mask of static/logo.svg. Sidebar is always dark → cream
-       fill (#f4f1ea). Auth card follows color-scheme (black / cream). */
+       fill (var(--side-brand)). Auth card follows color-scheme (black / cream). */
     .brand-logo {
       display: block;
       flex: 0 0 auto;
@@ -185,6 +186,14 @@
     @keyframes secrets-spin {
       to { transform: rotate(360deg); }
     }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
     /* HTMX in-flight feedback for search/filter forms swapping results */
     form.htmx-request {
       opacity: .55;
@@ -221,7 +230,7 @@
       transition: color .12s ease, background .12s ease;
     }
     .sidebar a.brand .brand-logo {
-      color: #f4f1ea;
+      color: var(--side-brand);
     }
     .sidebar a.brand .brand-text {
       min-width: 0;
@@ -230,11 +239,11 @@
     }
     .sidebar a.brand:hover {
       text-decoration: none;
-      color: #fff;
+      color: var(--side-ink);
       background: transparent;
     }
     .sidebar a.brand:hover .brand-logo {
-      color: #fff;
+      color: var(--side-ink);
     }
     .sidebar a.brand .brand-sub {
       display: block;
@@ -600,12 +609,17 @@
       cursor: pointer;
       font-size: 1.05rem;
       line-height: 1;
-      padding: .15rem .2rem;
+      padding: .35rem .4rem;
+      min-width: 1.75rem;
+      min-height: 1.75rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
     .pin-btn.pinned { color: var(--warning); }
     .pin-btn:hover { color: var(--foreground); }
     #side-pins.is-empty { display: none; }
-    .copy-btn:not(.button) { font-size: .7rem; font-weight: 400; width: auto !important; padding: 0 .45rem !important; }
+    .copy-btn:not(.button) { font-size: .7rem; font-weight: 400; width: auto !important; padding: .35rem .6rem !important; min-height: 1.75rem; display: inline-flex; align-items: center; }
     .side-team label {
       display: block;
       font-size: .65rem;
@@ -634,7 +648,7 @@
     .sr-only {
       position: absolute; width: 1px; height: 1px;
       padding: 0; margin: -1px; overflow: hidden;
-      clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+      clip-path: inset(50%); white-space: nowrap; border: 0;
     }
     /* Settings identity forms: grouped grids so LDAP/OIDC are less a tall stack */
     .settings-form {
@@ -928,13 +942,13 @@
       appearance: none;
       -webkit-appearance: none;
       box-sizing: border-box;
-      width: 1rem;
-      height: 1rem;
-      min-width: 1rem;
-      min-height: 1rem;
-      max-width: 1rem;
+      width: 1.25rem;
+      height: 1.25rem;
+      min-width: 1.25rem;
+      min-height: 1.25rem;
+      max-width: 1.25rem;
       margin: .15rem 0 0;
-      flex: 0 0 1rem;
+      flex: 0 0 1.25rem;
       padding: 0;
       position: relative;
       vertical-align: middle;
@@ -1216,7 +1230,7 @@
     .auth-brand .brand-logo {
       width: 2.15rem;
       height: calc(2.15rem * 474 / 500);
-      color: light-dark(#0c0c0b, #f4f1ea);
+      color: light-dark(#0c0c0b, var(--side-brand));
     }
     .auth-brand:hover { text-decoration: none; opacity: .8; }
     .auth-brand .brand-sub {
@@ -1313,6 +1327,99 @@
       line-height: 1.5;
     }
     .empty-state-action { margin: .85rem 0 0; }
+    /* Setup guide (first-run teams page) */
+    .setup-guide {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: .4rem;
+      padding: 2.5rem 1rem;
+      max-width: 34rem;
+      margin: .5rem auto;
+    }
+    .setup-guide-art {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(160deg, var(--border),
+                  color-mix(in srgb, var(--border) 35%, transparent));
+      color: var(--muted-foreground);
+      margin-bottom: .55rem;
+    }
+    .setup-guide-title {
+      margin: 0;
+      font-weight: 650;
+      font-size: 1.04rem;
+      color: var(--foreground);
+    }
+    .setup-guide-text {
+      margin: 0;
+      max-width: 30rem;
+      color: var(--muted-foreground);
+      font-size: .9rem;
+      line-height: 1.5;
+    }
+    .setup-guide-steps {
+      list-style: none;
+      margin: 1.2rem 0 .8rem;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: .65rem;
+      width: 100%;
+      max-width: 24rem;
+      text-align: left;
+    }
+    .setup-guide-step {
+      display: grid;
+      grid-template-columns: 1.75rem 1fr;
+      gap: .65rem;
+      align-items: baseline;
+      padding: .6rem .75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+    }
+    .setup-guide-step.is-active {
+      border-color: var(--side-accent);
+    }
+    .setup-guide-n {
+      display: grid;
+      place-items: center;
+      width: 1.75rem;
+      height: 1.75rem;
+      border-radius: 50%;
+      font-size: .8rem;
+      font-weight: 600;
+      background: var(--border);
+      color: var(--foreground);
+    }
+    .setup-guide-step.is-active .setup-guide-n {
+      background: var(--side-accent);
+      color: var(--primary-foreground);
+    }
+    .setup-guide-label {
+      font-weight: 600;
+      font-size: .9rem;
+      color: var(--foreground);
+    }
+    .setup-guide-hint {
+      font-size: .82rem;
+      line-height: 1.4;
+      display: block;
+    }
+    .setup-guide-action { margin: .85rem 0 0; }
+    /* Radio card help text */
+    .radio-card-help {
+      display: block;
+      font-size: .8rem;
+      line-height: 1.4;
+      color: var(--muted-foreground);
+      margin-top: .2rem;
+    }
     /* Error pages */
     .err-page {
       margin: 0;
@@ -2553,7 +2660,7 @@
       padding: 0;
       margin: -1px;
       overflow: hidden;
-      clip: rect(0, 0, 0, 0);
+      clip-path: inset(50%);
       white-space: nowrap;
       border: 0;
     }
@@ -2709,6 +2816,12 @@
     .acts .reveal-toggle:not(.ghost):hover { text-decoration: underline; }
     .pager-count { margin-top: 1rem; }
     .table-spaced { margin-top: 1rem; }
+    .col-url {
+      max-width: 22rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .swatch-row { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
     .swatch {
       width: 1.75rem; height: 1.75rem; border-radius: var(--radius-sm);

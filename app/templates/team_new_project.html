@@ -40,6 +40,7 @@
         <span class="radio-card-body">
           <strong>Server key</strong>
           <span class="muted">Server-wide key</span>
+          <span class="radio-card-help">Encrypted with the master key. Simplest setup, no extra configuration.</span>
         </span>
       </label>
       <label class="radio-card">
@@ -49,6 +50,7 @@
         <span class="radio-card-body">
           <strong>Local</strong>
           <span class="muted">Project key{% if my_role not in ('team-owner', 'team-admin') %} · owners/admins only{% endif %}</span>
+          <span class="radio-card-help">A dedicated key for this project, wrapped by the server master key. Keys are isolated per project.</span>
         </span>
       </label>
       {% if hsm_available %}
@@ -59,6 +61,7 @@
         <span class="radio-card-body">
           <strong>HSM</strong>
           <span class="muted">Project key in HSM{% if my_role not in ('team-owner', 'team-admin') %} · owners/admins only{% endif %}</span>
+          <span class="radio-card-help">Key material lives in a hardware security module. The HSM must remain available for all future access.</span>
         </span>
       </label>
       {% if hsm_slots %}

@@ -12,7 +12,7 @@
 </p>
 
 <style>
-  .wh-events { border: 1px solid var(--border, #d8dde3); border-radius: .5rem; padding: .75rem 1rem; margin: .5rem 0 1rem; }
+  .wh-events { border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1rem; margin: .5rem 0 1rem; }
   .wh-events legend { font-weight: 600; padding: 0 .35rem; }
   .wh-group { margin-bottom: .75rem; }
   .wh-group h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin: 0 0 .35rem; }
@@ -32,8 +32,8 @@
         <td>{{ d.created_at.strftime('%Y-%m-%d %H:%M:%S') if d.created_at }}</td>
         <td><code>{{ d.event }}</code></td>
         <td>
-          {% if d.ok %}<span class="badge success">{{ d.status_code }}</span>
-          {% else %}<span class="badge danger">{{ d.status_code or 'ERR' }}</span>{% endif %}
+          {% if d.ok %}<span class="badge" data-variant="success">{{ d.status_code }}</span>
+          {% else %}<span class="badge" data-variant="danger">{{ d.status_code or 'ERR' }}</span>{% endif %}
           {% if d.error %}<span class="muted">{{ d.error }}</span>{% endif %}
         </td>
         <td>{{ d.duration_ms }} ms</td>
@@ -102,7 +102,7 @@
       </div>
     </fieldset>
 
-    <p id="wh-events-error" hidden class="badge danger" style="margin: .25rem 0;">Select at least one event before saving.</p>
+    <p id="wh-events-error" hidden class="badge" data-variant="danger" style="margin: .25rem 0;">Select at least one event before saving.</p>
 
     <button type="submit" class="button">{{ 'Save changes' if mode == 'edit' else 'Add webhook' }}</button>
   </form>
@@ -134,7 +134,7 @@
       <form method="post" action="{{ url_for('webhook_delete', webhook_id=webhook.id) }}">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <input type="hidden" name="back" value="{{ back }}">
-        <button type="submit" class="button danger">Delete webhook</button>
+        <button type="submit" class="button" data-variant="danger">Delete webhook</button>
       </form>
     </div>
   </details>

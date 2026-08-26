@@ -42,18 +42,46 @@
 </table></div>
 {% else %}
 {% if search_q %}
-<p class="empty">No teams match “{{ search_q }}”.</p>
+<p class="empty">No teams match "{{ search_q }}".</p>
+{% else %}
+{% if can_create_team %}
+<div class="setup-guide">
+  <div class="setup-guide-art" aria-hidden="true">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="3"/>
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13A4 4 0 0 1 16 11"/>
+    </svg>
+  </div>
+  <h2 class="setup-guide-title">Welcome to {{ app_name }}</h2>
+  <p class="setup-guide-text">Corvus stores your team's secrets with row-level security enforced at the database. Get started in three steps.</p>
+  <ol class="setup-guide-steps">
+    <li class="setup-guide-step is-active">
+      <span class="setup-guide-n">1</span>
+      <span class="setup-guide-label">Create a team</span>
+      <span class="setup-guide-hint muted">Teams own projects and define access boundaries.</span>
+    </li>
+    <li class="setup-guide-step">
+      <span class="setup-guide-n">2</span>
+      <span class="setup-guide-label">Create a project</span>
+      <span class="setup-guide-hint muted">A project holds secrets and its own encryption key.</span>
+    </li>
+    <li class="setup-guide-step">
+      <span class="setup-guide-n">3</span>
+      <span class="setup-guide-label">Add a secret</span>
+      <span class="setup-guide-hint muted">Store a credential, then reveal it to verify the flow.</span>
+    </li>
+  </ol>
+  <p class="setup-guide-action">
+    <button type="button" class="button" data-open-dialog="create-team-dlg">Create your first team</button>
+  </p>
+</div>
 {% else %}
 {% set icon = 'teams' %}
 {% set title = 'No teams yet' %}
-{% if can_create_team %}
-{% set text = 'Teams own projects and define access boundaries. Create your first team to get started.' %}
-{% set action = 'Create your first team' %}
-{% set action_dialog = 'create-team-dlg' %}
-{% else %}
 {% set text = 'Ask a team administrator to invite you, or contact your administrator for access.' %}
-{% endif %}
 {% include "partials/empty_state.html" %}
+{% endif %}
 {% endif %}
 {% endif %}
 </section>
