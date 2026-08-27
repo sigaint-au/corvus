@@ -10,7 +10,7 @@
 </nav>
 {% endif %}
 <div class="section-tools">
-  <form method="get" class="toolbar" role="search">
+  <form method="get" action="{{ search_action }}" class="toolbar" role="search">
     <fieldset class="group search-input">
       {% include "partials/search_icon.html" %}
       <input type="search" name="q" value="{{ search_q or '' }}"

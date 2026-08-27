@@ -349,7 +349,7 @@ SETTINGS_CATEGORIES = [
 ALL_TABS = tuple(t for _, _, subs in SETTINGS_CATEGORIES for t, _ in subs)
 
 
-def _admin_webhooks(show_all: bool) -> list[dict]:
+def _admin_webhooks(show_all: bool, q: str = "") -> list[dict]:
     """Cluster-scope or all webhooks + last delivery, for the admin tab."""
     from integrations import webhooks as wh
 
@@ -363,12 +363,21 @@ def _admin_webhooks(show_all: bool) -> list[dict]:
                END AS scope_label
         FROM api.webhooks w
     """
+    where = []
+    params: list = []
     if not show_all:
-        sql += " WHERE w.scope_kind = 'cluster'"
+        where.append("w.scope_kind = 'cluster'")
+    q = (q or "").strip()
+    if q:
+        like = f"%{q}%"
+        where.append("(w.name ILIKE %s OR w.url ILIKE %s)")
+        params.extend([like, like])
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY w.created_at DESC"
     try:
         with db.connect_admin() as conn, conn.cursor() as cur:
-            cur.execute(sql)
+            cur.execute(sql, params)
             rows = list(cur.fetchall() or [])
             for r in rows:
                 r["deliveries"] = wh.recent_deliveries(cur, str(r["id"]), limit=1)
@@ -977,7 +986,7 @@ def server_settings():
     webhook_filter = (request.args.get("filter") or "cluster").strip().lower()
     if webhook_filter not in ("cluster", "all"):
         webhook_filter = "cluster"
-    cluster_webhooks = _admin_webhooks(webhook_filter == "all") if tab == "webhooks" else []
+    cluster_webhooks = _admin_webhooks(webhook_filter == "all", request.args.get("q") or "") if tab == "webhooks" else []
     with db.connect_admin() as conn, conn.cursor() as cur:
         if tab == "admins":
             cur.execute(
