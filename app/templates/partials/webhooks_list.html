@@ -22,6 +22,7 @@
   <a class="button outline small" href="{{ url_for('webhook_new', scope=scope_kind, scope_id=scope_ref or '', back=list_url) }}">+ Add webhook</a>
   {% endif %}
 </div>
+<section class="list-panel">
 {% if webhooks %}
 <div class="table"><table class="table-spaced">
   <thead>
@@ -55,3 +56,4 @@
 {% set icon = 'settings' %}{% set title = 'No webhooks yet' %}{% set text = 'Add a webhook to push events to an external endpoint.' %}
 {% include "partials/empty_state.html" %}
 {% endif %}
+</section>

@@ -65,13 +65,15 @@
 </div>
 </section>
 {% else %}
+<section class="list-panel">
 {% if search_q %}
 <p class="empty">No trash items match “{{ search_q }}”.</p>
 {% else %}
 {% set icon = 'inbox' %}
 {% set title = 'Trash is empty' %}
-  <p class="muted">Soft-deleted secrets land here. They can be restored or permanently deleted.</p>
+{% set text = 'Soft-deleted secrets land here. They can be restored or permanently deleted.' %}
 {% include "partials/empty_state.html" %}
 {% endif %}
+</section>
 {% endif %}
 </div>
