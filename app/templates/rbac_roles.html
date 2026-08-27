@@ -110,12 +110,12 @@
 {% endif %}
 
 {% if active_tab == 'create' and can_edit %}
-<section class="role-create-section">
+<section>
   <div class="section-head">
     <h2>New custom role</h2>
     <a class="button ghost small" href="{{ url_for('rbac_roles', tab='custom') }}">Back to roles</a>
   </div>
-  <form method="post" action="{{ url_for('rbac_roles_create') }}" class="settings-form role-create" id="role-create-form">
+  <form method="post" action="{{ url_for('rbac_roles_create') }}" class="settings-form" id="role-create-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <input type="hidden" name="tab" value="custom">
     <input type="hidden" name="mode" id="create-mode" value="form">
@@ -129,6 +129,7 @@
                  pattern="[a-z0-9][a-z0-9\-]*"
                  title="Lowercase letters, numbers, hyphens"
                  autocomplete="off">
+          <span class="field-hint">Lowercase letters, numbers, hyphens</span>
         </label>
         <label>Description
           <input type="text" name="description" placeholder="Optional summary" autocomplete="off">

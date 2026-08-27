@@ -1667,6 +1667,16 @@
     .page-subnav-link .tab-badge {
       float: right;
       margin-top: .15rem;
+      min-width: 1.1em;
+      padding: 0.05em 0.4em;
+      border-radius: 999px;
+      font-size: 0.75em;
+      font-weight: 600;
+      line-height: 1.3;
+      text-align: center;
+      background: var(--accent);
+      color: var(--muted-foreground);
+      border: 1px solid var(--border);
     }
     .page-subnav .page-subnav-header {
       margin: 1.1rem 0 .25rem;
@@ -3066,6 +3076,7 @@
     }
     /* ── RBAC Roles: rule chips + custom-role editor ── */
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    ot-tabs { display: contents; }
     .role-create-panel { min-height: min(40vh, 22rem); }
     .role-rules {
       display: flex;
@@ -3104,7 +3115,20 @@
     .role-yaml-ref {
       font-size: .8rem;
       white-space: pre-wrap;
+      margin: 0;
     }
+    .role-yaml-help {
+      margin: .75rem 0 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .6rem .85rem;
+    }
+    .role-yaml-help > summary {
+      cursor: pointer;
+      font-size: .85rem;
+      font-weight: 500;
+    }
+    .role-yaml-help[open] > summary { margin-bottom: .5rem; }
     .role-mode-tabs { margin: 0 0 .5rem; }
     .role-mode-tabs .tab { cursor: pointer; }
     /* ── Machine account create + scope chips ── */
