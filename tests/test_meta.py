@@ -52,12 +52,14 @@ class TestSchema:
         sql = migration_sql()
         for frag in (
             "ENABLE ROW LEVEL SECURITY",
+            "DROP POLICY IF EXISTS project_meta_admin ON api.project_meta;",
             "api.team_role(team_id) IS NOT NULL",
             "api.team_role(team_id) IN ('team-owner', 'team-admin')",
             "api.can_read_project(project_id)",
             "api.can_admin_project(project_id)",
         ):
             assert frag in sql, frag
+        assert "DROP POLICY IF EXISTS project_meta_admin ON api.project_meta FOR ALL;" not in sql
 
     def test_grants(self):
         sql = migration_sql()

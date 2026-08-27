@@ -75,7 +75,7 @@ ALTER TABLE api.project_meta ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS project_meta_select ON api.project_meta;
 CREATE POLICY project_meta_select ON api.project_meta FOR SELECT TO authenticated
     USING (api.can_read_project(project_id));
-DROP POLICY IF EXISTS project_meta_admin ON api.project_meta FOR ALL;
+DROP POLICY IF EXISTS project_meta_admin ON api.project_meta;
 CREATE POLICY project_meta_admin ON api.project_meta FOR ALL TO authenticated
     USING (api.can_admin_project(project_id))
     WITH CHECK (api.can_admin_project(project_id));
