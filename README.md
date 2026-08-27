@@ -130,6 +130,7 @@ existing databases upgrade in place.
 | [docs/admin/authentication.md](docs/admin/authentication.md) | Session, PAT, JWT, machine token, OIDC, LDAP, SMTP, password reset |
 | [docs/admin/machine-tokens.md](docs/admin/machine-tokens.md) | Machine accounts, key allow-lists |
 | [docs/admin/external-secrets.md](docs/admin/external-secrets.md) | External Secrets Operator: pull, push, copy-paste YAML |
+| [docs/admin/webhooks.md](docs/admin/webhooks.md) | Webhooks: events, payloads, signature verification |
 | [docs/admin/audit.md](docs/admin/audit.md) | Audit logs, access review, export, retention |
 | [docs/admin/backup.md](docs/admin/backup.md) | Backup and restore |
 

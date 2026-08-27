@@ -42,6 +42,7 @@ nav:
       - Authentication: admin/authentication.md
       - Machine tokens: admin/machine-tokens.md
       - External Secrets Operator: admin/external-secrets.md
+      - Webhooks: admin/webhooks.md
       - Project encryption keys (BYOK): admin/byok.md
       - Audit and retention: admin/audit.md
   - Developers:
