@@ -1,0 +1,18 @@
+{% extends "emails/_layout.html" %}
+{% block body %}
+<h1 style="margin:0 0 12px;font-size:18px;font-weight:600;color:#000000;">New sign-in</h1>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#000000;">Someone signed in to your {{ app_name }} account.</p>
+{% if when or ip or user_agent %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px;background-color:#f0f1f2;border:1px solid #d4d4d8;border-radius:8px;">
+  <tr>
+    <td style="padding:12px 16px;">
+      {% if when %}<p style="margin:0 0 4px;font-size:13px;line-height:1.5;color:#57626e;">Time: <span style="color:#000000;">{{ when }}</span></p>{% endif %}
+      {% if ip %}<p style="margin:0 0 4px;font-size:13px;line-height:1.5;color:#57626e;">IP address: <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#000000;">{{ ip }}</span></p>{% endif %}
+      {% if user_agent %}<p style="margin:0;font-size:13px;line-height:1.5;color:#57626e;">Client: <span style="color:#000000;">{{ user_agent }}</span></p>{% endif %}
+    </td>
+  </tr>
+</table>
+{% endif %}
+<p style="margin:0 0 4px;font-size:13px;line-height:1.5;color:#57626e;">If this was you, no action is required.</p>
+<p style="margin:0;font-size:13px;line-height:1.5;color:#57626e;">If you do not recognize this sign-in, change your password and sign out other sessions from your profile.</p>
+{% endblock %}

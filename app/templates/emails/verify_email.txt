@@ -1,0 +1,8 @@
+{{ app_name }}: verify your email
+Confirm this email address for your {{ app_name }} account.
+
+Open this link to verify your email. The link expires in 3 days:
+
+{{ verify_url }}
+
+If you did not sign up for this account, you can ignore this message.

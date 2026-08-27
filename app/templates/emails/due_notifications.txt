@@ -1,0 +1,5 @@
+{{ app_name }}: due items
+These items need attention:
+{% for line in lines %}
+- {{ line }}
+{%- endfor %}

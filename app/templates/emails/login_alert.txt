@@ -1,0 +1,10 @@
+{{ app_name }}: new sign-in
+Someone signed in to your {{ app_name }} account.
+{% if when %}
+Time: {{ when }}
+{% endif %}{% if ip %}
+IP address: {{ ip }}
+{% endif %}{% if user_agent %}
+Client: {{ user_agent }}
+{% endif %}If this was you, no action is required.
+If you do not recognize this sign-in, change your password and sign out other sessions from your profile.

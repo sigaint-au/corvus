@@ -7,6 +7,9 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 from email.utils import formataddr
+from pathlib import Path
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from core.config import APP_NAME, DEFAULT_SETTINGS, SMTP_ENCRYPTION_MODES, SMTP_SETTING_KEYS
 from core.settings_svc import get_settings, truthy
@@ -15,6 +18,36 @@ from crypto import decrypt
 log = logging.getLogger(__name__)
 
 SMTP_TIMEOUT = 20
+
+_TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "templates"
+_env = Environment(
+    loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+    autoescape=select_autoescape(("html", "htm", "xml")),
+)
+
+
+def render_email(name: str, **ctx) -> tuple[str, str]:
+    """Render an email template into ``(subject, body)``.
+
+    Templates live in ``app/templates/emails/<name>.txt``; the first line
+    is the subject, the remainder the plain-text body.
+    """
+    template = _env.get_template(f"emails/{name}.txt")
+    text = template.render(app_name=APP_NAME, **ctx).strip("\n")
+    subject, _, body = text.partition("\n")
+    return subject.strip(), body
+
+
+def render_email_html(name: str, **ctx) -> str:
+    """Render an email's HTML body from ``app/templates/emails/<name>.html``."""
+    template = _env.get_template(f"emails/{name}.html")
+    return template.render(app_name=APP_NAME, **ctx).strip()
+
+
+def render_email_message(name: str, **ctx) -> tuple[str, str, str]:
+    """Render an email template into ``(subject, text_body, html_body)``."""
+    subject, body = render_email(name, **ctx)
+    return subject, body, render_email_html(name, **ctx)
 
 
 def smtp_cfg() -> dict:
@@ -224,14 +257,17 @@ def send_email(
     body_text: str,
     *,
     cfg: dict | None = None,
+    body_html: str | None = None,
 ) -> tuple[bool, str]:
-    """Send a plain-text email using server SMTP settings.
+    """Send an email using server SMTP settings.
 
     Args:
         to_email: Recipient email address.
         subject: Message subject line.
         body_text: Plain-text body content.
         cfg: Optional SMTP settings dict; when None, loads via ``smtp_cfg()``.
+        body_html: Optional HTML body; when given the message is sent as
+            multipart/alternative with the plain-text part first.
 
     Returns:
         Tuple ``(ok, error_message)``. ``error_message`` is empty on
@@ -262,6 +298,8 @@ def send_email(
     msg["From"] = formataddr((from_name, from_email))
     msg["To"] = to_email
     msg.set_content(body_text)
+    if body_html:
+        msg.add_alternative(body_html, subtype="html")
 
     try:
         if encryption == "ssl":
@@ -304,14 +342,8 @@ def send_password_reset(to_email: str, reset_url: str) -> tuple[bool, str]:
         ...     "https://app.example/reset?token=abc",
         ... )
     """
-    subject = f"{APP_NAME}: password reset"
-    body = (
-        f"A password reset was requested for your {APP_NAME} account.\n\n"
-        f"Open this link to choose a new password. The link expires in 1 hour:\n\n"
-        f"{reset_url}\n\n"
-        "If you did not request this, ignore the message. Your password will not change.\n"
-    )
-    return send_email(to_email, subject, body)
+    subject, body, html = render_email_message("password_reset", reset_url=reset_url)
+    return send_email(to_email, subject, body, body_html=html)
 
 
 def send_login_alert(
@@ -339,25 +371,10 @@ def send_login_alert(
         ...     when="2024-01-01 12:00 UTC",
         ... )
     """
-    subject = f"{APP_NAME}: new sign-in"
-    lines = [
-        f"Someone signed in to your {APP_NAME} account.",
-        "",
-    ]
-    if when:
-        lines.append(f"Time: {when}")
-    if ip:
-        lines.append(f"IP address: {ip}")
-    if user_agent:
-        lines.append(f"Client: {user_agent}")
-    lines.extend(
-        [
-            "If this was you, no action is required.",
-            "If you do not recognize this sign-in, change your password and "
-            "sign out other sessions from your profile.",
-        ]
+    subject, body, html = render_email_message(
+        "login_alert", ip=ip, user_agent=user_agent, when=when
     )
-    return send_email(to_email, subject, "\n".join(lines))
+    return send_email(to_email, subject, body, body_html=html)
 
 
 def send_test_email(to_email: str) -> tuple[bool, str]:
@@ -372,18 +389,11 @@ def send_test_email(to_email: str) -> tuple[bool, str]:
     Example:
         >>> ok, err = send_test_email("admin@example.com")
     """
-    subject = f"{APP_NAME}: test email"
-    body = f"This is a test message from {APP_NAME}.\n\nSMTP is configured correctly.\n"
-    return send_email(to_email, subject, body)
+    subject, body, html = render_email_message("test")
+    return send_email(to_email, subject, body, body_html=html)
 
 
 def send_email_verification(to_email: str, verify_url: str) -> tuple[bool, str]:
     """Email the address-verification link for a new local account."""
-    subject = f"{APP_NAME}: verify your email"
-    body = (
-        f"Confirm this email address for your {APP_NAME} account.\n\n"
-        f"Open this link to verify your email. The link expires in 3 days:\n\n"
-        f"{verify_url}\n\n"
-        "If you did not sign up for this account, you can ignore this message.\n"
-    )
-    return send_email(to_email, subject, body)
+    subject, body, html = render_email_message("verify_email", verify_url=verify_url)
+    return send_email(to_email, subject, body, body_html=html)

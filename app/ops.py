@@ -114,11 +114,8 @@ def send_due_notifications(days: int = 14, *, dry_run: bool = False) -> dict[str
     for email, lines in notifications.items():
         if not lines:
             continue
-        ok, _err = mailer.send_email(
-            email,
-            "Corvus due items",
-            "These items need attention:\n\n" + "\n".join(f"- {line}" for line in lines),
-        )
+        subject, body, html = mailer.render_email_message("due_notifications", lines=lines)
+        ok, _err = mailer.send_email(email, subject, body, body_html=html)
         if ok:
             sent += 1
         else:

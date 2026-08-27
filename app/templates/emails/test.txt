@@ -1,0 +1,4 @@
+{{ app_name }}: test email
+This is a test message from {{ app_name }}.
+
+SMTP is configured correctly.

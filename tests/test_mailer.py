@@ -59,6 +59,83 @@ class TestMailer:
         mock_smtp.login.assert_called_once_with('u', '')
         mock_smtp.send_message.assert_called_once()
 
+    def test_render_email_subject_and_body(self):
+        from integrations import mailer
+        subject, body = mailer.render_email("password_reset", reset_url="https://x/r")
+        assert subject == "Corvus: password reset"
+        assert "https://x/r" in body
+        assert "password reset was requested" in body
+
+    def test_all_email_templates_render(self):
+        from integrations import mailer
+        cases = [
+            ("password_reset", {"reset_url": "https://x/r"}),
+            ("login_alert", {"ip": "1.2.3.4", "user_agent": "UA", "when": "now"}),
+            ("login_alert", {"ip": "", "user_agent": "", "when": ""}),
+            ("test", {}),
+            ("verify_email", {"verify_url": "https://x/v"}),
+            ("due_notifications", {"lines": ["a", "b"]}),
+            ("due_notifications", {"lines": []}),
+        ]
+        for name, ctx in cases:
+            subject, body = mailer.render_email(name, **ctx)
+            assert subject
+            assert body
+
+    def test_all_email_html_templates_render(self):
+        from integrations import mailer
+        cases = [
+            ("password_reset", {"reset_url": "https://x/r"}),
+            ("login_alert", {"ip": "1.2.3.4", "user_agent": "UA", "when": "now"}),
+            ("login_alert", {"ip": "", "user_agent": "", "when": ""}),
+            ("test", {}),
+            ("verify_email", {"verify_url": "https://x/v"}),
+            ("due_notifications", {"lines": ["a", "b"]}),
+            ("due_notifications", {"lines": []}),
+        ]
+        for name, ctx in cases:
+            html = mailer.render_email_html(name, **ctx)
+            assert html
+            assert "</html>" in html
+
+    def test_render_email_message_returns_text_and_html(self):
+        from integrations import mailer
+        subject, body, html = mailer.render_email_message(
+            "password_reset", reset_url="https://x/r"
+        )
+        assert subject == "Corvus: password reset"
+        assert "https://x/r" in body
+        assert "https://x/r" in html
+        assert "<html" in html
+        assert "Choose a new password" in html
+
+    def test_render_email_html_escapes_user_fields(self):
+        from integrations import mailer
+        html = mailer.render_email_html(
+            "login_alert", ip="1.2.3.4", user_agent="<script>alert(1)</script>", when="now"
+        )
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+    def test_send_email_builds_multipart_alternative(self):
+        from integrations import mailer
+        cfg = {'smtp_enabled': 'true', 'smtp_host': 'smtp.example.com', 'smtp_port': '587', 'smtp_encryption': 'starttls', 'smtp_username': '', 'smtp_password': '', 'smtp_from_email': 'from@ex.com', 'smtp_from_name': 'App'}
+        mock_smtp = MagicMock()
+        mock_smtp.__enter__ = MagicMock(return_value=mock_smtp)
+        mock_smtp.__exit__ = MagicMock(return_value=False)
+        with patch('integrations.mailer.smtplib.SMTP', return_value=mock_smtp) as SMTP:
+            ok, err = mailer.send_email(
+                'to@ex.com', 'Hello', 'Body text',
+                body_html='<p>Body text</p>', cfg=cfg,
+            )
+        assert ok
+        assert err == ''
+        SMTP.assert_called_once()
+        msg = mock_smtp.send_message.call_args[0][0]
+        assert msg.is_multipart()
+        parts = {p.get_content_type() for p in msg.iter_parts()}
+        assert parts == {'text/plain', 'text/html'}
+
     def test_forgot_password_sends_email(self):
         store.app.config['TESTING'] = True
         client = store.app.test_client()
