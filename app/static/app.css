@@ -1542,7 +1542,6 @@
     #team-banner-fields { margin-top: .85rem; }
     .mt-0 { margin-top: 0 !important; }
     .mt-1 { margin-top: 1rem !important; }
-    .scope-note { margin: .25rem 0 1rem; }
     /* RBAC access-review filter form: card grid layout (M4/L7) */
     .review-form.list-panel {
       display: grid;
