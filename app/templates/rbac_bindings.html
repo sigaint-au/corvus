@@ -91,10 +91,10 @@
         {% for b in bindings %}
         <tr>
           <td>
-            <span class="badge">{{ b.subject_kind }}</span>
             {% if b.subject_email %}{{ b.subject_email }}
             {% elif b.group_name %}{{ b.group_name }}
             {% else %}<code>{{ b.subject_id }}</code>{% endif %}
+            <span class="muted">· {{ b.subject_kind }}</span>
           </td>
           <td><span class="badge" data-variant="secondary">{{ b.role_name }}</span></td>
           <td class="muted">{{ b.created_at|time_ago if b.created_at else '-' }}</td>
