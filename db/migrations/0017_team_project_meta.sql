@@ -85,6 +85,8 @@ GRANT EXECUTE ON FUNCTION private.guard_meta_precedence() TO authenticator, auth
 
 -- Merged read view for secrets: inherited metadata flows down.
 -- Precedence on key collision: team > project > secret. Adds a source column.
+-- CREATE OR REPLACE cannot change OUT/TABLE columns; drop the 0001 signature first.
+DROP FUNCTION IF EXISTS private.secret_meta_rows(uuid);
 CREATE OR REPLACE FUNCTION private.secret_meta_rows(p_secret uuid)
 RETURNS TABLE(key text, value text, updated_at timestamptz, source text)
 LANGUAGE sql
@@ -125,3 +127,5 @@ FROM merged
 WHERE api.can_access_secret(p_secret, 'read')
 ORDER BY key, source = 'secret', source = 'project'
 $fn$;
+
+GRANT EXECUTE ON FUNCTION private.secret_meta_rows TO authenticator, authenticated;

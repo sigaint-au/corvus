@@ -65,9 +65,11 @@ class TestSchema:
         sql = migration_sql()
         assert "GRANT SELECT, INSERT, UPDATE, DELETE ON api.team_meta, api.project_meta TO authenticated" in sql
         assert "GRANT EXECUTE ON FUNCTION private.guard_meta_precedence() TO authenticator, authenticated" in sql
+        assert "GRANT EXECUTE ON FUNCTION private.secret_meta_rows TO authenticator, authenticated" in sql
 
     def test_secret_meta_rows_returns_source(self):
         sql = migration_sql()
+        assert "DROP FUNCTION IF EXISTS private.secret_meta_rows(uuid)" in sql
         assert "CREATE OR REPLACE FUNCTION private.secret_meta_rows(p_secret uuid)" in sql
         assert "RETURNS TABLE(key text, value text, updated_at timestamptz, source text)" in sql
         assert "source = 'secret'" in sql
