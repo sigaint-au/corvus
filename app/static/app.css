@@ -3076,7 +3076,6 @@
     /* ── RBAC Roles: rule chips + custom-role editor ── */
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     ot-tabs { display: contents; }
-    .role-create-panel { min-height: min(40vh, 22rem); }
     .role-rules {
       display: flex;
       flex-wrap: wrap;
