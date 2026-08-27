@@ -14,10 +14,12 @@ from .access import (
 )
 from .detail import (
     delete_project,
+    delete_project_meta,
     project_crypto_action,
     project_detail,
     projects_list,
     update_project_settings,
+    upsert_project_meta,
 )
 from .search import (
     access_requests_inbox,
@@ -41,4 +43,6 @@ def register(app):
     app.post("/projects/<uuid:project_id>/access/bindings")(project_access_binding_create)
     app.post("/projects/<uuid:project_id>/access/bindings/<uuid:binding_id>/delete")(project_access_binding_delete)
     app.post("/projects/<uuid:project_id>/settings")(update_project_settings)
+    app.post("/projects/<uuid:project_id>/meta")(upsert_project_meta)
+    app.post("/projects/<uuid:project_id>/meta/<meta_key>/delete")(delete_project_meta)
     app.post("/projects/<uuid:project_id>/crypto")(project_crypto_action)

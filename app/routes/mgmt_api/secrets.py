@@ -89,8 +89,13 @@ def mgmt_upsert_secret_meta(project_ref, key):
                 action="updated",
             )
             conn.commit()
-        except Exception:
+        except Exception as exc:
             conn.rollback()
+            if "cannot be overridden" in str(exc):
+                return (
+                    jsonify({"error": "metadata key is defined at team/project level and cannot be overridden"}),
+                    409,
+                )
             raise
     return jsonify({"ok": True, "key": key, "meta_key": meta_key, "value": value})
 

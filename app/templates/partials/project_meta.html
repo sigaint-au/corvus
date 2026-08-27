@@ -1,0 +1,34 @@
+<section>
+  <h2>Project metadata</h2>
+  <p class="muted">Metadata here appears on every secret in the project. Keys defined on the team are inherited and cannot be changed here.</p>
+  <form method="post" action="{{ url_for('upsert_project_meta', project_id=project_id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Key <input name="key" required pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,63}" maxlength="64" placeholder="e.g. env"></label>
+    <label>Value <input name="value" maxlength="2000"></label>
+    <button type="submit">Save</button>
+  </form>
+  {% if project_meta %}
+  <div class="table">
+    <table>
+      <thead><tr><th>Key</th><th>Value</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+        {% for m in project_meta %}
+        <tr>
+          <td><code class="k">{{ m.key }}</code></td>
+          <td>{{ m.value }}</td>
+          <td>{{ m.updated_at.strftime('%Y-%m-%d %H:%M') if m.updated_at else '' }}</td>
+          <td class="acts">
+            <form method="post" action="{{ url_for('delete_project_meta', project_id=project_id, meta_key=m.key) }}" class="inline" onsubmit="return confirm('Remove metadata \u201c{{ m.key }}\u201d?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No project metadata yet.</p>
+  {% endif %}
+</section>

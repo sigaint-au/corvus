@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from flask import (
     flash,
     redirect,
@@ -126,6 +128,7 @@ def project_detail(project_id):
         "integrations",
         "webhooks",
         "settings",
+        "meta",
     ):
         tab = "secrets"
     page = paging.page_arg("page")
@@ -141,6 +144,7 @@ def project_detail(project_id):
     tokens = []
     project_secret_keys = []
 
+    project_meta: list = []
     team_groups = []
     access_requests = []
     access_pending_count = 0
@@ -191,6 +195,8 @@ def project_detail(project_id):
             # Old Access tab was reveal requests; non-admins land on Requests
             tab = "requests"
         if tab == "webhooks" and not can_admin:
+            tab = "secrets"
+        if tab == "meta" and not can_admin:
             tab = "secrets"
         webhooks = []
         due_overdue, due_soon, rotation_overdue, rotation_soon = [], [], [], []
@@ -321,6 +327,12 @@ def project_detail(project_id):
                     hsm_slots = cur.fetchall() or []
             except Exception:
                 hsm_slots = []
+        elif tab == "meta":
+            cur.execute(
+                "SELECT key, value, updated_at FROM api.project_meta WHERE project_id = %s ORDER BY key",
+                (str(project_id),),
+            )
+            project_meta = cur.fetchall() or []
         elif tab == "access" and can_admin:
             from auth import rbac_sync
 
@@ -476,6 +488,7 @@ def project_detail(project_id):
         "project_master_rows": project_master_rows,
         "hsm_slots": hsm_slots,
         "hsm_available": bool(hsm_slots),
+        "project_meta": project_meta,
     }
     template = "partials/project_content.html" if authz.htmx() else "project.html"
     return render_template(template, **ctx)
@@ -571,6 +584,71 @@ def update_project_settings(project_id):
             conn.commit()
             flash("Project settings saved", "ok")
     return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
+
+
+@authz.login_required
+def upsert_project_meta(project_id):
+    """Add or update a project-level metadata field (project admins only)."""
+    meta_url = url_for("project_detail", project_id=project_id, tab="meta")
+    key = (request.form.get("key") or "").strip()
+    value = (request.form.get("value") or "").strip()
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", key):
+        flash("Metadata key must start with a letter/digit and use only A-Z, a-z, 0-9, ., _, - (max 64)", "error")
+        return redirect(meta_url)
+    if len(value) > 2000:
+        value = value[:2000]
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+        if not (cur.fetchone() or {}).get("a"):
+            flash("You don't have permission to do that", "error")
+            return redirect(meta_url)
+        cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
+        team_id = (cur.fetchone() or {}).get("team_id")
+        try:
+            cur.execute(
+                "INSERT INTO api.project_meta (project_id, key, value, updated_at) VALUES (%s, %s, %s, now()) "
+                "ON CONFLICT (project_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+                (str(project_id), key, value),
+            )
+            audit.log_org(cur, team_id=str(team_id), project_id=str(project_id), action="project_meta", detail=f"meta {key}")
+            conn.commit()
+            flash(f"Metadata \u201c{key}\u201d saved", "ok")
+        except Exception as exc:
+            conn.rollback()
+            if "cannot be overridden" in str(exc):
+                flash("Metadata key is defined at team/project level and cannot be overridden.", "error")
+            else:
+                flash("Could not save the metadata. Try again.", "error")
+    return redirect(meta_url)
+
+
+@authz.login_required
+def delete_project_meta(project_id, meta_key):
+    """Remove a project-level metadata field (project admins only)."""
+    meta_url = url_for("project_detail", project_id=project_id, tab="meta")
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
+        if not (cur.fetchone() or {}).get("a"):
+            flash("You don't have permission to do that", "error")
+            return redirect(meta_url)
+        cur.execute("SELECT team_id FROM api.projects WHERE id = %s", (str(project_id),))
+        team_id = (cur.fetchone() or {}).get("team_id")
+        try:
+            cur.execute(
+                "DELETE FROM api.project_meta WHERE project_id = %s AND key = %s RETURNING key",
+                (str(project_id), meta_key),
+            )
+            if not cur.fetchone():
+                conn.rollback()
+                flash("Field not found or not permitted", "error")
+            else:
+                audit.log_org(cur, team_id=str(team_id), project_id=str(project_id), action="project_meta", detail=f"meta {meta_key}")
+                conn.commit()
+                flash(f"Metadata \u201c{meta_key}\u201d removed", "ok")
+        except Exception:
+            conn.rollback()
+            flash("Could not remove the metadata. Try again.", "error")
+    return redirect(meta_url)
 
 
 @authz.login_required

@@ -27,10 +27,12 @@ from .projects import (
     mgmt_add_project_binding,
     mgmt_create_project,
     mgmt_delete_project,
+    mgmt_delete_project_meta,
     mgmt_get_project,
     mgmt_list_project_members,
     mgmt_remove_project_binding,
     mgmt_update_project_settings,
+    mgmt_upsert_project_meta,
 )
 from .secrets import (
     mgmt_delete_secret_meta,
@@ -40,11 +42,13 @@ from .teams import (
     mgmt_add_team_binding,
     mgmt_create_team,
     mgmt_delete_team,
+    mgmt_delete_team_meta,
     mgmt_get_team,
     mgmt_list_team_members,
     mgmt_list_teams,
     mgmt_remove_team_binding,
     mgmt_transfer_team,
+    mgmt_upsert_team_meta,
 )
 from .tokens import (
     mgmt_create_token,
@@ -70,6 +74,8 @@ def register(app):
     app.post(f"{base}/teams/<team_ref>/members")(mgmt_add_team_binding)
     app.delete(f"{base}/teams/<team_ref>/members/<member_ref>")(mgmt_remove_team_binding)
     app.post(f"{base}/teams/<team_ref>/transfer")(mgmt_transfer_team)
+    app.patch(f"{base}/teams/<team_ref>/meta/<meta_key>")(mgmt_upsert_team_meta)
+    app.delete(f"{base}/teams/<team_ref>/meta/<meta_key>")(mgmt_delete_team_meta)
     app.get(f"{base}/teams/<team_ref>/groups")(mgmt_list_groups)
     app.post(f"{base}/teams/<team_ref>/groups")(mgmt_create_group)
     app.delete(f"{base}/teams/<team_ref>/groups/<group_ref>")(mgmt_delete_group)
@@ -103,5 +109,7 @@ def register(app):
         mgmt_delete_secret_meta
     )
     app.get(f"{base}/projects/<project_ref>/audit")(mgmt_project_audit)
+    app.patch(f"{base}/projects/<project_ref>/meta/<meta_key>")(mgmt_upsert_project_meta)
+    app.delete(f"{base}/projects/<project_ref>/meta/<meta_key>")(mgmt_delete_project_meta)
     app.get(f"{base}/admin/users")(mgmt_admin_users)
     app.get(f"{base}/admin/audit")(mgmt_admin_audit)

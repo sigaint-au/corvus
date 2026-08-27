@@ -38,9 +38,11 @@ from .projects import (
 from .teams import (
     create_team,
     delete_team,
+    delete_team_meta,
     team_detail,
     teams,
     update_team_settings,
+    upsert_team_meta,
 )
 
 
@@ -60,6 +62,8 @@ def register(app):
     app.post("/teams/<uuid:team_id>/join-requests/<uuid:req_id>/approve")(approve_join_request)
     app.post("/teams/<uuid:team_id>/join-requests/<uuid:req_id>/reject")(reject_join_request)
     app.post("/teams/<uuid:team_id>/settings")(update_team_settings)
+    app.post("/teams/<uuid:team_id>/meta")(upsert_team_meta)
+    app.post("/teams/<uuid:team_id>/meta/<meta_key>/delete")(delete_team_meta)
     app.post("/teams/<uuid:team_id>/ldap-maps")(add_team_ldap_map)
     app.post("/teams/<uuid:team_id>/ldap-maps/<uuid:map_id>/delete")(delete_team_ldap_map)
     app.post("/teams/<uuid:team_id>/oidc-maps")(add_team_oidc_map)

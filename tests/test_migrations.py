@@ -54,6 +54,7 @@ def test_migrations_ship_in_order():
         "0014_webhook_deliveries.sql",
         "0015_webhook_grants.sql",
         "0016_brand_name_corvus.sql",
+        "0017_team_project_meta.sql",
     ]
     for name in files:
         assert name[:4].isdigit()

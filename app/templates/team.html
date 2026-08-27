@@ -46,6 +46,9 @@
   <a href="{{ url_for('team_detail', team_id=team.id, tab='settings') }}"
      class="page-subnav-link {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
   >Settings</a>
+  <a href="{{ url_for('team_detail', team_id=team.id, tab='meta') }}"
+     class="page-subnav-link {% if active_tab == 'meta' %}active{% endif %}"{% if active_tab == 'meta' %} aria-current="page"{% endif %}
+  >Metadata</a>
   {% endif %}
 </nav>
 <div class="page-panel">
@@ -59,6 +62,41 @@
 {% elif active_tab == 'groups' %}{% include "partials/team_groups.html" %}
 {% elif active_tab == 'activity' %}{% include "partials/team_activity.html" %}
 {% elif active_tab == 'settings' and is_admin %}{% include "partials/team_settings.html" %}
+{% elif active_tab == 'meta' and is_admin %}
+<section>
+  <h2>Team metadata</h2>
+  <p class="muted">Metadata here appears on every project and secret in the team. Lower levels cannot override these keys.</p>
+  <form method="post" action="{{ url_for('upsert_team_meta', team_id=team.id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Key <input name="key" required pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,63}" maxlength="64" placeholder="e.g. cost-center"></label>
+    <label>Value <input name="value" maxlength="2000"></label>
+    <button type="submit">Save</button>
+  </form>
+  {% if team_meta %}
+  <div class="table">
+    <table>
+      <thead><tr><th>Key</th><th>Value</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+        {% for m in team_meta %}
+        <tr>
+          <td><code class="k">{{ m.key }}</code></td>
+          <td>{{ m.value }}</td>
+          <td>{{ m.updated_at.strftime('%Y-%m-%d %H:%M') if m.updated_at else '' }}</td>
+          <td class="acts">
+            <form method="post" action="{{ url_for('delete_team_meta', team_id=team.id, meta_key=m.key) }}" class="inline" onsubmit="return confirm('Remove metadata \u201c{{ m.key }}\u201d?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit" class="link danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No team metadata yet.</p>
+  {% endif %}
+</section>
 {% endif %}
 </div>
 </div>

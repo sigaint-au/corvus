@@ -20,6 +20,7 @@ from .helpers import (
     _resolve_team,
     _row,
 )
+from .secrets import _META_KEY_RE, _META_VALUE_MAX
 
 log = logging.getLogger(__name__)
 
@@ -294,3 +295,64 @@ def mgmt_update_project_settings(project_ref):
         )
         conn.commit()
     return jsonify({"ok": True, "project": pid})
+
+
+def mgmt_upsert_project_meta(project_ref, meta_key):
+    """Add or update a project metadata field via PAT (project admins only)."""
+    uid, err = _require_pat()
+    if err:
+        return err
+    if not _META_KEY_RE.match(meta_key):
+        return (
+            jsonify({"error": "metadata key must start with a letter/digit and use only A-Z a-z 0-9 . _ - (max 64)"}),
+            400,
+        )
+    value = (request.get_json(silent=True) or {}).get("value") or ""
+    value = value[:_META_VALUE_MAX]
+    with db.as_user(uid) as conn, conn.cursor() as cur:
+        pid = _resolve_project(cur, project_ref)
+        if not pid:
+            return jsonify({"error": "not found"}), 404
+        cur.execute("SELECT api.can_admin_project(%s) AS a", (pid,))
+        if not (cur.fetchone() or {}).get("a"):
+            return jsonify({"error": "forbidden"}), 403
+        try:
+            cur.execute(
+                "INSERT INTO api.project_meta (project_id, key, value, updated_at) VALUES (%s, %s, %s, now()) "
+                "ON CONFLICT (project_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+                (pid, meta_key, value),
+            )
+            audit.log_org(cur, project_id=pid, action="project_meta", detail=f"meta {meta_key}")
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            if "cannot be overridden" in str(exc):
+                return (
+                    jsonify({"error": "metadata key is defined at team/project level and cannot be overridden"}),
+                    409,
+                )
+            raise
+    return jsonify({"ok": True, "project_ref": project_ref, "meta_key": meta_key, "value": value})
+
+
+def mgmt_delete_project_meta(project_ref, meta_key):
+    """Remove a project metadata field via PAT (project admins only)."""
+    uid, err = _require_pat()
+    if err:
+        return err
+    if not _META_KEY_RE.match(meta_key):
+        return jsonify({"error": "metadata key must start with a letter/digit and use only A-Z a-z 0-9 . _ - (max 64)"}), 400
+    with db.as_user(uid) as conn, conn.cursor() as cur:
+        pid = _resolve_project(cur, project_ref)
+        if not pid:
+            return jsonify({"error": "not found"}), 404
+        cur.execute("SELECT api.can_admin_project(%s) AS a", (pid,))
+        if not (cur.fetchone() or {}).get("a"):
+            return jsonify({"error": "forbidden"}), 403
+        cur.execute("SELECT 1 FROM api.project_meta WHERE project_id = %s AND key = %s", (pid, meta_key))
+        if not cur.fetchone():
+            return jsonify({"error": "not found"}), 404
+        cur.execute("DELETE FROM api.project_meta WHERE project_id = %s AND key = %s", (pid, meta_key))
+        audit.log_org(cur, project_id=pid, action="project_meta", detail=f"meta {meta_key}")
+        conn.commit()
+    return jsonify({"ok": True, "project_ref": project_ref, "meta_key": meta_key})

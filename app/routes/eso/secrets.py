@@ -267,14 +267,13 @@ def eso_list_secrets(project_ref):
                 SELECT s.id, s.key, s.note, s.kind, s.expires_at,
                        s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                        s.created_at, s.updated_at, s.last_accessed_at,
-                       COALESCE(
-                         (
-                           SELECT jsonb_object_agg(m.key, m.value)
-                           FROM api.secret_meta m
-                           WHERE m.secret_id = s.id
-                         ),
-                         '{{}}'::jsonb
-                       ) AS metadata
+                        COALESCE(
+                          (
+                            SELECT jsonb_object_agg(m.key, m.value)
+                            FROM private.secret_meta_rows(s.id) m
+                          ),
+                          '{{}}'::jsonb
+                        ) AS metadata
                   FROM api.secrets s
                  WHERE {where}
                  ORDER BY s.key

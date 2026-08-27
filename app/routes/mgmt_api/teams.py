@@ -17,6 +17,7 @@ from .helpers import (
     _resolve_team,
     _row,
 )
+from .secrets import _META_KEY_RE, _META_VALUE_MAX
 
 
 def mgmt_list_teams():
@@ -286,3 +287,67 @@ def mgmt_transfer_team(team_ref):
         )
         conn.commit()
     return jsonify({"ok": True, "owner": email})
+
+
+def _team_meta_allowed(cur, tid: str) -> bool:
+    cur.execute("SELECT api.team_role(%s) AS r", (tid,))
+    return (cur.fetchone() or {}).get("r") in ("team-owner", "team-admin")
+
+
+def mgmt_upsert_team_meta(team_ref, meta_key):
+    """Add or update a team metadata field via PAT (owners/admins only)."""
+    uid, err = _require_pat()
+    if err:
+        return err
+    if not _META_KEY_RE.match(meta_key):
+        return (
+            jsonify({"error": "metadata key must start with a letter/digit and use only A-Z a-z 0-9 . _ - (max 64)"}),
+            400,
+        )
+    value = (request.get_json(silent=True) or {}).get("value") or ""
+    value = value[:_META_VALUE_MAX]
+    with db.as_user(uid) as conn, conn.cursor() as cur:
+        tid = _resolve_team(cur, team_ref)
+        if not tid:
+            return jsonify({"error": "not found"}), 404
+        if not _team_meta_allowed(cur, tid):
+            return jsonify({"error": "forbidden"}), 403
+        try:
+            cur.execute(
+                "INSERT INTO api.team_meta (team_id, key, value, updated_at) VALUES (%s, %s, %s, now()) "
+                "ON CONFLICT (team_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+                (tid, meta_key, value),
+            )
+            audit.log_org(cur, team_id=tid, action="team_meta", detail=f"meta {meta_key}")
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            if "cannot be overridden" in str(exc):
+                return (
+                    jsonify({"error": "metadata key is defined at team/project level and cannot be overridden"}),
+                    409,
+                )
+            raise
+    return jsonify({"ok": True, "team_ref": team_ref, "meta_key": meta_key, "value": value})
+
+
+def mgmt_delete_team_meta(team_ref, meta_key):
+    """Remove a team metadata field via PAT (owners/admins only)."""
+    uid, err = _require_pat()
+    if err:
+        return err
+    if not _META_KEY_RE.match(meta_key):
+        return jsonify({"error": "metadata key must start with a letter/digit and use only A-Z a-z 0-9 . _ - (max 64)"}), 400
+    with db.as_user(uid) as conn, conn.cursor() as cur:
+        tid = _resolve_team(cur, team_ref)
+        if not tid:
+            return jsonify({"error": "not found"}), 404
+        if not _team_meta_allowed(cur, tid):
+            return jsonify({"error": "forbidden"}), 403
+        cur.execute("SELECT 1 FROM api.team_meta WHERE team_id = %s AND key = %s", (tid, meta_key))
+        if not cur.fetchone():
+            return jsonify({"error": "not found"}), 404
+        cur.execute("DELETE FROM api.team_meta WHERE team_id = %s AND key = %s", (tid, meta_key))
+        audit.log_org(cur, team_id=tid, action="team_meta", detail=f"meta {meta_key}")
+        conn.commit()
+    return jsonify({"ok": True, "team_ref": team_ref, "meta_key": meta_key})

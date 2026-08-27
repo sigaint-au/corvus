@@ -168,9 +168,12 @@ def upsert_secret_meta(project_id, secret_id):
                 )
             conn.commit()
             flash(f"Metadata “{key}” saved", "ok")
-        except Exception:
+        except Exception as exc:
             conn.rollback()
-            flash("Could not save the secret. Try again.", "error")
+            if "cannot be overridden" in str(exc):
+                flash("Metadata key is defined at team/project level and cannot be overridden.", "error")
+            else:
+                flash("Could not save the secret. Try again.", "error")
     return redirect(meta_url)
 
 
