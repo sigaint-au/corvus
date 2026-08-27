@@ -86,7 +86,7 @@ def create_team():
 
 @authz.login_required
 def team_detail(team_id):
-    """Show team detail with projects, members, activity, or settings tab.
+    """Show team detail with projects, members, activity, settings, or metadata tab.
 
     Args:
         team_id: UUID of the team to display.
@@ -99,7 +99,16 @@ def team_detail(team_id):
     """
     session["team_id"] = str(team_id)
     tab = (request.args.get("tab") or "projects").strip().lower()
-    if tab not in ("projects", "members", "groups", "activity", "access", "settings", "webhooks"):
+    if tab not in (
+        "projects",
+        "members",
+        "groups",
+        "activity",
+        "access",
+        "settings",
+        "webhooks",
+        "meta",
+    ):
         tab = "projects"
     webhooks = []
     team_meta: list = []

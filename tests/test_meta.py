@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from core import db as core_db
+from core import settings_svc
+from integrations import ldap_auth
 
 from tests.helpers import REPO_ROOT, mock_conn as _conn
 
@@ -135,6 +137,51 @@ class TestTeamMetaRoutes:
         assert "DELETE FROM api.team_meta" in sql
         conn.commit.assert_called()
 
+    def _team_detail_conn(self, role):
+        last = {"s": ""}
+
+        def execute(sql, params=None):
+            last["s"] = " ".join(str(sql).lower().split())
+
+        def fetchone():
+            s = last["s"]
+            if "from api.teams" in s and "where id" in s:
+                return {"id": self.tid, "name": "T"}
+            if "api.team_role" in s:
+                return {"r": role}
+            if "can_manage_rbac" in s:
+                return {"ok": role in ("team-owner", "team-admin")}
+            return None
+
+        conn, cur = _conn(fetchone=fetchone, fetchall=[])
+        cur.execute.side_effect = execute
+        return conn, cur
+
+    def test_member_can_view_meta_tab(self):
+        conn, _cur = self._team_detail_conn("team-member")
+        with (
+            patch.object(core_db, "as_user", return_value=conn),
+            patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}),
+            patch.object(settings_svc, "get_settings", return_value={}),
+        ):
+            resp = self.client.get(f"/teams/{self.tid}?tab=meta")
+        assert resp.status_code == 200
+        assert b"Team metadata" in resp.data
+        assert b"No team metadata yet." in resp.data
+        assert b"Save" not in resp.data
+
+    def test_admin_meta_tab_shows_form(self):
+        conn, _cur = self._team_detail_conn("team-owner")
+        with (
+            patch.object(core_db, "as_user", return_value=conn),
+            patch.object(ldap_auth, "ldap_cfg", return_value={"ldap_enabled": "false"}),
+            patch.object(settings_svc, "get_settings", return_value={}),
+        ):
+            resp = self.client.get(f"/teams/{self.tid}?tab=meta")
+        assert resp.status_code == 200
+        assert b"Team metadata" in resp.data
+        assert b"Save" in resp.data
+
 
 class TestTeamMetaTemplates:
     def test_team_subnav_has_meta_link(self):
@@ -150,7 +197,9 @@ class TestTeamMetaTemplates:
         src = routes_module_src("teams")
         assert '"/teams/<uuid:team_id>/meta"' in src
         assert '"/teams/<uuid:team_id>/meta/<meta_key>/delete"' in src
-        assert '"settings", "access", "webhooks")' in src
+        allowed = (REPO_ROOT / "app" / "routes" / "teams" / "teams.py").read_text()
+        chunk = allowed.split("if tab not in (")[1].split("):")[0]
+        assert '"meta"' in chunk
 
 
 class TestProjectMetaRoutes:
@@ -211,6 +260,28 @@ class TestProjectMetaRoutes:
         src = routes_module_src("projects")
         assert '"/projects/<uuid:project_id>/meta"' in src
         assert '"/projects/<uuid:project_id>/meta/<meta_key>/delete"' in src
+
+    def test_non_admin_can_view_project_meta_tab(self):
+        project = {"id": self.pid, "name": "prod", "team_name": "Ops", "team_id": uuid4()}
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            project,
+            {"w": False},
+            {"a": False},
+            {"r": "team-member"},
+            {"g": False},
+            {"n": 0},
+        ]
+        cur.fetchall.return_value = []
+        with (
+            patch.object(core_db, "as_user", return_value=conn),
+            patch.object(settings_svc, "get_settings", return_value={}),
+        ):
+            resp = self.client.get(f"/projects/{self.pid}?tab=meta")
+        assert resp.status_code == 200
+        assert b"Project metadata" in resp.data
+        assert b"No project metadata yet." in resp.data
+        assert b"Save" not in resp.data
 
 
 class TestSecretMetaOverride:
