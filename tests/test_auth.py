@@ -319,11 +319,28 @@ class TestAuth:
             r = self.client.get('/profile?tab=myaccess')
         assert r.status_code == 200
         assert b'My access' in r.data
-        assert b'platform-ops' in r.data
+        # Default scope is team: only team rows render, project rows are filtered server-side
         assert b'team-owner' in r.data
+        assert b'platform-ops' not in r.data
         assert b'Team access' in r.data
         assert b'Project access' in r.data
         assert b'?tab=myaccess' in r.data
+        # Project scope renders the project row
+        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn):
+            r = self.client.get('/profile?tab=myaccess&scope=project')
+        assert r.status_code == 200
+        assert b'platform-ops' in r.data
+        assert b'team-owner' not in r.data
+        # Search filters within the active scope
+        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn):
+            r = self.client.get('/profile?tab=myaccess&scope=project&q=platform')
+        assert r.status_code == 200
+        assert b'platform-ops' in r.data
+        with patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(db, 'as_user', return_value=user_conn):
+            r = self.client.get('/profile?tab=myaccess&scope=project&q=nomatch')
+        assert r.status_code == 200
+        assert b'platform-ops' not in r.data
+        assert b'No project access bindings match' in r.data
 
     def test_profile_ok(self):
         uid = uuid4()

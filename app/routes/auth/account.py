@@ -321,22 +321,36 @@ def profile():
     session["name"] = user.get("name") or session.get("name") or ""
     session["is_global_admin"] = bool(user.get("is_global_admin"))
 
-    # My access: bindings grouped by scope for the My access tab
+    # My access: server-side scope tab + search (data may be large; keep
+    # filtering off the client). Cluster rows are skipped: global admins see
+    # the alert instead, and no one else can hold a cluster binding.
     _scope_labels = {
-        "cluster": "Global",
         "team": "Team access",
         "project": "Project access",
         "secret": "Secret access",
     }
-    _scope_order = ("cluster", "team", "project", "secret")
-    my_access_groups = []
-    by_scope: dict[str, list] = {}
+    _scope_headers = {
+        "team": "Team",
+        "project": "Project",
+        "secret": "Secret",
+    }
+    my_access_scope = (request.args.get("scope") or "team").strip().lower()
+    if my_access_scope not in _scope_labels:
+        my_access_scope = "team"
+    my_access_q = (request.args.get("q") or "").strip()
+    my_access_rows = []
     for row in my_access:
-        by_scope.setdefault(row["scope_kind"], []).append(row)
-    for kind in _scope_order:
-        rows = by_scope.get(kind)
-        if rows:
-            my_access_groups.append((_scope_labels[kind], rows))
+        if row["scope_kind"] != my_access_scope:
+            continue
+        if my_access_q:
+            needle = my_access_q.casefold()
+            hay = " ".join(
+                str(row.get(k) or "")
+                for k in ("scope_label", "role_name", "grant_kind", "grant_subject")
+            ).casefold()
+            if needle not in hay:
+                continue
+        my_access_rows.append(row)
 
     smtp = mailer.smtp_cfg()
     alerts_allowed = settings_svc.truthy(smtp.get("smtp_login_alerts"))
@@ -370,7 +384,11 @@ def profile():
         totp_enforced_for_user=totp_enforced,
         active_tab=tab,
         postgrest_url=config.POSTGREST_URL,
-        my_access_groups=my_access_groups,
+        my_access_scope=my_access_scope,
+        my_access_q=my_access_q,
+        my_access_rows=my_access_rows,
+        my_access_scope_label=_scope_labels[my_access_scope],
+        my_access_scope_header=_scope_headers[my_access_scope],
         stats={
             "teams": len(teams),
             "projects": len(projects),

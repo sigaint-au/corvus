@@ -6,45 +6,67 @@
     You are a <strong>global admin</strong> and can access every team, project, and secret.
   </div>
   {% endif %}
-  {% for label, rows in my_access_groups %}
-  <h3>{{ label }}</h3>
-  <div class="table">
-    <table>
-      <thead>
-        <tr>
-          {% if label == 'Team access' %}<th>Team</th>
-          {% elif label == 'Project access' %}<th>Project</th>
-          {% elif label == 'Secret access' %}<th>Secret</th>
-          {% else %}<th>Scope</th>{% endif %}
-          <th>Role</th>
-          <th>Granted to</th>
-          <th>Since</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in rows %}
-        <tr>
-          <td>
-            {% if r.scope_kind == 'secret' and r.scope_label %}<code class="k">{{ r.scope_label }}</code>
-            {% else %}{{ r.scope_label or '-' }}{% endif %}
-          </td>
-          <td>
-            <span class="badge" data-variant="secondary" title="{{ r.role_description or r.role_name }}">{{ r.role_name }}</span>
-          </td>
-          <td>
-            <span class="badge">{{ r.grant_kind }}</span>
-            {{ r.grant_subject }}
-          </td>
-          <td class="muted">{{ r.created_at|time_ago if r.created_at else '-' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+
+  <nav class="tabs" aria-label="Access scope">
+    <a href="{{ url_for('profile', tab='myaccess', scope='team') }}"
+       class="tab{% if my_access_scope == 'team' %} active{% endif %}"{% if my_access_scope == 'team' %} aria-current="page"{% endif %}
+    >Team access</a>
+    <a href="{{ url_for('profile', tab='myaccess', scope='project') }}"
+       class="tab{% if my_access_scope == 'project' %} active{% endif %}"{% if my_access_scope == 'project' %} aria-current="page"{% endif %}
+    >Project access</a>
+    <a href="{{ url_for('profile', tab='myaccess', scope='secret') }}"
+       class="tab{% if my_access_scope == 'secret' %} active{% endif %}"{% if my_access_scope == 'secret' %} aria-current="page"{% endif %}
+    >Secret access</a>
+  </nav>
+
+  <div class="section-tools">
+    <form method="get" action="{{ url_for('profile', tab='myaccess', scope=my_access_scope) }}" class="toolbar" role="search">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ my_access_q or '' }}"
+               placeholder="Search" autocomplete="off" aria-label="Search {{ my_access_scope_label }}">
+      </fieldset>
+      {% if my_access_q %}<a class="button ghost small" href="{{ url_for('profile', tab='myaccess', scope=my_access_scope) }}">Clear</a>{% endif %}
+    </form>
   </div>
+
+  {% if my_access_rows %}
+  <section class="list-panel">
+    <div class="table">
+      <table>
+        <thead>
+          <tr>
+            <th>{{ my_access_scope_header }}</th>
+            <th>Role</th>
+            <th>Granted to</th>
+            <th>Since</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in my_access_rows %}
+          <tr>
+            <td>
+              {% if my_access_scope == 'secret' %}<code class="k">{{ r.scope_label or '-' }}</code>
+              {% else %}{{ r.scope_label or '-' }}{% endif %}
+            </td>
+            <td>
+              <span class="badge" data-variant="secondary" title="{{ r.role_description or r.role_name }}">{{ r.role_name }}</span>
+            </td>
+            <td>
+              <span class="badge">{{ r.grant_kind }}</span>
+              {{ r.grant_subject }}
+            </td>
+            <td class="muted">{{ r.created_at|time_ago if r.created_at else '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
   {% else %}
   <p class="empty">
-    {% if user.is_global_admin %}No explicit bindings record your global-admin access.{% else %}
-    No bindings reference you or your groups. Ask a team owner or admin to grant access.{% endif %}
+    {% if my_access_q %}No {{ my_access_scope_label|lower }} bindings match "{{ my_access_q }}".
+    {% else %}No {{ my_access_scope_label|lower }} bindings reference you or your groups. Ask a team owner or admin to grant access.{% endif %}
   </p>
-  {% endfor %}
+  {% endif %}
 </section>
