@@ -1932,7 +1932,8 @@
     .section-head > :is(a, button).button.small,
     .section-head form.inline > :is(a, button).button.small,
     .page-head > :is(a, button).button.small,
-    .page-head form.inline > :is(a, button).button.small {
+    .page-head form.inline > :is(a, button).button.small,
+    .review-form-row > :is(a, button).button.small {
       display: inline-flex;
       align-items: center;
       justify-content: center;

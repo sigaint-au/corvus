@@ -34,28 +34,26 @@
   </div>
   <p class="muted mt-0">Shipped roles used by the Access dropdowns. Rules can't be edited.</p>
   {% if builtin_roles %}
-  <section class="list-panel">
-    <div class="table">
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Description</th>
-            <th>Rules</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in builtin_roles %}
-          <tr>
-            <td><span class="badge" data-variant="secondary">{{ r.name }}</span></td>
-            <td class="col-note">{{ r.description or "-" }}</td>
-            <td class="col-note">{% include "partials/role_rules.html" %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Rules</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in builtin_roles %}
+        <tr>
+          <td><span class="badge" data-variant="secondary">{{ r.name }}</span></td>
+          <td class="col-note">{{ r.description or "-" }}</td>
+          <td class="col-note">{% include "partials/role_rules.html" %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
   {% set title = 'No built-in roles' %}
   {% set text = 'Shipped roles used by the Access dropdowns were not loaded.' %}
@@ -76,39 +74,37 @@
   <p class="muted mt-0">Only global admins can create or delete custom roles.</p>
   {% endif %}
   {% if custom_roles %}
-  <section class="list-panel">
-    <div class="table">
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Description</th>
-            <th>Rules</th>
-            {% if can_edit %}<th class="acts-col" aria-label="Actions"></th>{% endif %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in custom_roles %}
-          <tr>
-            <td><span class="badge" data-variant="secondary">{{ r.name }}</span></td>
-            <td class="col-note">{{ r.description or "-" }}</td>
-            <td class="col-note">{% include "partials/role_rules.html" %}</td>
-            {% if can_edit %}
-            <td class="acts">
-              <form method="post" action="{{ url_for('rbac_roles_delete', role_id=r.id) }}" class="inline"
-                    onsubmit="return confirm('Delete role {{ r.name }}?');">
-                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                <input type="hidden" name="tab" value="custom">
-                <button type="submit" class="link danger">Delete</button>
-              </form>
-            </td>
-            {% endif %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Rules</th>
+          {% if can_edit %}<th class="acts-col" aria-label="Actions"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in custom_roles %}
+        <tr>
+          <td><span class="badge" data-variant="secondary">{{ r.name }}</span></td>
+          <td class="col-note">{{ r.description or "-" }}</td>
+          <td class="col-note">{% include "partials/role_rules.html" %}</td>
+          {% if can_edit %}
+          <td class="acts">
+            <form method="post" action="{{ url_for('rbac_roles_delete', role_id=r.id) }}" class="inline"
+                  onsubmit="return confirm('Delete role {{ r.name }}?');">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <input type="hidden" name="tab" value="custom">
+              <button type="submit" class="link danger">Delete</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
   {% set title = 'No custom roles yet' %}
   {% set text = 'Create a named set of permissions, then assign it under Role bindings.' %}

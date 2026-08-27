@@ -2,6 +2,10 @@
 
 Secret server: self-hosted team secrets store (Flask + HTMX, Postgres RLS, oat.ink UI).
 
+## RTK
+
+Always prefix shell commands with `rtk` when running supported tools via bash (`rtk git ...`, `rtk gh ...`, `rtk docker ...`, `rtk kubectl ...`, `rtk cargo ...`, `rtk npm ...`, `rtk pytest ...`).
+
 ## Run / verify
 
 - Tests: `pytest` from repo root (pythonpath = `.` `app` is in `pyproject.toml`). **Tests mock the DB — no Postgres needed.** `str | None` syntax requires Python 3.10+; the system `python3` on macOS (3.9) will NOT work.
