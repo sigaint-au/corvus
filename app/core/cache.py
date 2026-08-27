@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import time
 
-import redis
-
 from core.config import REDIS_URL
 
 _client = None
@@ -16,6 +14,10 @@ def redis_client():
     if not REDIS_URL:
         return None
     if _client is None:
+        try:
+            import redis
+        except ImportError:
+            return None
         _client = redis.Redis.from_url(
             REDIS_URL,
             decode_responses=True,

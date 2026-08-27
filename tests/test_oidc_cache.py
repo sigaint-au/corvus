@@ -43,3 +43,18 @@ def test_rate_limited_sliding_window():
         assert cache.rate_limited("corvus:rl:x", limit=10, window=60) is True
     with patch.object(cache, "redis_client", return_value=None):
         assert cache.rate_limited("corvus:rl:x", limit=10, window=60) is False
+
+
+def test_redis_client_without_package():
+    """App import and cache client fail open when redis is not installed."""
+    from core import cache
+
+    prev = cache._client
+    cache._client = None
+    try:
+        with patch.object(cache, "REDIS_URL", "redis://localhost:1/0"), patch.dict(
+            "sys.modules", {"redis": None}
+        ):
+            assert cache.redis_client() is None
+    finally:
+        cache._client = prev

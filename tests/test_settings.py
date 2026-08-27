@@ -389,6 +389,13 @@ class TestConnectionTests:
             s['user_id'] = self.uid
             s['email'] = 'admin@ex.com'
             s['is_global_admin'] = True
+        # Probe imports ldap3 inside the handler; stub so unit tests
+        # don't require the optional LDAP extra.
+        self._ldap3_patch = patch.dict("sys.modules", {"ldap3": MagicMock()})
+        self._ldap3_patch.start()
+
+    def teardown_method(self, method=None):
+        self._ldap3_patch.stop()
 
     def _render_mocks(self):
         return (
