@@ -1,6 +1,18 @@
 <section>
-  <h2>My access</h2>
-  <p class="muted">How your access is granted.</p>
+  <div class="section-head">
+    <div>
+      <h2>My access</h2>
+      <p class="muted">How your access is granted.</p>
+    </div>
+    <form method="get" action="{{ url_for('profile', tab='myaccess', scope=my_access_scope) }}" class="toolbar" role="search">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ my_access_q or '' }}"
+               placeholder="Search" autocomplete="off" aria-label="Search {{ my_access_scope_label }}">
+      </fieldset>
+      {% if my_access_q %}<a class="button ghost small" href="{{ url_for('profile', tab='myaccess', scope=my_access_scope) }}">Clear</a>{% endif %}
+    </form>
+  </div>
   {% if user.is_global_admin %}
   <div role="alert" data-variant="warning">
     You are a <strong>global admin</strong> and can access every team, project, and secret.
@@ -18,17 +30,6 @@
        class="tab{% if my_access_scope == 'secret' %} active{% endif %}"{% if my_access_scope == 'secret' %} aria-current="page"{% endif %}
     >Secret access</a>
   </nav>
-
-  <div class="section-tools">
-    <form method="get" action="{{ url_for('profile', tab='myaccess', scope=my_access_scope) }}" class="toolbar" role="search">
-      <fieldset class="group search-input">
-        {% include "partials/search_icon.html" %}
-        <input type="search" name="q" value="{{ my_access_q or '' }}"
-               placeholder="Search" autocomplete="off" aria-label="Search {{ my_access_scope_label }}">
-      </fieldset>
-      {% if my_access_q %}<a class="button ghost small" href="{{ url_for('profile', tab='myaccess', scope=my_access_scope) }}">Clear</a>{% endif %}
-    </form>
-  </div>
 
   {% if my_access_rows %}
   <section class="list-panel">
