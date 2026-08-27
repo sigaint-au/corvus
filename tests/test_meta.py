@@ -141,6 +141,8 @@ class TestTeamMetaTemplates:
         src = (REPO_ROOT / "app" / "templates" / "team.html").read_text()
         assert "tab='meta'" in src or 'tab="meta"' in src
         assert "upsert_team_meta" in src
+        assert """{% if is_admin %}
+  <form method="post" action="{{ url_for('upsert_team_meta'""" in src
 
     def test_team_meta_registered(self):
         from tests.helpers import routes_module_src
@@ -148,6 +150,7 @@ class TestTeamMetaTemplates:
         src = routes_module_src("teams")
         assert '"/teams/<uuid:team_id>/meta"' in src
         assert '"/teams/<uuid:team_id>/meta/<meta_key>/delete"' in src
+        assert '"settings", "access", "webhooks")' in src
 
 
 class TestProjectMetaRoutes:
@@ -199,7 +202,12 @@ class TestProjectMetaRoutes:
         assert "tab='meta'" in subnav
         content = (REPO_ROOT / "app" / "templates" / "partials" / "project_content.html").read_text()
         assert "project_meta.html" in content
+        meta_partial = (REPO_ROOT / "app" / "templates" / "partials" / "project_meta.html").read_text()
+        assert """{% if can_admin %}
+  <form method="post" action="{{ url_for('upsert_project_meta'""" in meta_partial
         assert (REPO_ROOT / "app" / "templates" / "partials" / "project_meta.html").exists()
+        detail_src = (REPO_ROOT / "app" / "routes" / "projects" / "detail.py").read_text()
+        assert 'if tab == "meta" and not can_admin:' not in detail_src
         src = routes_module_src("projects")
         assert '"/projects/<uuid:project_id>/meta"' in src
         assert '"/projects/<uuid:project_id>/meta/<meta_key>/delete"' in src
@@ -238,6 +246,7 @@ class TestSecretMetaOverride:
         src = (REPO_ROOT / "app" / "templates" / "secret_view.html").read_text()
         assert "m.source" in src
         assert "inherited" in src.lower()
+        assert "<th>Updated</th>" in src
 
 
 class TestMgmtSecretMetaOverride:

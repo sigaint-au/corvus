@@ -9,6 +9,6 @@
 {% set scope_kind = 'project' %}{% set scope_ref = project.id %}{% set search_action = url_for('project_detail', project_id=project.id) %}{% set list_url = url_for('project_detail', project_id=project.id, tab='webhooks') %}
 {% include "partials/webhooks_list.html" %}
 {% elif active_tab == 'settings' and can_settings %}{% include "partials/project_settings.html" %}
-{% elif active_tab == 'meta' and can_admin %}{% include "partials/project_meta.html" %}
+{% elif active_tab == 'meta' %}{% include "partials/project_meta.html" %}
 {% else %}{% include "partials/project_secrets.html" %}
 {% endif %}

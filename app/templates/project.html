@@ -74,11 +74,9 @@
      class="page-subnav-link {% if active_tab == 'settings' %}active{% endif %}"{% if active_tab == 'settings' %} aria-current="page"{% endif %}
   >Settings</a>
   {% endif %}
-  {% if can_admin %}
   <a hx-get="{{ url_for('project_detail', project_id=project.id, tab='meta') }}" hx-target="#project-panel" hx-swap="innerHTML" hx-push-url="true" href="{{ url_for('project_detail', project_id=project.id, tab='meta') }}"
      class="page-subnav-link {% if active_tab == 'meta' %}active{% endif %}"{% if active_tab == 'meta' %} aria-current="page"{% endif %}
   >Metadata</a>
-  {% endif %}
 </nav>
 <div class="page-panel" id="project-panel">
 {% include "partials/project_content.html" %}

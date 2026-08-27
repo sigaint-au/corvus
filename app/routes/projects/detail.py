@@ -196,8 +196,6 @@ def project_detail(project_id):
             tab = "requests"
         if tab == "webhooks" and not can_admin:
             tab = "secrets"
-        if tab == "meta" and not can_admin:
-            tab = "secrets"
         webhooks = []
         due_overdue, due_soon, rotation_overdue, rotation_soon = [], [], [], []
         if tab == "secrets":
