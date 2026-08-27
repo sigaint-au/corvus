@@ -2532,6 +2532,7 @@
     .row > * { flex: 1; min-width: 8rem; }
     table { width: 100%; border-collapse: collapse; font-size: .925rem; table-layout: auto; }
     th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tbody tr:last-child th, tbody tr:last-child td { border-bottom: none; }
     th { color: var(--muted-foreground); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
     /* Responsive table container (oat .table): horizontal scroll on narrow
        screens instead of overflowing the card/viewport. Also supports sticky
