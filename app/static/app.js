@@ -393,6 +393,7 @@ document.addEventListener('htmx:configRequest', function (e) {
       var nodes = root.querySelectorAll
         ? root.querySelectorAll('[data-grant-until]')
         : [];
+      var any = nodes.length > 0;
       nodes.forEach(function (el) {
         var until = el.getAttribute('data-grant-until');
         if (!until) return;
@@ -407,7 +408,9 @@ document.addEventListener('htmx:configRequest', function (e) {
         }
       });
       /* Auto-hide countdown note (revealed secret rows) */
-      (root.querySelectorAll ? root.querySelectorAll('[data-hide-until]') : []).forEach(function (el) {
+      var hides = root.querySelectorAll ? root.querySelectorAll('[data-hide-until]') : [];
+      if (hides.length > 0) any = true;
+      hides.forEach(function (el) {
         var until = el.getAttribute('data-hide-until');
         if (!until) return;
         var t = Date.parse(until);
@@ -416,13 +419,25 @@ document.addEventListener('htmx:configRequest', function (e) {
         var count = el.querySelector('.auto-hide-count');
         if (count) count.textContent = s + 's';
       });
+      return any;
     }
-    setInterval(function () { tickGrantCountdowns(document); }, 1000);
+    var countdownTimer = null;
+    function startCountdownTimer() {
+      if (countdownTimer) return;
+      countdownTimer = setInterval(function () {
+        if (!tickGrantCountdowns(document)) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+      }, 1000);
+    }
     document.addEventListener('DOMContentLoaded', function () {
       tickGrantCountdowns(document);
+      startCountdownTimer();
     });
     document.body.addEventListener('htmx:afterSwap', function (e) {
       tickGrantCountdowns(e.target || document);
+      startCountdownTimer();
     });
 
     /* Auto-hide revealed secrets after N seconds */
