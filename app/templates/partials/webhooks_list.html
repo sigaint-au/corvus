@@ -11,6 +11,8 @@
 {% endif %}
 <div class="section-tools">
   <form method="get" action="{{ search_action }}" class="toolbar" role="search">
+    <input type="hidden" name="tab" value="webhooks">
+    {% if webhook_filter is defined %}<input type="hidden" name="filter" value="{{ webhook_filter }}">{% endif %}
     <fieldset class="group search-input">
       {% include "partials/search_icon.html" %}
       <input type="search" name="q" value="{{ search_q or '' }}"

@@ -5,27 +5,54 @@ surface: web
 mode: operate
 -->
 
-# Corvus — Design System
+# Corvus — Style Guide
 
-## Visual Identity
+A designer-facing reference for carrying Corvus's visual language into a new
+project. Every value here is taken from the running implementation
+(`app/static/app.css`, `app/static/logo.svg`, `app/static/favicon.svg`,
+`app/templates/`). Where this guide differs from `DESIGN.md`, this guide is
+current.
 
-Corvus is a secrets manager built for engineering teams who treat infrastructure security as a first-class concern. The visual language reflects that: no decoration, no flourish, no color that doesn't carry meaning. Every surface earns its place by being legible, scannable, and trustworthy at a glance.
+---
 
-The brand mark is a raven — `app/static/logo.svg` — rendered as a CSS mask in the sidebar and auth card header. It inverts with color-scheme (black on light, cream on dark). The raven is the only ornamental element in the entire interface.
+## 1. Identity
 
-### Design Principles
+Corvus is a self-hosted secrets manager for engineering teams that treat
+infrastructure security as a first-class concern. The visual language says
+that plainly: no decoration, no flourish, no color that doesn't carry
+meaning. Every surface earns its place by being legible, scannable, and
+trustworthy at a glance.
 
-1. **Monochrome authority.** Pure black and white are the primary palette. Color is reserved for semantic states (danger, success, warning) and a single teal accent in the sidebar. No gradients on content surfaces, no decorative color.
-2. **Tonal layering over shadows.** Depth is communicated through background tone (`--faint` → `--muted` → `--secondary` → `--card` → `--background`) rather than box shadows. Shadows appear only on floating elements (dialogs, auth cards).
-3. **Density with breath.** Compact spacing for data surfaces (tables, secret lists), generous padding for decision surfaces (empty states, setup guide, auth). The interface respects the operator's screen real estate.
-4. **Monospace where it matters.** Secret keys, values, and all cryptographic material use the monospace stack. Prose uses the system sans. The typographic shift signals "this is data, not narrative."
-5. **Plain copy.** User-facing text is direct and factual. RBAC role names appear verbatim. No marketing voice inside the product.
+The brand mark is a raven. It is the only ornamental element in the entire
+interface.
 
-## Color System
+### Design principles
 
-All tokens use `light-dark()` for dual-theme support. The sidebar is always dark regardless of color-scheme — it acts as a fixed shell.
+1. **Monochrome authority.** Pure black and white are the primary palette.
+   Color is reserved for semantic states (danger, success, warning) and a
+   single teal accent in the sidebar. No gradients on content surfaces, no
+   decorative color.
+2. **Tonal layering over shadows.** Depth comes from background tone
+   (`--faint` → `--muted` → `--secondary` → `--card` → `--background`), not
+   box shadows. Shadows appear only on floating elements (dialogs, auth card).
+3. **Density with breath.** Compact spacing for data surfaces (tables, secret
+   lists), generous padding for decision surfaces (empty states, setup guide,
+   auth). Respect the operator's screen real estate.
+4. **Monospace where it matters.** Secret keys, values, and all cryptographic
+   material use the monospace stack. Prose uses the system sans. The shift
+   signals "this is data, not narrative."
+5. **Plain copy.** User-facing text is direct and factual. RBAC role names
+   appear verbatim. No marketing voice inside the product.
 
-### Surface Tokens
+---
+
+## 2. Color system
+
+All tokens are defined once in `:root` using `light-dark()` so light and dark
+themes share one source. The sidebar is always dark regardless of color-scheme
+— it acts as a fixed shell.
+
+### Surface tokens
 
 | Token | Light | Dark | Usage |
 |-------|-------|------|-------|
@@ -40,13 +67,13 @@ All tokens use `light-dark()` for dual-theme support. The sidebar is always dark
 | `--muted` | `#f0f1f2` | `#181b1e` | Muted backgrounds |
 | `--muted-foreground` | `#57626e` | `#a3aab3` | Secondary text, hints |
 | `--faint` | `#fafafa` | `#111111` | Faintest surface tier |
-| `--faint-foreground` | `#64707c` | `#737a84` | Faintest text |
+| `--faint-foreground` | `#5a6670` | `#838a98` | Faintest text |
 | `--accent` | `#eef0f1` | `#1a1e22` | Accent surfaces |
 | `--border` | `#d4d4d8` | `#2a2f34` | Borders, dividers |
 | `--input` | `#d4d4d8` | `#2a2f34` | Input borders |
 | `--ring` | `#000000` | `#f5f5f5` | Focus ring (pure black/white) |
 
-### Semantic Tokens
+### Semantic tokens
 
 | Token | Light | Dark | Usage |
 |-------|-------|------|-------|
@@ -57,14 +84,15 @@ All tokens use `light-dark()` for dual-theme support. The sidebar is always dark
 | `--warning` | `#a65b00` | `#f0a030` | Warnings, expiring soon |
 | `--warning-foreground` | `#000000` | `#000000` | Text on warning surfaces |
 
-### Sidebar Tokens (always dark)
+### Sidebar tokens (always dark)
 
 | Token | Value | Usage |
 |-------|-------|-------|
 | `--side-bg` | `#0c0e10` | Sidebar background |
 | `--side-ink` | `#e8eaed` | Sidebar primary text |
 | `--side-muted` | `#9aa1a9` | Sidebar secondary text |
-| `--side-faint` | `#6b727a` | Sidebar faint text |
+| `--side-faint` | `#828a92` | Sidebar faint text (passes AA on `--side-bg`) |
+| `--side-brand` | `#f4f1ea` | Brand mark cream in the sidebar |
 | `--side-hover` | `#161a1f` | Sidebar hover background |
 | `--side-active` | `#1a2228` | Sidebar active link background |
 | `--side-accent` | `#47817F` | Teal accent (active step, focus) |
@@ -72,20 +100,41 @@ All tokens use `light-dark()` for dual-theme support. The sidebar is always dark
 | `--side-input` | `#121518` | Sidebar input background |
 | `--side-w` | `15.5rem` | Sidebar width |
 
-### Accent Rule
+### The accent rule
 
-`--side-accent` (`#47817F` teal) is the only non-monochrome, non-semantic color in the system. It appears exclusively in the sidebar shell and the setup-guide active step. It never appears in content surfaces, buttons, or data tables. Success green is deliberately distinct from the teal accent — the CSS comment makes this explicit: "Success must read as success, not brand teal."
+`--side-accent` (`#47817F` teal) is the only non-monochrome, non-semantic
+color in the system. It appears exclusively in the sidebar shell and the
+setup-guide active step. It never appears in content surfaces, buttons, or
+data tables. Success green is deliberately distinct from the teal accent:
+success must read as success, not brand.
 
-## Typography
+### Contrast floor
 
-### Font Families
+Every text token pair passes WCAG AA (4.5:1) in both themes. The tightest
+pairs, verified:
 
-- **Sans (body, UI):** `var(--font-sans)` from oat.ink — system font stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`)
-- **Monospace (secrets, keys, code):** `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+- `--muted-foreground` on `--background`: ~6.2:1 light, ~7.8:1 dark
+- `--side-faint` (`#828a92`) on `--side-bg` (`#0c0e10`): ~4.6:1
+- `--faint-foreground` on `--faint`: ~4.5:1+ both themes
 
-No web fonts are loaded. The system stack ensures zero latency and native rendering on every platform.
+Do not darken these values. They sit at the AA boundary.
 
-### Type Scale
+---
+
+## 3. Typography
+
+### Font families
+
+- **Sans (body, UI):** the oat.ink `--font-sans` system stack —
+  `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+- **Monospace (secrets, keys, code):** `ui-monospace, SFMono-Regular, Menlo,
+  Consolas, monospace`
+
+No web fonts are loaded. The system stack gives zero latency and native
+rendering on every platform. Carry this forward: do not introduce webfonts
+for a product in this family.
+
+### Type scale
 
 | Element | Size | Weight | Notes |
 |---------|------|--------|-------|
@@ -97,44 +146,78 @@ No web fonts are loaded. The system stack ensures zero latency and native render
 | Setup-guide title | 1.04rem | 650 | |
 | Radio-card label | .95rem | 600 | |
 | Brand text | .95rem | 700 | letter-spacing -.02em |
-| Body text | oat default (1rem) | 400 | |
+| Body text | 1rem | 400 | oat default |
 | Muted text | .9rem | 400 | `--muted-foreground` |
 | Radio-card help | .8rem | 400 | `--muted-foreground` |
 | Labels/legends | .72rem | 650 | letter-spacing .04em, uppercase |
 | Brand sub | .68rem | 500 | letter-spacing .05em, uppercase |
 
-### Typographic Conventions
+### Typographic conventions
 
-- Secret keys and values render in `<code class="k">` with monospace font
+- Secret keys and values render in `<code class="k">` with the monospace stack
 - Masked secrets use `•••••••` with letter-spacing .08em
-- Labels and legends are uppercase, small, tight letter-spacing — functional, not decorative
+- Labels and legends are uppercase, small, tight letter-spacing — functional,
+  not decorative
 - RBAC role names appear verbatim in badges, never translated or prettified
+- The `.muted` class sets `--muted-foreground` at .9em
 
-## Spacing & Radius
+---
 
-### Radius
+## 4. Logo and wordmark
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--radius-sm` | 4px | Small controls, tight corners |
-| `--radius` | 8px | Default — cards, inputs, radio cards, list panels |
-| `--radius-lg` | 12px | Auth card, dialogs |
+### The raven mark
 
-### Spacing Patterns
+`app/static/logo.svg` — a single-path raven on a 500×474 canvas. It inverts
+with color-scheme: `#0c0c0b` (near-black) in light mode, `#f4f1ea` (cream)
+in dark mode.
 
-- Page padding: oat default (content area has comfortable margins)
-- List panel padding: 1.1rem
-- Empty state padding: 2.5rem 1rem
-- Card/dialog form padding: 1rem 1.15rem (header), .5rem gap (footer)
-- Field grid: 2-column, .65rem row gap, .85rem column gap
-- Sidebar padding: 1.1rem .7rem 1rem
-- Section gap (settings-form): 1.15rem
+The mark renders three ways:
 
-## Layout
+1. **CSS mask (primary).** The `.brand-logo` class paints a
+   `background-color: currentColor` box and masks it with the SVG:
+   `mask: url("logo.svg") center / contain no-repeat`. Color comes from the
+   surrounding context — sidebar uses `--side-brand`, auth uses
+   `light-dark(#0c0c0b, var(--side-brand))`. This lets the mark inherit hover
+   and theme states without duplicating assets.
+2. **Inline SVG.** Used in email and static contexts where masks are
+   unreliable.
+3. **Favicon.** `app/static/favicon.svg` — the raven in cream on a
+   `#0c0c0b` rounded-square tile (32×32, rx=7). This tile is the app icon
+   pattern: near-black tile, cream mark.
 
-### App Shell
+### Sizes
 
-The authenticated app uses a two-column grid: fixed sidebar (`--side-w: 15.5rem`) + fluid content area. The sidebar is `position: sticky` and always dark. Below 720px the sidebar collapses to a toggle with backdrop overlay.
+| Context | Size |
+|---------|------|
+| Sidebar brand | 1.5rem wide, height `1.5rem × 474/500` |
+| Auth brand | 2.15rem wide, height `2.15rem × 474/500` |
+| Favicon | 32×32 |
+
+Height always follows the 500:474 canvas ratio. Never distort the mark.
+
+### Wordmark
+
+The wordmark is typeset, not drawn:
+
+- **Sidebar:** brand text `.95rem / 700`, letter-spacing -.02em, in
+  `--side-ink`. Optional sub-line `.68rem / 500`, uppercase, letter-spacing
+  .05em, in `--side-faint` (e.g. the tagline).
+- **Auth:** brand text `1.05rem / 700` in `--foreground`, centered under the
+  mark. Sub-line `.7rem / 500`, uppercase, in `--muted-foreground`.
+- The mark is `aria-hidden` when it sits beside the wordmark; the wordmark is
+  the accessible name.
+
+The default product name is **Corvus**, but the name is configurable
+(`brand_name` setting). The style must survive any name.
+
+---
+
+## 5. Layout
+
+### App shell
+
+Two-column grid: fixed sidebar (`--side-w: 15.5rem`) + fluid content area.
+Sidebar is `position: sticky` and always dark.
 
 ```
 ┌─────────────┬──────────────────────────┐
@@ -153,94 +236,133 @@ The authenticated app uses a two-column grid: fixed sidebar (`--side-w: 15.5rem`
 └─────────────┴──────────────────────────┘
 ```
 
-### Auth Shell
+Sidebar anatomy: brand lockup, global search, team selector dropdown,
+collapsible nav groups (`<details>`), pinned items, recent secrets, user
+email + logout.
 
-Unauthenticated pages use a centered auth card (max-width 22rem) on a dot-pattern background. If a login banner is configured, the layout splits `1fr 2fr` (max 1000px) with the banner in the aside.
+### Auth shell
 
-```
-┌────────────────────────────────┐
-│  · · · · · · · (dot pattern) ·  │
-│  ┌──────────────────┐           │
-│  │  Raven mark       │           │
-│  │  Corvus           │  banner   │
-│  │  ─────────────    │  (opt.)   │
-│  │  form fields      │           │
-│  └──────────────────┘           │
-│  · · · · · · · · · · · · · · ·  │
-└────────────────────────────────┘
-```
+Unauthenticated pages use a centered auth card (max-width 22rem) on a
+dot-pattern background — a radial-gradient of 1px `rgba(0,0,0,.08)` dots on a
+22px grid. With a login banner configured, the layout splits `1fr 2fr`
+(max 1000px).
 
-### Resource Sub-Pages
+### Resource sub-pages
 
-Team and project detail pages use a vertical rail (`page-side` / `page-subnav`) with `?tab=` links. The tab nav markup (`nav.tabs`) is used only for client-side widget tablists (e.g. role-create mode switcher).
+Team and project detail pages use a vertical rail (`page-side` /
+`page-subnav`) with `?tab=` links. The rail is an 11rem column; on mobile
+(≤720px) it becomes a horizontal wrapping row. Underline tabs (`.tabs`) are
+for server-side section navigation and client-side widget tablists only.
 
-### Responsive Breakpoints
+### Responsive breakpoints
 
 | Breakpoint | What changes |
 |------------|-------------|
-| `max-width: 720px` | Sidebar collapses to toggle+backdrop; field-grid → 1 col; auth-split → 1 col |
-| `max-width: 640px` | Token-policy-grid → 1 col |
-| `max-width: 600px` | Token-policy-grid → 1 col (duplicate) |
+| `max-width: 720px` | Sidebar collapses to a 2.75rem toggle + backdrop; field-grid → 1 col; auth-split → 1 col; subnav rail → horizontal |
+| `max-width: 640px` | Token-policy grid → 1 col |
 
-720px is the primary structural breakpoint. Below it, the app is single-column with a hamburger sidebar.
+720px is the primary structural breakpoint. Below it the app is single-column
+with a hamburger sidebar. Tables never break: they sit inside a `.table`
+wrapper that scrolls horizontally.
 
-## Components
+---
 
-### App Shell & Sidebar
+## 6. Spacing and radius
 
-Dark slate (`#0c0e10`), always dark regardless of theme. Contains: brand mark (raven via CSS mask), global search, team selector dropdown, collapsible nav groups (`<details>`), pinned items, recent secrets, user email + logout. Sidebar width is 15.5rem. Nav links use `.12s ease` hover transition to `--side-hover` background.
+### Radius
 
-### Auth Card
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--radius-sm` | 4px | Small controls, tight corners |
+| `--radius` | 8px | Default — cards, inputs, radio cards, list panels |
+| `--radius-lg` | 12px | Auth card, dialogs |
 
-Centered, max-width 22rem, card background, 1px border, `--radius-lg` (12px), subtle shadow (`0 1px 3px rgba(0,0,0,.06)`). Sits on a radial-gradient dot-pattern background (`rgba(0,0,0,.08)` 1px dots, 22px grid). Optional split view with login banner aside.
+### Spacing patterns
 
-### List Panel
+- Page padding: oat default (content area has comfortable margins)
+- List panel padding: 1.1rem
+- Empty state padding: 2.5rem 1rem
+- Dialog header: 1rem 1.15rem; footer: flex with .5rem gap
+- Field grid: 2 columns, .65rem row gap, .85rem column gap
+- Sidebar padding: 1.1rem .7rem 1rem
+- Settings form section gap: 1.15rem
 
-Card surface for tabular data: `--card` background, 1px `--border`, `--radius`, 1.1rem padding. Contains tables (wrapped in `.table` div for horizontal scroll on narrow screens) or empty states.
+---
 
-### Empty State
+## 7. Components
 
-Reusable partial (`partials/empty_state.html`): centered flex column, 58px circle art with gradient background, title (1.04rem/650), muted text (.9rem, max 30rem), optional CTA button. Icons: folder, teams, key, search, inbox, default. Used across teams, projects, secrets, and members lists.
+### List panel
 
-### Setup Guide
+Card surface for tabular data: `--card` background, 1px `--border`,
+`--radius`, 1.1rem padding. Contains tables (wrapped in `.table`) or empty
+states. A bare table is also valid — a table with nothing else does not need
+a panel around it.
 
-First-run onboarding panel on the teams page (shown when `can_create_team` and no teams exist). Three numbered steps with the current step highlighted via `--side-accent` border and filled circle. Guides the user through: Create team → Create project → Add secret.
+### Empty state
 
-### Radio Cards
+Centered flex column: 58px circle art with a subtle gradient background,
+title (1.04rem/650), muted text (.9rem, max-width 30rem), optional CTA.
+Icons: folder, teams, key, search, inbox, default.
 
-Used for encryption selection and other mutually exclusive choices. Flex row, 1px border, `--radius`, `.85rem 1rem` padding. Checked state via `:has(input:checked)`: border becomes `--ring`, background becomes `--muted`, box-shadow `0 0 0 1px var(--ring)`. Optional `.radio-card-help` text (.8rem, muted) explains tradeoffs.
+### Setup guide
+
+First-run onboarding panel. Numbered steps with the current step highlighted
+via `--side-accent` border and filled circle.
+
+### Radio cards
+
+Mutually exclusive choices (e.g. encryption selection). Flex row, 1px border,
+`--radius`, `.85rem 1rem` padding. Checked state via `:has(input:checked)`:
+border becomes `--ring`, background becomes `--muted`, plus a 1px ring shadow.
+Optional `.radio-card-help` (.8rem, muted) explains tradeoffs.
 
 ### Dialogs
 
-`<dialog>` elements with `data-open-dialog`/`data-close-dialog` triggers. Max-width `min(24rem, 100vw-2rem)`, 1px border, `--radius-lg`, `--card` background, moderate shadow (`0 8px 24px rgb(0 0 0 / .15)`). Form header padding 1rem 1.15rem, footer flex with .5rem gap.
+Native `<dialog>` with `closedby="any"`. Max-width `min(24rem, 100vw-2rem)`,
+1px border, `--radius-lg`, `--card` background, shadow
+`0 8px 24px rgb(0 0 0 / .15)`.
 
 ### Badges
 
-oat.ink `.badge` component with `data-variant` attribute: `secondary` (role names, kind chips), `danger` (overdue, destructive), `warning` (expiring soon, rotation due), `success` (active states). Badges are the primary way RBAC roles and secret metadata are communicated inline.
-
-### Secret Masked
-
-Monospace, .9em, letter-spacing .08em, muted color, .3rem .45rem padding. Renders as `•••••••` when not revealed. Locked secrets show a lock icon badge; access-granted secrets show a clock badge.
+oat.ink `.badge` with `data-variant`: `secondary` (role names, kind chips),
+`danger` (overdue, destructive), `warning` (expiring soon), `success`
+(active). Badges are the primary way RBAC roles and secret metadata are
+communicated inline. Variants are driven by `data-variant`, never by class
+names.
 
 ### Buttons
 
-Provided by oat.ink framework. Variants: primary (solid `--primary`), outline (border + ghost), ghost (transparent), small (size modifier). No custom button CSS in app.css. Used consistently for CTAs, form submits, and toolbar actions.
+oat.ink framework. Variants: primary (solid `--primary`), outline (border +
+transparent bg), ghost (transparent), small (size modifier). No custom button
+CSS. In filter/toolbar rows, buttons are height-matched to inputs
+(`min-height: calc(1.5em + 1rem + 2px)`).
 
 ### Forms
 
-`.settings-form` is a flex column with 1.15rem gap. `.field-grid` is a 2-column grid (collapses to 1 col on mobile). `.field-group` wraps related fields with a 1px border, `--radius`, `.85rem 1rem` padding, and an uppercase legend. CSRF tokens on all POST forms.
+`.settings-form` is a flex column with 1.15rem gap. `.field-grid` is a
+2-column grid (1 col on mobile) with `.span-2` full-width rows. `.field-group`
+wraps related fields: 1px border, `--radius`, `.85rem 1rem` padding, uppercase
+legend. `.field-hint` (.75rem/500/muted) explains a single field. `.check-row`
+is a labeled checkbox row. Every POST form carries a CSRF token.
 
-### Flash Messages
+### Secret value surfaces
 
-oat.ink alerts via `partials/flash_messages.html` with `data-variant` for success/error/warning/info. Server-rendered, appear at top of content area.
+Revealed secret values sit on a `--muted` readout surface in monospace, with
+horizontal scroll rather than truncation. Masked values use `•••••••` at .9em
+with letter-spacing .08em.
 
-### HTMX Loading States
+### Flash messages
 
-Elements with HTMX get `.12s ease` opacity transition to .45–.55, `pointer-events: none`. The secrets list shows a spinner (`secrets-spin` keyframe, .6s linear rotate).
+oat.ink alerts via `data-variant` (success/error/warning/info), server-
+rendered at the top of the content area.
 
-## Motion
+---
 
-Motion is restrained and functional. No decorative animations.
+## 8. Motion and elevation
+
+### Motion
+
+Restrained and functional. No decorative animation.
 
 | Pattern | Duration | Easing | Usage |
 |---------|----------|--------|-------|
@@ -248,53 +370,85 @@ Motion is restrained and functional. No decorative animations.
 | HTMX loading | .12s | ease | Opacity fade to .45–.55 |
 | Spinner | .6s | linear | Secrets list spinner (rotate) |
 
-No motion tokens defined. All transitions are inline `.12s ease`. No entrance animations, no scroll-triggered effects, no parallax.
+`prefers-reduced-motion: reduce` collapses durations to .01ms but keeps state
+change visible — the spinner still appears, forms still dim. Do not ship a
+global motion kill that destroys feedback.
 
-## Elevation
+### Elevation
 
-| Element | Shadow | Notes |
-|---------|--------|-------|
-| Auth card | `0 1px 3px rgba(0,0,0,.06)` | Minimal lift |
-| Dialog | `0 8px 24px rgb(0 0 0 / .15)` | Moderate lift for floating UI |
-| Radio card checked | `0 0 0 1px var(--ring)` | Ring, not shadow |
-| Everything else | none | Flat — depth via tonal layering |
+| Element | Shadow |
+|---------|--------|
+| Auth card | `0 1px 3px rgba(0,0,0,.06)` |
+| Dialog | `0 8px 24px rgb(0 0 0 / .15)` |
+| Radio card checked | `0 0 0 1px var(--ring)` (ring, not shadow) |
+| Everything else | none — depth via tonal layering |
 
-## Framework
+---
 
-### oat.ink
+## 9. Iconography
 
-The project uses [oat.ink](https://oat.ink) as its CSS/JS foundation (`app/static/vendor/oat.min.css`, `app/static/vendor/oat.min.js`). oat provides:
+All icons are inline SVGs: `stroke="currentColor"`, `stroke-width="1.5"`,
+`fill="none"`. Functional, not decorative — search, key, folder, teams,
+inbox, lock, clock, hamburger. No icon font, no icon library. The raven is
+the only non-geometric SVG in the product.
 
-- Base reset and typography scale
-- Button component (primary, outline, ghost, small variants)
-- Badge component (data-variant driven)
-- Input/select/textarea base styles
-- Table styles (with `.table` wrapper for horizontal scroll)
-- Alert component (flash messages)
-- Menu/dropdown primitives
+---
 
-`app.css` (3088 lines) is the Corvus theme layer on top of oat. It defines all custom properties, the app shell, sidebar, auth card, radio cards, empty states, setup guide, dialogs, secret-specific UI, and responsive overrides. No utility framework (Tailwind, etc.) is used.
+## 10. Voice and copy
 
-### HTMX
+- Direct, factual, plain. No marketing voice inside the product.
+- RBAC role names appear verbatim (`team-owner`, `service-read`).
+- Error and empty states say what happened and what to do next.
+- Labels are short and specific; hints are one clause.
 
-HTMX (`app/static/vendor/htmx.min.js`) handles partial-page updates. Secret lists, search, tab switches, and pin toggles use HTMX. The server returns partials (Jinja2 templates in `app/templates/partials/`). Loading states are CSS-driven (opacity + spinner).
+---
 
-### JavaScript
+## 11. Accessibility
 
-`app/static/app.js` provides: CSRF token injection for HTMX requests, sidebar group persistence (localStorage), mobile sidebar toggle, user autocomplete (datalist). No client-side framework. No onboarding tour JS.
-
-## Iconography
-
-All icons are inline SVGs with `stroke="currentColor"`, `stroke-width="1.5"`, `fill="none"`. They are functional, not decorative — search, key, folder, teams, inbox, lock, clock, hamburger menu. No icon font, no icon library. The raven brand mark is the only non-geometric SVG.
-
-## Accessibility
-
-- Skip link to `#main-content` in base.html
-- `aria-hidden="true"` on decorative SVGs and the brand logo
-- `aria-label` on icon-only buttons and table header columns
-- `aria-current="page"` on active sidebar links
+- Skip link to `#main-content`
+- `aria-hidden="true"` on decorative SVGs and the brand mark beside a
+  wordmark
+- `aria-label` on icon-only buttons and action table columns
+- `aria-current="page"` on active nav links
 - `role="search"` on search forms
-- `visually-hidden` class for screen-reader-only labels
-- Focus ring uses pure black/white (`--ring`), high contrast in both themes
-- Dialogs use native `<dialog>` with `closedby="any"`
-- No established accessibility standard in PRODUCT.md — this is the incumbent state, not a commitment
+- Focus ring is `--ring` (pure black/white), high contrast in both themes
+- Touch targets: primary controls ≥ 2.25rem (36px); the sidebar toggle is
+  2.75rem
+- Headings descend without skipping levels (h1 → h2 → h3)
+- `role="alert"` for live errors; `role="status"` for the error-page code
+
+---
+
+## 12. Technical foundation
+
+- **oat.ink** (`vendor/oat.min.css`, `vendor/oat.min.js`) provides the base
+  reset, typography scale, buttons, badges, inputs, tables, alerts, and
+  dropdowns. `app.css` is the theme layer on top — all custom properties, the
+  shell, sidebar, and product components.
+- **HTMX** for partial-page updates; loading states are CSS-driven.
+- **No utility framework.** No Tailwind, no component library, no webfonts.
+- **One CSS file.** `app.css` (~3,200 lines) is organized by component with
+  section comments.
+- **Dual theme** via `color-scheme: light dark` and `light-dark()` tokens —
+  no separate dark stylesheet.
+
+---
+
+## 13. Carrying this to a new project
+
+A checklist for a designer starting fresh:
+
+1. Copy the `:root` token block verbatim (surface, semantic, sidebar). It is
+   the whole palette.
+2. Keep the accent rule: one teal, sidebar-only, never in content.
+3. Use the system font stacks. Do not add webfonts.
+4. Render the raven as a CSS mask with `currentColor`; keep the 500:474 ratio.
+5. Build depth with tonal layering, not shadows. Shadows only on floating
+   elements.
+6. Use oat.ink (or an equivalent classless base) + a single theme CSS file.
+7. Ship both themes from one token source with `light-dark()`.
+8. Keep motion at .12s ease and honor `prefers-reduced-motion`.
+9. Respect the contrast floor for `--muted-foreground`, `--side-faint`, and
+   `--faint-foreground`.
+10. Monospace for data, sans for prose. Uppercase micro-labels for structure.
+11. Plain copy, verbatim role names, no decoration.

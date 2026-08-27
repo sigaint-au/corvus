@@ -4,7 +4,9 @@
       <h2>My access</h2>
       <p class="muted">How your access is granted.</p>
     </div>
-    <form method="get" action="{{ url_for('profile', tab='myaccess', scope=my_access_scope) }}" class="toolbar" role="search">
+    <form method="get" action="{{ url_for('profile') }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="myaccess">
+      <input type="hidden" name="scope" value="{{ my_access_scope }}">
       <fieldset class="group search-input">
         {% include "partials/search_icon.html" %}
         <input type="search" name="q" value="{{ my_access_q or '' }}"
@@ -32,8 +34,7 @@
   </nav>
 
   {% if my_access_rows %}
-  <section class="list-panel">
-    <div class="table">
+  <div class="table">
       <table>
         <thead>
           <tr>
@@ -63,7 +64,6 @@
         </tbody>
       </table>
     </div>
-  </section>
   {% else %}
   <p class="empty">
     {% if my_access_q %}No {{ my_access_scope_label|lower }} bindings match "{{ my_access_q }}".

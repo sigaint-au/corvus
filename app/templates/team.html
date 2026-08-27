@@ -53,7 +53,7 @@
 {% if active_tab == 'projects' %}{% include "partials/team_projects.html" %}
 {% elif active_tab == 'access' and is_admin %}{% include "partials/team_access.html" %}
 {% elif active_tab == 'webhooks' and is_admin %}
-{% set scope_kind = 'team' %}{% set scope_ref = team.id %}{% set search_action = url_for('team_detail', team_id=team.id, tab='webhooks') %}{% set list_url = url_for('team_detail', team_id=team.id, tab='webhooks') %}
+{% set scope_kind = 'team' %}{% set scope_ref = team.id %}{% set search_action = url_for('team_detail', team_id=team.id) %}{% set list_url = url_for('team_detail', team_id=team.id, tab='webhooks') %}
 {% include "partials/webhooks_list.html" %}
 {% elif active_tab == 'members' %}{% include "partials/team_members.html" %}
 {% elif active_tab == 'groups' %}{% include "partials/team_groups.html" %}

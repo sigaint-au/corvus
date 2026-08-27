@@ -28,7 +28,7 @@
 {% elif active_tab == 'encryption' %}{% include "partials/settings_encryption.html" %}
 {% elif active_tab == 'webhooks' %}
 {% if webhook_filter == 'all' %}{% set show_scope = True %}{% endif %}
-{% set search_action = url_for('server_settings', tab='webhooks', filter=webhook_filter) %}
+{% set search_action = url_for('server_settings') %}
 {% set list_url = url_for('server_settings', tab='webhooks', filter=webhook_filter, q=search_q or none) %}
 {% include "partials/webhooks_list.html" %}
 
