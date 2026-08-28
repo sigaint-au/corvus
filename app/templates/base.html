@@ -97,7 +97,6 @@
         <a class="who-email" href="{{ url_for('profile') }}" title="{{ session.email }} - My profile">{{ session.email }}</a>
         {% if is_global_admin %}<span class="badge" data-variant="secondary">Global admin</span>{% endif %}
       </div>
-      <button type="button" class="logout-link" data-open-dialog="cli-login-dlg">Copy login command</button>
       <form method="post" action="{{ url_for('logout') }}" class="inline">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button type="submit" class="logout-link">Log out</button>

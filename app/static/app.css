@@ -2411,6 +2411,23 @@
     dialog.access-dlg label:last-child {
       margin-bottom: 0;
     }
+    /* CLI login command dialog: wide enough to fit the full command */
+    dialog#cli-login-dlg {
+      max-width: min(40rem, calc(100vw - 2rem));
+    }
+    dialog#cli-login-dlg pre {
+      margin: 0 0 .5rem;
+      padding: .7rem .8rem;
+      background: var(--code-bg, color-mix(in srgb, var(--border) 30%, transparent));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .9rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+    }
     /* Acts column: oat dropdown kebab */
     td.acts-menu ot-dropdown {
       display: inline-flex;

@@ -34,8 +34,9 @@ Env **or** `~/.config/corvus/config` (`0600`). **Env wins.**
 
 ### Copy login command
 
-Instead of creating a PAT, sign in to the web UI and click **Copy login
-command** in the sidebar footer. A dialog mints a short-lived `sso_…` token
+Instead of creating a PAT, sign in to the web UI and open **My profile**,
+then click **Copy login command** in the page header. A dialog mints a
+short-lived `sso_…` token
 (1 hour by default) and builds a ready-to-paste command:
 
 ```bash

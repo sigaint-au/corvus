@@ -143,8 +143,8 @@ A CLI session token (`sso_…`) is a short-lived, user-scoped opaque token that
 lets a signed-in user hand a ready-made `corvus login` command to a shell
 without minting a long-lived PAT.
 
-Click **Copy login command** in the sidebar footer. A dialog mints the token
-and shows the command:
+Open **My profile** and click **Copy login command** in the page header. A
+dialog mints the token and shows the command:
 
 ```bash
 corvus login --url https://secrets.example.com --token sso_…
