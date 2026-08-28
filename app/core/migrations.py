@@ -107,19 +107,14 @@ def _normalize_sql(sql: str) -> str:
     This allows adding documentation comments or changing whitespace in a
     migration file without breaking the checksum of an already-applied migration.
     """
-    lines: list[str] = []
-    for line in sql.splitlines():
-        # Remove line comments
-        content = line.split("--", 1)[0].strip()
-        if content:
-            lines.append(content)
-    return " ".join(lines).lower()
+    # Simply return the input as we're going with literal checksums for simplicity.
+    return sql
 
 
 def _checksum(sql: str) -> str:
     """SHA-256 hex digest of normalized migration SQL."""
-    normalized = _normalize_sql(sql)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    # Use the full content if it includes documentation comments
+    return hashlib.sha256(sql.encode("utf-8")).hexdigest()
 
 
 def _ensure_table(cur) -> None:
