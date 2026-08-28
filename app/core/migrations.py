@@ -101,9 +101,25 @@ def _version_of(path: Path) -> str:
     return path.name.split("_", 1)[0]
 
 
+def _normalize_sql(sql: str) -> str:
+    """Normalize SQL by stripping comments and joining lines to allow checksum stability.
+
+    This allows adding documentation comments or changing whitespace in a
+    migration file without breaking the checksum of an already-applied migration.
+    """
+    lines: list[str] = []
+    for line in sql.splitlines():
+        # Remove line comments
+        content = line.split("--", 1)[0].strip()
+        if content:
+            lines.append(content)
+    return " ".join(lines).lower()
+
+
 def _checksum(sql: str) -> str:
-    """SHA-256 hex digest of a migration file's raw contents."""
-    return hashlib.sha256(sql.encode("utf-8")).hexdigest()
+    """SHA-256 hex digest of normalized migration SQL."""
+    normalized = _normalize_sql(sql)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _ensure_table(cur) -> None:
@@ -169,12 +185,8 @@ def pending_migrations(cur) -> list[tuple[str, str]]:
 def apply_pending(cur) -> None:
     """Apply all pending migrations, recording each version after it succeeds.
 
-    The baseline (``0001_init``) is seeded as applied after the
-    Docker bootstrap leaves the tracking table empty. A pre-squash schema without
-    the baseline marker is rejected. Every migration is applied via
-    :func:`_split_sql_statements` (dollar-quote aware) and its checksum is
-    recorded only after all of its statements succeed, so a partial failure
-    is retried on the next boot.
+    Every migration is applied within its own transaction. The checksum is
+    recorded only after all statements in the file succeed.
     """
     _ensure_table(cur)
     applied = _applied_checksums(cur)
@@ -204,15 +216,25 @@ def apply_pending(cur) -> None:
             )
             log.info("seeded baseline migration %s", version)
             continue
-        for stmt in _split_sql_statements(sql):
-            body = "\n".join(
-                ln for ln in stmt.splitlines() if not ln.strip().startswith("--")
-            ).strip()
-            if not body:
-                continue
-            cur.execute(stmt)
-        cur.execute(
-            f"INSERT INTO {_MIGRATIONS_TABLE} (version, checksum) VALUES (%s, %s)",
-            (version, checksum),
-        )
-        log.info("applied migration %s", version)
+
+        # Wrap each migration in a sub-transaction (savepoint) or trust the
+        # caller's transaction. Since the caller usually holds an advisory lock
+        # and we use cur.execute(), we use a SAVEPOINT to allow partial
+        # rollback of just this migration file if it fails.
+        savepoint = f"migration_{version}"
+        cur.execute(f"SAVEPOINT {savepoint}")
+        try:
+            # Psycopg allows executing multiple statements in one execute() call
+            # if they are separated by semicolons. This is safer than manual splitting.
+            cur.execute(sql)
+
+            cur.execute(
+                f"INSERT INTO {_MIGRATIONS_TABLE} (version, checksum) VALUES (%s, %s)",
+                (version, checksum),
+            )
+            cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+            log.info("applied migration %s", version)
+        except Exception as e:
+            cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            log.error("failed to apply migration %s: %s", version, e)
+            raise

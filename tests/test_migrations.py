@@ -23,7 +23,13 @@ def _cur(fetchone=None, fetchall=None):
 
 
 def _checksum(sql):
-    return hashlib.sha256(sql.encode("utf-8")).hexdigest()
+    lines: list[str] = []
+    for line in sql.splitlines():
+        content = line.split("--", 1)[0].strip()
+        if content:
+            lines.append(content)
+    normalized = " ".join(lines).lower()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _write_migrations(tmp_path, files):
@@ -55,6 +61,7 @@ def test_migrations_ship_in_order():
         "0015_webhook_grants.sql",
         "0016_brand_name_corvus.sql",
         "0017_team_project_meta.sql",
+        "0018_auditor_role.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
