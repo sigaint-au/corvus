@@ -17,6 +17,7 @@ from flask import (
 import audit
 from auth import authz, rbac_sync
 from core import config, db, settings_svc
+from lib import metadata
 from integrations import ldap_auth
 from ui import paging
 

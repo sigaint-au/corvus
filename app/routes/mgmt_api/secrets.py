@@ -11,14 +11,12 @@ from flask import (
 
 import audit
 from core import db
+from lib import metadata
 
 from .helpers import (
     _require_pat,
     _resolve_project,
 )
-
-_META_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-_META_VALUE_MAX = 2000
 
 
 def _resolve_secret(cur, pid, key):
@@ -51,7 +49,7 @@ def mgmt_upsert_secret_meta(project_ref, key):
         return err
     body = request.get_json(silent=True) or {}
     meta_key = (body.get("key") or "").strip()
-    if not _META_KEY_RE.match(meta_key):
+    if not metadata.validate_meta_key(meta_key):
         return (
             jsonify(
                 {
@@ -61,7 +59,7 @@ def mgmt_upsert_secret_meta(project_ref, key):
             ),
             400,
         )
-    value = (body.get("value") or "")[:_META_VALUE_MAX]
+    value = metadata.clean_meta_value(body.get("value"))
     with db.as_user(uid) as conn, conn.cursor() as cur:
         pid = _resolve_project(cur, project_ref)
         if not pid:

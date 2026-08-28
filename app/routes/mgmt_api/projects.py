@@ -12,6 +12,7 @@ from flask import (
 import audit
 from auth import rbac_sync
 from core import config, db
+from lib import metadata
 from lib.users import lookup_user_id
 
 from .helpers import (
@@ -20,7 +21,6 @@ from .helpers import (
     _resolve_team,
     _row,
 )
-from .secrets import _META_KEY_RE, _META_VALUE_MAX
 
 log = logging.getLogger(__name__)
 
@@ -302,13 +302,12 @@ def mgmt_upsert_project_meta(project_ref, meta_key):
     uid, err = _require_pat()
     if err:
         return err
-    if not _META_KEY_RE.match(meta_key):
+    if not metadata.validate_meta_key(meta_key):
         return (
             jsonify({"error": "metadata key must start with a letter/digit and use only A-Z a-z 0-9 . _ - (max 64)"}),
             400,
         )
-    value = (request.get_json(silent=True) or {}).get("value") or ""
-    value = value[:_META_VALUE_MAX]
+    value = metadata.clean_meta_value((request.get_json(silent=True) or {}).get("value"))
     with db.as_user(uid) as conn, conn.cursor() as cur:
         pid = _resolve_project(cur, project_ref)
         if not pid:
@@ -340,7 +339,7 @@ def mgmt_delete_project_meta(project_ref, meta_key):
     uid, err = _require_pat()
     if err:
         return err
-    if not _META_KEY_RE.match(meta_key):
+    if not metadata.validate_meta_key(meta_key):
         return jsonify({"error": "metadata key must start with a letter/digit and use only A-Z a-z 0-9 . _ - (max 64)"}), 400
     with db.as_user(uid) as conn, conn.cursor() as cur:
         pid = _resolve_project(cur, project_ref)

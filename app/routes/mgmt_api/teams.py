@@ -10,6 +10,8 @@ from flask import (
 import audit
 from auth import authz, rbac_sync
 from core import config, db, settings_svc
+from lib import metadata
+from lib import metadata
 from lib.users import lookup_user_id
 
 from .helpers import (
@@ -17,7 +19,6 @@ from .helpers import (
     _resolve_team,
     _row,
 )
-from .secrets import _META_KEY_RE, _META_VALUE_MAX
 
 
 def mgmt_list_teams():
@@ -299,13 +300,12 @@ def mgmt_upsert_team_meta(team_ref, meta_key):
     uid, err = _require_pat()
     if err:
         return err
-    if not _META_KEY_RE.match(meta_key):
+    if not metadata.validate_meta_key(meta_key):
         return (
             jsonify({"error": "metadata key must start with a letter/digit and use only A-Z a-z 0-9 . _ - (max 64)"}),
             400,
         )
-    value = (request.get_json(silent=True) or {}).get("value") or ""
-    value = value[:_META_VALUE_MAX]
+    value = metadata.clean_meta_value((request.get_json(silent=True) or {}).get("value"))
     with db.as_user(uid) as conn, conn.cursor() as cur:
         tid = _resolve_team(cur, team_ref)
         if not tid:
@@ -336,7 +336,7 @@ def mgmt_delete_team_meta(team_ref, meta_key):
     uid, err = _require_pat()
     if err:
         return err
-    if not _META_KEY_RE.match(meta_key):
+    if not metadata.validate_meta_key(meta_key):
         return jsonify({"error": "metadata key must start with a letter/digit and use only A-Z a-z 0-9 . _ - (max 64)"}), 400
     with db.as_user(uid) as conn, conn.cursor() as cur:
         tid = _resolve_team(cur, team_ref)

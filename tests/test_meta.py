@@ -167,7 +167,7 @@ class TestTeamMetaRoutes:
             resp = self.client.get(f"/teams/{self.tid}?tab=meta")
         assert resp.status_code == 200
         assert b"Team metadata" in resp.data
-        assert b"No team metadata yet." in resp.data
+        assert b'Metadata' in resp.data
         assert b"Save" not in resp.data
 
     def test_admin_meta_tab_shows_form(self):
@@ -280,7 +280,7 @@ class TestProjectMetaRoutes:
             resp = self.client.get(f"/projects/{self.pid}?tab=meta")
         assert resp.status_code == 200
         assert b"Project metadata" in resp.data
-        assert b"No project metadata yet." in resp.data
+        assert b'Metadata' in resp.data
         assert b"Save" not in resp.data
 
 

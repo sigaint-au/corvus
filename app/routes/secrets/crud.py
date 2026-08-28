@@ -15,6 +15,7 @@ from werkzeug.exceptions import HTTPException
 import audit
 from auth import authz
 from core import config, db
+from lib import metadata
 from secret_svc.commands import (
     delete_secret_command,
     update_secret_value_command,
@@ -119,19 +120,16 @@ def delete_secret(project_id, secret_id):
 def upsert_secret_meta(project_id, secret_id):
     """Add or update a custom metadata field (writers)."""
     key = (request.form.get("key") or "").strip()
-    value = (request.form.get("value") or "").strip()
+    value = metadata.clean_meta_value(request.form.get("value"))
     meta_url = url_for("secret_view", project_id=project_id, secret_id=secret_id, tab="meta")
-    import re
 
-    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", key or ""):
+    if not metadata.validate_meta_key(key):
         flash(
             "Metadata key must start with a letter/digit and use only "
             "A–Z, a–z, 0–9, ., _, - (max 64)",
             "error",
         )
         return redirect(meta_url)
-    if len(value) > 2000:
-        value = value[:2000]
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT api.can_access_secret(%s, 'write') AS w",

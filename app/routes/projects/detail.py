@@ -16,6 +16,7 @@ from flask import (
 import audit
 from auth import authz
 from core import config, db, settings_svc
+from lib import metadata
 from secret_svc.secret_kinds import (
     SOON_DAYS,
     annotate_token_expiry,
@@ -589,12 +590,10 @@ def upsert_project_meta(project_id):
     """Add or update a project-level metadata field (project admins only)."""
     meta_url = url_for("project_detail", project_id=project_id, tab="meta")
     key = (request.form.get("key") or "").strip()
-    value = (request.form.get("value") or "").strip()
-    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", key):
+    value = metadata.clean_meta_value(request.form.get("value"))
+    if not metadata.validate_meta_key(key):
         flash("Metadata key must start with a letter/digit and use only A-Z, a-z, 0-9, ., _, - (max 64)", "error")
         return redirect(meta_url)
-    if len(value) > 2000:
-        value = value[:2000]
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
         if not (cur.fetchone() or {}).get("a"):
