@@ -98,7 +98,10 @@
     </table>
   </div>
   {% else %}
-  <p class="empty">No team metadata yet.</p>
+  {% set icon = 'teams' %}
+  {% set title = 'No team metadata yet' %}
+  {% set text = 'Metadata here appears on every project and secret in the team.' %}
+  {% include "partials/empty_state.html" %}
   {% endif %}
 </section>
 {% endif %}

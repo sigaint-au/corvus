@@ -33,6 +33,9 @@
     </table>
   </div>
   {% else %}
-  <p class="empty">No project metadata yet.</p>
+  {% set icon = 'folder' %}
+  {% set title = 'No project metadata yet' %}
+  {% set text = 'Metadata here appears on every secret in the project.' %}
+  {% include "partials/empty_state.html" %}
   {% endif %}
 </section>
