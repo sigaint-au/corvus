@@ -198,6 +198,7 @@ RBAC_RESOURCES = (
 # Built-in role names (seeded in db/migrations/0001_init.sql) — keep in sync with rbac.ensure_builtin_roles
 RBAC_BUILTIN_ROLES = (
     "global-admin",
+    "auditor",
     "audit-viewer",
     "team-owner",
     "team-admin",
@@ -221,6 +222,7 @@ RBAC_TEAM_ROLE_DROPDOWN = (
     ("team-admin", "Admin"),
     ("team-member", "Member"),
     ("team-viewer", "Viewer"),
+    ("auditor", "Auditor"),
 )
 RBAC_PROJECT_ROLE_DROPDOWN = (
     ("project-admin", "Admin"),
@@ -235,6 +237,7 @@ RBAC_SECRET_ROLE_DROPDOWN = (
 )
 RBAC_CLUSTER_ROLE_DROPDOWN = (
     ("global-admin", "Global admin"),
+    ("auditor", "Auditor"),
     ("audit-viewer", "Audit viewer"),
 )
 RBAC_SERVICE_ROLE_DROPDOWN = (
