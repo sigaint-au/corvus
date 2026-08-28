@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 from core import db as core_db
 from core import settings_svc
 from integrations import ldap_auth
+from tests.helpers import REPO_ROOT
+from tests.helpers import mock_conn as _conn
 
-from tests.helpers import REPO_ROOT, mock_conn as _conn
-
-MIGRATION = REPO_ROOT / "db" / "migrations" / "0017_team_project_meta.sql"
+MIGRATION = REPO_ROOT / "db" / "migrations" / "0001_init.sql"
 
 
 def migration_sql() -> str:
@@ -26,19 +25,16 @@ def _login(client, uid):
 
 
 class TestSchema:
-    def test_migration_file_exists(self):
-        assert MIGRATION.exists()
-
     def test_team_meta_table(self):
         sql = migration_sql()
-        assert "CREATE TABLE IF NOT EXISTS api.team_meta" in sql
+        assert "CREATE TABLE api.team_meta" in sql
         assert "REFERENCES api.teams(id) ON DELETE CASCADE" in sql
         assert "PRIMARY KEY (team_id, key)" in sql
         assert "key ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'" in sql
 
     def test_project_meta_table(self):
         sql = migration_sql()
-        assert "CREATE TABLE IF NOT EXISTS api.project_meta" in sql
+        assert "CREATE TABLE api.project_meta" in sql
         assert "REFERENCES api.projects(id) ON DELETE CASCADE" in sql
         assert "PRIMARY KEY (project_id, key)" in sql
 
@@ -54,7 +50,6 @@ class TestSchema:
         sql = migration_sql()
         for frag in (
             "ENABLE ROW LEVEL SECURITY",
-            "DROP POLICY IF EXISTS project_meta_admin ON api.project_meta;",
             "api.team_role(team_id) IS NOT NULL",
             "api.team_role(team_id) IN ('team-owner', 'team-admin')",
             "api.can_read_project(project_id)",
@@ -71,7 +66,6 @@ class TestSchema:
 
     def test_secret_meta_rows_returns_source(self):
         sql = migration_sql()
-        assert "DROP FUNCTION IF EXISTS private.secret_meta_rows(uuid)" in sql
         assert "CREATE OR REPLACE FUNCTION private.secret_meta_rows(p_secret uuid)" in sql
         assert "RETURNS TABLE(key text, value text, updated_at timestamptz, source text)" in sql
         assert "source = 'secret'" in sql

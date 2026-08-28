@@ -708,7 +708,7 @@ class TestAuth:
         assert b'gate@b.c' in r.data
         assert b'Resend verification email' in r.data
     def test_dir_upsert_functions_stamp_verified(self):
-        init = (REPO_ROOT / 'db' / 'migrations' / '0003_email_verification.sql').read_text()
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         for fn in ('upsert_ldap_user', 'upsert_oidc_user'):
             start = init.index(fn)
             body = init[start:init.index('$$;', start)]
@@ -716,7 +716,6 @@ class TestAuth:
             assert 'now())\n' in body or 'now())' in body
 
     def test_verify_user_returns_email_verified_at(self):
-        sql = (REPO_ROOT / 'db' / 'migrations' / '0004_email_verify_backfill.sql').read_text()
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'email_verified_at timestamptz' in sql
-        assert 'SET email_verified_at = COALESCE(email_verified_at, created_at, now())' in sql
         assert 'GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator' in sql

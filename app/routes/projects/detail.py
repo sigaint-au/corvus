@@ -328,7 +328,7 @@ def project_detail(project_id):
                 hsm_slots = []
         elif tab == "meta":
             cur.execute(
-                "SELECT key, value, updated_at FROM api.project_meta WHERE project_id = %s ORDER BY key",
+                "SELECT key, value, updated_at, source FROM private.project_meta_rows(%s::uuid)",
                 (str(project_id),),
             )
             project_meta = cur.fetchall() or []

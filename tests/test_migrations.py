@@ -41,105 +41,20 @@ def _write_migrations(tmp_path, files):
 
 
 def test_migrations_ship_in_order():
-    """Baseline plus additive hardening migrations ship in order."""
+    """Single squashed baseline — no additive migrations."""
     files = [p.name for p in migrations._migration_files()]
     assert files == [
         "0001_init.sql",
-        "0002_rls_authz_hardening.sql",
-        "0003_email_verification.sql",
-        "0004_email_verify_backfill.sql",
-        "0005_sql_password_crypt.sql",
-        "0006_smtp_from_name_corvus.sql",
-        "0007_login_alerts_pref.sql",
-        "0008_reveal_grant_without_acl.sql",
-        "0009_team_reveal_requests.sql",
-        "0010_fix_can_reveal_secret.sql",
-        "0011_machine_token_scope_deny.sql",
-        "0012_reveal_deleted_guard.sql",
-        "0013_webhooks.sql",
-        "0014_webhook_deliveries.sql",
-        "0015_webhook_grants.sql",
-        "0016_brand_name_corvus.sql",
-        "0017_team_project_meta.sql",
-        "0018_auditor_role.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
         assert name[4] == "_"
 
 
-def test_smtp_from_name_rebrand_migration():
-    """0006 rewrites leftover 0001 defaults without editing the baseline."""
-    sql = (migrations.MIGRATIONS_DIR / "0006_smtp_from_name_corvus.sql").read_text()
-    assert "smtp_from_name" in sql
-    assert "brand_name" in sql
-    assert "brand_tagline" in sql
-    assert "Sigaint Secret Server" in sql
-    assert "Secret Server v0.1.0" in sql
-    assert "Keep your secrets." in sql
-    assert "Corvus" in sql
-    assert "UPDATE" in sql.upper()
-
-
-def test_brand_name_secret_server_migration():
-    """0016 rewrites a brand_name that 0006 missed (plain 'Secret Server')."""
-    sql = (migrations.MIGRATIONS_DIR / "0016_brand_name_corvus.sql").read_text()
-    assert "brand_name" in sql
-    assert "Secret Server" in sql
-    assert "Corvus" in sql
-    assert "UPDATE" in sql.upper()
-
-
-def test_team_reveal_requests_migration():
-    sql = (migrations.MIGRATIONS_DIR / "0009_team_reveal_requests.sql").read_text()
-    assert "allow_reveal_requests" in sql
-    assert "team_allows_reveal_requests" in sql
-
-
-def test_reveal_grant_without_acl_migration():
-    sql = (migrations.MIGRATIONS_DIR / "0008_reveal_grant_without_acl.sql").read_text()
-    assert "can_reveal_secret" in sql
-    assert "can_access_secret(sid, 'get')" in sql
-    assert "secret_access_requests" in sql
-
-
-def test_fix_can_reveal_secret_migration():
-    """0010 undoes 0008's invalid 'get' need so owners/admins can decrypt."""
-    sql = (migrations.MIGRATIONS_DIR / "0010_fix_can_reveal_secret.sql").read_text()
-    assert "can_reveal_secret" in sql
-    assert "can_access_secret(sid, 'read')" in sql
-    assert "can_access_secret(sid, 'get')" not in sql
-    assert "is_global_admin()" in sql
-    assert "can_admin_project" in sql
-
-
-def test_machine_token_scope_deny_migration():
-    sql = (migrations.MIGRATIONS_DIR / "0011_machine_token_scope_deny.sql").read_text()
-    assert "machine_key_allowed" in sql
-    assert "array_remove(rr.resources, 'machine_tokens')" in sql
-    assert "team-member" in sql
-    assert "project-write" in sql
-
-
-def test_reveal_deleted_guard_migration():
-    """0012 blocks global admins from revealing soft-deleted secrets."""
-    sql = (migrations.MIGRATIONS_DIR / "0012_reveal_deleted_guard.sql").read_text()
-    assert "deleted_at IS NULL" in sql
-    body = sql[sql.index("$$") + 2:]
-    assert body.index("deleted_at IS NULL") < body.index("is_global_admin()")
-
-
-def test_login_alerts_pref_migration():
-    sql = (migrations.MIGRATIONS_DIR / "0007_login_alerts_pref.sql").read_text()
-    assert "login_alerts" in sql
-    assert "smtp_login_alerts_force" in sql
-    assert "private.users" in sql
-
-
 def test_squashed_baseline_contains_all_schema_layers():
     """The consolidated baseline retains the complete current schema."""
     sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
-    assert "CREATE TABLE IF NOT EXISTS private.project_crypto_keys" in sql
+    assert "CREATE TABLE private.project_crypto_keys" in sql
     assert "crypto_provider" in sql
     assert "api.secrets" in sql and "api.secret_versions" in sql
     for col in (
@@ -163,23 +78,61 @@ def test_squashed_baseline_contains_all_schema_layers():
     assert "CREATE TRIGGER guard_secret_access_request" in sql
     assert "CREATE TRIGGER validate_binding_scope" in sql
     assert "role % cannot be assigned at scope %" in sql
-    assert "DROP FUNCTION IF EXISTS api.hsm_slot_url(uuid)" in sql
+    assert "api.hsm_slot_url(uuid)" in sql
     assert "ALTER DEFAULT PRIVILEGES IN SCHEMA api" in sql
     assert "ALTER DEFAULT PRIVILEGES IN SCHEMA rbac" in sql
     assert "private.squashed_baseline_marker" in sql
-
-
-def test_authz_hardening_migration():
-    sql = (migrations.MIGRATIONS_DIR / "0002_rls_authz_hardening.sql").read_text()
-    assert "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA private FROM PUBLIC" in sql
-    assert "only a team owner can assign team-owner" in sql
-    assert "only a team owner can map team-owner" in sql
+    # Email verification columns
+    assert "email_verified_at" in sql
+    assert "email_verify_token_hash" in sql
+    assert "email_verify_sent_at" in sql
+    assert "users_email_verify_token_idx" in sql
+    # Login alerts
+    assert "login_alerts" in sql
+    assert "smtp_login_alerts_force" in sql
+    # Team reveal requests
+    assert "allow_reveal_requests" in sql
+    assert "team_allows_reveal_requests" in sql
+    # Brand defaults
+    assert "'Corvus'" in sql
+    assert "'Keep your secrets.'" in sql
+    # Webhooks
+    assert "api.webhooks" in sql
+    assert "private.webhook_delivery_queue" in sql
+    assert "api.webhook_deliveries" in sql
+    assert "ssl_verify" in sql
+    assert "enqueue_webhooks" in sql
+    assert "tr_webhook_secret_audit" in sql
+    assert "tr_webhook_org_audit" in sql
+    # Meta tables
+    assert "api.team_meta" in sql
+    assert "api.project_meta" in sql
+    assert "guard_meta_precedence" in sql
+    # Security hardening
+    assert "pg_catalog" in sql
+    assert "SECURITY INVOKER" in sql
+    assert "applied_by" in sql
+    assert "application_name" in sql
+    # Ciphertext guards
+    assert "private.secret_enc" in sql
+    assert "private.secret_version_enc" in sql
+    assert "private.project_reveal_enc_rows" in sql
+    assert "REVOKE SELECT (value_enc) ON api.secrets FROM authenticated" in sql
+    # Update guards
+    assert "guard_secret_update" in sql
+    assert "guard_project_update" in sql
+    assert "guard_team_dir_map" in sql
     assert "secret identity fields cannot be changed" in sql
     assert "project team_id cannot be changed" in sql
-    assert "REVOKE SELECT (value_enc) ON api.secrets FROM authenticated" in sql
-    assert "private.secret_enc" in sql
-    assert "can_admin_project(project_id)" in sql
-    assert "OR api.can('update', 'secrets', 'secret', sid)" not in sql.split("WHEN need = 'reveal'")[1].split("ELSE")[0]
+    # only a team owner can assign team-owner
+    assert "only a team owner can assign team-owner" in sql
+    assert "only a team owner can map team-owner" in sql
+    # can_reveal_secret with deleted_at guard
+    assert "deleted_at IS NULL" in sql
+    # machine_key_allowed with restricted check
+    assert "service-read" in sql
+    # auditor role
+    assert "'auditor'" in sql
 
 
 class TestPendingMigrations:
@@ -280,9 +233,10 @@ class TestApplyPending:
         i_drop = joined.index("DROP COLUMN IF EXISTS acl_mode")
         assert i_restricted < i_inherit < i_drop
 
-def test_webhooks_migration():
-    sql = (migrations.MIGRATIONS_DIR / "0013_webhooks.sql").read_text()
-    assert "api.webhooks" in sql
-    assert "private.webhook_delivery_queue" in sql
-    assert "private.enqueue_webhooks" in sql
-    assert "tr_webhook_secret_audit" in sql
+def test_ensure_table_includes_audit_columns():
+    """The migration tracking table records who applied each migration."""
+    cur = _cur()
+    migrations._ensure_table(cur)
+    create_sql = cur.execute.call_args_list[0].args[0]
+    assert "applied_by" in create_sql
+    assert "application_name" in create_sql

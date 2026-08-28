@@ -212,10 +212,10 @@ def test_secret_kinds_config():
 
 
 def test_machine_key_allowed_empty_scope_denies():
-    """0011: no scope rows deny; restricted keys need an exact secret_key."""
+    """Squashed baseline: no scope rows deny; restricted keys need an exact secret_key."""
     from tests.helpers import REPO_ROOT
 
-    sql = (REPO_ROOT / "db" / "migrations" / "0011_machine_token_scope_deny.sql").read_text()
+    sql = (REPO_ROOT / "db" / "migrations" / "0001_init.sql").read_text()
     start = sql.index("CREATE OR REPLACE FUNCTION private.machine_key_allowed")
     end = sql.index("$$;", start) + 3
     body = sql[start:end]

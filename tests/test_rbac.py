@@ -27,8 +27,8 @@ def test_builtin_role_names_match_docs():
 def test_rbac_sql_ships_can_and_tables():
     root = Path(__file__).resolve().parents[1]
     sql = (root / "db" / "migrations" / "0001_init.sql").read_text()
-    assert "CREATE TABLE IF NOT EXISTS rbac.roles" in sql
-    assert "CREATE TABLE IF NOT EXISTS rbac.bindings" in sql
+    assert "CREATE TABLE rbac.roles" in sql
+    assert "CREATE TABLE rbac.bindings" in sql
     assert "CREATE OR REPLACE FUNCTION api.can(" in sql
     assert "rbac_scope_chain" in sql
     assert "ensure_builtin_roles" in sql
@@ -156,10 +156,7 @@ def test_schema_scrubs_legacy_access_modes():
 
     root = Path(__file__).resolve().parents[1]
     access = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
-    cleanup = access
-    assert "WHERE access_mode = 'custom'" in access
-    assert "WHERE access_mode NOT IN ('inherit', 'restricted')" in access
-    assert "DROP COLUMN IF EXISTS acl_mode" in access
+    assert "access_mode text NOT NULL DEFAULT 'inherit'" in access
     assert "CHECK (access_mode IN ('inherit', 'restricted'))" in access
-    assert "WHERE default_access_mode = 'custom'" in cleanup
-    assert "DROP TABLE IF EXISTS api.secret_acl" in cleanup
+    assert "default_access_mode text NOT NULL DEFAULT 'inherit'" in access
+    assert "DROP TABLE IF EXISTS api.secret_acl" not in access

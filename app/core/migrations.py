@@ -107,14 +107,19 @@ def _normalize_sql(sql: str) -> str:
     This allows adding documentation comments or changing whitespace in a
     migration file without breaking the checksum of an already-applied migration.
     """
-    # Simply return the input as we're going with literal checksums for simplicity.
-    return sql
+    lines: list[str] = []
+    for line in sql.splitlines():
+        # Remove line comments
+        content = line.split("--", 1)[0].strip()
+        if content:
+            lines.append(content)
+    return " ".join(lines).lower()
 
 
 def _checksum(sql: str) -> str:
     """SHA-256 hex digest of normalized migration SQL."""
-    # Use the full content if it includes documentation comments
-    return hashlib.sha256(sql.encode("utf-8")).hexdigest()
+    normalized = _normalize_sql(sql)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _ensure_table(cur) -> None:
@@ -124,7 +129,9 @@ def _ensure_table(cur) -> None:
         CREATE TABLE IF NOT EXISTS {_MIGRATIONS_TABLE} (
           version text PRIMARY KEY,
           applied_at timestamptz NOT NULL DEFAULT now(),
-          checksum text NOT NULL
+          checksum text NOT NULL,
+          applied_by text,
+          application_name text
         )
         """
     )
@@ -203,8 +210,8 @@ def apply_pending(cur) -> None:
         if seed_baseline and version in BASELINE_VERSIONS:
             cur.execute(
                 f"""
-                INSERT INTO {_MIGRATIONS_TABLE} (version, checksum)
-                VALUES (%s, %s)
+                INSERT INTO {_MIGRATIONS_TABLE} (version, checksum, applied_by, application_name)
+                VALUES (%s, %s, current_user, current_setting('application_name', true))
                 ON CONFLICT (version) DO NOTHING
                 """,
                 (version, checksum),
@@ -224,7 +231,7 @@ def apply_pending(cur) -> None:
             cur.execute(sql)
 
             cur.execute(
-                f"INSERT INTO {_MIGRATIONS_TABLE} (version, checksum) VALUES (%s, %s)",
+                f"INSERT INTO {_MIGRATIONS_TABLE} (version, checksum, applied_by, application_name) VALUES (%s, %s, current_user, current_setting('application_name', true))",
                 (version, checksum),
             )
             cur.execute(f"RELEASE SAVEPOINT {savepoint}")

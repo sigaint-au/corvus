@@ -26,6 +26,10 @@ Always prefix shell commands with `rtk` when running supported tools via bash (`
 - **Testing**: Add schema assertions to `tests/test_meta.py` or similar to verify new tables/functions exist in the concatenated migration source. Append new files to the list in `tests/test_migrations.py:test_migrations_ship_in_order`.
 - **Keep the squashed baseline ordered** — RBAC definitions live inside `db/migrations/0001_init.sql`; do not create a second baseline definition. Do not edit the baseline unless the change is part of an unreleased fresh-install revision (and then recreate the database).
 - Machine-token `role` column uses `service-read`/`service-reveal`/`service-write`.
+- DB changes only via new migration file in `db/migrations/NNNN_slug.sql`.
+- Never edit existing migration; record checksum; ensure idempotent `IF NOT EXISTS`.
+- Run `pytest` and `tox -e lint` after adding migration.
+- Add schema assertion to `tests/test_meta.py` or `tests/test_migrations.py`.
 
 Roles in the UI are **RBAC names** (`team-owner/team-admin/...` and project-role & secret roles). Machine-token `role` column uses `service-read`/`service-reveal`/`service-write`.
 

@@ -103,8 +103,7 @@ class TestOrgAccess:
         assert 'REVOKE INSERT, UPDATE, DELETE ON api.secret_versions FROM authenticated' in init
         assert 'SECURITY DEFINER' in init.split('archive_secret_version')[1][:400]
         assert 'REVOKE INSERT, UPDATE, DELETE ON api.secret_versions' in src
-        # L2 was secret_acl group-team check; table dropped — ensure drop remains
-        assert 'DROP TABLE IF EXISTS api.secret_acl' in src
+        # L2 was secret_acl group-team check; table dropped — not present in fresh baseline
         assert 'CREATE TABLE api.secret_acl' not in init
         assert 'FORCE ROW LEVEL SECURITY' in init
         assert 'FORCE ROW LEVEL SECURITY' in src
@@ -134,9 +133,8 @@ class TestOrgAccess:
         src = migrations_src()
         assert 'can_access_secret' in src
         assert 'can_access_secret_row' in src
-        assert 'DROP TABLE IF EXISTS api.secret_acl' in src
+        assert 'api.secret_acl' not in src
         assert "NOT api.can_access_secret(sid, 'reveal')" in src
-        assert 'DROP TABLE IF EXISTS api.secret_acl' in rbac
         assert 'rbac_secret_binding_allows' in rbac
 
     def test_can_access_secret_row_modes_in_sql(self):
@@ -302,9 +300,9 @@ class TestOrgAccess:
         rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'api.project_role' in rbac_sql
         src = migrations_src()
-        assert 'CREATE TABLE IF NOT EXISTS api.groups' in src
+        assert 'CREATE TABLE api.groups' in src
         assert 'team_group_rows' in src
-        assert 'DROP TABLE IF EXISTS api.secret_acl' in src
+        assert 'api.secret_acl' not in src
         teams_src = routes_module_src('teams')
         assert 'create_team_group' in teams_src
         assert 'apply_group_membership_maps' in Path(APP_ROOT / 'integrations' / 'ldap_auth.py').read_text()
