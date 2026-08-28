@@ -11,8 +11,9 @@ Or from host after copying the file in.
 
 Covers: teams/projects/secrets, group + project + secret role bindings,
 custom roles with rules, restricted (access_mode) secrets, reveal approval,
-machine tokens with key allow-lists, and ServiceAccount subjects (visible in
-Access review, Effective access, and My access).
+machine tokens with key allow-lists, ServiceAccount subjects (visible in
+Access review, Effective access, and My access), cluster + project webhooks,
+and team/project/secret metadata (inheritance).
 """
 from __future__ import annotations
 
@@ -179,12 +180,16 @@ CUSTOM_BINDINGS = [
     ("secret", ("Platform", "infra-core", "SSH_DEPLOY_KEY"), "User", "carol@example.com", "secrets-operator"),
 ]
 
-# Machine accounts (ServiceAccount subjects): (team, project, name, role, scope keys|None)
+# Machine accounts (ServiceAccount subjects): (team, project, name, role, scopes|None)
 # role must match api.machine_tokens CHECK: service-read | service-reveal | service-write
-# None scope keys = * (inherit keys). Restricted secrets need an exact key.
+# scopes = exact secret keys and/or glob patterns (containing * or ?), or
+# None = wildcard '*' (inherit all project keys). Restricted secrets need an exact key.
 MACHINE_TOKENS = [
     ("Platform", "demo-api", "ci-demo", "service-reveal", ["API_KEY", "DATABASE_URL"]),
+    ("Platform", "demo-api", "ci-readonly", "service-read", ["API_KEY"]),
+    ("Platform", "infra-core", "deploy-bot", "service-write", ["AWS_*", "SSH_DEPLOY_KEY"]),
     ("Payments", "billing-api", "eso-billing", "service-reveal", None),
+    ("Mobile", "android-app", "mobile-reader", "service-read", ["SENTRY_*"]),
 ]
 
 # Secret-scope bindings: (team, project, secret_key, user_email|None, group_name|None, role)
@@ -194,6 +199,62 @@ SECRET_BINDINGS = [
     ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", None, "platform-ops", "secret-read"),
     ("Platform", "infra-core", "SSH_DEPLOY_KEY", "carol@example.com", None, "secrets-operator"),
     ("Payments", "ledger", "DATABASE_URL", None, "payments-readers", "secret-reveal"),
+]
+
+# Webhooks: (scope_kind, scope key|None, name, url, events)
+# scope_kind is 'cluster' (scope key None) or 'project' (scope key = (team, project)).
+# events must match core.config.WEBHOOK_EVENTS.
+WEBHOOKS = [
+    (
+        "cluster",
+        None,
+        "corvus-cluster-events",
+        "https://hooks.example.internal/corvus/cluster",
+        ["secret.created", "secret.updated", "secret.revealed", "secret.deleted", "org.member_add", "org.project_key_created"],
+    ),
+    (
+        "project",
+        ("Platform", "demo-api"),
+        "demo-api-deploy",
+        "https://hooks.example.internal/corvus/demo-api",
+        ["secret.created", "secret.updated", "secret.deleted"],
+    ),
+    (
+        "project",
+        ("Payments", "billing-api"),
+        "billing-alerts",
+        "https://hooks.example.internal/corvus/billing",
+        ["secret.revealed"],
+    ),
+]
+
+# Metadata (flows team -> project -> secret). Keys must be unique per hierarchy
+# level or the guard_meta_precedence trigger rejects the write.
+# (team, [(key, value), ...])
+TEAM_META = [
+    ("Platform", [("cost-center", "CC-100"), ("owner", "platform-ops"), ("compliance", "soc2")]),
+    ("Payments", [("cost-center", "CC-200"), ("owner", "payments"), ("compliance", "pci")]),
+    ("Mobile", [("cost-center", "CC-300")]),
+]
+
+# (team, project, [(key, value), ...])
+PROJECT_META = [
+    ("Platform", "demo-api", [("tier", "prod"), ("on-call", "platform-ops")]),
+    ("Platform", "infra-core", [("tier", "prod"), ("on-call", "platform-ops")]),
+    ("Payments", "billing-api", [("tier", "prod"), ("data-class", "restricted")]),
+    ("Payments", "ledger", [("tier", "prod")]),
+    ("Mobile", "ios-app", [("tier", "staging")]),
+    ("Mobile", "android-app", [("tier", "staging")]),
+]
+
+# (team, project, secret_key, [(key, value), ...])
+SECRET_META = [
+    ("Platform", "demo-api", "API_KEY", [("env", "prod"), ("region", "us-east-1")]),
+    ("Platform", "demo-api", "DATABASE_URL", [("env", "prod"), ("region", "us-east-1")]),
+    ("Platform", "infra-core", "SSH_DEPLOY_KEY", [("region", "us-east-1")]),
+    ("Platform", "infra-core", "AWS_SECRET_ACCESS_KEY", [("region", "us-east-1"), ("rotation", "90d")]),
+    ("Payments", "billing-api", "PAYMENT_GATEWAY_SECRET", [("env", "prod")]),
+    ("Payments", "ledger", "DATABASE_URL", [("env", "prod")]),
 ]
 
 TEAM_ROLE_MAP = {
@@ -552,14 +613,24 @@ def main() -> None:
             )
             if scope_keys:
                 for k in scope_keys:
-                    cur.execute(
-                        """
-                        INSERT INTO api.machine_token_scope (token_id, secret_key)
-                        VALUES (%s::uuid, %s)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        (token_id, k),
-                    )
+                    if any(ch in k for ch in "*?"):
+                        cur.execute(
+                            """
+                            INSERT INTO api.machine_token_scope (token_id, key_pattern)
+                            VALUES (%s::uuid, %s)
+                            ON CONFLICT DO NOTHING
+                            """,
+                            (token_id, k),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            INSERT INTO api.machine_token_scope (token_id, secret_key)
+                            VALUES (%s::uuid, %s)
+                            ON CONFLICT DO NOTHING
+                            """,
+                            (token_id, k),
+                        )
             else:
                 cur.execute(
                     """
@@ -624,6 +695,82 @@ def main() -> None:
                 )
                 print(f"bind  {key} group={gname} {role_name}")
         cur.execute("ALTER TABLE api.secrets ENABLE TRIGGER guard_secret_update")
+
+        # Webhooks (cluster-wide + project-scoped), idempotent by (scope_kind, scope_id, name).
+        admin_uid = uids.get("admin@example.com") or next(iter(uids.values()))
+        for scope_kind, scope_key, name, url, events in WEBHOOKS:
+            scope_id = None if scope_kind == "cluster" else project_ids[scope_key]
+            cur.execute(
+                """
+                SELECT id FROM api.webhooks
+                WHERE scope_kind = %s AND scope_id IS NOT DISTINCT FROM %s::uuid AND name = %s
+                """,
+                (scope_kind, scope_id, name),
+            )
+            row = cur.fetchone()
+            token = secrets.token_hex(32)
+            if row:
+                cur.execute(
+                    """
+                    UPDATE api.webhooks
+                       SET url = %s, events = %s, secret_token = %s, active = true
+                     WHERE id = %s::uuid
+                    """,
+                    (url, events, token, str(row["id"])),
+                )
+                print(f"hook  {scope_kind}/{scope_key or 'cluster'}/{name}  updated")
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO api.webhooks (name, url, secret_token, events, scope_kind, scope_id, ssl_verify, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s::uuid, true, %s::uuid)
+                    """,
+                    (name, url, token, events, scope_kind, scope_id, admin_uid),
+                )
+                print(f"hook  {scope_kind}/{scope_key or 'cluster'}/{name}  added")
+
+        # Metadata (team -> project -> secret inheritance).
+        for team_name, pairs in TEAM_META:
+            tid = team_ids[team_name]
+            for key, value in pairs:
+                cur.execute(
+                    """
+                    INSERT INTO api.team_meta (team_id, key, value, updated_at)
+                    VALUES (%s::uuid, %s, %s, now())
+                    ON CONFLICT (team_id, key) DO UPDATE
+                      SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+                    """,
+                    (tid, key, value),
+                )
+            print(f"tmeta {team_name:16}  {len(pairs)} keys")
+
+        for team_name, proj_name, pairs in PROJECT_META:
+            pid = project_ids[(team_name, proj_name)]
+            for key, value in pairs:
+                cur.execute(
+                    """
+                    INSERT INTO api.project_meta (project_id, key, value, updated_at)
+                    VALUES (%s::uuid, %s, %s, now())
+                    ON CONFLICT (project_id, key) DO UPDATE
+                      SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+                    """,
+                    (pid, key, value),
+                )
+            print(f"pmeta {team_name}/{proj_name:16}  {len(pairs)} keys")
+
+        for team_name, proj_name, secret_key, pairs in SECRET_META:
+            sid = secret_ids[(team_name, proj_name, secret_key)]
+            for key, value in pairs:
+                cur.execute(
+                    """
+                    INSERT INTO api.secret_meta (secret_id, key, value, updated_at)
+                    VALUES (%s::uuid, %s, %s, now())
+                    ON CONFLICT (secret_id, key) DO UPDATE
+                      SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+                    """,
+                    (sid, key, value),
+                )
+            print(f"smeta {team_name}/{proj_name}/{secret_key}  {len(pairs)} keys")
 
     print()
     print("All accounts password:", PASSWORD)
