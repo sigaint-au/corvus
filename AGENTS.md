@@ -22,6 +22,8 @@ Always prefix shell commands with `rtk` when running supported tools via bash (`
 
 - **Migrations are the sole source of truth for DDL.** The fresh-install baseline lives in `db/migrations/0001_init.sql`; later `NNNN_` migrations upgrade existing databases at startup.
 - **Adding migrations is allowed and is the preferred way to change the schema — do it when a change needs one.** Create `db/migrations/NNNN_slug.sql` (zero-padded, next number), make it idempotent where possible, and run `pytest` + `tox -e lint`. Never edit an already-released migration file whose checksum is recorded — add a new `NNNN_` migration instead.
+- **Migration Format**: Migrations are applied in a single transaction per file. Do NOT include `BEGIN` or `COMMIT`; the runner handles it. Comments (starting with `--`) are stripped before checksumming, so you can safely document or re-document existing migrations without triggering a "schema drift" error.
+- **Testing**: Add schema assertions to `tests/test_meta.py` or similar to verify new tables/functions exist in the concatenated migration source. Append new files to the list in `tests/test_migrations.py:test_migrations_ship_in_order`.
 - **Keep the squashed baseline ordered** — RBAC definitions live inside `db/migrations/0001_init.sql`; do not create a second baseline definition. Do not edit the baseline unless the change is part of an unreleased fresh-install revision (and then recreate the database).
 - Machine-token `role` column uses `service-read`/`service-reveal`/`service-write`.
 
