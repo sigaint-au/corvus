@@ -15,24 +15,21 @@
       <thead><tr><th>Key</th><th>Value</th><th>Updated</th>{% if can_admin %}<th></th>{% endif %}</tr></thead>
       <tbody>
         {% for m in project_meta %}
-        <tr {% if m.source and m.source != 'project' %}class="inherited"{% endif %}>
-          <td>
-            <code class="k">{{ m.key }}</code>
-            {% if m.source and m.source != 'project' %}
-            <span class="badge muted" title="Inherited from team">team</span>
-            {% endif %}
-          </td>
+        <tr>
+          <td><code class="k">{{ m.key }}</code></td>
           <td>{{ m.value }}</td>
           <td>{{ m.updated_at.strftime('%Y-%m-%d %H:%M') if m.updated_at else '' }}</td>
-          {% if can_admin %}
+          {% if m.source and m.source != 'project' %}
+          <td><span class="muted">inherited · {{ m.source }}</span></td>
+          {% elif can_admin %}
           <td class="acts">
-            {% if not m.source or m.source == 'project' %}
             <form method="post" action="{{ url_for('delete_project_meta', project_id=project_id, meta_key=m.key) }}" class="inline" onsubmit="return confirm('Remove metadata \u201c{{ m.key }}\u201d?')">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">
               <button type="submit" class="link danger">Remove</button>
             </form>
-            {% endif %}
           </td>
+          {% else %}
+          <td></td>
           {% endif %}
         </tr>
         {% endfor %}
