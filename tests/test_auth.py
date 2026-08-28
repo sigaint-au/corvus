@@ -647,12 +647,31 @@ class TestAuth:
         ])
         with patch.object(db, 'connect', return_value=conn), \
              patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), \
+             patch.object(mailer, 'smtp_configured', return_value=True), \
              patch('auth.lockout.is_locked', return_value=False), \
              patch('auth.lockout.clear_failures'):
             r = self.client.post('/login', data={'email': 'gate@b.c', 'password': 'secret12'}, follow_redirects=True)
         assert r.status_code == 403 or b'verify your email' in r.data.lower()
         with self.client.session_transaction() as s:
             assert 'user_id' not in s
+
+    def test_login_unverified_ok_without_smtp(self):
+        uid = uuid4()
+        conn, _ = self._seq_conn([
+            ('verify_user', {'id': uid, 'email': 'nosmtp@b.c', 'name': 'N', 'is_global_admin': False}),
+        ])
+        with patch.object(db, 'connect', return_value=conn), \
+             patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), \
+             patch.object(mailer, 'smtp_configured', return_value=False), \
+             patch('auth.lockout.is_locked', return_value=False), \
+             patch('auth.lockout.clear_failures'), \
+             patch.object(authz, 'is_global_admin', return_value=False), \
+             patch('auth.totp_svc.needs_challenge', return_value=None), \
+             patch('integrations.mailer.login_alerts_enabled', return_value=False):
+            r = self.client.post('/login', data={'email': 'nosmtp@b.c', 'password': 'secret12'}, follow_redirects=False)
+        assert r.status_code == 302
+        with self.client.session_transaction() as s:
+            assert s['user_id'] == str(uid)
 
     def test_login_ok_after_verified(self):
         uid = uuid4()
@@ -701,6 +720,7 @@ class TestAuth:
         ])
         with patch.object(db, 'connect', return_value=conn), \
              patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}), \
+             patch.object(mailer, 'smtp_configured', return_value=True), \
              patch('auth.lockout.is_locked', return_value=False), \
              patch('auth.lockout.clear_failures'):
             r = self.client.post('/login', data={'email': 'gate@b.c', 'password': 'secret12'})

@@ -307,6 +307,7 @@ class TestOrgAccess:
         assert 'create_team_group' in teams_src
         assert 'apply_group_membership_maps' in Path(APP_ROOT / 'integrations' / 'ldap_auth.py').read_text()
         seed = (REPO_ROOT / 'scripts' / 'seed_mock.py').read_text()
+        assert 'email_verified_at = COALESCE(email_verified_at, now())' in seed
         assert 'GROUPS' in seed
         assert 'PROJECT_GROUP_BINDINGS' in seed
         assert 'CUSTOM_ROLES' in seed

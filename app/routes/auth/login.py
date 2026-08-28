@@ -82,7 +82,8 @@ def login():
         # Local password auth only: directory (LDAP/OIDC) already proved the
         # mailbox. email_verified_at comes from private.verify_user — do not
         # SELECT private.users as authenticator (no table privilege).
-        if local_ok and not user.get("email_verified_at"):
+        # No SMTP means no verification mail can be sent; do not lock the account.
+        if local_ok and not user.get("email_verified_at") and mailer.smtp_configured():
             # Password proved; clear lockout so the retry after clicking the
             # link is not penalized.
             lockout.clear_failures(email)

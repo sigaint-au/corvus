@@ -2,7 +2,7 @@
 """Seed mock users, teams, projects, secrets, groups, custom RBAC roles,
 machine accounts, and scoped bindings (dev only).
 
-Password for every local account: password
+Password for every local account: password. Accounts are email-verified so they can sign in immediately.
 Run inside the app container (has MASTER_KEY + DB + crypto):
 
   podman exec corvus_app_1 python /tmp/seed_mock.py
@@ -232,7 +232,10 @@ def main() -> None:
                            name = %s,
                            is_global_admin = %s,
                            auth_source = 'local',
-                           disabled_at = NULL
+                           disabled_at = NULL,
+                           email_verified_at = COALESCE(email_verified_at, now()),
+                           email_verify_token_hash = NULL,
+                           email_verify_sent_at = NULL
                      WHERE id = %s::uuid
                     """,
                     (PASSWORD, name, is_admin, uid),
@@ -248,6 +251,16 @@ def main() -> None:
                         "UPDATE private.users SET is_global_admin = true WHERE id = %s::uuid",
                         (uid,),
                     )
+            cur.execute(
+                """
+                UPDATE private.users
+                   SET email_verified_at = COALESCE(email_verified_at, now()),
+                       email_verify_token_hash = NULL,
+                       email_verify_sent_at = NULL
+                 WHERE id = %s::uuid
+                """,
+                (uid,),
+            )
             uids[email] = uid
             print(f"user  {email:24}  admin={is_admin}  {uid}")
 
