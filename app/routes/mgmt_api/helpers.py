@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask import jsonify
 
-from auth import authz, pats
+from auth import authz, cli_sessions, pats
 from lib.auth_tokens import classify_token
 from lib.serialize import row_to_dict
 from lib.validate import is_uuid
@@ -18,9 +18,9 @@ def _require_pat():
         Tuple ``(user_id, None)`` or ``(None, (jsonify, status))``.
     """
     raw = bearer_raw()
-    if raw and raw.startswith(pats.PREFIX):
+    if raw and (raw.startswith(pats.PREFIX) or raw.startswith(cli_sessions.PREFIX)):
         kind, uid = classify_token(raw)
-        if kind != "pat" or not uid:
+        if kind not in ("pat", "sso") or not uid:
             return None, (jsonify({"error": "unauthorized"}), 401)
         return uid, None
     # allow session for completeness

@@ -41,10 +41,11 @@ def _write_migrations(tmp_path, files):
 
 
 def test_migrations_ship_in_order():
-    """Single squashed baseline — no additive migrations."""
+    """Squashed baseline plus additive CLI session token migration."""
     files = [p.name for p in migrations._migration_files()]
     assert files == [
         "0001_init.sql",
+        "0002_cli_session_tokens.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -133,6 +134,16 @@ def test_squashed_baseline_contains_all_schema_layers():
     assert "service-read" in sql
     # auditor role
     assert "'auditor'" in sql
+
+
+def test_cli_session_tokens_migration_creates_table():
+    """The additive CLI session token migration defines the sso_ token store."""
+    sql = (migrations.MIGRATIONS_DIR / "0002_cli_session_tokens.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS private.cli_session_tokens" in sql
+    assert "token_hash text NOT NULL UNIQUE" in sql
+    assert "expires_at timestamptz NOT NULL" in sql
+    assert "REFERENCES private.users(id) ON DELETE CASCADE" in sql
+    assert "cli_session_tokens_user_idx" in sql
 
 
 def test_squashed_baseline_is_idempotent_enough_for_fresh_init():

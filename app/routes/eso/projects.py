@@ -30,7 +30,7 @@ def eso_list_projects():
     if err:
         return err
     kind, ident = auth
-    if kind != "pat":
+    if kind not in ("pat", "sso"):
         return jsonify(
             {"error": "project list requires a personal access token (pat_…)"}
         ), 400

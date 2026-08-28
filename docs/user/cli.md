@@ -22,14 +22,29 @@ Env **or** `~/.config/corvus/config` (`0600`). **Env wins.**
 | Env | Meaning |
 |-----|---------|
 | `SS_URL` | Base URL (no trailing slash) |
-| `SS_TOKEN` | `ss_…` machine token **or** `pat_…` PAT |
-| `SS_PROJECT` | Project UUID (`ss_…`) or UUID/name (`pat_…`) |
+| `SS_TOKEN` | `ss_…` machine token, `pat_…` PAT, **or** `sso_…` CLI session token |
+| `SS_PROJECT` | Project UUID (`ss_…`) or UUID/name (`pat_…`/`sso_…`) |
 | `PID` | Alias for `SS_PROJECT` |
 
 | Token | Project |
 |-------|---------|
 | `ss_…` | UUID only |
 | `pat_…` | UUID or unique **name** |
+| `sso_…` | UUID or unique **name** (short-lived, user-scoped) |
+
+### Copy login command
+
+Instead of creating a PAT, sign in to the web UI and click **Copy login
+command** in the sidebar footer. A dialog mints a short-lived `sso_…` token
+(1 hour by default) and builds a ready-to-paste command:
+
+```bash
+corvus login --url https://secrets.example.com --token sso_…
+```
+
+The token is user-scoped, reusable until it expires, and is not shown again
+after the dialog closes. Lifetime is controlled by the server setting
+`cli_session_ttl_seconds`.
 
 ```bash
 # Machine token
@@ -38,7 +53,7 @@ corvus login \
   --token ss_… \
   --project 31a70875-7d6a-40a7-a315-751f8a7ee38f
 
-# PAT (name ok)
+# PAT or sso_ session token (name ok)
 corvus login \
   --url https://secrets.example.com \
   --token pat_… \

@@ -10,6 +10,7 @@ planes:
 |------------|---------------|------------|-------------|
 | Browser session | cookie (`session`) | UI (HTML), `GET /api/token` | Flask session + server-side session registry |
 | Personal Access Token (PAT) | `pat_…` | `/api/token` → JWT; **and** `/eso/v1/…` plaintext | Flask PAT table; user RLS on secrets |
+| CLI session token | `sso_…` | `/eso/v1/…`, `/api/v1/manage`, `/api/token` | Flask CLI-session table; user RLS on secrets |
 | Short-lived JWT | `eyJ…` (HS256) | PostgREST `:3000` | Postgres RLS (`request.jwt.claims`) |
 | Machine token | `ss_…` | `/eso/v1/…` only | Postgres SECURITY DEFINER functions |
 
@@ -133,6 +134,30 @@ expired PATs return `401 {"error":"unauthorized"}`.
 curl -s -H "Authorization: Bearer $JWT" \
   "http://localhost:3000/projects?select=id,name,team_id"
 ```
+
+---
+
+## 2b. CLI session token flow (copy login command)
+
+A CLI session token (`sso_…`) is a short-lived, user-scoped opaque token that
+lets a signed-in user hand a ready-made `corvus login` command to a shell
+without minting a long-lived PAT.
+
+Click **Copy login command** in the sidebar footer. A dialog mints the token
+and shows the command:
+
+```bash
+corvus login --url https://secrets.example.com --token sso_…
+```
+
+- Opaque, stored as a SHA-256 hash in `private.cli_session_tokens`.
+- Multi-use within its TTL; `last_used_at` bumps on each use.
+- Lifetime is the server setting `cli_session_ttl_seconds` (default **3600**,
+  i.e. 1 hour; clamped to at least 60).
+- User-wide: acts as that user under RLS (same as a PAT), so `/eso/v1` accepts
+  a project UUID or unique name.
+
+The raw token is shown once and is not retrievable after the dialog closes.
 
 ---
 

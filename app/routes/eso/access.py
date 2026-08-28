@@ -27,7 +27,7 @@ def eso_request_secret_access(project_ref, key):
     if err:
         return err
     kind, ident = auth
-    if kind != "pat":
+    if kind not in ("pat", "sso"):
         return jsonify({"error": "PAT required"}), 403
     key = (key or "").strip()
     body = request.get_json(silent=True) or {}
@@ -137,7 +137,7 @@ def eso_list_access_requests(project_ref):
     if err:
         return err
     kind, ident = auth
-    if kind != "pat":
+    if kind not in ("pat", "sso"):
         return jsonify({"error": "PAT required"}), 403
     status = (request.args.get("status") or "").strip().lower()
     with db.as_user(ident) as conn, conn.cursor() as cur:
@@ -177,7 +177,7 @@ def eso_approve_access_request(project_ref, req_id):
     if err:
         return err
     kind, ident = auth
-    if kind != "pat":
+    if kind not in ("pat", "sso"):
         return jsonify({"error": "PAT required"}), 403
     body = request.get_json(silent=True) or {}
     try:
@@ -251,7 +251,7 @@ def eso_deny_access_request(project_ref, req_id):
     if err:
         return err
     kind, ident = auth
-    if kind != "pat":
+    if kind not in ("pat", "sso"):
         return jsonify({"error": "PAT required"}), 403
     with db.as_user(ident) as conn, conn.cursor() as cur:
         pid = _resolve_project_ref(cur, project_ref, kind=kind, thash=None)

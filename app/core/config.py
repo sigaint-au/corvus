@@ -155,6 +155,8 @@ DEFAULT_SETTINGS = {
     "totp_enforce_global_admins": "false",
     "require_pat_expiry": "false",
     "max_pat_lifetime_days": "3650",
+    # CLI "copy login command" session-token lifetime (seconds). Default 1h.
+    "cli_session_ttl_seconds": "3600",
     "require_machine_token_expiry": "false",
     "max_machine_token_lifetime_days": "3650",
     # Audit log retention (days). 0 = keep forever. Applied by global-admin purge.

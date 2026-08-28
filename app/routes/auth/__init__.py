@@ -9,6 +9,7 @@ from .account import (
     revoke_session,
     update_login_alerts,
 )
+from .cli_login import cli_login_command
 from .login import (
     forgot_password,
     login,
@@ -55,6 +56,7 @@ def register(app):
     app.route("/reset-password/<token>", methods=["GET", "POST"])(reset_password)
     app.post("/profile/tokens")(create_personal_token)
     app.post("/profile/tokens/<uuid:token_id>/delete")(delete_personal_token)
+    app.post("/login/command")(cli_login_command)
     app.post("/profile/password")(change_password)
     app.post("/profile/login-alerts")(update_login_alerts)
     app.post("/profile/sessions/revoke-others")(revoke_other_sessions)

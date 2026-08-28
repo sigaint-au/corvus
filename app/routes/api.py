@@ -4,8 +4,9 @@ import logging
 
 from flask import jsonify, redirect, request, session, url_for
 
-from auth import authz, pats
+from auth import authz
 from core import config, db
+from lib.auth_tokens import classify_token
 
 log = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ def api_token():
     """Return a short-lived JWT for PostgREST API access.
 
     Auth: browser session, or ``Authorization: Bearer pat_…`` personal
-    access token. Unauthenticated JSON/XHR clients get 401; browsers are
-    redirected to login (or 2FA if pending).
+    access token or ``sso_…`` CLI session token. Unauthenticated JSON/XHR
+    clients get 401; browsers are redirected to login (or 2FA if pending).
 
     Args:
         None (reads ``Authorization`` header and Flask session).
@@ -37,10 +38,12 @@ def api_token():
     auth = request.headers.get("Authorization") or ""
     if auth.lower().startswith("bearer "):
         raw = auth[7:].strip()
-        if raw.startswith(pats.PREFIX):
-            uid = pats.resolve(raw)
+        kind, uid = classify_token(raw)
+        if kind in ("pat", "sso"):
             if not uid:
                 return jsonify({"error": "unauthorized"}), 401
+        else:
+            uid = None
     if uid is None:
         if session.get("pending_2fa_uid"):
             return redirect(url_for("login_2fa"))

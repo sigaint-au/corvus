@@ -1,0 +1,17 @@
+{# Dialog body after the token is minted (swapped into #cli-login-dlg). #}
+<form method="dialog">
+  <header>
+    <h3 id="cli-login-dlg-title">Login command</h3>
+    <p>Paste this into a shell. The token expires in {{ minutes }} minutes.</p>
+  </header>
+  <div>
+    <pre id="cli-login-command">{{ command }}</pre>
+    <p class="acts form-actions-tight">
+      <button type="button" class="link copy-btn" data-copy-target="cli-login-command"
+              data-clear-seconds="{{ clipboard_clear_seconds|default(30) }}">Copy command</button>
+    </p>
+  </div>
+  <footer>
+    <button value="ok">Done</button>
+  </footer>
+</form>
