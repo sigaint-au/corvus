@@ -20,15 +20,15 @@ class TestOrgAccess:
     def test_schema_has_invites_and_org_audit(self):
         root = REPO_ROOT
         init = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
-        assert 'CREATE TABLE api.team_invites' in init
-        assert 'CREATE TABLE api.team_join_requests' in init
-        assert 'CREATE TABLE api.org_audit' in init
+        assert 'CREATE TABLE IF NOT EXISTS api.team_invites' in init
+        assert 'CREATE TABLE IF NOT EXISTS api.team_join_requests' in init
+        assert 'CREATE TABLE IF NOT EXISTS api.org_audit' in init
         assert 'rbac.guard_last_team_owner_binding' in init
         assert 'private.project_member_rows' in init
         assert 'private.audit_org' in init
         assert 'default_token_days' in init
         assert "'exported'" in init
-        assert 'CREATE TABLE api.secret_access_requests' in init
+        assert 'CREATE TABLE IF NOT EXISTS api.secret_access_requests' in init
         assert 'api.can_reveal_secret' in init
         assert 'api.secret_requires_approval' in init
         assert 'require_reveal_approval' in init
@@ -64,7 +64,7 @@ class TestOrgAccess:
 
     def test_secret_meta_schema(self):
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
-        assert 'CREATE TABLE api.secret_meta' in init
+        assert 'CREATE TABLE IF NOT EXISTS api.secret_meta' in init
         assert 'last_accessed_at' in init
         assert 'last_accessed_by' in init
         assert 'private.secret_meta_rows' in init
@@ -81,7 +81,7 @@ class TestOrgAccess:
         """Per-token key allow-list (exact + glob) is in schema and helpers."""
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         src = migrations_src()
-        assert 'CREATE TABLE api.machine_token_scope' in init
+        assert 'CREATE TABLE IF NOT EXISTS api.machine_token_scope' in init
         assert 'machine_token_scope' in src
         assert 'private.machine_key_allowed' in init
         assert 'private.glob_to_like' in init
@@ -249,8 +249,8 @@ class TestOrgAccess:
         assert [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN][0] == 'team-owner'
         assert not hasattr(config, 'GROUP_TEAM_ROLES')
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
-        gstart = init.index('CREATE TABLE api.groups')
-        gend = init.index('CREATE TABLE api.group_members')
+        gstart = init.index('CREATE TABLE IF NOT EXISTS api.groups')
+        gend = init.index('CREATE TABLE IF NOT EXISTS api.group_members')
         assert 'team_role' not in init[gstart:gend]
 
     def test_can_access_secret_row_behavioral_matrix(self):
@@ -290,8 +290,8 @@ class TestOrgAccess:
     def test_org_groups_rbac_schema(self):
         """Groups tables and group-aware RBAC helpers."""
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
-        assert 'CREATE TABLE api.groups' in init
-        assert 'CREATE TABLE api.group_members' in init
+        assert 'CREATE TABLE IF NOT EXISTS api.groups' in init
+        assert 'CREATE TABLE IF NOT EXISTS api.group_members' in init
         assert 'external_key' in init
         assert 'group_members gm' in init
         # Legacy tables removed from init.sql
@@ -300,7 +300,7 @@ class TestOrgAccess:
         rbac_sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'api.project_role' in rbac_sql
         src = migrations_src()
-        assert 'CREATE TABLE api.groups' in src
+        assert 'CREATE TABLE IF NOT EXISTS api.groups' in src
         assert 'team_group_rows' in src
         assert 'api.secret_acl' not in src
         teams_src = routes_module_src('teams')

@@ -244,7 +244,7 @@ class TestTokens:
     def test_secret_versions_schema(self):
         root = REPO_ROOT
         init = (root / 'db' / 'migrations' / '0001_init.sql').read_text()
-        assert 'CREATE TABLE api.secret_versions' in init
+        assert 'CREATE TABLE IF NOT EXISTS api.secret_versions' in init
         assert 'archive_secret_version' in init
         assert 'expires_at' in init
         assert 'rotate_days' not in init
@@ -257,7 +257,6 @@ class TestTokens:
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'token_prefix text NOT NULL UNIQUE' in init
         src = migrations_src()
-        assert 'machine_tokens_token_prefix_key' in src
         assert 'personal_access_tokens' in src
 
     def test_init_sql_allows_oidc_auth_source(self):
@@ -268,4 +267,4 @@ class TestTokens:
         assert 'oidc_role_maps' in init
         assert "source IN ('manual', 'ldap', 'oidc')" in init
         src = migrations_src()
-        assert 'users_auth_source_check' in src
+        assert "CHECK (auth_source IN ('local', 'ldap', 'oidc'))" in src

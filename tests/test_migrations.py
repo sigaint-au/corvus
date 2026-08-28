@@ -54,7 +54,7 @@ def test_migrations_ship_in_order():
 def test_squashed_baseline_contains_all_schema_layers():
     """The consolidated baseline retains the complete current schema."""
     sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
-    assert "CREATE TABLE private.project_crypto_keys" in sql
+    assert "CREATE TABLE IF NOT EXISTS private.project_crypto_keys" in sql
     assert "crypto_provider" in sql
     assert "api.secrets" in sql and "api.secret_versions" in sql
     for col in (
@@ -133,6 +133,35 @@ def test_squashed_baseline_contains_all_schema_layers():
     assert "service-read" in sql
     # auditor role
     assert "'auditor'" in sql
+
+
+def test_squashed_baseline_is_idempotent_enough_for_fresh_init():
+    """Fresh volumes run the whole 0001 file once; leftover squash sections
+    must not abort docker-entrypoint with duplicate-object errors."""
+    import re
+
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
+    assert re.search(
+        r"^CREATE TABLE (?!IF NOT EXISTS )", sql, re.M
+    ) is None
+    assert re.search(r"^  ON api\.\w+;$", sql, re.M) is None
+    marker_insert = sql.split("INSERT INTO private.squashed_baseline_marker")[1][:80]
+    assert "ON CONFLICT DO NOTHING" in marker_insert
+    # Current verify_user OUT columns (leftover copies omit email_verified_at).
+    assert "email_verified_at timestamptz)" in sql
+    assert "DROP FUNCTION IF EXISTS private.secret_meta_rows(uuid)" in sql
+    # Historical 0003–0019 copies must not be concatenated (they aborted initdb).
+    for leftover in (
+        "0003_bindings_source",
+        "0004_access_mode",
+        "0005_users_auth_settings",
+        "0016_reveal_approval",
+        "0019_row_acl_and_groups",
+    ):
+        assert f"-- ===== {leftover}.sql =====" not in sql
+    assert "-- ===== 0020_security_hardening.sql =====" in sql
+    assert "-- ===== 0029_rls_boundary_hardening.sql =====" in sql
+    assert "private.project_meta_rows" in sql
 
 
 class TestPendingMigrations:

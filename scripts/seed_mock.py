@@ -420,7 +420,9 @@ def main() -> None:
             secret_ids[(team_name, proj_name, key)] = sid
             print(f"sec   {team_name}/{proj_name}/{key}  {sid}")
 
-        # Reveal-approval secrets
+        # Reveal-approval secrets. Bypass guard_secret_update (requires a
+        # project-admin JWT; this seed runs as the postgres superuser).
+        cur.execute("ALTER TABLE api.secrets DISABLE TRIGGER guard_secret_update")
         for team_name, proj_name, key in REQUIRES_APPROVAL:
             sid = secret_ids[(team_name, proj_name, key)]
             cur.execute(
@@ -608,6 +610,7 @@ def main() -> None:
                     (rid, gid, sid),
                 )
                 print(f"bind  {key} group={gname} {role_name}")
+        cur.execute("ALTER TABLE api.secrets ENABLE TRIGGER guard_secret_update")
 
     print()
     print("All accounts password:", PASSWORD)

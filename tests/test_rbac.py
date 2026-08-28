@@ -27,8 +27,8 @@ def test_builtin_role_names_match_docs():
 def test_rbac_sql_ships_can_and_tables():
     root = Path(__file__).resolve().parents[1]
     sql = (root / "db" / "migrations" / "0001_init.sql").read_text()
-    assert "CREATE TABLE rbac.roles" in sql
-    assert "CREATE TABLE rbac.bindings" in sql
+    assert "CREATE TABLE IF NOT EXISTS rbac.roles" in sql
+    assert "CREATE TABLE IF NOT EXISTS rbac.bindings" in sql
     assert "CREATE OR REPLACE FUNCTION api.can(" in sql
     assert "rbac_scope_chain" in sql
     assert "ensure_builtin_roles" in sql

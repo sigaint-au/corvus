@@ -27,14 +27,14 @@ def _login(client, uid):
 class TestSchema:
     def test_team_meta_table(self):
         sql = migration_sql()
-        assert "CREATE TABLE api.team_meta" in sql
+        assert "CREATE TABLE IF NOT EXISTS api.team_meta" in sql
         assert "REFERENCES api.teams(id) ON DELETE CASCADE" in sql
         assert "PRIMARY KEY (team_id, key)" in sql
         assert "key ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'" in sql
 
     def test_project_meta_table(self):
         sql = migration_sql()
-        assert "CREATE TABLE api.project_meta" in sql
+        assert "CREATE TABLE IF NOT EXISTS api.project_meta" in sql
         assert "REFERENCES api.projects(id) ON DELETE CASCADE" in sql
         assert "PRIMARY KEY (project_id, key)" in sql
 
