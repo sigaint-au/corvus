@@ -65,7 +65,7 @@
 {% elif active_tab == 'meta' %}
 <section>
   <h2>Team metadata</h2>
-  <p class="muted">Metadata here appears on every project and secret in the team. Lower levels cannot override these keys.</p>
+  <p class="muted">Metadata here appears on every project and secret in the team.</p>
   {% if is_admin %}
   <form method="post" action="{{ url_for('upsert_team_meta', team_id=team.id) }}" class="row">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
