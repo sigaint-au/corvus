@@ -2555,12 +2555,16 @@ $$;
 GRANT EXECUTE ON FUNCTION api.effective_access_rows TO authenticator, authenticated;
 
 -- ── RLS Policies (created after auth functions exist) ──────────────────
--- All RLS policies are defined here (not in init.sql) because they reference
--- RBAC auth functions defined above. Each policy uses DROP POLICY IF EXISTS
--- before CREATE POLICY for idempotency.
+-- All RLS policies are defined here because they reference RBAC auth
+-- functions defined above. Policies use the `authenticated` role (SET ROLE).
+--
+-- Security Strategy:
+-- 1. Global admins (api.is_global_admin()) short-circuit most USING checks.
+-- 2. Scoped access relies on recursive RBAC checks (e.g. api.team_role).
+-- 3. 'authenticator' bypasses RLS for system tasks (auditing, auth-sync).
+-- 4. 'anon' has minimal access, mainly for OIDC/LDAP discovery.
 --
 -- Convention: policies use the `authenticated` role (SET ROLE from JWT).
--- Global admins short-circuit via api.is_global_admin() in helpers.
 
 -- Grant execute on auth functions to authenticated and anon (PostgREST)
 GRANT EXECUTE ON FUNCTION api.is_team_member TO authenticated, anon;
