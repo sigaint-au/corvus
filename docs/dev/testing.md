@@ -129,6 +129,30 @@ pytest -m live tests/test_live_secrets.py::test_live_eso_secret_create_edit_dele
 Each test creates a uniquely named secret and deletes it afterwards. Default
 `pytest` / `tox -e py` skip these unless the env vars are set.
 
+### Playwright browser tests
+
+`tests/test_e2e.py` drives a real headless Chromium through the UI, so it
+exercises the JS secret form, HTMX partial swaps, and CSRF that the urllib
+live tests cannot. Install the extra and browser once:
+
+```bash
+pip install -e ".[e2e]"
+python -m playwright install chromium
+```
+
+Run against a seeded stack (login is password-only for the mock admin):
+
+```bash
+LIVE_APP_URL=http://127.0.0.1:8080 \
+LIVE_USER_EMAIL=admin@example.com \
+LIVE_USER_PASSWORD=password \
+pytest -m live tests/test_e2e.py
+```
+
+The two tests cover login (lands on `/teams`) and the full secret lifecycle:
+create via the advanced form, reveal via HTMX, then trash via the row menu.
+Skipped by default unless `LIVE_APP_URL` is set (or `playwright` is missing).
+
 ## Test conventions
 
 - Tests mock the DB connection (`helpers.mock_conn`); no live Postgres.
