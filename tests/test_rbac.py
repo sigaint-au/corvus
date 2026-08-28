@@ -79,7 +79,7 @@ def test_rbac_roles_requires_login(client):
 
 def test_dropdowns_cover_legacy_vocabularies():
     team_names = {n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN}
-    assert team_names == {"team-owner", "team-admin", "team-member", "team-viewer"}
+    assert team_names == {"team-owner", "team-admin", "team-member", "team-viewer", "auditor"}
     proj = {n for n, _ in config.RBAC_PROJECT_ROLE_DROPDOWN}
     assert proj == {"project-admin", "project-write", "project-reveal", "project-read"}
 
