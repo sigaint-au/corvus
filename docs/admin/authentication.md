@@ -35,6 +35,7 @@ account shows a verify-your-email page with a resend button; resends answer
 generically and send at most one email per address per minute.
 LDAP/OIDC-provisioned accounts skip this: the directory already proves the
 mailbox. Without SMTP, new accounts are active immediately (fail-open).
+
 ### 1a. Password (local) or LDAP login
 
 ```

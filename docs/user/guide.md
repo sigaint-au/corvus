@@ -41,10 +41,13 @@ You become the **team-owner** of any team you create.
 | Tab | Purpose |
 |-----|---------|
 | **Projects** | Create and open projects in this team |
+| **Activity** | Team-level audit events |
 | **Members** | Add/remove members, manage roles, invites, join requests |
 | **Groups** | Create team-scoped groups (RBAC principals) |
-| **Activity** | Team-level audit events |
+| **Access** | Team-scope role bindings (owners/admins) |
+| **Webhooks** | Team event subscriptions (owners/admins) |
 | **Settings** | Team defaults, classification banner, LDAP/OIDC group maps |
+| **Metadata** | Team-wide key/value labels inherited by every project and secret |
 
 ### Team roles
 
@@ -89,13 +92,15 @@ Description: optional purpose
 | Tab | Purpose |
 |-----|---------|
 | **Secrets** | List, search, create, reveal, pin, bulk actions |
-| **Access** | Project-scope role bindings (project admins) |
 | **Requests** | Reveal-approval request queue (approve/deny) |
-| **Audit log** | Who did what to secrets in this project |
-| **Machine accounts** | Tokens for ESO / CI / CLI |
 | **Import / Export** | Bulk `.env` / JSON / CSV |
+| **Access** | Project-scope role bindings (project admins) |
+| **Activity** | Who did what to secrets in this project |
+| **Machine accounts** | Tokens for ESO / CI / CLI |
 | **Integrations** | ESO manifest generator |
+| **Webhooks** | Project event subscriptions (project admins) |
 | **Settings** | Reveal-approval default, members, danger zone |
+| **Metadata** | Project-wide labels inherited by every secret (cannot override team keys) |
 
 ---
 
@@ -181,8 +186,16 @@ Open a secret → **History**. You can view and roll back to a previous version.
 
 ### Metadata
 
-On a secret, the **Metadata** tab shows system fields (created, updated, last
-accessed) and lets writers add custom searchable key/value labels.
+Labels are searchable key/value pairs, not secret values. They inherit down
+the hierarchy: **team → project → secret**. A key defined higher up cannot
+be overridden lower down.
+
+- **Team Metadata** tab: owners/admins write; members can read.
+- **Project Metadata** tab: project admins write; anyone who can see the
+  project can read. Inherited team keys show as inherited.
+- **Secret Metadata** tab: system fields (created, updated, last accessed)
+  plus custom labels. Writers add secret-level keys that are not already
+  defined on the team or project.
 
 ### Access (project admins)
 
