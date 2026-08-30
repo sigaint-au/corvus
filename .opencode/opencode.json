@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "watcher": {
+    "ignore": [
+      ".venv/**",
+      ".tox/**",
+      ".pytest_cache/**",
+      "site/**",
+      "softhsm2/**",
+      "app/static/**",
+      "**/.idea/**"
+    ]
+  }
+}
