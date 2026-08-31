@@ -629,6 +629,15 @@ document.addEventListener('htmx:configRequest', function (e) {
         }
         return;
       }
+      /* Inline toggle: data-toggle-inline="#target-id" hides/shows the target */
+      var toggleBtn = e.target.closest && e.target.closest('[data-toggle-inline]');
+      if (toggleBtn) {
+        e.preventDefault();
+        var targetId = toggleBtn.getAttribute('data-toggle-inline');
+        var targetEl = targetId ? document.querySelector(targetId) : null;
+        if (targetEl) targetEl.hidden = !targetEl.hidden;
+        return;
+      }
       /* History (and other data-nav) from ot-dropdown menus */
       var navBtn = e.target.closest && e.target.closest('[data-nav]');
       if (navBtn) {
