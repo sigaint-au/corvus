@@ -38,6 +38,12 @@ ORG_PROJECT_KEY_ADOPTED = "project_key_adopted"
 ORG_PROJECT_KEY_MIGRATED = "project_key_migrated"
 ORG_HSM_KEK_ROTATED = "hsm_kek_rotated"
 ORG_HSM_BULK_MIGRATED = "hsm_bulk_migrated"
+ORG_USER_DISABLED = "user_disabled"
+ORG_USER_ENABLED = "user_enabled"
+ORG_USER_PROMOTED = "user_promoted"
+ORG_USER_DEMOTED = "user_demoted"
+ORG_USER_PASSWORD_RESET = "user_password_reset"
+ORG_USER_2FA_RESET = "user_2fa_reset"
 
 _ACTION_VERB = {
     "created": "created",

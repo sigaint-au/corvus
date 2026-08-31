@@ -20,3 +20,5 @@ build/
 .omo/
 site/
 /.impeccable
+.opencode/plans/
+plans/

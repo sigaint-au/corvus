@@ -16,7 +16,7 @@ from flask import (
 
 import audit
 import crypto
-from auth import authz, passwords, totp_svc, user_sessions
+from auth import admin_ops, authz
 from core import cache, config, db, settings_svc
 from crypto import hsm, project_keys
 from integrations import ldap_auth, mailer
@@ -721,80 +721,35 @@ def server_settings():
             flash("LDAP role mapping removed", "ok")
         elif action == "promote":
             email = (request.form.get("email") or "").strip().lower()
-            if not email:
-                flash("Enter an email address.", "error")
+            ok, err = admin_ops.promote_user(email, session.get("user_id"))
+            if ok:
+                flash(f"Promoted {email} to global admin", "ok")
             else:
-                with db.connect_admin() as conn, conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE private.users SET is_global_admin = true WHERE email = %s RETURNING id",
-                        (email,),
-                    )
-                    row = cur.fetchone()
-                if row:
-                    flash(f"Promoted {email} to global admin", "ok")
-                else:
-                    flash("No user with that email. They need to register or sign in via LDAP first.", "error")
+                flash(err, "error")
         elif action == "demote":
             uid = (request.form.get("user_id") or "").strip()
-            if uid == session.get("user_id"):
-                flash("You cannot remove your own global admin role", "error")
-            else:
-                with db.connect_admin() as conn, conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE private.users SET is_global_admin = false WHERE id = %s::uuid",
-                        (uid,),
-                    )
+            ok, err = admin_ops.demote_user(uid, session.get("user_id"))
+            if ok:
                 flash("Global admin removed", "ok")
+            else:
+                flash(err, "error")
         elif action == "user_disable":
             uid = (request.form.get("user_id") or "").strip()
-            if not uid:
-                flash("User required", "error")
-            elif uid == session.get("user_id"):
-                flash("You cannot disable your own account", "error")
+            ok, err = admin_ops.disable_user(uid, session.get("user_id"))
+            if ok:
+                flash("User disabled", "ok")
             else:
-                with db.connect_admin() as conn, conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE private.users
-                        SET disabled_at = now()
-                        WHERE id = %s::uuid AND disabled_at IS NULL
-                        RETURNING email
-                        """,
-                        (uid,),
-                    )
-                    row = cur.fetchone()
-                if row:
-                    n = user_sessions.revoke_all_sessions(uid)
-                    flash(
-                        f"Disabled {row['email']}"
-                        + (f" and signed out {n} session(s)" if n else ""),
-                        "ok",
-                    )
-                else:
-                    flash("User not found or already disabled", "error")
+                flash(err, "error")
         elif action == "user_enable":
             uid = (request.form.get("user_id") or "").strip()
-            if not uid:
-                flash("User required", "error")
+            ok, err = admin_ops.enable_user(uid)
+            if ok:
+                flash("User enabled", "ok")
             else:
-                with db.connect_admin() as conn, conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE private.users
-                        SET disabled_at = NULL
-                        WHERE id = %s::uuid AND disabled_at IS NOT NULL
-                        RETURNING email
-                        """,
-                        (uid,),
-                    )
-                    row = cur.fetchone()
-                if row:
-                    flash(f"Re-enabled {row['email']}", "ok")
-                else:
-                    flash("User not found or already active", "error")
+                flash(err, "error")
         elif action == "user_reset_password":
             uid = (request.form.get("user_id") or "").strip()
-            token, err = passwords.create_reset_token_for_user(uid)
+            token, err = admin_ops.reset_user_password(uid)
             if not token:
                 flash(err or "Could not create password reset", "error")
             else:
@@ -808,11 +763,9 @@ def server_settings():
                     mailed = ok
                     if not ok:
                         log.warning("admin password reset email failed: %s", merr)
-                user_sessions.revoke_all_sessions(uid)
                 if mailed:
                     flash(f"Password reset email sent to {email}", "ok")
                 else:
-                    # Surface link once for admin to share (SMTP optional)
                     flash(
                         f"Password reset link for {email or 'user'} (share securely; "
                         f"expires in 1 hour): {link}",
@@ -820,21 +773,18 @@ def server_settings():
                     )
         elif action == "user_reset_2fa":
             uid = (request.form.get("user_id") or "").strip()
-            if not uid:
-                flash("User required", "error")
-            elif not totp_svc.is_enabled(uid):
-                flash("User does not have two-factor authentication enabled", "error")
-            else:
+            ok, err = admin_ops.reset_user_2fa(uid)
+            if ok:
                 email = ""
                 with db.connect_admin() as conn, conn.cursor() as cur:
                     email = user_email(cur, uid) or uid
-                totp_svc.disable(uid)
-                user_sessions.revoke_all_sessions(uid)
                 flash(
                     f"Two-factor authentication reset for {email}. "
                     "They must set up 2FA again at next sign-in if required.",
                     "ok",
                 )
+            else:
+                flash(err, "error")
         elif action == "hsm_migrate_all":
             target_slot = (request.form.get("target_slot") or "").strip() or None
             if not target_slot:

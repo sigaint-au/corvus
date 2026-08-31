@@ -9,6 +9,12 @@ from .access import (
 )
 from .admin import (
     mgmt_admin_audit,
+    mgmt_admin_demote_user,
+    mgmt_admin_disable_user,
+    mgmt_admin_enable_user,
+    mgmt_admin_promote_user,
+    mgmt_admin_reset_2fa,
+    mgmt_admin_reset_password,
     mgmt_admin_users,
 )
 from .export import mgmt_export_project
@@ -113,3 +119,9 @@ def register(app):
     app.delete(f"{base}/projects/<project_ref>/meta/<meta_key>")(mgmt_delete_project_meta)
     app.get(f"{base}/admin/users")(mgmt_admin_users)
     app.get(f"{base}/admin/audit")(mgmt_admin_audit)
+    app.post(f"{base}/admin/users/<uuid:user_id>/disable")(mgmt_admin_disable_user)
+    app.post(f"{base}/admin/users/<uuid:user_id>/enable")(mgmt_admin_enable_user)
+    app.post(f"{base}/admin/users/<uuid:user_id>/promote")(mgmt_admin_promote_user)
+    app.post(f"{base}/admin/users/<uuid:user_id>/demote")(mgmt_admin_demote_user)
+    app.post(f"{base}/admin/users/<uuid:user_id>/reset-password")(mgmt_admin_reset_password)
+    app.post(f"{base}/admin/users/<uuid:user_id>/reset-2fa")(mgmt_admin_reset_2fa)

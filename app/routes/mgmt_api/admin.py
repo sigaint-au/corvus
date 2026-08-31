@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from flask import (
     jsonify,
     request,
 )
 
 import audit
+from auth import admin_ops
 from core import db
 
 from .helpers import (
@@ -112,3 +115,92 @@ def mgmt_admin_audit():
                 )
             ]
     return jsonify({"source": source, "items": items})
+
+
+def _admin_auth():
+    """Authenticate a PAT + require global admin. Returns (uid, None) or (None, resp)."""
+    uid, err = _require_pat()
+    if err:
+        return None, err
+    gerr = _require_global_admin(uid)
+    if gerr:
+        return None, gerr
+    return uid, None
+
+
+def mgmt_admin_disable_user(user_id: UUID):
+    """POST /api/v1/manage/admin/users/<uuid>/disable"""
+    uid, err = _admin_auth()
+    if err:
+        return err
+    ok, msg = admin_ops.disable_user(str(user_id), uid)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"error": msg}), 400
+
+
+def mgmt_admin_enable_user(user_id: UUID):
+    """POST /api/v1/manage/admin/users/<uuid>/enable"""
+    uid, err = _admin_auth()
+    if err:
+        return err
+    ok, msg = admin_ops.enable_user(str(user_id))
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"error": msg}), 400 if "not found" in msg else 400
+
+
+def mgmt_admin_promote_user(user_id: UUID):
+    """POST /api/v1/manage/admin/users/<uuid>/promote
+
+    Body may include ``email`` as a convenience alias.
+    """
+    uid, err = _admin_auth()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip()
+    if not email:
+        return jsonify({"error": "email required"}), 400
+    ok, msg = admin_ops.promote_user(email, uid)
+    if ok:
+        return jsonify({"ok": True})
+    if "No user" in msg:
+        return jsonify({"error": msg}), 404
+    return jsonify({"error": msg}), 400
+
+
+def mgmt_admin_demote_user(user_id: UUID):
+    """POST /api/v1/manage/admin/users/<uuid>/demote"""
+    uid, err = _admin_auth()
+    if err:
+        return err
+    ok, msg = admin_ops.demote_user(str(user_id), uid)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"error": msg}), 400
+
+
+def mgmt_admin_reset_password(user_id: UUID):
+    """POST /api/v1/manage/admin/users/<uuid>/reset-password"""
+    uid, err = _admin_auth()
+    if err:
+        return err
+    token, err_msg = admin_ops.reset_user_password(str(user_id))
+    if not token:
+        return jsonify({"error": err_msg}), 400
+    from flask import url_for
+
+    link = url_for("reset_password", token=token, _external=True)
+    return jsonify({"ok": True, "reset_link": link})
+
+
+def mgmt_admin_reset_2fa(user_id: UUID):
+    """POST /api/v1/manage/admin/users/<uuid>/reset-2fa"""
+    uid, err = _admin_auth()
+    if err:
+        return err
+    ok, msg = admin_ops.reset_user_2fa(str(user_id))
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"error": msg}), 400
