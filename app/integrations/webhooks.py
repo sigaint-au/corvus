@@ -108,7 +108,7 @@ def process_queue():
     with db.connect_admin() as conn, conn.cursor() as cur:
         # SELECT ... FOR UPDATE SKIP LOCKED ensures multiple workers can run in parallel
         cur.execute("""
-            SELECT q.id, q.payload, q.attempts, w.url, w.secret_token,
+            SELECT q.id, q.webhook_id, q.payload, q.attempts, w.url, w.secret_token,
                    COALESCE(w.ssl_verify, true) AS ssl_verify,
                    COALESCE(q.payload->>'event', '') AS event
             FROM private.webhook_delivery_queue q

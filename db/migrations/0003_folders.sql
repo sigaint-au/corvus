@@ -180,45 +180,73 @@ END;
 $$;
 
 -- ── rbac_scope_chain: walk folder parents then project → team → cluster ─
+-- LIMIT cannot appear on a UNION arm without wrapping it in a subquery
+-- (PostgreSQL treats LIMIT as applying to the whole UNION). Resolve
+-- project/team from the starting folder instead of LIMITing the CTE.
 CREATE OR REPLACE FUNCTION api.rbac_scope_chain(
   p_scope_kind text,
   p_scope_id   uuid
 ) RETURNS TABLE(scope_kind text, scope_id uuid)
-  LANGUAGE plpgsql STABLE
+  LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = api, rbac, pg_catalog
   SET row_security = off
 AS $$
 BEGIN
+  IF p_scope_kind IS NULL THEN
+    RETURN;
+  END IF;
+  IF p_scope_kind = 'cluster' THEN
+    RETURN QUERY SELECT 'cluster'::text, NULL::uuid;
+    RETURN;
+  END IF;
   IF p_scope_kind = 'folder' AND p_scope_id IS NOT NULL THEN
     RETURN QUERY
     WITH RECURSIVE folder_chain AS (
-      SELECT f.id, f.parent_id, f.project_id
+      SELECT f.id, f.parent_id, f.project_id, 1 AS depth
       FROM api.folders f
       WHERE f.id = p_scope_id
       UNION ALL
-      SELECT f.id, f.parent_id, f.project_id
+      SELECT f.id, f.parent_id, f.project_id, fc.depth + 1
       FROM api.folders f
       JOIN folder_chain fc ON fc.parent_id = f.id
+      WHERE fc.depth < 16
     )
     SELECT 'folder'::text, fc.id FROM folder_chain fc
     UNION ALL
-    SELECT 'project'::text, fc.project_id FROM folder_chain fc LIMIT 1
+    SELECT 'project'::text, f.project_id
+      FROM api.folders f WHERE f.id = p_scope_id
     UNION ALL
-    SELECT 'team'::text, p.team_id FROM (
-      SELECT fc.project_id FROM folder_chain fc LIMIT 1
-    ) fc2 JOIN api.projects p ON p.id = fc2.project_id
+    SELECT 'team'::text, p.team_id
+      FROM api.folders f
+      JOIN api.projects p ON p.id = f.project_id
+      WHERE f.id = p_scope_id
     UNION ALL
     SELECT 'cluster'::text, NULL::uuid;
     RETURN;
   END IF;
   IF p_scope_kind = 'secret' AND p_scope_id IS NOT NULL THEN
     RETURN QUERY
+    WITH RECURSIVE folder_chain AS (
+      SELECT f.id, f.parent_id, 1 AS depth
+      FROM api.folders f
+      JOIN api.secrets s ON s.folder_id = f.id
+      WHERE s.id = p_scope_id
+      UNION ALL
+      SELECT f.id, f.parent_id, fc.depth + 1
+      FROM api.folders f
+      JOIN folder_chain fc ON fc.parent_id = f.id
+      WHERE fc.depth < 16
+    )
     SELECT 'secret'::text, s.id FROM api.secrets s WHERE s.id = p_scope_id
     UNION ALL
-    SELECT 'folder'::text, s.folder_id FROM api.secrets s WHERE s.id = p_scope_id AND s.folder_id IS NOT NULL
+    SELECT 'folder'::text, fc.id FROM folder_chain fc
     UNION ALL
     SELECT 'project'::text, s.project_id FROM api.secrets s WHERE s.id = p_scope_id
     UNION ALL
-    SELECT 'team'::text, p.team_id FROM api.secrets s JOIN api.projects p ON p.id = s.project_id WHERE s.id = p_scope_id
+    SELECT 'team'::text, p.team_id
+      FROM api.secrets s
+      JOIN api.projects p ON p.id = s.project_id
+      WHERE s.id = p_scope_id
     UNION ALL
     SELECT 'cluster'::text, NULL::uuid;
     RETURN;
@@ -239,50 +267,43 @@ BEGIN
     SELECT 'cluster'::text, NULL::uuid;
     RETURN;
   END IF;
-  RETURN QUERY SELECT 'cluster'::text, NULL::uuid;
 END;
 $$;
 
--- ── can_manage_rbac for folder scope ────────────────────────────────────
+-- ── can_manage_rbac: keep existing short-circuits, add folder scope ──────
 CREATE OR REPLACE FUNCTION api.can_manage_rbac(
   p_scope_kind text,
-  p_scope_id   uuid
+  p_scope_id uuid DEFAULT NULL
 ) RETURNS boolean
-  LANGUAGE plpgsql STABLE
-  SET row_security = off
-AS $$
-BEGIN
-  IF p_scope_kind = 'folder' AND p_scope_id IS NOT NULL THEN
-    RETURN EXISTS (
-      SELECT 1 FROM api.folders f
-      WHERE f.id = p_scope_id
-        AND api.can_admin_project(f.project_id)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT api.is_global_admin()
+    OR api.can('admin', 'bindings', p_scope_kind, p_scope_id)
+    OR api.can('*', '*', p_scope_kind, p_scope_id)
+    OR (
+      p_scope_kind = 'team'
+      AND api.team_role(p_scope_id) IN ('team-owner', 'team-admin')
+    )
+    OR (
+      p_scope_kind = 'project'
+      AND api.can_admin_project(p_scope_id)
+    )
+    OR (
+      p_scope_kind = 'secret'
+      AND EXISTS (
+        SELECT 1 FROM api.secrets s
+        WHERE s.id = p_scope_id
+          AND s.deleted_at IS NULL
+          AND api.can_admin_project(s.project_id)
+      )
+    )
+    OR (
+      p_scope_kind = 'folder'
+      AND EXISTS (
+        SELECT 1 FROM api.folders f
+        WHERE f.id = p_scope_id
+          AND api.can_admin_project(f.project_id)
+      )
     );
-  END IF;
-  IF p_scope_kind = 'secret' AND p_scope_id IS NOT NULL THEN
-    RETURN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = p_scope_id
-        AND (
-          api.can_admin_project(s.project_id)
-          OR (s.created_by = api.current_user_id() AND s.deleted_at IS NULL)
-        )
-    );
-  END IF;
-  IF p_scope_kind = 'project' AND p_scope_id IS NOT NULL THEN
-    RETURN api.can_admin_project(p_scope_id);
-  END IF;
-  IF p_scope_kind = 'team' AND p_scope_id IS NOT NULL THEN
-    RETURN api.can_admin_project(NULL)
-      OR EXISTS (
-        SELECT 1 FROM api.teams t
-        WHERE t.id = p_scope_id
-          AND api.team_role(t.id) IN ('team-owner', 'team-admin')
-      );
-  END IF;
-  IF p_scope_kind = 'cluster' THEN
-    RETURN api.is_global_admin();
-  END IF;
-  RETURN false;
-END;
 $$;
