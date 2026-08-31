@@ -3270,3 +3270,135 @@
     .folder-tree-layout .pager {
       margin-top: .75rem;
     }
+
+    /* ── Two-column tree view ─────────────────────────────────────────── */
+    .tree-layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+    .tree-nav {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+      padding: .5rem;
+      overflow-x: auto;
+    }
+    .tree-nav .pager {
+      margin-top: .5rem;
+    }
+    .tree-item {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      border-radius: var(--radius-sm);
+      font-size: .875rem;
+      color: var(--foreground);
+      text-decoration: none;
+      min-width: 0;
+    }
+    .tree-item a {
+      color: inherit;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      min-width: 0;
+      flex: 1;
+    }
+    .tree-item:hover {
+      background: var(--secondary);
+    }
+    .tree-item.active {
+      background: var(--accent);
+    }
+    .tree-icon {
+      flex: none;
+      color: var(--muted-foreground);
+    }
+    .tree-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tree-counts {
+      font-size: .75rem;
+      flex: none;
+    }
+    .tree-folder details {
+      margin: 0;
+    }
+    .tree-folder summary {
+      list-style: none;
+      cursor: pointer;
+      padding: .3rem .4rem;
+    }
+    .tree-folder summary::-webkit-details-marker {
+      display: none;
+    }
+    .tree-folder details[open] > summary .tree-icon {
+      color: var(--accent);
+    }
+    .tree-folder .tree-folder {
+      padding-left: 1rem;
+      border-left: 1px solid var(--border);
+      margin-left: .55rem;
+    }
+    .tree-folder-acts {
+      padding: 0 .4rem .25rem 1.9rem;
+    }
+    .tree-secret {
+      padding: .3rem .4rem;
+    }
+    .tree-secret-list {
+      margin-top: .25rem;
+    }
+    .tree-panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+      padding: 1rem;
+      min-height: 10rem;
+    }
+    .secret-panel-head {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+    .secret-panel-head h2 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .secret-panel-meta {
+      margin: .75rem 0;
+      display: grid;
+      gap: .35rem;
+      font-size: .875rem;
+    }
+    .secret-panel-meta div {
+      display: flex;
+      gap: .5rem;
+    }
+    .secret-panel-meta dt {
+      color: var(--muted-foreground);
+      min-width: 5.5rem;
+    }
+    .secret-panel-meta dd {
+      margin: 0;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .secret-panel-acts {
+      display: flex;
+      gap: .5rem;
+      margin-top: .75rem;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 720px) {
+      .tree-layout {
+        grid-template-columns: 1fr;
+      }
+    }

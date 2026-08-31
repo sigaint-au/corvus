@@ -155,6 +155,23 @@ def list_children(cur, project_id, folder_id, page, q):
     return rows, pager, folders, secrets
 
 
+def load_tree(cur, project_id):
+    """All folders of a project as a nested tree (one query)."""
+    cur.execute(
+        """
+        SELECT f.id, f.name, f.path, f.parent_id,
+               (SELECT count(*) FROM api.secrets s
+                WHERE s.folder_id = f.id AND s.deleted_at IS NULL) AS secret_count
+        FROM api.folders f
+        WHERE f.project_id = %s
+        ORDER BY f.path
+        """,
+        (str(project_id),),
+    )
+    from lib.folders import build_tree
+    return build_tree(cur.fetchall() or [])
+
+
 def create_folder(cur, project_id, path, *, actor_email=None):
     """Create a folder (and ancestors); audit folder_created."""
     from lib.folders import validate_path

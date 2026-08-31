@@ -101,6 +101,29 @@ def test_folder_routes_registered(app):
     assert "/projects/<uuid:project_id>/folders/<uuid:folder_id>/delete" in rules
     assert "/projects/<uuid:project_id>/folders/<uuid:folder_id>/move" in rules
     assert "/projects/<uuid:project_id>/folders/<uuid:folder_id>" in rules
+    assert "/projects/<uuid:project_id>/secrets/<uuid:secret_id>/panel" in rules
+
+
+def test_build_tree_nests_and_counts():
+    from lib.folders import build_tree
+
+    a, b, c = "a1111111-1111-1111-1111-111111111111", "b2222222-2222-2222-2222-222222222222", "c3333333-3333-3333-3333-333333333333"
+    rows = [
+        {"id": a, "name": "prod", "path": "prod", "parent_id": None, "secret_count": 2},
+        {"id": b, "name": "db", "path": "prod/db", "parent_id": a, "secret_count": 1},
+        {"id": c, "name": "staging", "path": "staging", "parent_id": None, "secret_count": 0},
+    ]
+    tree = build_tree(rows)
+    assert [n["name"] for n in tree] == ["prod", "staging"]
+    prod = tree[0]
+    assert prod["secret_count"] == 2
+    assert [k["name"] for k in prod["children"]] == ["db"]
+    assert prod["children"][0]["children"] == []
+
+
+def test_build_tree_empty():
+    from lib.folders import build_tree
+    assert build_tree([]) == []
 
 
 def test_mgmt_api_folder_routes_registered(app):

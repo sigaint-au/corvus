@@ -45,6 +45,7 @@ from .list import (
 from .view import (
     hide_secret,
     reveal_secret,
+    secret_panel,
     secret_view,
     toggle_secret_pin,
 )
@@ -64,6 +65,7 @@ def register(app):
         "/projects/<uuid:project_id>/secrets/<uuid:secret_id>/view",
         methods=["GET", "POST"],
     )(secret_view)
+    app.get("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/panel")(secret_panel)
     app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/meta")(upsert_secret_meta)
     app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/meta/<path:meta_key>/delete")(
         delete_secret_meta

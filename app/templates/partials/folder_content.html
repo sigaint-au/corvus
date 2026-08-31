@@ -1,50 +1,48 @@
 {% set _pid = project_id if project_id is defined else project.id %}
-{% if folder_rows %}
-<div class="table"><table class="folder-table">
-  <tbody>
-  {% for f in folder_rows %}
-    <tr class="folder-row">
-      <td class="folder-icon-col">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-      </td>
-      <td>
-        <a href="{{ url_for('project_detail', project_id=_pid, tab='secrets', folder=f.id) }}"
-           class="folder-link" title="Open {{ f.path }}">
-          <code class="k folder-name">{{ f.name }}</code>
-        </a>
-      </td>
-      <td class="folder-counts muted">
-        {%- if f.child_count and f.secret_count %}
-          {{ f.child_count }} folder{% if f.child_count != 1 %}s{% endif %} &middot; {{ f.secret_count }} secret{% if f.secret_count != 1 %}s{% endif %}
-        {%- elif f.child_count %}
-          {{ f.child_count }} folder{% if f.child_count != 1 %}s{% endif %}
-        {%- elif f.secret_count %}
-          {{ f.secret_count }} secret{% if f.secret_count != 1 %}s{% endif %}
-        {%- else %}&ndash;{% endif %}
-      </td>
-      <td class="acts folder-acts">
+<div class="tree-layout">
+  <nav class="tree-nav" aria-label="Secret tree">
+    <div class="tree-item tree-root {{ 'active' if not current_folder else '' }}">
+      <a href="{{ url_for('project_detail', project_id=_pid, tab='secrets') }}">
+        <svg class="tree-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+        All secrets
+      </a>
+    </div>
+    {% macro render_folder(f, depth) %}
+    <div class="tree-folder" data-depth="{{ depth }}">
+      <details open>
+        <summary class="tree-item {{ 'active' if current_folder and current_folder['id']|string == f.id|string else '' }}">
+          <a class="tree-folder-link" href="{{ url_for('project_detail', project_id=_pid, tab='secrets', folder=f.id) }}">
+            <svg class="tree-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+            <span class="tree-name">{{ f.name }}/</span>
+          </a>
+          <span class="tree-counts muted">{{ f.secret_count }}</span>
+        </summary>
         {% if can_write %}
-        <a href="{{ url_for('rbac_bindings', scope_kind='folder', scope_id=f.id) }}"
-           class="ghost small">Access</a>
-        <form method="post" action="{{ url_for('folder_delete', project_id=_pid, folder_id=f.id) }}"
-              class="inline-form" data-confirm="Delete folder '{{ f.path }}'?">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <button class="ghost small danger" type="submit"
-                  title="Delete empty folder">Delete</button>
-        </form>
+        <div class="tree-folder-acts">
+          <a class="ghost small" href="{{ url_for('rbac_bindings', scope_kind='folder', scope_id=f.id) }}">Access</a>
+        </div>
         {% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table></div>
-{% endif %}
-{% if tree_secrets %}
-{% with secrets=tree_secrets, project_id=_pid, secrets_pager=pager %}
-{% include "partials/secrets.html" %}
-{% endwith %}
-{% elif folder_rows %}
-{% with pager=pager %}{% include "partials/pager.html" %}{% endwith %}
-{% elif not search_q %}
-<p class="empty">This folder is empty.</p>
-{% endif %}
+        {% for c in f.children %}{{ render_folder(c, depth + 1) }}{% endfor %}
+      </details>
+    </div>
+    {% endmacro %}
+    {% for f in folder_tree %}{{ render_folder(f, 0) }}{% endfor %}
+    <div class="tree-secret-list">
+      {% for s in tree_secrets %}
+      <a class="tree-item tree-secret"
+         href="{{ url_for('secret_view', project_id=_pid, secret_id=s.id) }}"
+         hx-get="{{ url_for('secret_panel', project_id=_pid, secret_id=s.id) }}"
+         hx-target="#secret-panel" hx-swap="innerHTML" hx-push-url="false">
+        <svg class="tree-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m10.85 12.15 8.9-8.9"/><path d="M18 5l2 2"/><path d="M15 8l2 2"/></svg>
+        <span class="tree-name" title="{{ s.key }}">{{ s.key.rsplit('/', 1)[-1] }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% if pager and pager.pages and pager.pages > 1 %}
+    {% with pager=pager %}{% include "partials/pager.html" %}{% endwith %}
+    {% endif %}
+  </nav>
+  <div class="tree-panel" id="secret-panel">
+    {% include "partials/secret_panel_empty.html" %}
+  </div>
+</div>

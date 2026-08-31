@@ -56,3 +56,23 @@ def validate_key(key: str) -> str:
     if not leaf or not _SEGMENT_RE.match(leaf):
         raise ValueError(f'Invalid leaf name: {leaf!r}')
     return key
+
+
+def build_tree(rows: list[dict]) -> list[dict]:
+    """Nest flat folder rows (id, name, path, parent_id, secret_count, child_count)
+    into a tree: [{id, name, path, secret_count, children: [...]}, ...]."""
+    by_id: dict = {}
+    roots: list[dict] = []
+    for r in rows:
+        by_id[r['id']] = {
+            'id': r['id'], 'name': r['name'], 'path': r['path'],
+            'secret_count': r.get('secret_count', 0), 'children': [],
+        }
+    for r in rows:
+        node = by_id[r['id']]
+        parent = by_id.get(r['parent_id']) if r['parent_id'] else None
+        if parent:
+            parent['children'].append(node)
+        else:
+            roots.append(node)
+    return roots

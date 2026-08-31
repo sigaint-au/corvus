@@ -145,6 +145,7 @@ def project_detail(project_id):
     secret_rows = []
     folder_rows = []
     tree_secrets = []
+    folder_tree = []
     audit_rows = []
     tokens = []
     project_secret_keys = []
@@ -207,6 +208,14 @@ def project_detail(project_id):
         folder_crumbs = []
         tree_view = False
         if tab == "secrets":
+            cur.execute(
+                "SELECT EXISTS(SELECT 1 FROM api.folders WHERE project_id = %s) AS has",
+                (str(project_id),),
+            )
+            has_folders = bool((cur.fetchone() or {}).get("has"))
+            if has_folders:
+                from secret_svc.folder_ops import load_tree
+                folder_tree = load_tree(cur, project_id)
             if folder_id:
                 secret_rows, secrets_pager, folder_rows, tree_secrets = _list_folder_children(cur, project_id, folder_id, page, q)
                 tree_view = True
@@ -231,11 +240,7 @@ def project_detail(project_id):
             elif q:
                 secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             else:
-                cur.execute(
-                    "SELECT EXISTS(SELECT 1 FROM api.folders WHERE project_id = %s) AS has",
-                    (str(project_id),),
-                )
-                if bool((cur.fetchone() or {}).get("has")):
+                if has_folders:
                     secret_rows, secrets_pager, folder_rows, tree_secrets = _list_folder_children(
                         cur, project_id, None, page, q
                     )
@@ -520,6 +525,7 @@ def project_detail(project_id):
         "folder_rows": folder_rows,
         "tree_secrets": tree_secrets,
         "tree_view": tree_view,
+        "folder_tree": folder_tree,
         "public_base_url": public_base,
         "max_expiry_days": config.MAX_EXPIRY_DAYS,
         "grant_minutes": settings_svc.reveal_access_grant_minutes(),

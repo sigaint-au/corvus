@@ -163,6 +163,39 @@ def reveal_secret(project_id, secret_id):
 
 
 @authz.login_required
+def secret_panel(project_id, secret_id):
+    """HTMX fragment: secret summary card for the tree-view detail panel."""
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        row = get_secret_brief(cur, secret_id, project_id)
+        if not row:
+            return "Not found", 404
+        access_state, _ = _reveal_access_state(
+            cur, project_id, secret_id, session["user_id"]
+        )
+        cur.execute(
+            "SELECT api.can_access_secret(%s, 'write') AS w",
+            (str(secret_id),),
+        )
+        can_write = bool((cur.fetchone() or {}).get("w"))
+        cur.execute(
+            "SELECT s.folder_id, f.path AS folder_path, s.updated_at, s.rotation_next_at, s.access_mode"
+            " FROM api.secrets s LEFT JOIN api.folders f ON f.id = s.folder_id"
+            " WHERE s.id = %s",
+            (str(secret_id),),
+        )
+        extra = cur.fetchone() or {}
+    return render_template(
+        "partials/secret_panel.html",
+        project_id=project_id,
+        secret_id=secret_id,
+        s={**row, **extra},
+        reveal_allowed=access_state == "allowed",
+        access_state=access_state,
+        can_write=can_write,
+    )
+
+
+@authz.login_required
 def secret_view(project_id, secret_id):
     """Type-specific view/edit page (KV, cert, SSH, database URL).
 
