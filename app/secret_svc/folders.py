@@ -7,16 +7,11 @@ def materialize_folder_path(cur, project_id, segments: tuple[str, ...]):
     for name in segments:
         path_parts.append(name)
         cur.execute(
-            """
-            INSERT INTO api.folders (project_id, parent_id, name, path)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (project_id, path) DO UPDATE SET name = EXCLUDED.name
-            RETURNING id
-            """,
+            "SELECT private.materialize_folder_path(%s::uuid, %s::uuid, %s, %s) AS id",
             (project_id, parent_id, name, "/".join(path_parts)),
         )
         row = cur.fetchone()
-        parent_id = row["id"] if isinstance(row, dict) else row[0]
+        parent_id = row["id"] if row else None
     return parent_id
 
 
