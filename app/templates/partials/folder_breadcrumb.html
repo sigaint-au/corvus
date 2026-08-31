@@ -1,0 +1,16 @@
+{% set _pid = project_id if project_id is defined else project.id %}
+<nav class="folder-breadcrumb" aria-label="Folder breadcrumb">
+  <a href="{{ url_for('project_detail', project_id=_pid, tab='secrets') }}"
+     class="folder-crumb{% if not current_folder %} active{% endif %}">Secrets</a>
+  {% for name, path in folder_crumbs %}
+  <span class="crumb-sep">/</span>
+  {% if loop.last and not current_folder %}
+  <span class="folder-crumb active">{{ name }}</span>
+  {% elif path %}
+  <a href="{{ url_for('project_detail', project_id=_pid, tab='secrets', folder=path) }}"
+     class="folder-crumb">{{ name }}</a>
+  {% else %}
+  <span class="folder-crumb">{{ name }}</span>
+  {% endif %}
+  {% endfor %}
+</nav>

@@ -1,0 +1,50 @@
+{% set _pid = project_id if project_id is defined else project.id %}
+{% if folder_rows %}
+<div class="table"><table class="folder-table">
+  <tbody>
+  {% for f in folder_rows %}
+    <tr class="folder-row">
+      <td class="folder-icon-col">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      </td>
+      <td>
+        <a href="{{ url_for('project_detail', project_id=_pid, tab='secrets', folder=f.id) }}"
+           class="folder-link" title="Open {{ f.path }}">
+          <code class="k folder-name">{{ f.name }}</code>
+        </a>
+      </td>
+      <td class="folder-counts muted">
+        {%- if f.child_count and f.secret_count %}
+          {{ f.child_count }} folder{% if f.child_count != 1 %}s{% endif %} &middot; {{ f.secret_count }} secret{% if f.secret_count != 1 %}s{% endif %}
+        {%- elif f.child_count %}
+          {{ f.child_count }} folder{% if f.child_count != 1 %}s{% endif %}
+        {%- elif f.secret_count %}
+          {{ f.secret_count }} secret{% if f.secret_count != 1 %}s{% endif %}
+        {%- else %}&ndash;{% endif %}
+      </td>
+      <td class="acts folder-acts">
+        {% if can_write %}
+        <a href="{{ url_for('rbac_bindings', scope_kind='folder', scope_id=f.id) }}"
+           class="ghost small">Access</a>
+        <form method="post" action="{{ url_for('folder_delete', project_id=_pid, folder_id=f.id) }}"
+              class="inline-form" data-confirm="Delete folder '{{ f.path }}'?">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button class="ghost small danger" type="submit"
+                  title="Delete empty folder">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+{% if tree_secrets %}
+{% with secrets=tree_secrets, project_id=_pid, secrets_pager=pager %}
+{% include "partials/secrets.html" %}
+{% endwith %}
+{% elif folder_rows %}
+{% with pager=pager %}{% include "partials/pager.html" %}{% endwith %}
+{% elif not search_q %}
+<p class="empty">This folder is empty.</p>
+{% endif %}

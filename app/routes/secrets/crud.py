@@ -387,7 +387,18 @@ def secret_new(project_id):
         return ctx
 
     if request.method == "GET":
-        return render_template("secret_new.html", **_new_ctx())
+        folder_id = (request.args.get("folder_id") or "").strip() or None
+        folder_path = ""
+        if folder_id:
+            with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT path FROM api.folders WHERE id = %s AND project_id = %s",
+                    (str(folder_id), str(project_id)),
+                )
+                row = cur.fetchone()
+                if row:
+                    folder_path = row["path"] + "/"
+        return render_template("secret_new.html", **_new_ctx(key=folder_path, folder_id=folder_id, folder_path=folder_path))
     kind = normalize_kind(request.form.get("kind"))
     key = (request.form.get("key") or "").strip()
     note = (request.form.get("note") or "").strip()

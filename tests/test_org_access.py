@@ -346,3 +346,18 @@ class TestOrgAccess:
         assert '/login' in (r.location or '')
         with c.session_transaction() as s:
             assert s.get('invite_token') == 'not-a-real-token'
+
+    def test_folders_schema_and_scope(self):
+        """Folders migration adds container + folder scope to RBAC."""
+        src = migrations_src()
+        assert 'CREATE TABLE IF NOT EXISTS api.folders' in src
+        assert 'ADD COLUMN IF NOT EXISTS folder_id' in src
+        assert "scope_kind IN ('cluster', 'team', 'project', 'secret', 'folder')" in src
+        assert 'WITH RECURSIVE folder_chain' in src
+        assert "secret-%" in src
+        assert 'api.can_read_project(project_id)' in src
+        assert 'folder_created' in src
+        assert 'folder_deleted' in src
+        assert 'folder_moved' in src
+        from core import config
+        assert 'folder' in config.RBAC_SCOPE_KINDS

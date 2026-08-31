@@ -17,6 +17,7 @@ import audit
 from auth import authz
 from core import config, db, settings_svc
 from lib import metadata
+from secret_svc.folder_ops import list_children as _list_folder_children
 from secret_svc.secret_kinds import (
     SOON_DAYS,
     annotate_token_expiry,
@@ -134,6 +135,7 @@ def project_detail(project_id):
         tab = "secrets"
     page = paging.page_arg("page")
     q = paging.list_state_q()
+    folder_id = (request.args.get("folder") or "").strip() or None
     audit_actor = (request.args.get("actor") or "").strip()
     audit_action = (request.args.get("action") or "").strip()
     audit_since = (request.args.get("since") or "").strip()
@@ -141,6 +143,8 @@ def project_detail(project_id):
     secrets_pager = None
     audit_pager = None
     secret_rows = []
+    folder_rows = []
+    tree_secrets = []
     audit_rows = []
     tokens = []
     project_secret_keys = []
@@ -199,8 +203,31 @@ def project_detail(project_id):
             tab = "secrets"
         webhooks = []
         due_overdue, due_soon, rotation_overdue, rotation_soon = [], [], [], []
+        current_folder = None
+        folder_crumbs = []
         if tab == "secrets":
-            secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
+            if folder_id:
+                secret_rows, secrets_pager, folder_rows, tree_secrets = _list_folder_children(cur, project_id, folder_id, page, q)
+                cur.execute("SELECT id, name, path, parent_id FROM api.folders WHERE id = %s", (str(folder_id),))
+                current_folder = cur.fetchone()
+                if current_folder:
+                    parts = (current_folder["path"] or "").split("/")
+                    parent_paths = []
+                    path_acc = ""
+                    for p in parts[:-1]:
+                        path_acc = path_acc + "/" + p if path_acc else p
+                        parent_paths.append((p, path_acc))
+                    id_map = {}
+                    if parent_paths:
+                        cur.execute(
+                            "SELECT id, path FROM api.folders "
+                            "WHERE project_id = %s AND path = ANY(%s::text[])",
+                            (str(project_id), [pp for _, pp in parent_paths]),
+                        )
+                        id_map = {str(r["path"]): str(r["id"]) for r in cur.fetchall() or []}
+                    folder_crumbs = [(p, id_map.get(pp)) for p, pp in parent_paths]
+            else:
+                secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             # Expiry dashboard: scan live secrets for this project (capped)
             cur.execute(
                 """
@@ -474,6 +501,10 @@ def project_detail(project_id):
         "due_soon": due_soon if tab == "secrets" else [],
         "rotation_overdue": rotation_overdue if tab == "secrets" else [],
         "rotation_soon": rotation_soon if tab == "secrets" else [],
+        "current_folder": current_folder,
+        "folder_crumbs": folder_crumbs,
+        "folder_rows": folder_rows if folder_id else [],
+        "tree_secrets": tree_secrets if folder_id else [],
         "public_base_url": public_base,
         "max_expiry_days": config.MAX_EXPIRY_DAYS,
         "grant_minutes": settings_svc.reveal_access_grant_minutes(),

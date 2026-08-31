@@ -3219,3 +3219,54 @@
     .token-scope-badges .token-scope-glob {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
+
+    /* ── Folder tree ──────────────────────────────────────────────────── */
+    .folder-breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .5rem 0 .75rem;
+      font-size: .875rem;
+      flex-wrap: wrap;
+    }
+    .folder-crumb {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .folder-crumb.active {
+      color: var(--foreground);
+      font-weight: 500;
+    }
+    .crumb-sep {
+      color: var(--muted-foreground);
+    }
+    .folder-table {
+      width: 100%;
+    }
+    .folder-row td {
+      padding: .45rem .5rem;
+      vertical-align: middle;
+    }
+    .folder-icon-col {
+      width: 2rem;
+      text-align: center;
+      color: var(--muted-foreground);
+    }
+    .folder-name {
+      font-weight: 500;
+    }
+    .folder-counts {
+      font-size: .8rem;
+      white-space: nowrap;
+    }
+    .folder-acts {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .folder-acts .ghost {
+      font-size: .8rem;
+    }
+    .folder-tree-layout + .pager,
+    .folder-tree-layout .pager {
+      margin-top: .75rem;
+    }

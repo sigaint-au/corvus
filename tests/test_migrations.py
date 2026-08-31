@@ -41,11 +41,12 @@ def _write_migrations(tmp_path, files):
 
 
 def test_migrations_ship_in_order():
-    """Squashed baseline plus additive CLI session token migration."""
+    """Squashed baseline plus additive CLI session token + folders migration."""
     files = [p.name for p in migrations._migration_files()]
     assert files == [
         "0001_init.sql",
         "0002_cli_session_tokens.sql",
+        "0003_folders.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -144,6 +145,19 @@ def test_cli_session_tokens_migration_creates_table():
     assert "expires_at timestamptz NOT NULL" in sql
     assert "REFERENCES private.users(id) ON DELETE CASCADE" in sql
     assert "cli_session_tokens_user_idx" in sql
+
+
+def test_folders_migration_creates_table():
+    """The additive folders migration defines api.folders + backfill."""
+    sql = (migrations.MIGRATIONS_DIR / "0003_folders.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS api.folders" in sql
+    assert "parent_id" in sql
+    assert "UNIQUE (project_id, path)" in sql
+    assert "ADD COLUMN IF NOT EXISTS folder_id" in sql
+    assert "ensure_folder_path" in sql
+    assert "FORCE ROW LEVEL SECURITY" in sql
+    assert "'folder'" in sql
+    assert "subscription_keys" not in sql  # must not touch 0001 shape
 
 
 def test_squashed_baseline_is_idempotent_enough_for_fresh_init():

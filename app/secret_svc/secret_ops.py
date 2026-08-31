@@ -463,6 +463,7 @@ def _upsert_secret(
     access_mode="inherit",
     set_access_mode=False,
     crypto_provider: str | None = None,
+    folder_id: str | None = None,
 ):
     """Insert/update one secret; returns (id, was_new).
 
@@ -531,6 +532,10 @@ def _upsert_secret(
             cols.append("access_mode")
             vals.append(mode)
             updates.append("access_mode = EXCLUDED.access_mode")
+        if folder_id is not None:
+            cols.append("folder_id")
+            vals.append(str(folder_id))
+            updates.append("folder_id = EXCLUDED.folder_id")
         placeholders = ", ".join(["%s"] * len(cols))
         col_sql = ", ".join(cols)
         upd_sql = ",\n                      ".join(updates)

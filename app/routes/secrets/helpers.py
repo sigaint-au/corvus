@@ -399,11 +399,12 @@ def _secrets_partial(project_id):
     )
 
 
-def _secrets_redirect_or_partial(project_id):
+def _secrets_redirect_or_partial(project_id, folder_id=None):
     """Return the HTMX secrets partial, or redirect to the project secrets tab.
 
     Args:
         project_id: UUID of the project whose secrets were mutated.
+        folder_id: Optional UUID of the folder to return to.
 
     Returns:
         str | werkzeug.wrappers.Response: HTMX partial when requested;
@@ -419,6 +420,7 @@ def _secrets_redirect_or_partial(project_id):
             "project_detail",
             project_id=project_id,
             tab="secrets",
+            folder=folder_id or None,
             page=paging.page_arg("page"),
             q=paging.list_state_q() or None,
         )

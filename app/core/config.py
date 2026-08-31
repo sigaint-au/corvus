@@ -182,7 +182,7 @@ MACHINE_TOKEN_ROLES = ("service-read", "service-reveal", "service-write")
 
 # ── Kubernetes-style RBAC (Subjects + Roles + Bindings) ───────────────
 # Familiar dropdown labels map to built-in rbac.roles names.
-RBAC_SCOPE_KINDS = ("cluster", "team", "project", "secret")
+RBAC_SCOPE_KINDS = ("cluster", "team", "project", "folder", "secret")
 RBAC_SUBJECT_KINDS = ("User", "Group", "ServiceAccount")
 RBAC_VERBS = ("get", "list", "create", "update", "delete", "reveal", "admin", "*")
 RBAC_RESOURCES = (
@@ -300,6 +300,9 @@ WEBHOOK_EVENTS: dict[str, list[str]] = {
         "org.project_member_role",
         "org.project_key_created",
         "org.hsm_kek_rotated",
+        "org.folder_created",
+        "org.folder_deleted",
+        "org.folder_moved",
     ],
 }
 ALL_WEBHOOK_EVENTS = tuple(e for evs in WEBHOOK_EVENTS.values() for e in evs)

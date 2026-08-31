@@ -18,6 +18,12 @@ from .admin import (
     mgmt_admin_users,
 )
 from .export import mgmt_export_project
+from .folders import (
+    mgmt_create_folder,
+    mgmt_delete_folder,
+    mgmt_list_folders,
+    mgmt_move_folder,
+)
 from .groups import (
     mgmt_add_group_member,
     mgmt_create_group,
@@ -94,6 +100,10 @@ def register(app):
     app.delete(f"{base}/projects/<project_ref>")(mgmt_delete_project)
     app.patch(f"{base}/projects/<project_ref>")(mgmt_update_project_settings)
     app.get(f"{base}/projects/<project_ref>/export")(mgmt_export_project)
+    app.get(f"{base}/projects/<project_ref>/folders")(mgmt_list_folders)
+    app.post(f"{base}/projects/<project_ref>/folders")(mgmt_create_folder)
+    app.post(f"{base}/projects/<project_ref>/folders/<folder_ref>/move")(mgmt_move_folder)
+    app.delete(f"{base}/projects/<project_ref>/folders/<folder_ref>")(mgmt_delete_folder)
     app.get(f"{base}/projects/<project_ref>/members")(mgmt_list_project_members)
     app.post(f"{base}/projects/<project_ref>/members")(mgmt_add_project_binding)
     app.delete(f"{base}/projects/<project_ref>/members/<member_ref>")(mgmt_remove_project_binding)

@@ -40,6 +40,7 @@ def rbac_bindings():
     teams = []
     projects = []
     secrets = []
+    folders = []
     groups = []
     all_roles = []
     dropdown = []
@@ -94,6 +95,21 @@ def rbac_bindings():
                 picker_team_id = str(srow["team_id"])
                 back_team_id = picker_team_id
                 scope_label = f"{srow['project_name']} / {srow['name']}"
+        elif scope_kind == "folder" and scope_id:
+            cur.execute(
+                """
+                SELECT f.path AS name, f.project_id, p.team_id, p.name AS project_name
+                FROM api.folders f
+                JOIN api.projects p ON p.id = f.project_id
+                WHERE f.id = %s::uuid
+                """,
+                (scope_id,),
+            )
+            frow = cur.fetchone()
+            if frow:
+                picker_team_id = str(frow["team_id"])
+                back_team_id = picker_team_id
+                scope_label = f"{frow['project_name']} / {frow['name']}/"
 
         if back_team_id:
             for t in teams:
@@ -136,6 +152,18 @@ def rbac_bindings():
                 (picker_team_id,),
             )
             secrets = cur.fetchall() or []
+        if scope_kind == "folder" and picker_team_id:
+            cur.execute(
+                """
+                SELECT f.id, f.path AS name, p.name AS project_name
+                FROM api.folders f
+                JOIN api.projects p ON p.id = f.project_id
+                WHERE p.team_id = %s
+                ORDER BY p.name, f.path LIMIT 500
+                """,
+                (picker_team_id,),
+            )
+            folders = cur.fetchall() or []
 
         if scope_kind == "cluster":
             cur.execute(
@@ -233,6 +261,7 @@ def rbac_bindings():
         teams=teams,
         projects=projects,
         secrets=secrets,
+        folders=folders,
         groups=groups,
         all_roles=all_roles,
         dropdown=dropdown,
@@ -316,11 +345,18 @@ def rbac_bindings_create():
                           JOIN api.projects p ON p.id = s.project_id
                           WHERE s.id = %s::uuid AND p.team_id = g.team_id
                         ))
+                        OR (%s = 'folder' AND EXISTS (
+                          SELECT 1 FROM api.folders f
+                          JOIN api.projects p ON p.id = f.project_id
+                          WHERE f.id = %s::uuid AND p.team_id = g.team_id
+                        ))
                       )
                     """,
                     (
                         subject_group,
                         scope_kind,
+                        scope_kind,
+                        scope_id or subject_group,
                         scope_kind,
                         scope_id or subject_group,
                         scope_kind,
@@ -349,6 +385,10 @@ def rbac_bindings_create():
                           SELECT 1 FROM api.secrets s
                           WHERE s.id = %s::uuid AND s.project_id = mt.project_id
                         ))
+                        OR (%s = 'folder' AND EXISTS (
+                          SELECT 1 FROM api.folders f
+                          WHERE f.id = %s::uuid AND f.project_id = mt.project_id
+                        ))
                         OR (%s = 'team' AND EXISTS (
                           SELECT 1 FROM api.projects p
                           WHERE p.id = mt.project_id AND p.team_id = %s::uuid
@@ -358,6 +398,8 @@ def rbac_bindings_create():
                     (
                         subject_sa,
                         scope_kind,
+                        scope_kind,
+                        scope_id or subject_sa,
                         scope_kind,
                         scope_id or subject_sa,
                         scope_kind,

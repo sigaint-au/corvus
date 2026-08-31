@@ -20,6 +20,7 @@ import crypto
 from core import cache, config, db
 from lib.auth_tokens import classify_token
 from lib.datetime_utils import iso_utc
+from lib.folders import split_key
 from lib.validate import is_uuid
 from secret_svc.commands import upsert_secret_command
 
@@ -401,6 +402,14 @@ def _upsert_body(project_ref, key: str, body: dict):
             _, err = _require_machine_write(cur, pid, thash)
             if err:
                 return err
+            # Materialize folders from key prefix
+            folder_path, _ = split_key(key)
+            if folder_path:
+                cur.execute(
+                    "SELECT private.ensure_folder_path(%s::uuid, %s, NULL) AS fid",
+                    (str(pid), folder_path),
+                )
+                cur.fetchone()
             value_enc, enc_provider = crypto.encrypt_for_project(str(pid), str(value))
             cur.execute(
                 """

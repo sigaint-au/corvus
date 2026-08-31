@@ -44,6 +44,9 @@ ORG_USER_PROMOTED = "user_promoted"
 ORG_USER_DEMOTED = "user_demoted"
 ORG_USER_PASSWORD_RESET = "user_password_reset"
 ORG_USER_2FA_RESET = "user_2fa_reset"
+ORG_FOLDER_CREATED = "folder_created"
+ORG_FOLDER_DELETED = "folder_deleted"
+ORG_FOLDER_MOVED = "folder_moved"
 
 _ACTION_VERB = {
     "created": "created",

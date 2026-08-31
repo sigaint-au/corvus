@@ -23,6 +23,8 @@ from werkzeug.exceptions import Forbidden, NotFound
 
 import audit
 import crypto
+from lib.folders import split_key
+from secret_svc.folder_ops import ensure_path
 from secret_svc.secret_ops import _upsert_secret
 
 log = logging.getLogger(__name__)
@@ -74,6 +76,8 @@ def upsert_secret_command(
         Forbidden: when the upsert was blocked by RLS (``_upsert_secret``
             returned a null id).
     """
+    folder_path, _ = split_key(key)
+    folder_id = ensure_path(cur, project_id, folder_path) if folder_path else None
     sid, was_new = _upsert_secret(
         cur,
         project_id,
@@ -86,6 +90,7 @@ def upsert_secret_command(
         set_requires_approval=set_requires_approval,
         access_mode=access_mode,
         set_access_mode=set_access_mode,
+        folder_id=folder_id,
     )
     if not sid:
         raise Forbidden("You don't have permission to do that")

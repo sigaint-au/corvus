@@ -8,7 +8,7 @@
 {% if back_team_id and back_team_name %}
 {% set crumbs = crumbs + [(back_team_name, url_for('team_detail', team_id=back_team_id))] %}
 {% endif %}
-{% if scope_kind in ('project', 'secret') and scope_label %}
+{% if scope_kind in ('project', 'secret', 'folder') and scope_label %}
 {% set crumbs = crumbs + [(scope_label, none)] %}
 {% endif %}
 {% set breadcrumbs = crumbs + [('Role bindings', none)] %}
@@ -55,6 +55,17 @@
         {% for s in secrets %}
         <option value="{{ s.id }}" {% if scope_id and scope_id|string == s.id|string %}selected{% endif %}>
           {% if s.project_name %}{{ s.project_name }} / {% endif %}{{ s.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    {% elif scope_kind == 'folder' %}
+    <label>Folder
+      <select name="scope_id">
+        <option value="">Choose a folder…</option>
+        {% for f in folders %}
+        <option value="{{ f.id }}" {% if scope_id and scope_id|string == f.id|string %}selected{% endif %}>
+          {% if f.project_name %}{{ f.project_name }} / {% endif %}{{ f.name }}
         </option>
         {% endfor %}
       </select>
