@@ -38,6 +38,8 @@ class TestSecrets:
         if total is None:
             total = len(rows)
         fo = [project, {'w': can_write}, {'a': can_admin}, {'r': team_role}, {'g': False}]
+        if tab == 'secrets':
+            fo.append({'has': False})  # no folders → keep the flat secrets table
         if tab in ('secrets', 'audit'):
             fo.append({'n': total})
         if tab == 'secrets':

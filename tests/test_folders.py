@@ -209,3 +209,51 @@ def test_detail_passes_folder_params():
     assert "list_children" in src
     assert "current_folder" in src
     assert "folder_crumbs" in src
+    assert "tree_view" in src
+    assert "EXISTS(SELECT 1 FROM api.folders" in src
+
+
+def test_new_folder_dialog_renders_at_project_root():
+    """+ New folder must open a dialog even when not already inside a folder."""
+    import app as store
+    from flask import render_template
+
+    project = {"id": str(uuid4()), "name": "App"}
+    with store.app.test_request_context(f"/projects/{project['id']}?tab=secrets"):
+        html = render_template(
+            "partials/project_secrets.html",
+            project=project,
+            secrets=[],
+            search_q="",
+            current_folder=None,
+            folder_rows=[],
+            tree_secrets=[],
+            tree_view=False,
+            can_write=True,
+            due_overdue=[],
+            due_soon=[],
+            rotation_overdue=[],
+            rotation_soon=[],
+        )
+    assert 'data-open-dialog="new-folder-dlg"' in html
+    assert 'id="new-folder-dlg"' in html
+    assert 'name="parent_id"' not in html
+    assert "+ New folder" in html
+    fid = str(uuid4())
+    with store.app.test_request_context(f"/projects/{project['id']}?tab=secrets&folder={fid}"):
+        nested = render_template(
+            "partials/project_secrets.html",
+            project=project,
+            secrets=[],
+            search_q="",
+            current_folder={"id": fid, "path": "prod", "name": "prod"},
+            folder_rows=[],
+            tree_secrets=[],
+            tree_view=True,
+            can_write=True,
+            due_overdue=[],
+            due_soon=[],
+            rotation_overdue=[],
+            rotation_soon=[],
+        )
+    assert f'name="parent_id" value="{fid}"' in nested

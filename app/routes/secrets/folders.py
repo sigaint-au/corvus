@@ -59,7 +59,7 @@ def folder_create(project_id):
             create_folder(cur, project_id, path, actor_email=session.get("email"))
             conn.commit()
             flash("Folder created", "ok")
-        except HTTPException as e:
+        except (HTTPException, ValueError) as e:
             conn.rollback()
             flash(str(e), "error")
     return _secrets_redirect_or_partial(project_id, folder_id=parent_id)

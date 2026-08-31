@@ -205,9 +205,11 @@ def project_detail(project_id):
         due_overdue, due_soon, rotation_overdue, rotation_soon = [], [], [], []
         current_folder = None
         folder_crumbs = []
+        tree_view = False
         if tab == "secrets":
             if folder_id:
                 secret_rows, secrets_pager, folder_rows, tree_secrets = _list_folder_children(cur, project_id, folder_id, page, q)
+                tree_view = True
                 cur.execute("SELECT id, name, path, parent_id FROM api.folders WHERE id = %s", (str(folder_id),))
                 current_folder = cur.fetchone()
                 if current_folder:
@@ -226,8 +228,20 @@ def project_detail(project_id):
                         )
                         id_map = {str(r["path"]): str(r["id"]) for r in cur.fetchall() or []}
                     folder_crumbs = [(p, id_map.get(pp)) for p, pp in parent_paths]
-            else:
+            elif q:
                 secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
+            else:
+                cur.execute(
+                    "SELECT EXISTS(SELECT 1 FROM api.folders WHERE project_id = %s) AS has",
+                    (str(project_id),),
+                )
+                if bool((cur.fetchone() or {}).get("has")):
+                    secret_rows, secrets_pager, folder_rows, tree_secrets = _list_folder_children(
+                        cur, project_id, None, page, q
+                    )
+                    tree_view = True
+                else:
+                    secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
             # Expiry dashboard: scan live secrets for this project (capped)
             cur.execute(
                 """
@@ -503,8 +517,9 @@ def project_detail(project_id):
         "rotation_soon": rotation_soon if tab == "secrets" else [],
         "current_folder": current_folder,
         "folder_crumbs": folder_crumbs,
-        "folder_rows": folder_rows if folder_id else [],
-        "tree_secrets": tree_secrets if folder_id else [],
+        "folder_rows": folder_rows,
+        "tree_secrets": tree_secrets,
+        "tree_view": tree_view,
         "public_base_url": public_base,
         "max_expiry_days": config.MAX_EXPIRY_DAYS,
         "grant_minutes": settings_svc.reveal_access_grant_minutes(),
