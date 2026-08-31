@@ -117,7 +117,7 @@
           <td class="acts">
             {% if can_edit_access and delete_endpoint %}
             <form method="post"
-                  action="{% if delete_team_id is defined and delete_team_id %}{{ url_for(delete_endpoint, team_id=delete_team_id, binding_id=b.id) }}{% elif delete_secret_id is defined and delete_secret_id %}{{ url_for(delete_endpoint, project_id=delete_project_id, secret_id=delete_secret_id, grant_id=b.id) }}{% else %}{{ url_for(delete_endpoint, project_id=delete_project_id, binding_id=b.id) }}{% endif %}"
+                   action="{% if delete_team_id is defined and delete_team_id %}{{ url_for(delete_endpoint, team_id=delete_team_id, binding_id=b.id) }}{% elif delete_secret_id is defined and delete_secret_id %}{{ url_for(delete_endpoint, project_id=delete_project_id, secret_id=delete_secret_id, grant_id=b.id) }}{% elif delete_folder_id is defined and delete_folder_id %}{{ url_for(delete_endpoint, project_id=delete_project_id, folder_id=delete_folder_id, binding_id=b.id) }}{% else %}{{ url_for(delete_endpoint, project_id=delete_project_id, binding_id=b.id) }}{% endif %}"
                   class="inline"
                   onsubmit="return confirm('Remove this binding?')">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">

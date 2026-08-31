@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import crypto
 from core import config
+from secret_svc.folders import materialize_folder_path, parse_secret_path
 from secret_svc.secret_kinds import expires_status, secret_due_status
 from ui import paging
 
@@ -498,6 +499,13 @@ def _upsert_secret(
 
     kind = normalize_kind(kind)
     mode = _parse_access_mode(access_mode)
+    folder_segments, _ = parse_secret_path(key)
+    folder_id = materialize_folder_path(cur, str(project_id), folder_segments)
+    conflict_target = (
+        "(project_id, key) WHERE folder_id IS NULL AND deleted_at IS NULL"
+        if folder_id is None
+        else "(project_id, folder_id, key) WHERE folder_id IS NOT NULL AND deleted_at IS NULL"
+    )
     if already_enc:
         enc = value_or_enc
         provider = crypto_provider or "master"
@@ -508,14 +516,15 @@ def _upsert_secret(
     cur.execute(
         """
         SELECT id FROM api.secrets
-        WHERE project_id = %s AND key = %s AND deleted_at IS NULL
+        WHERE project_id = %s AND folder_id IS NOT DISTINCT FROM %s
+          AND key = %s AND deleted_at IS NULL
         """,
-        (str(project_id), key),
+        (str(project_id), folder_id, key),
     )
     existing = cur.fetchone()
     if touch_meta:
-        cols = ["project_id", "key", "value_enc", "note", "expires_at", "kind", "crypto_provider"]
-        vals = [str(project_id), key, enc, note or "", expires_at, kind, provider]
+        cols = ["project_id", "folder_id", "key", "value_enc", "note", "expires_at", "kind", "crypto_provider"]
+        vals = [str(project_id), folder_id, key, enc, note or "", expires_at, kind, provider]
         updates = [
             "value_enc = EXCLUDED.value_enc",
             "note = EXCLUDED.note",
@@ -539,7 +548,7 @@ def _upsert_secret(
                 INSERT INTO api.secrets
                   ({col_sql})
                 VALUES ({placeholders})
-                ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+                ON CONFLICT {conflict_target} DO UPDATE
                   SET {upd_sql}
                 RETURNING id
                 """,
@@ -547,10 +556,10 @@ def _upsert_secret(
         )
     else:
         cur.execute(
-            """
-            INSERT INTO api.secrets (project_id, key, value_enc, note, kind, crypto_provider)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+            f"""
+            INSERT INTO api.secrets (project_id, folder_id, key, value_enc, note, kind, crypto_provider)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT {conflict_target} DO UPDATE
               SET value_enc = EXCLUDED.value_enc,
                   crypto_provider = EXCLUDED.crypto_provider,
                   note = CASE WHEN EXCLUDED.note = '' THEN api.secrets.note
@@ -558,7 +567,7 @@ def _upsert_secret(
                   kind = EXCLUDED.kind
             RETURNING id
             """,
-            (str(project_id), key, enc, note or "", kind, provider),
+            (str(project_id), folder_id, key, enc, note or "", kind, provider),
         )
     row = cur.fetchone()
     return (row["id"] if row else None), (existing is None)

@@ -27,6 +27,13 @@ from .history import (
     rollback_secret,
     secret_history,
 )
+from .folders import (
+    add_folder_access_binding,
+    delete_folder,
+    delete_folder_access_binding,
+    folder_view,
+    update_folder_access,
+)
 from .list import (
     bulk_trash,
     purge_secret,
@@ -82,6 +89,15 @@ def register(app):
         rollback_secret
     )
     app.post("/projects/<uuid:project_id>/secrets/bulk")(bulk_secrets)
+    app.get("/projects/<uuid:project_id>/folders/<uuid:folder_id>")(folder_view)
+    app.post("/projects/<uuid:project_id>/folders/<uuid:folder_id>/access")(update_folder_access)
+    app.post("/projects/<uuid:project_id>/folders/<uuid:folder_id>/access/bindings")(
+        add_folder_access_binding
+    )
+    app.post(
+        "/projects/<uuid:project_id>/folders/<uuid:folder_id>/access/bindings/<uuid:binding_id>/delete"
+    )(delete_folder_access_binding)
+    app.post("/projects/<uuid:project_id>/folders/<uuid:folder_id>/delete")(delete_folder)
     app.post("/trash/bulk")(bulk_trash)
     app.route("/projects/<uuid:project_id>/secrets/new", methods=["GET", "POST"])(secret_new)
     app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access")(update_secret_access)

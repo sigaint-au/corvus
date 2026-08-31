@@ -46,10 +46,24 @@ def test_migrations_ship_in_order():
     assert files == [
         "0001_init.sql",
         "0002_cli_session_tokens.sql",
+        "0003_secret_folders.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
         assert name[4] == "_"
+
+
+def test_secret_folder_migration_covers_schema_and_rls():
+    sql = (migrations.MIGRATIONS_DIR / "0003_secret_folders.sql").read_text()
+    for fragment in (
+        "CREATE TABLE IF NOT EXISTS api.folders",
+        "folder_id",
+        "scope_kind = 'folder'",
+        "api.rbac_scope_chain",
+        "api.can_access_secret_row",
+        "validate_binding_scope",
+    ):
+        assert fragment in sql
 
 
 def test_squashed_baseline_contains_all_schema_layers():

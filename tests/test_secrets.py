@@ -217,6 +217,16 @@ class TestSecrets:
         r = self.client.post(f'/projects/{self.pid}/secrets', data={'key': '', 'value': 'x'}, follow_redirects=False)
         assert r.status_code == 302
 
+    def test_create_secret_rejects_invalid_path_before_db(self):
+        with patch.object(db, 'as_user') as as_user:
+            r = self.client.post(
+                f'/projects/{self.pid}/secrets',
+                data={'key': 'folder//secret', 'value': 'x'},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        as_user.assert_not_called()
+
     def test_delete_secret(self):
         sid = uuid4()
         conn, cur = _conn(fetchone={'id': sid, 'key': 'API_KEY'})

@@ -31,6 +31,7 @@ from secret_svc.secret_ops import (
     _parse_requires_approval,
     compose_secret_value,
 )
+from secret_svc.folders import parse_secret_path
 
 from .helpers import (
     _reveal_toggle_html,
@@ -63,6 +64,11 @@ def create_secret(project_id):
     access_mode = _parse_access_mode(request.form)
     if not key or value is None:
         flash("Key and value required", "error")
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+    try:
+        parse_secret_path(key)
+    except ValueError:
+        flash("Secret key contains an invalid path", "error")
         return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
     try:
         expires_at = _parse_expires_at(request.form)
@@ -395,6 +401,21 @@ def secret_new(project_id):
     kv_pairs = parse_kv_lines(value) if kind == "kv" else []
     if not key or not value:
         flash("Key and value are required", "error")
+        return render_template(
+            "secret_new.html",
+            **_new_ctx(
+                kind=kind,
+                key=key,
+                note=note,
+                expires_at=request.form.get("expires_at") or "",
+                kv_pairs=kv_pairs or [("", "")],
+                access_mode=_parse_access_mode(request.form),
+            ),
+        ), 400
+    try:
+        parse_secret_path(key)
+    except ValueError:
+        flash("Secret key contains an invalid path", "error")
         return render_template(
             "secret_new.html",
             **_new_ctx(
