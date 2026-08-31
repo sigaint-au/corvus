@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from flask import jsonify, request
+from werkzeug.exceptions import HTTPException
 
 from core import db
 from lib.validate import is_uuid
@@ -98,6 +99,9 @@ def mgmt_create_folder(project_ref):
         except ValueError as exc:
             conn.rollback()
             return jsonify({"error": str(exc)}), 400
+        except HTTPException as exc:
+            conn.rollback()
+            return jsonify({"error": exc.description}), exc.code
         except Exception as exc:
             conn.rollback()
             if "folder path" in str(exc):
@@ -130,6 +134,9 @@ def mgmt_move_folder(project_ref, folder_ref):
         except ValueError as exc:
             conn.rollback()
             return jsonify({"error": str(exc)}), 400
+        except HTTPException as exc:
+            conn.rollback()
+            return jsonify({"error": exc.description}), exc.code
     return jsonify({"ok": True, "folder_id": str(folder["id"]), "path": new_path})
 
 
@@ -151,6 +158,9 @@ def mgmt_delete_folder(project_ref, folder_ref):
                 cur, str(folder["id"]), project_id=pid, recursive=recursive
             )
             conn.commit()
+        except HTTPException as exc:
+            conn.rollback()
+            return jsonify({"error": exc.description}), exc.code
         except Exception as exc:
             conn.rollback()
             if "not empty" in str(exc):

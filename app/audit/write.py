@@ -93,6 +93,7 @@ def log_org(
     team_id=None,
     project_id=None,
     actor_email: str | None = None,
+    data: dict | None = None,
 ):
     """Insert a membership/settings audit row via private.audit_org.
 
@@ -103,6 +104,7 @@ def log_org(
         team_id: Optional team UUID related to the event.
         project_id: Optional project UUID related to the event.
         actor_email: Optional actor email override; defaults to session email.
+        data: Optional structured payload merged into the webhook event.
 
     Returns:
         None. The audit row is written via a side-effect SQL call.
@@ -116,7 +118,7 @@ def log_org(
     cur.execute(
         """
         SELECT private.audit_org(
-          %s::uuid, %s::uuid, %s, %s, %s
+          %s::uuid, %s::uuid, %s, %s, %s, %s::jsonb
         )
         """,
         (
@@ -125,6 +127,7 @@ def log_org(
             action,
             detail or "",
             email or "",
+            json.dumps(data) if data else None,
         ),
     )
     _emit_console(

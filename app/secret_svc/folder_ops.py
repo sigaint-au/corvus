@@ -59,6 +59,16 @@ def list_children(cur, project_id, folder_id, page, q):
              str(project_id), folder_param),
         )
     total = int((cur.fetchone() or {}).get("n") or 0)
+    # Total folders at this level, so the combined folder+secret window can be
+    # split correctly when the folder count crosses a page boundary.
+    cur.execute(
+        """
+        SELECT count(*) AS n FROM api.folders f
+        WHERE f.project_id = %s AND f.parent_id IS NOT DISTINCT FROM %s
+        """,
+        (str(project_id), folder_param),
+    )
+    total_folders = int((cur.fetchone() or {}).get("n") or 0)
     pager = paging.page_window(total, page)
     pager.update(
         endpoint="project_detail",
@@ -68,25 +78,28 @@ def list_children(cur, project_id, folder_id, page, q):
         q=q,
     )
 
+    # Folders occupy the leading slots of the combined window.
+    folder_offset = min(pager["offset"], total_folders)
+    folder_slots = max(0, min(pager["limit"], total_folders - pager["offset"]))
     folders = []
-    cur.execute(
-        """
-        SELECT f.id, f.name, f.path, f.parent_id,
-               (SELECT count(*) FROM api.secrets s
-                WHERE s.folder_id = f.id AND s.deleted_at IS NULL) AS secret_count,
-               (SELECT count(*) FROM api.folders c WHERE c.parent_id = f.id) AS child_count
-        FROM api.folders f
-        WHERE f.project_id = %s AND f.parent_id IS NOT DISTINCT FROM %s
-        ORDER BY f.name
-        LIMIT %s OFFSET %s
-        """,
-        (str(project_id), folder_param, pager["limit"], pager["offset"]),
-    )
-    folders = cur.fetchall() or []
+    if folder_slots > 0:
+        cur.execute(
+            """
+            SELECT f.id, f.name, f.path, f.parent_id,
+                   (SELECT count(*) FROM api.secrets s
+                    WHERE s.folder_id = f.id AND s.deleted_at IS NULL) AS secret_count,
+                   (SELECT count(*) FROM api.folders c WHERE c.parent_id = f.id) AS child_count
+            FROM api.folders f
+            WHERE f.project_id = %s AND f.parent_id IS NOT DISTINCT FROM %s
+            ORDER BY f.name
+            LIMIT %s OFFSET %s
+            """,
+            (str(project_id), folder_param, folder_slots, folder_offset),
+        )
+        folders = cur.fetchall() or []
 
-    folder_count = len(folders)
-    secret_limit = max(0, pager["limit"] - folder_count)
-    secret_offset = max(0, pager["offset"] - folder_count)
+    secret_limit = pager["limit"] - folder_slots
+    secret_offset = max(0, pager["offset"] - total_folders)
 
     from secret_svc.secret_kinds import expires_status, secret_due_status
 
@@ -160,6 +173,7 @@ def create_folder(cur, project_id, path, *, actor_email=None):
         action="folder_created",
         detail=f"folder={fid} path={path}",
         actor_email=actor_email,
+        data={"folder_id": fid, "path": path},
     )
     return fid
 
@@ -167,10 +181,11 @@ def create_folder(cur, project_id, path, *, actor_email=None):
 def delete_folder(cur, folder_id, *, project_id, recursive=False, actor_email=None):
     """Delete a folder; recursive trashes descendant secrets first."""
     cur.execute(
-        "SELECT id FROM api.folders WHERE id = %s AND project_id = %s",
+        "SELECT id, path FROM api.folders WHERE id = %s AND project_id = %s",
         (str(folder_id), str(project_id)),
     )
-    if not cur.fetchone():
+    folder = cur.fetchone()
+    if not folder:
         raise NotFound("Folder not found")
 
     cur.execute(
@@ -246,14 +261,18 @@ def delete_folder(cur, folder_id, *, project_id, recursive=False, actor_email=No
         action="folder_deleted",
         detail=f"folder={folder_id} recursive={recursive}",
         actor_email=actor_email,
+        data={
+            "folder_id": str(folder_id),
+            "path": str(folder["path"]),
+            "recursive": recursive,
+        },
     )
 
 
 def move_folder(cur, folder_id, new_path, *, project_id, actor_email=None):
     """Rename/move a folder, rewriting descendant paths and secret keys."""
-    new_path = new_path.strip("/")
-    from lib.folders import validate_path
-    validate_path(new_path)
+    from lib.folders import segments, validate_path
+    new_path = validate_path(new_path.strip("/"))
 
     cur.execute(
         "SELECT id, path, project_id FROM api.folders WHERE id = %s",
@@ -266,12 +285,16 @@ def move_folder(cur, folder_id, new_path, *, project_id, actor_email=None):
     if old_path == new_path:
         return str(folder_id)
 
+    # Moving a folder inside its own subtree would orphan it.
+    if new_path.startswith(old_path + "/"):
+        raise Forbidden("Cannot move a folder inside itself")
+
     # Check for collisions
     prefix_len = len(old_path) + 1
     cur.execute(
         """
         SELECT count(*) AS n FROM api.secrets
-        WHERE project_id = %s AND deleted_at IS NULL
+        WHERE project_id = %s
           AND (key = %s OR key LIKE %s)
           AND key != %s
         """,
@@ -288,26 +311,42 @@ def move_folder(cur, folder_id, new_path, *, project_id, actor_email=None):
     if (cur.fetchone() or {}).get("n", 0) > 0:
         raise Forbidden("Target path already exists as a folder")
 
-    # Rewrite folder paths (descendants)
+    # Target ancestors must exist (folder move does not create them).
+    segs = segments(new_path)
+    new_parent_id = None
+    if len(segs) > 1:
+        parent_path = "/".join(segs[:-1])
+        cur.execute(
+            "SELECT id FROM api.folders WHERE project_id = %s AND path = %s",
+            (str(project_id), parent_path),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise Forbidden("Target parent folder does not exist")
+        new_parent_id = row["id"]
+
+    # Rewrite folder paths + reparent the moved folder
+    new_name = segs[-1]
     cur.execute(
         """
         UPDATE api.folders
         SET path = %s || substr(path, %s),
             name = CASE WHEN id = %s THEN %s ELSE name END,
+            parent_id = CASE WHEN id = %s THEN %s ELSE parent_id END,
             updated_at = now()
         WHERE project_id = %s
           AND (path = %s OR path LIKE %s)
         """,
-        (new_path, prefix_len, str(folder_id), new_path.rsplit("/", 1)[-1] or new_path,
-         str(project_id), old_path, f"{old_path}/%"),
+        (new_path, prefix_len, str(folder_id), new_name, str(folder_id),
+         new_parent_id, str(project_id), old_path, f"{old_path}/%"),
     )
 
-    # Rewrite secret keys
+    # Rewrite secret keys — live and trashed, so restore stays consistent.
     cur.execute(
         """
         UPDATE api.secrets
         SET key = %s || substr(key, %s)
-        WHERE project_id = %s AND deleted_at IS NULL
+        WHERE project_id = %s
           AND (key = %s OR key LIKE %s)
         """,
         (new_path, prefix_len, str(project_id), old_path, f"{old_path}/%"),
@@ -319,5 +358,10 @@ def move_folder(cur, folder_id, new_path, *, project_id, actor_email=None):
         action="folder_moved",
         detail=f"folder={folder_id} from={old_path} to={new_path}",
         actor_email=actor_email,
+        data={
+            "folder_id": str(folder_id),
+            "old_path": old_path,
+            "path": new_path,
+        },
     )
     return str(folder_id)

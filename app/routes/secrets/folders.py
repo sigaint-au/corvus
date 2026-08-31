@@ -13,7 +13,10 @@ from .helpers import _secrets_redirect_or_partial
 def folder_list(project_id):
     """Render one folder level (child folders + leaf secrets) as a partial."""
     folder_id = request.args.get("folder") or None
-    page = int(request.args.get("page") or 1)
+    try:
+        page = int(request.args.get("page") or 1)
+    except ValueError:
+        page = 1
     q = (request.args.get("q") or "").strip()
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         rows, pager, folder_rows, tree_secrets = list_children(cur, project_id, folder_id, page, q)

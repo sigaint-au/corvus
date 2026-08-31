@@ -69,7 +69,7 @@ CREATE OR REPLACE FUNCTION private.ensure_folder_path(
   p_path    text,
   p_actor   uuid DEFAULT NULL
 ) RETURNS uuid
-  LANGUAGE plpgsql STRICT
+  LANGUAGE plpgsql
   SECURITY DEFINER
   SET row_security = off
 AS $$
@@ -110,6 +110,65 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION private.ensure_folder_path(uuid, text, uuid) TO authenticator, authenticated;
+
+-- ── machine_upsert_enc: materialize folders for slashed keys ────────────
+-- CREATE OR REPLACE of the 0001 definition; adds folder_id so ESO/machine
+-- writes land in the tree like UI writes do.
+CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
+  p_project uuid,
+  p_hash text,
+  p_key text,
+  p_value_enc text,
+  p_note text,
+  p_kind text DEFAULT 'plain',
+  p_expires_at timestamptz DEFAULT NULL,
+  p_set_expires boolean DEFAULT false,
+  p_crypto_provider text DEFAULT 'master'
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, api, private
+SET row_security = off AS $$
+DECLARE
+  sid uuid;
+  fid uuid;
+  k text := COALESCE(NULLIF(btrim(p_kind), ''), 'plain');
+BEGIN
+  IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
+    RETURN NULL;
+  END IF;
+  IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
+    RETURN NULL;
+  END IF;
+  IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
+    RETURN NULL;
+  END IF;
+  IF k NOT IN ('plain', 'database', 'certificate', 'ssh', 'kv') THEN
+    k := 'plain';
+  END IF;
+  fid := private.ensure_folder_path(
+    p_project, substring(p_key FROM '^(.+)/[^/]+$'), NULL
+  );
+  INSERT INTO api.secrets (project_id, key, value_enc, note, kind, expires_at, crypto_provider, folder_id)
+  VALUES (
+    p_project, p_key, p_value_enc, COALESCE(p_note, ''), k,
+    CASE WHEN p_set_expires THEN p_expires_at ELSE NULL END,
+    CASE WHEN p_crypto_provider IN ('master', 'project') THEN p_crypto_provider ELSE 'master' END,
+    fid
+  )
+  ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
+    SET value_enc = EXCLUDED.value_enc,
+        note = EXCLUDED.note,
+        kind = EXCLUDED.kind,
+        crypto_provider = EXCLUDED.crypto_provider,
+        folder_id = EXCLUDED.folder_id,
+        expires_at = CASE
+          WHEN p_set_expires THEN p_expires_at
+          ELSE api.secrets.expires_at
+        END
+  RETURNING id INTO sid;
+  RETURN sid;
+END;
+$$;
 
 -- ── Backfill folder_id for existing secrets with '/' in key ─────────────
 DO $$ BEGIN
@@ -306,4 +365,63 @@ SET row_security = off AS $$
           AND api.can_admin_project(f.project_id)
       )
     );
+$$;
+
+-- ── audit_org: optional structured p_data, merged into webhook payload ──
+-- 6th optional arg keeps every existing call site working. The org-audit
+-- webhook trigger merges it into the jsonb payload so folder events carry
+-- folder_id / path / old_path as real fields instead of only detail text.
+CREATE OR REPLACE FUNCTION private.audit_org(
+  p_team uuid,
+  p_project uuid,
+  p_action text,
+  p_detail text DEFAULT '',
+  p_actor_email text DEFAULT NULL,
+  p_data jsonb DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private, pg_catalog AS $$
+DECLARE
+  uid uuid;
+  email text;
+BEGIN
+  IF p_action IS NULL OR btrim(p_action) = '' THEN
+    RAISE EXCEPTION 'invalid org audit action';
+  END IF;
+  BEGIN
+    uid := NULLIF(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid;
+  EXCEPTION WHEN others THEN
+    uid := NULL;
+  END;
+  email := COALESCE(
+    (SELECT u.email FROM private.users u WHERE u.id = uid),
+    NULLIF(p_actor_email, ''),
+    ''
+  );
+  INSERT INTO api.org_audit (team_id, project_id, action, detail, user_id, actor_email)
+  VALUES (p_team, p_project, p_action, COALESCE(p_detail, ''), uid, email);
+END;
+$$;
+
+ALTER TABLE api.org_audit ADD COLUMN IF NOT EXISTS data jsonb;
+
+CREATE OR REPLACE FUNCTION private.tr_webhook_org_audit()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = api, private, pg_catalog AS $$
+BEGIN
+    PERFORM private.enqueue_webhooks(
+        CASE WHEN NEW.project_id IS NOT NULL THEN 'project' ELSE 'team' END,
+        COALESCE(NEW.project_id, NEW.team_id),
+        'org.' || NEW.action,
+        jsonb_build_object(
+            'event', 'org.' || NEW.action,
+            'team_id', NEW.team_id,
+            'project_id', NEW.project_id,
+            'action', NEW.action,
+            'detail', NEW.detail,
+            'actor_email', NEW.actor_email,
+            'timestamp', NEW.created_at
+        ) || COALESCE(NEW.data, '{}'::jsonb)
+    );
+    RETURN NEW;
+END;
 $$;

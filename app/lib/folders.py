@@ -2,7 +2,6 @@
 import re
 
 _SEGMENT_RE = re.compile(r'^[A-Za-z0-9._-]{1,64}$')
-_HAS_ALNUM_RE = re.compile(r'[A-Za-z0-9]')
 _MAX_DEPTH = 16
 
 
@@ -42,9 +41,7 @@ def validate_path(path: str) -> str:
     if len(segs) > _MAX_DEPTH:
         raise ValueError(f'Path exceeds maximum depth of {_MAX_DEPTH}')
     for s in segs:
-        if not _SEGMENT_RE.match(s):
-            raise ValueError(f'Invalid segment: {s!r}')
-        if '..' in s or not _HAS_ALNUM_RE.search(s):
+        if not _SEGMENT_RE.match(s) or s in ('.', '..'):
             raise ValueError(f'Invalid segment: {s!r}')
     if len(segs) == 1 and path != norm:
         raise ValueError(f'Invalid path: {path!r}')

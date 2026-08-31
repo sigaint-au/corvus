@@ -76,6 +76,8 @@ def upsert_secret_command(
         Forbidden: when the upsert was blocked by RLS (``_upsert_secret``
             returned a null id).
     """
+    from lib.folders import validate_key
+    validate_key(key)
     folder_path, _ = split_key(key)
     folder_id = ensure_path(cur, project_id, folder_path) if folder_path else None
     sid, was_new = _upsert_secret(

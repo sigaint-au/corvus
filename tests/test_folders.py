@@ -40,11 +40,17 @@ def test_join_and_segments():
 @pytest.mark.parametrize(
     "bad",
     ["", "/a", "a/", "a//b", "a/./b", "a/../b", "..", ".", "a b", "a b/c",
-     "/".join(f"s{i}" for i in range(17)), "a..", "-", "_", "heavy/slash/../x"],
+     "/".join(f"s{i}" for i in range(17)), "heavy/slash/../x"],
 )
 def test_validate_path_rejects(bad):
     with pytest.raises(ValueError):
         validate_path(bad)
+
+
+def test_validate_path_allows_dash_underscore_dots():
+    assert validate_path("-") == "-"
+    assert validate_path("_") == "_"
+    assert validate_path("a..") == "a.."
 
 
 def test_validate_path_normalizes_and_allows():
@@ -143,14 +149,14 @@ def test_create_folder_rejects_bad_path():
 
 def test_delete_folder_refuses_nonempty_without_recursive():
     cur = MagicMock()
-    cur.fetchone.side_effect = [{"id": "f1"}, {"n": 3}, {"n": 0}]
+    cur.fetchone.side_effect = [{"id": "f1", "path": "prod"}, {"n": 3}, {"n": 0}]
     with pytest.raises(Forbidden):
         delete_folder(cur, "f1", project_id=uuid4(), actor_email="t@e.st")
 
 
 def test_delete_empty_folder_ok():
     cur = MagicMock()
-    cur.fetchone.side_effect = [{"id": "f1"}, {"n": 0}, {"n": 0}]
+    cur.fetchone.side_effect = [{"id": "f1", "path": "prod"}, {"n": 0}, {"n": 0}]
     delete_folder(cur, "f1", project_id=uuid4(), actor_email="t@e.st")
     executed = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
     assert "DELETE FROM api.folders WHERE id = %s" in executed
@@ -158,7 +164,7 @@ def test_delete_empty_folder_ok():
 
 def test_recursive_delete_trashes_descendants():
     cur = MagicMock()
-    cur.fetchone.side_effect = [{"id": "f1"}, {"n": 5}, {"n": 1}]
+    cur.fetchone.side_effect = [{"id": "f1", "path": "prod"}, {"n": 5}, {"n": 1}]
     cur.fetchall.return_value = [{"id": "abc"}]
     delete_folder(cur, "f1", project_id=uuid4(), recursive=True, actor_email="t@e.st")
     executed = "\n".join(str(c.args[0]) for c in cur.execute.call_args_list)
