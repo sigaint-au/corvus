@@ -32,6 +32,10 @@ def due_notifications(cur, days: int = 14) -> dict[str, list[str]]:
         WHERE s.deleted_at IS NULL
           AND s.expires_at IS NOT NULL
           AND s.expires_at <= now() + (%s || ' days')::interval
+          AND NOT EXISTS (
+              SELECT 1 FROM api.secret_meta m
+              WHERE m.secret_id = s.id AND m.key IN ('exclude-due-notify', 'exclude_due_notify')
+          )
         ORDER BY s.expires_at, p.name, s.key
         LIMIT 500
         """,

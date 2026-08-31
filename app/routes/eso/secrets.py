@@ -35,6 +35,7 @@ def eso_get_secret(project_ref, key):
 
     Example:
         GET /eso/v1/projects/<project_ref>/secrets/<key>
+        GET /eso/v1/projects/<project_ref>/secrets/<key>?meta=1
         Authorization: Bearer ss_… | pat_…
     """
     auth, err = _require_auth()
@@ -51,12 +52,32 @@ def eso_get_secret(project_ref, key):
             pid = _resolve_project_ref(cur, project_ref, kind=kind, thash=thash)
             if not pid:
                 return jsonify({"error": "unauthorized"}), 401
-            # Defense in depth: reject service-read tokens at the app layer too.
+            meta, _q = _meta_list_query()
             cur.execute(
                 "SELECT private.machine_role(%s::uuid, %s) AS role",
                 (pid, thash),
             )
             mrole = (cur.fetchone() or {}).get("role")
+            if meta:
+                if mrole is None:
+                    return jsonify({"error": "unauthorized"}), 401
+                cur.execute(
+                    "SELECT * FROM private.machine_get_row(%s::uuid, %s, %s)",
+                    (pid, thash, key),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"error": "not found"}), 404
+                actor = _machine_actor(cur, pid, thash)
+                _audit(
+                    cur,
+                    project_id=pid,
+                    action="exported",
+                    secret_key=f"machine/meta {row.get('key') or key}",
+                    actor_email=actor,
+                )
+                conn.commit()
+                return jsonify(_meta_item(row))
             if mrole == "service-read":
                 return jsonify({"error": "token does not have reveal access"}), 403
             cur.execute(
@@ -99,6 +120,16 @@ def eso_get_secret(project_ref, key):
         if not row:
             return jsonify({"error": "not found"}), 404
         row = dict(row)
+        meta, _q = _meta_list_query()
+        if meta:
+            _audit(
+                cur,
+                project_id=pid,
+                action="exported",
+                secret_key=row.get("key") or key,
+            )
+            conn.commit()
+            return jsonify(_meta_item(row))
         # PAT human path: reveal ACL or an approved time-limited grant
         cur.execute(
             "SELECT api.can_reveal_secret(%s) AS ok", (str(row["id"]),)

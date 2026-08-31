@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions use calendar versioning: `<year>-<month>-<day>.<build>` (pip-normalized
 form `YYYY.M.D.build`).
 
+## [2026-08-31.2] - 2026-08-31
+
+### Added
+
+- `notify-due` skips secrets with metadata key `exclude-due-notify` (any
+  value) — documented in the user guide Metadata section
+
+## [2026-08-31.1] - 2026-08-31
+
+### Added
+
+- `eso_get_secret` supports `?meta=1` — returns secret metadata without
+  revealing the value or recording a `revealed` audit event
+
 ## [2026-08-23.1] - 2026-08-23
 
 ### Changed

@@ -65,6 +65,68 @@ class TestESO:
         assert r.status_code == 403
         assert 'reveal' in r.get_json().get('error', '')
 
+    def test_get_meta_machine_ok(self):
+        """?meta=1 returns metadata without value, audited exported."""
+        sid = uuid4()
+        fo = [{'ok': True}, {'role': 'service-reveal'}, {'id': sid, 'key': 'KEY', 'value_enc': 'enc', 'note': 'n', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None, 'crypto_provider': 'master'}, {'label': 'eso:ss_testtoke'}]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, 'connect', return_value=conn):
+            r = self.client.get(f'/eso/v1/projects/{self.pid}/secrets/KEY?meta=1', headers={'Authorization': 'Bearer ss_testtoken'})
+        assert r.status_code == 200
+        body = r.get_json()
+        assert 'value' not in body
+        assert body['key'] == 'KEY'
+        assert body['id'] == str(sid)
+        assert body['note'] == 'n'
+        conn.commit.assert_called()
+        sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
+        assert 'audit_secret' in sql
+        audit_params = [c.args[1] for c in cur.execute.call_args_list if c.args and 'audit_secret' in str(c.args[0])]
+        assert any('exported' in p for p in audit_params)
+        assert any(any(isinstance(x, str) and 'machine/meta' in x for x in p) for p in audit_params)
+
+    def test_get_meta_machine_not_found(self):
+        """?meta=1 on missing key returns 404."""
+        fo = [{'ok': True}, {'role': 'service-reveal'}, None]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, 'connect', return_value=conn):
+            r = self.client.get(f'/eso/v1/projects/{self.pid}/secrets/MISSING?meta=1', headers={'Authorization': 'Bearer ss_x'})
+        assert r.status_code == 404
+
+    def test_get_meta_machine_service_read_allowed(self):
+        """?meta=1 allows service-read tokens (metadata only)."""
+        sid = uuid4()
+        fo = [{'ok': True}, {'role': 'service-read'}, {'id': sid, 'key': 'KEY', 'value_enc': 'enc', 'note': 'n', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None, 'crypto_provider': 'master'}, {'label': 'eso:ss_read'}]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, 'connect', return_value=conn):
+            r = self.client.get(f'/eso/v1/projects/{self.pid}/secrets/KEY?meta=1', headers={'Authorization': 'Bearer ss_read'})
+        assert r.status_code == 200
+        body = r.get_json()
+        assert 'value' not in body
+        assert body['key'] == 'KEY'
+
+    def test_get_meta_pat_ok(self):
+        """PAT ?meta=1 returns metadata without value, no approval flow."""
+        uid = str(uuid4())
+        sid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            {'id': sid, 'key': 'API_KEY', 'value_enc': 'enc', 'note': '', 'kind': 'plain', 'expires_at': None, 'created_at': None, 'updated_at': None, 'last_accessed_at': None},
+        ]
+        cur.fetchall.side_effect = [
+            [{'id': self.pid}],  # project name resolve
+        ]
+        with patch.object(pats, 'resolve', return_value=uid), patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get('/eso/v1/projects/ios-app/secrets/API_KEY?meta=1', headers={'Authorization': 'Bearer pat_testtoken1234567890'})
+        assert r.status_code == 200
+        body = r.get_json()
+        assert 'value' not in body
+        assert body['key'] == 'API_KEY'
+        assert body['id'] == str(sid)
+
     def test_list_service_read_forbidden(self):
         """service-read tokens must not bulk-list plaintext values."""
         fo = [{'ok': True}, {'label': 'eso:ss_ro'}, {'role': 'service-read'}]

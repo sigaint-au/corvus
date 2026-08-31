@@ -197,6 +197,10 @@ be overridden lower down.
   plus custom labels. Writers add secret-level keys that are not already
   defined on the team or project.
 
+  A secret with the key `exclude-due-notify` or `exclude_due_notify` (any
+  value) is omitted from the due/expired notification email (`notify-due`
+  command).
+
 ### Access (project admins)
 
 The **Access** tab on a secret controls:

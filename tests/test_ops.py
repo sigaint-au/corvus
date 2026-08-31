@@ -27,6 +27,19 @@ def test_due_notifications_groups_admin_and_token_owner():
     assert out["alice@example.com"] == ["Personal access token laptop (pat_abc) expires soon"]
 
 
+def test_due_notifications_excludes_secrets_with_exclude_due_notify_meta():
+    conn, cur = _conn()
+    cur.fetchall.side_effect = [
+        [{"email": "admin@example.com"}],
+        [], [], [], [],
+    ]
+    with conn.cursor() as c:
+        due_notifications(c, 14)
+    sql = " ".join(str(a.args[0]) for a in cur.execute.call_args_list if a.args)
+    assert "exclude-due-notify" in sql and "exclude_due_notify" in sql
+    assert "NOT EXISTS" in sql
+
+
 def test_send_due_notifications_dry_run_does_not_send():
     conn, cur = _conn()
     cur.fetchall.side_effect = [[{"email": "admin@example.com"}], [], [], [], []]
