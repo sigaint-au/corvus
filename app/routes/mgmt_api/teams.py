@@ -11,7 +11,6 @@ import audit
 from auth import authz, rbac_sync
 from core import config, db, settings_svc
 from lib import metadata
-from lib import metadata
 from lib.users import lookup_user_id
 
 from .helpers import (

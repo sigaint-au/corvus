@@ -60,7 +60,7 @@ def parse_secret_path(key: str) -> tuple[tuple[str, ...], str]:
 
 def visible_folder_paths(secret_rows) -> list[str]:
     """Return folder prefixes represented by rows already allowed by RLS."""
-    paths = set()
+    paths: set[str] = set()
     for row in secret_rows or []:
         parts = str(row.get("key") or "").split("/")
         paths.update("/".join(parts[:index]) for index in range(1, len(parts)))

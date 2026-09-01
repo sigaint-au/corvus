@@ -22,6 +22,7 @@ from secret_svc.commands import (
     update_secret_value_command,
     upsert_secret_command,
 )
+from secret_svc.folders import parse_secret_path
 from secret_svc.secret_kinds import (
     normalize_kind,
     parse_kv_lines,
@@ -32,7 +33,6 @@ from secret_svc.secret_ops import (
     _parse_requires_approval,
     compose_secret_value,
 )
-from secret_svc.folders import parse_secret_path
 
 from .helpers import (
     _reveal_toggle_html,
@@ -348,11 +348,11 @@ def generate_ssh_key(project_id):
     """Generate an SSH key pair server-side and return both keys."""
     key_type = (request.form.get("key_type") or "ed25519").strip()
     try:
-        from cryptography.hazmat.primitives.asymmetric import ed25519, rsa, ec
+        from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
         from cryptography.hazmat.primitives.serialization import (
             Encoding,
-            PrivateFormat,
             NoEncryption,
+            PrivateFormat,
             PublicFormat,
         )
 

@@ -46,7 +46,9 @@ class TestSecrets:
         if tab == 'settings':
             fa = [[]]
         elif tab == 'secrets':
-            fa = [rows, [], [], [], []]
+            # _load_secrets_page: secrets page + pins + grants; then detail.py: folders + expiry + rotation
+            fa = [rows, [], [], [], [], []] if rows else [rows, [], [], [], []]
+            # rows truthy → pins + grants executed; rows falsy → pins/grants skipped, one fewer fetchall
         elif tab in ('access', 'requests'):
             fa = [access_requests or []]
         else:

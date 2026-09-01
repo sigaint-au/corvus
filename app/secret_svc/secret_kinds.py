@@ -177,10 +177,10 @@ def extract_ssh_public_key(private_pem: str) -> str:
 
         raw = private_pem.encode("ascii")
         try:
-            key = load_ssh_private_key(raw, password=None)
+            key: object = load_ssh_private_key(raw, password=None)  # type: ignore[assignment]
         except ValueError:
-            key = load_pem_private_key(raw, password=None)
-        return key.public_key().public_bytes(Encoding.OpenSSH, PublicFormat.OpenSSH).decode("ascii")
+            key = load_pem_private_key(raw, password=None)  # type: ignore[assignment]
+        return key.public_key().public_bytes(Encoding.OpenSSH, PublicFormat.OpenSSH).decode("ascii")  # type: ignore[attr-defined]
     except Exception:
         return ""
 

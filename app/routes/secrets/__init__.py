@@ -22,12 +22,6 @@ from .crud import (
     update_secret_value,
     upsert_secret_meta,
 )
-from .history import (
-    hide_secret_version,
-    reveal_secret_version,
-    rollback_secret,
-    secret_history,
-)
 from .folders import (
     add_folder_access_binding,
     create_folder,
@@ -35,6 +29,12 @@ from .folders import (
     delete_folder_access_binding,
     folder_view,
     update_folder_access,
+)
+from .history import (
+    hide_secret_version,
+    reveal_secret_version,
+    rollback_secret,
+    secret_history,
 )
 from .list import (
     bulk_trash,

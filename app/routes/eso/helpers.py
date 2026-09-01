@@ -397,8 +397,8 @@ def _upsert_body(project_ref, key: str, body: dict):
         from cryptography.hazmat.primitives.asymmetric import ed25519
         from cryptography.hazmat.primitives.serialization import (
             Encoding,
-            PrivateFormat,
             NoEncryption,
+            PrivateFormat,
             PublicFormat,
         )
 
