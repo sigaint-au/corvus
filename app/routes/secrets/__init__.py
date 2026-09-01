@@ -29,6 +29,7 @@ from .history import (
 )
 from .folders import (
     add_folder_access_binding,
+    create_folder,
     delete_folder,
     delete_folder_access_binding,
     folder_view,
@@ -89,6 +90,7 @@ def register(app):
         rollback_secret
     )
     app.post("/projects/<uuid:project_id>/secrets/bulk")(bulk_secrets)
+    app.post("/projects/<uuid:project_id>/folders")(create_folder)
     app.get("/projects/<uuid:project_id>/folders/<uuid:folder_id>")(folder_view)
     app.post("/projects/<uuid:project_id>/folders/<uuid:folder_id>/access")(update_folder_access)
     app.post("/projects/<uuid:project_id>/folders/<uuid:folder_id>/access/bindings")(

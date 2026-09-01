@@ -9,7 +9,7 @@ from auth import authz, rbac_sync
 from core import config, db
 from lib.users import lookup_user_id
 from routes.rbac.helpers import _role_allowed_at_scope
-from secret_svc.folders import delete_empty_folder
+from secret_svc.folders import delete_empty_folder, materialize_folder_path
 from secret_svc.secret_ops import _parse_access_mode
 
 
@@ -273,6 +273,40 @@ def delete_folder_access_binding(project_id, folder_id, binding_id):
             conn.rollback()
             flash("Binding not found", "error")
     return redirect(access_url)
+
+
+@authz.login_required
+def create_folder(project_id):
+    """Create an empty folder from a slash-separated path."""
+    back_url = url_for("project_detail", project_id=project_id, tab="secrets")
+    path = (request.form.get("path") or "").strip().strip("/")
+    if not path:
+        flash("Invalid folder path", "error")
+        return redirect(back_url)
+    parts = path.split("/")
+    if any(not p or p in {".", ".."} for p in parts):
+        flash("Invalid folder path", "error")
+        return redirect(back_url)
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT api.can_write_project(%s) AS a", (str(project_id),))
+        if not (cur.fetchone() or {}).get("a"):
+            flash("Only project writers can create folders", "error")
+            return redirect(back_url)
+        segments = tuple(path.split("/"))
+        folder_id = materialize_folder_path(cur, str(project_id), segments)
+        if folder_id:
+            audit.log_org(
+                cur,
+                action="FOLDER_CREATED",
+                detail=f"Folder created: {path}",
+                project_id=project_id,
+            )
+            conn.commit()
+            flash(f"Folder «{path}» created", "ok")
+        else:
+            conn.rollback()
+            flash("Could not create folder", "error")
+    return redirect(back_url)
 
 
 @authz.login_required

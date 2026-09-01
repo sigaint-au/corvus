@@ -15,6 +15,7 @@ Cluster
       ├── Groups (principals: manual, LDAP, or OIDC)
       └── Project
            ├── Bindings (User/Group → project-scope role)
+           ├── Folders (optional, with own access_mode + bindings)
            └── Secrets
                 └── Bindings (User/Group → secret-scope role) + access_mode
 ```
@@ -23,6 +24,7 @@ Cluster
 |-------|------------------|------------------|
 | **Team** | See team, projects, settings | `rbac.bindings` with team-scope role |
 | **Project** | Read/write/admin secrets | `rbac.bindings` with project-scope role |
+| **Folder** | Tighter than project (who may list/reveal/write secrets in a folder) | Folder `access_mode` + folder-scope `rbac.bindings` |
 | **Secret** | Tighter than project (who may list/reveal/edit) | Secret `access_mode` + secret-scope `rbac.bindings` |
 | **Global admin** | Everything | `global-admin` cluster-scope binding |
 
@@ -60,13 +62,18 @@ If a user has **no** project-scope binding, access falls back to their team role
 
 Users who can see a secret but not reveal it can **request access** when the team setting **Allow members to request reveal** is on (default). An owner or project admin grants a time-limited reveal (default 15 minutes). The same request flow applies when a secret or project has **require reveal approval** even for users who already have the reveal verb.
 
-### Secret roles
+### Secret roles (also usable at folder scope)
 
 | Role | Can |
 |------|-----|
 | `secret-write` | Create, update, delete, reveal |
 | `secret-reveal` | Read metadata + reveal plaintext |
 | `secret-read` | Read metadata only |
+
+Secret roles (`secret-read`, `secret-reveal`, `secret-write`) can be bound at
+**folder scope** too. A folder-scope binding applies to every secret in that
+folder and its descendants. Combined with `restricted` access mode, this
+limits access to a folder subtree without affecting other project secrets.
 
 ### Machine token (service) roles
 
@@ -86,12 +93,21 @@ Users who can see a secret but not reveal it can **request access** when the tea
 
 ---
 
-## 3. Per-secret access
+## 3. Per-secret and per-folder access
+
+### Secret access
 
 | `access_mode` | Who can access |
 |---------------|----------------|
 | `inherit` (default) | Project/team bindings via scope chain; secret-scope bindings add grants |
 | `restricted` | Only secret-scope bindings + project admins |
+
+### Folder access
+
+| `access_mode` | Who can access |
+|---------------|----------------|
+| `inherit` (default) | Project/team roles via scope chain; folder-scope bindings add grants |
+| `restricted` | Only folder-scope bindings + project admins |
 
 **Always full access:** global admins and anyone with `can_admin_project`.
 
