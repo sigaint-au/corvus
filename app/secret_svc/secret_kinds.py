@@ -171,10 +171,15 @@ def extract_ssh_public_key(private_pem: str) -> str:
         from cryptography.hazmat.primitives.serialization import (
             Encoding,
             PublicFormat,
+            load_pem_private_key,
             load_ssh_private_key,
         )
 
-        key = load_ssh_private_key(private_pem.encode("ascii"), password=None)
+        raw = private_pem.encode("ascii")
+        try:
+            key = load_ssh_private_key(raw, password=None)
+        except ValueError:
+            key = load_pem_private_key(raw, password=None)
         return key.public_key().public_bytes(Encoding.OpenSSH, PublicFormat.OpenSSH).decode("ascii")
     except Exception:
         return ""
