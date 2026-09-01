@@ -74,6 +74,15 @@ def test_machine_upsert_conflict_target():
     sql = (migrations.MIGRATIONS_DIR / "0006_machine_upsert_conflict_target.sql").read_text()
     assert "folder_id IS NULL AND deleted_at IS NULL" in sql
     assert "ON CONFLICT (project_id, key)" in sql
+    # Stale 8-arg overload from 0001 must be dropped so GRANT is unambiguous.
+    assert (
+        "DROP FUNCTION IF EXISTS private.machine_upsert_enc("
+        "uuid, text, text, text, text, text, timestamptz, boolean)"
+    ) in sql
+    assert (
+        "GRANT EXECUTE ON FUNCTION private.machine_upsert_enc("
+        "uuid, text, text, text, text, text, timestamptz, boolean, text)"
+    ) in sql
 
 
 def test_squashed_baseline_contains_all_schema_layers():

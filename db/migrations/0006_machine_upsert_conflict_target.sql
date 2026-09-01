@@ -7,6 +7,12 @@
 --
 -- machine_upsert_enc always creates root-level secrets (no folder_id), so its
 -- ON CONFLICT clause must now include the folder_id IS NULL predicate.
+--
+-- 0001_init.sql left two overloads: the 8-arg form (no p_crypto_provider) and
+-- the 9-arg form. GRANT without an argument list is then ambiguous and aborts
+-- this migration. Drop the stale 8-arg function first.
+
+DROP FUNCTION IF EXISTS private.machine_upsert_enc(uuid, text, text, text, text, text, timestamptz, boolean);
 
 CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
   p_project uuid,
@@ -58,4 +64,4 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION private.machine_upsert_enc TO authenticator;
+GRANT EXECUTE ON FUNCTION private.machine_upsert_enc(uuid, text, text, text, text, text, timestamptz, boolean, text) TO authenticator;
