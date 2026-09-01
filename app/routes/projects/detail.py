@@ -23,7 +23,6 @@ from secret_svc.secret_kinds import (
     expires_status,
     secret_due_status,
 )
-from secret_svc.folders import visible_folder_paths
 from secret_svc.secret_ops import _load_secrets_page
 from ui import nav, paging
 
@@ -203,21 +202,19 @@ def project_detail(project_id):
         due_overdue, due_soon, rotation_overdue, rotation_soon = [], [], [], []
         if tab == "secrets":
             secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
-            folder_paths = visible_folder_paths(secret_rows)
-            if folder_paths:
-                try:
-                    cur.execute(
-                        """
-                        SELECT id, path, access_mode
-                        FROM api.folders
-                        WHERE project_id = %s::uuid AND path = ANY(%s::text[])
-                        ORDER BY path
-                        """,
-                        (str(project_id), folder_paths),
-                    )
-                    folder_rows = list(cur.fetchall() or [])
-                except Exception:
-                    folder_rows = []
+            try:
+                cur.execute(
+                    """
+                    SELECT id, path, access_mode
+                    FROM api.folders
+                    WHERE project_id = %s::uuid
+                    ORDER BY path
+                    """,
+                    (str(project_id),),
+                )
+                folder_rows = list(cur.fetchall() or [])
+            except Exception:
+                folder_rows = []
             # Expiry dashboard: scan live secrets for this project (capped)
             cur.execute(
                 """

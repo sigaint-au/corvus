@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import (
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -340,6 +341,38 @@ def bulk_secrets(project_id):
         conn.commit()
     flash(f"Moved {n} secret(s) to trash", "ok")
     return redirect(back)
+
+
+@authz.login_required
+def generate_ssh_key(project_id):
+    """Generate an SSH key pair server-side and return the private key."""
+    key_type = (request.form.get("key_type") or "ed25519").strip()
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ed25519, rsa, ec
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            PrivateFormat,
+            NoEncryption,
+        )
+
+        if key_type == "ed25519":
+            key = ed25519.Ed25519PrivateKey.generate()
+        elif key_type == "rsa-4096":
+            key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
+        elif key_type == "ecdsa-256":
+            key = ec.generate_private_key(ec.SECP256R1())
+        elif key_type == "ecdsa-384":
+            key = ec.generate_private_key(ec.SECP384R1())
+        else:
+            return jsonify(success=False, error="Unknown key type"), 400
+        pem = key.private_bytes(
+            Encoding.PEM,
+            PrivateFormat.OpenSSH if key_type == "ed25519" else PrivateFormat.TraditionalOpenSSL,
+            NoEncryption(),
+        ).decode("ascii")
+        return jsonify(success=True, key=pem)
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
 
 
 @authz.login_required
