@@ -29,7 +29,7 @@
 <div class="page-panel" id="folder-panel">
 {% if active_tab == 'contents' %}
 <section>
-  <h2>Folders</h2>
+  <div class="section-head"><h2>Folders</h2></div>
   {% if child_folders %}
   <div class="table"><table><thead><tr><th>Folder</th><th>Access</th></tr></thead><tbody>
   {% for child in child_folders %}<tr><td><a href="{{ url_for('folder_view', project_id=project_id, folder_id=child.id) }}"><code class="k">{{ child.path }}</code></a></td><td class="muted">{{ child.access_mode }}</td></tr>{% endfor %}
@@ -37,7 +37,7 @@
   {% else %}<p class="empty">No child folders.</p>{% endif %}
 </section>
 <section>
-  <h2>Secrets</h2>
+  <div class="section-head"><h2>Secrets</h2></div>
   {% if secrets %}
   <div class="table"><table><thead><tr><th>Key</th><th>Kind</th><th>Updated</th></tr></thead><tbody>
   {% for secret in secrets %}<tr><td><a href="{{ url_for('secret_view', project_id=project_id, secret_id=secret.id) }}"><code class="k">{{ secret.key }}</code></a></td><td>{{ secret.kind }}</td><td class="muted">{{ secret.updated_at|time_ago if secret.updated_at else '-' }}</td></tr>{% endfor %}
