@@ -11,7 +11,7 @@ ACL tables are removed during schema ensure. Team creation inserts a
 ## Scope hierarchy
 
 ```
-cluster → team → project → secret
+cluster → team → project → folder → secret
 ```
 
 A binding at an ancestor applies to descendants. Evaluation uses
@@ -31,9 +31,9 @@ A binding at an ancestor applies to descendants. Evaluation uses
 | `project-write` | project | Create, update, reveal secrets |
 | `project-reveal` | project | Read + reveal (no edit/create/delete) |
 | `project-read` | project | Read metadata only |
-| `secret-read` | secret | Read secret metadata (not plaintext) |
-| `secret-reveal` | secret | Read metadata + reveal plaintext |
-| `secret-write` | secret | Create, update, delete, reveal |
+| `secret-read` | secret / folder | Read secret metadata (not plaintext) |
+| `secret-reveal` | secret / folder | Read metadata + reveal plaintext |
+| `secret-write` | secret / folder | Create, update, delete, reveal |
 | `team-audit-viewer` | team | Read audit logs for a specific team |
 | `service-read` | project | Machine token: metadata only |
 | `service-reveal` | project | Machine token: metadata + plaintext (ESO) |
@@ -54,16 +54,26 @@ or a `secret-reveal` binding to allow reveal.
 | Access review | `/rbac/access-review` | Global admin | Who can do X on a resource |
 | Team → Members | team tab | Team owner/admin | Team-scope bindings |
 | Project → Access | project tab | Project admin | Project-scope bindings |
+| Folder → Access | folder view | Project admin | Folder-scope bindings + access mode |
 | Secret → Access | secret view | Project admin | Secret-scope bindings + access mode |
 
 Non-admins do not see Role bindings, Roles, or Access review in the sidebar.
 
-## Per-secret access
+## Per-secret and per-folder access
+
+### Secret access
 
 | `access_mode` | Behaviour |
 |---------------|-----------|
 | `inherit` (default) | Project/team bindings apply via scope chain. Secret-level bindings add extra grants. |
 | `restricted` | Only secret-scope bindings (+ project admins) apply. Team/project roles do not. |
+
+### Folder access
+
+| `access_mode` | Behaviour |
+|---------------|-----------|
+| `inherit` (default) | Project/team bindings apply via scope chain. Folder-level bindings add extra grants. Secrets inside inherit the folder's effective access. |
+| `restricted` | Only folder-scope bindings (+ project admins) apply. Team/project roles do not reach secrets in this folder. |
 
 **Warning:** switching to Restricted immediately cuts off inherited access
 for all users who currently have access via team/project roles (except
@@ -86,10 +96,10 @@ Reveal approval remains a separate layer after the `reveal` verb.
   RLS, grants, and all RLS policies
 - `db/migrations/0002_rls_authz_hardening.sql` applies additive RLS/authz hardening
 - Legacy membership and ACL tables are removed during schema ensure
-- `can()` rejects deleted secrets at the authorizer level
-- Compatibility helpers `can_read_project`, `can_write_project`,
-  `can_admin_project`, `can_access_secret`, `team_role`, `project_role` are
-  reimplemented on top of `api.can()`
+- `api.access_secret_folder()` checks folder-level restricted mode via `api.rbac_folder_binding_allows()` and walks the folder ancestry via `api.rbac_scope_chain('folder', …)`.
+- `api.access_secret_row()` checks both secret-level and folder-level restricted mode: a secret under a restricted folder is treated as restricted regardless of the secret's own `access_mode`.
+- Secret roles (`secret-read`, `secret-reveal`, `secret-write`) are valid at `folder` scope. Bindings apply to all secrets in that folder subtree.
+- `rbac.validate_binding_scope()` accepts `folder` scope for `secret-%` and `service-%` roles, and verifies the folder exists.
 
 ## Design notes
 

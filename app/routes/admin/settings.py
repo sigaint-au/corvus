@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 from flask import (
@@ -1118,6 +1119,22 @@ def hsm_slot_new_wizard():
                 is_default=is_default,
                 test_result=False,
                 test_message=f"Invalid PKCS#11 URL: {e}",
+                slot_id=slot_id,
+            )
+        if hsm.has_inline_pin(pkcs11_url) and os.environ.get(
+            "ALLOW_INSECURE_DEFAULTS", ""
+        ).lower() not in ("1", "true", "yes"):
+            return render_template(
+                "hsm_slot_new.html",
+                name=name,
+                pkcs11_url=pkcs11_url,
+                description=description,
+                is_default=is_default,
+                test_result=False,
+                test_message=(
+                    "Inline pin-value= is not allowed — use pin-source=/run/secrets/hsm-pin "
+                    "(or set ALLOW_INSECURE_DEFAULTS=1 for dev only)"
+                ),
                 slot_id=slot_id,
             )
         test_ok = False

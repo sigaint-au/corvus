@@ -46,7 +46,9 @@ class TestSecrets:
         if tab == 'settings':
             fa = [[]]
         elif tab == 'secrets':
-            fa = [rows, [], [], [], []]
+            # _load_secrets_page: secrets page + pins + grants; then detail.py: folders + expiry + rotation
+            fa = [rows, [], [], [], [], []] if rows else [rows, [], [], [], []]
+            # rows truthy → pins + grants executed; rows falsy → pins/grants skipped, one fewer fetchall
         elif tab in ('access', 'requests'):
             fa = [access_requests or []]
         else:
@@ -216,6 +218,16 @@ class TestSecrets:
     def test_create_secret_missing_key(self):
         r = self.client.post(f'/projects/{self.pid}/secrets', data={'key': '', 'value': 'x'}, follow_redirects=False)
         assert r.status_code == 302
+
+    def test_create_secret_rejects_invalid_path_before_db(self):
+        with patch.object(db, 'as_user') as as_user:
+            r = self.client.post(
+                f'/projects/{self.pid}/secrets',
+                data={'key': 'folder//secret', 'value': 'x'},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        as_user.assert_not_called()
 
     def test_delete_secret(self):
         sid = uuid4()

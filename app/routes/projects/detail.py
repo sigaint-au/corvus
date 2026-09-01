@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from flask import (
     flash,
     redirect,
@@ -144,6 +142,7 @@ def project_detail(project_id):
     audit_rows = []
     tokens = []
     project_secret_keys = []
+    folder_rows = []
 
     project_meta: list = []
     team_groups = []
@@ -201,6 +200,23 @@ def project_detail(project_id):
         due_overdue, due_soon, rotation_overdue, rotation_soon = [], [], [], []
         if tab == "secrets":
             secret_rows, secrets_pager = _load_secrets_page(cur, project_id, page, q)
+            try:
+                cur.execute(
+                    """
+                    SELECT f.id, f.path, f.access_mode
+                    FROM api.folders f
+                    WHERE f.project_id = %s::uuid
+                      AND EXISTS (
+                        SELECT 1 FROM api.secrets s
+                        WHERE s.folder_id = f.id AND s.deleted_at IS NULL
+                      )
+                    ORDER BY f.path
+                    """,
+                    (str(project_id),),
+                )
+                folder_rows = list(cur.fetchall() or [])
+            except Exception:
+                folder_rows = []
             # Expiry dashboard: scan live secrets for this project (capped)
             cur.execute(
                 """
@@ -439,6 +455,7 @@ def project_detail(project_id):
         "secrets": secret_rows,
         "tokens": tokens,
         "project_secret_keys": project_secret_keys,
+        "folder_rows": folder_rows,
         "audit_log": audit_rows,
         "access_requests": access_requests,
         "access_pending_count": access_pending_count,

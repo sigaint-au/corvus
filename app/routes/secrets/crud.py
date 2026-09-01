@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import (
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -21,6 +22,7 @@ from secret_svc.commands import (
     update_secret_value_command,
     upsert_secret_command,
 )
+from secret_svc.folders import parse_secret_path
 from secret_svc.secret_kinds import (
     normalize_kind,
     parse_kv_lines,
@@ -63,6 +65,11 @@ def create_secret(project_id):
     access_mode = _parse_access_mode(request.form)
     if not key or value is None:
         flash("Key and value required", "error")
+        return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
+    try:
+        parse_secret_path(key)
+    except ValueError:
+        flash("Secret key contains an invalid path", "error")
         return redirect(url_for("project_detail", project_id=project_id, tab="secrets"))
     try:
         expires_at = _parse_expires_at(request.form)
@@ -337,6 +344,43 @@ def bulk_secrets(project_id):
 
 
 @authz.login_required
+def generate_ssh_key(project_id):
+    """Generate an SSH key pair server-side and return both keys."""
+    key_type = (request.form.get("key_type") or "ed25519").strip()
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+            PublicFormat,
+        )
+
+        if key_type == "ed25519":
+            key = ed25519.Ed25519PrivateKey.generate()
+        elif key_type == "rsa-4096":
+            key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
+        elif key_type == "ecdsa-256":
+            key = ec.generate_private_key(ec.SECP256R1())
+        elif key_type == "ecdsa-384":
+            key = ec.generate_private_key(ec.SECP384R1())
+        else:
+            return jsonify(success=False, error="Unknown key type"), 400
+        private_pem = key.private_bytes(
+            Encoding.PEM,
+            PrivateFormat.OpenSSH if key_type == "ed25519" else PrivateFormat.TraditionalOpenSSL,
+            NoEncryption(),
+        ).decode("ascii")
+        public_pem = key.public_key().public_bytes(
+            Encoding.OpenSSH,
+            PublicFormat.OpenSSH,
+        ).decode("ascii")
+        return jsonify(success=True, private_key=private_pem, public_key=public_pem)
+    except Exception as e:
+        return jsonify(success=False, error=str(e)), 500
+
+
+@authz.login_required
 def secret_new(project_id):
     """Show the new-secret form or create a secret of any kind.
 
@@ -395,6 +439,21 @@ def secret_new(project_id):
     kv_pairs = parse_kv_lines(value) if kind == "kv" else []
     if not key or not value:
         flash("Key and value are required", "error")
+        return render_template(
+            "secret_new.html",
+            **_new_ctx(
+                kind=kind,
+                key=key,
+                note=note,
+                expires_at=request.form.get("expires_at") or "",
+                kv_pairs=kv_pairs or [("", "")],
+                access_mode=_parse_access_mode(request.form),
+            ),
+        ), 400
+    try:
+        parse_secret_path(key)
+    except ValueError:
+        flash("Secret key contains an invalid path", "error")
         return render_template(
             "secret_new.html",
             **_new_ctx(

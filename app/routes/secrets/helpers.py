@@ -14,6 +14,7 @@ from auth import authz
 from core import config, db, settings_svc
 from secret_svc.secret_kinds import (
     as_utc,
+    extract_ssh_public_key,
     parse_database_url,
     parse_kv_lines,
     parse_pem_blocks,
@@ -331,6 +332,7 @@ def _render_secret_view(
             is_version=is_version,
             kv_pairs=parse_kv_lines(plaintext) if kind == "kv" else [("", "")],
             pem_blocks=parse_pem_blocks(plaintext) if kind in ("certificate", "ssh") else [],
+            ssh_public_key=extract_ssh_public_key(plaintext) if kind == "ssh" else "",
             cert_pem=cert_pem,
             cert_key=cert_key,
             db_parts=parse_database_url(plaintext) if kind == "database" else {},

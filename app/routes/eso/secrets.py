@@ -295,7 +295,9 @@ def eso_list_secrets(project_ref):
                 params.extend([like, like, like, like])
             cur.execute(
                 f"""
-                SELECT s.id, s.key, s.note, s.kind, s.expires_at,
+                SELECT s.id, s.key, s.folder_id,
+                       (SELECT f.path FROM api.folders f WHERE f.id = s.folder_id) AS folder_path,
+                       s.note, s.kind, s.expires_at,
                        s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                        s.created_at, s.updated_at, s.last_accessed_at,
                         COALESCE(

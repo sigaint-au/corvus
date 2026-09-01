@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{{ folder.path }} - {{ app_name }}{% endblock %}
+{% block body %}
+{% set breadcrumbs = [
+  ('Teams', url_for('teams')),
+  (project.team_name or project.team_id, url_for('team_detail', team_id=project.team_id)),
+  (project.name, url_for('project_detail', project_id=project_id, tab='secrets')),
+  (folder.path, none),
+] %}
+{% include "partials/breadcrumb.html" %}
+<div class="page-head">
+  <div class="section-head-main"><span class="badge" data-variant="secondary">Folder</span><h1><code class="k">{{ folder.path }}</code></h1></div>
+  <div class="section-tools">
+    {% if can_admin %}
+    <form method="post" action="{{ url_for('delete_folder', project_id=project_id, folder_id=folder_id) }}" class="inline" onsubmit="return confirm('Delete this empty folder?')">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button type="submit" class="button outline small" data-variant="danger">Delete folder</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+<div class="page-side">
+<nav class="page-subnav" aria-label="Folder sections">
+  <a class="page-subnav-link {% if active_tab == 'contents' %}active{% endif %}" href="{{ url_for('folder_view', project_id=project_id, folder_id=folder_id, tab='contents') }}">Contents</a>
+  {% if can_admin %}
+  <a class="page-subnav-link {% if active_tab == 'access' %}active{% endif %}" href="{{ url_for('folder_view', project_id=project_id, folder_id=folder_id, tab='access') }}">Access</a>
+  {% endif %}
+</nav>
+<div class="page-panel" id="folder-panel">
+{% if active_tab == 'contents' %}
+<section>
+  <div class="section-head"><h2>Folders</h2></div>
+  {% if child_folders %}
+  <div class="table"><table><thead><tr><th>Folder</th><th>Access</th></tr></thead><tbody>
+  {% for child in child_folders %}<tr><td><a href="{{ url_for('folder_view', project_id=project_id, folder_id=child.id) }}"><code class="k">{{ child.path }}</code></a></td><td class="muted">{{ child.access_mode }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="empty">No child folders.</p>{% endif %}
+</section>
+<section>
+  <div class="section-head"><h2>Secrets</h2></div>
+  {% if secrets %}
+  <div class="table"><table><thead><tr><th>Key</th><th>Kind</th><th>Updated</th></tr></thead><tbody>
+  {% for secret in secrets %}<tr><td><a href="{{ url_for('secret_view', project_id=project_id, secret_id=secret.id) }}"><code class="k">{{ secret.key.split('/')[-1] }}</code></a></td><td>{{ secret.kind }}</td><td class="muted">{{ secret.updated_at|time_ago if secret.updated_at else '-' }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="empty">No secrets in this folder.</p>{% endif %}
+</section>
+{% else %}
+<section>
+  <h2>Access</h2>
+  <p class="muted">Inherited folders follow project and team roles. Restricted folders use the bindings below, plus project admins.</p>
+  <form method="post" action="{{ url_for('update_folder_access', project_id=project_id, folder_id=folder_id) }}" class="row">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <label>Access mode<select name="access_mode">{% for mode in access_modes %}<option value="{{ mode }}" {% if folder.access_mode == mode %}selected{% endif %}>{{ access_mode_labels.get(mode, mode) }}</option>{% endfor %}</select></label>
+    <button type="submit">Save settings</button>
+  </form>
+</section>
+{% set panel_title = 'Folder role bindings' %}
+{% set create_url = url_for('add_folder_access_binding', project_id=project_id, folder_id=folder_id) %}
+{% set delete_endpoint = 'delete_folder_access_binding' %}
+{% set delete_project_id = project_id %}
+{% set delete_folder_id = folder_id %}
+{% set form_id_prefix = 'folder-access' %}
+{% set empty_message = 'No folder-level bindings yet. Access follows project and team roles unless this folder is Restricted.' %}
+{% set help_html = 'Bind a user, group, or machine account to a folder role. Use <strong>Restricted</strong> mode so only these bindings apply.' %}
+{% include "partials/access_bindings_panel.html" %}
+<section>
+  <div class="section-head">
+    <div>
+      <h2>Effective access</h2>
+      <p class="muted">Who can access this folder and why.</p>
+    </div>
+    <form method="get" action="{{ url_for('folder_view', project_id=project_id, folder_id=folder_id) }}" class="toolbar" role="search">
+      <input type="hidden" name="tab" value="access">
+      <fieldset class="group search-input">
+        {% include "partials/search_icon.html" %}
+        <input type="search" name="q" value="{{ effective_access_q or '' }}"
+               placeholder="Search access" aria-label="Search effective access" autocomplete="off">
+      </fieldset>
+      {% if effective_access_q %}
+      <a class="button ghost small" href="{{ url_for('folder_view', project_id=project_id, folder_id=folder_id, tab='access') }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+  {% if effective_access %}
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>Kind</th>
+          <th>Role</th>
+          <th>Granted at</th>
+          <th>How</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in effective_access %}
+        <tr>
+          <td>
+            {{ a.subject_email or a.subject_name or '-' }}
+            {% if a.subject_name and a.subject_email %}
+            <span class="muted">{{ a.subject_email }}</span>
+            {% endif %}
+            {% if a.is_global_admin %}<span class="badge" data-variant="warning">global admin</span>{% endif %}
+          </td>
+          <td><span class="badge" data-variant="secondary">{{ a.subject_kind }}</span></td>
+          <td><span class="badge" data-variant="secondary">{{ a.role_name }}</span></td>
+          <td class="muted">{{ a.scope_label or a.scope_kind }}</td>
+          <td class="muted">{{ a.grant_kind }}{% if a.grant_subject and a.grant_subject != a.subject_email %} · {{ a.grant_subject }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% with pager=effective_access_pager %}
+    {% include "partials/pager.html" %}
+  {% endwith %}
+  {% else %}
+  <p class="empty">{% if effective_access_q %}No access grants match “{{ effective_access_q }}”.{% else %}No access grants found for this folder.{% endif %}</p>
+  {% endif %}
+</section>
+{% endif %}
+</div>
+</div>
+{% endblock %}

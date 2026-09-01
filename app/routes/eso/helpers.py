@@ -46,6 +46,8 @@ def _meta_item(row: dict, *, value: str | None = None) -> dict:
     out = {
         "id": str(row["id"]) if row.get("id") is not None else None,
         "key": row.get("key"),
+        "folder_id": str(row["folder_id"]) if row.get("folder_id") else None,
+        "folder_path": row.get("folder_path") or None,
         "note": row.get("note") or "",
         "kind": row.get("kind") or "plain",
         "expires_at": iso_utc(row.get("expires_at")),
@@ -385,8 +387,28 @@ def _upsert_body(project_ref, key: str, body: dict):
     kind_s = (body.get("kind") or "plain").strip().lower()
     if kind_s not in config.SECRET_KINDS:
         return jsonify({"error": f"kind must be one of: {', '.join(config.SECRET_KINDS)}"}), 400
-    if not key or value is None:
+    if not key:
         return jsonify({"error": "key and value required"}), 400
+    if value is None and kind_s != "ssh":
+        return jsonify({"error": "key and value required"}), 400
+
+    ssh_public_key = None
+    if kind_s == "ssh" and value is None:
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+            PublicFormat,
+        )
+
+        k = ed25519.Ed25519PrivateKey.generate()
+        value = k.private_bytes(
+            Encoding.PEM, PrivateFormat.OpenSSH, NoEncryption(),
+        ).decode("ascii")
+        ssh_public_key = k.public_key().public_bytes(
+            Encoding.OpenSSH, PublicFormat.OpenSSH,
+        ).decode("ascii")
 
     expires_at, set_expires, exp_err = _parse_expires_from_body(body)
     if exp_err:
@@ -439,6 +461,9 @@ def _upsert_body(project_ref, key: str, body: dict):
             row = cur.fetchone() or {}
             conn.commit()
         item = _meta_item(row, value=str(value))
+        if ssh_public_key:
+            item["ssh_public_key"] = ssh_public_key
+            item["private_key"] = value
         item["ok"] = True
         return jsonify(item), 200
 
@@ -475,5 +500,8 @@ def _upsert_body(project_ref, key: str, body: dict):
         row = cur.fetchone() or {"id": sid, "key": key}
         conn.commit()
     item = _meta_item(row, value=str(value))
+    if ssh_public_key:
+        item["ssh_public_key"] = ssh_public_key
+        item["private_key"] = value
     item["ok"] = True
     return jsonify(item), 200

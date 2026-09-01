@@ -5,6 +5,7 @@ overhead). User-context connections (``as_user``) remain direct because each
 checkout needs ``SET ROLE`` + JWT claims that must be reset on return.
 """
 
+import contextlib
 import json
 import time
 
@@ -104,6 +105,7 @@ def connect_admin(autocommit=True):
     return psycopg.connect(DATABASE_ADMIN_URL, row_factory=dict_row, autocommit=autocommit)
 
 
+@contextlib.contextmanager
 def as_user(user_id: str):
     """Open a connection with JWT claims set so RLS matches PostgREST.
 
@@ -124,13 +126,24 @@ def as_user(user_id: str):
     """
     conn = connect()
     claims = {"sub": str(user_id), "role": "authenticated"}
-    with conn.cursor() as cur:
-        cur.execute("SET ROLE authenticated")
-        cur.execute(
-            "SELECT set_config('request.jwt.claims', %s, false)",
-            (json.dumps(claims),),
-        )
-    return conn
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SET ROLE authenticated")
+            cur.execute(
+                "SELECT set_config('request.jwt.claims', %s, false)",
+                (json.dumps(claims),),
+            )
+        yield conn
+    finally:
+        if not conn.closed:
+            try:
+                conn.rollback()
+                with conn.cursor() as cur:
+                    cur.execute("SELECT set_config('request.jwt.claims', '', false)")
+                    cur.execute("RESET ROLE")
+            except Exception:
+                pass
+            conn.close()
 
 
 def team(cur, team_id):

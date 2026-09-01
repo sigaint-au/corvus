@@ -17,9 +17,18 @@ from .crud import (
     create_secret,
     delete_secret,
     delete_secret_meta,
+    generate_ssh_key,
     secret_new,
     update_secret_value,
     upsert_secret_meta,
+)
+from .folders import (
+    add_folder_access_binding,
+    create_folder,
+    delete_folder,
+    delete_folder_access_binding,
+    folder_view,
+    update_folder_access,
 )
 from .history import (
     hide_secret_version,
@@ -82,7 +91,18 @@ def register(app):
         rollback_secret
     )
     app.post("/projects/<uuid:project_id>/secrets/bulk")(bulk_secrets)
+    app.post("/projects/<uuid:project_id>/folders")(create_folder)
+    app.get("/projects/<uuid:project_id>/folders/<uuid:folder_id>")(folder_view)
+    app.post("/projects/<uuid:project_id>/folders/<uuid:folder_id>/access")(update_folder_access)
+    app.post("/projects/<uuid:project_id>/folders/<uuid:folder_id>/access/bindings")(
+        add_folder_access_binding
+    )
+    app.post(
+        "/projects/<uuid:project_id>/folders/<uuid:folder_id>/access/bindings/<uuid:binding_id>/delete"
+    )(delete_folder_access_binding)
+    app.post("/projects/<uuid:project_id>/folders/<uuid:folder_id>/delete")(delete_folder)
     app.post("/trash/bulk")(bulk_trash)
+    app.post("/projects/<uuid:project_id>/generate-ssh-key")(generate_ssh_key)
     app.route("/projects/<uuid:project_id>/secrets/new", methods=["GET", "POST"])(secret_new)
     app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access")(update_secret_access)
     app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access/bindings")(

@@ -17,7 +17,7 @@ def _role_dropdown_for_scope(scope_kind: str) -> list[tuple[str, str]]:
         return list(config.RBAC_TEAM_ROLE_DROPDOWN)
     if scope_kind == "project":
         return list(config.RBAC_PROJECT_ROLE_DROPDOWN)
-    if scope_kind == "secret":
+    if scope_kind in ("folder", "secret"):
         return list(config.RBAC_SECRET_ROLE_DROPDOWN)
     return []
 
@@ -28,9 +28,9 @@ def _role_allowed_at_scope(role_name: str, scope_kind: str) -> bool:
     if role_name.startswith("project-"):
         return scope_kind == "project"
     if role_name.startswith("secret-"):
-        return scope_kind == "secret"
+        return scope_kind in ("folder", "secret")
     if role_name.startswith("service-"):
-        return scope_kind in ("project", "secret")
+        return scope_kind in ("project", "folder", "secret")
     if role_name in ("global-admin", "audit-viewer"):
         return scope_kind == "cluster"
     return scope_kind != "cluster"

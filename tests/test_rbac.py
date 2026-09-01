@@ -107,6 +107,15 @@ def test_access_modes_updated():
     assert set(config.ACCESS_MODE_LABELS) == {"inherit", "restricted"}
 
 
+def test_folder_scope_uses_secret_roles():
+    from routes.rbac.helpers import _role_allowed_at_scope, _role_dropdown_for_scope
+
+    assert "folder" in config.RBAC_SCOPE_KINDS
+    assert _role_dropdown_for_scope("folder") == list(config.RBAC_SECRET_ROLE_DROPDOWN)
+    assert _role_allowed_at_scope("secret-read", "folder")
+    assert _role_allowed_at_scope("service-read", "folder")
+
+
 def test_parse_rules_yaml_multi_rule():
     from routes.rbac import parse_rules_yaml
 

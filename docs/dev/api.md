@@ -395,7 +395,8 @@ Notes:
 ### Replace a secret by key (PUT)
 
 Same write semantics as POST, but **`key` is in the URL**. Body must include
-`value`.
+`value` (unless `kind="ssh"` where `value` can be omitted to trigger server-side
+keypair generation).
 
 ```bash
 curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
@@ -404,6 +405,10 @@ curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" \
 ```
 
 Creates the secret if it does not exist; replaces it if it does.
+
+When `kind="ssh"` and `value` is omitted, Corvus generates an ed25519 keypair,
+stores the private key PEM as the secret value, and returns `private_key` plus
+`ssh_public_key` in the response JSON alongside standard metadata.
 
 ---
 

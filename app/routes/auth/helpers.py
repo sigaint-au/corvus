@@ -54,8 +54,6 @@ def send_verification_email(uid, email: str) -> bool:
         log.exception("verification email setup failed for %s", email)
         return False
 
-log = logging.getLogger(__name__)
-
 
 def _maybe_promote_bootstrap_admin(email: str, user_id) -> bool:
     """Promote a user to global admin if email matches bootstrap config.
@@ -132,7 +130,7 @@ def _restore_auth_extras(extras: dict):
 
 
 def _establish_session(user_id, email, name, is_global_admin: bool):
-    """Clear session, restore extras, and set authenticated session values.
+    """Clear session, rotate cookie, restore extras, and set authenticated session values.
 
     Args:
         user_id: Authenticated user UUID.
@@ -144,9 +142,20 @@ def _establish_session(user_id, email, name, is_global_admin: bool):
         None (mutates Flask session; may create a server-side session row).
 
     Example:
-        >>> _establish_session(uid, "u@example.com", "Ada", False)
+        >>> _establish_session(uid, "ada@example.com", "Ada", False)
     """
     extras = _preserve_auth_extras()
+    # Mitigate session fixation: rotate the session cookie so any pre-auth
+    # cookie value obtained by an attacker is invalid after login.
+    try:
+        from flask import session as _flask_session
+
+        # Flask 2.3+ exposes regenerate(); fall back to clear if unavailable.
+        regen = getattr(_flask_session, "regenerate", None)
+        if callable(regen):
+            regen()
+    except Exception:
+        pass
     session.clear()
     _restore_auth_extras(extras)
     session["user_id"] = str(user_id)
@@ -172,10 +181,18 @@ def _begin_2fa_challenge(user_id, email, name, is_global_admin: bool):
         None (writes ``pending_2fa_*`` keys into the session).
 
     Example:
-        >>> _begin_2fa_challenge(uid, "u@example.com", "Ada", True)
+        >>> _begin_2fa_challenge(uid, "__VG_EMAIL_5cf292062a8d__", "Ada", True)
         >>> # then redirect to /login/2fa
     """
     extras = _preserve_auth_extras()
+    try:
+        from flask import session as _flask_session
+
+        regen = getattr(_flask_session, "regenerate", None)
+        if callable(regen):
+            regen()
+    except Exception:
+        pass
     session.clear()
     _restore_auth_extras(extras)
     session["pending_2fa_uid"] = str(user_id)

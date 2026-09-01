@@ -95,12 +95,38 @@ Description: optional purpose
 | **Requests** | Reveal-approval request queue (approve/deny) |
 | **Import / Export** | Bulk `.env` / JSON / CSV |
 | **Access** | Project-scope role bindings (project admins) |
-| **Activity** | Who did what to secrets in this project |
-| **Machine accounts** | Tokens for ESO / CI / CLI |
-| **Integrations** | ESO manifest generator |
 | **Webhooks** | Project event subscriptions (project admins) |
 | **Settings** | Reveal-approval default, members, danger zone |
 | **Metadata** | Project-wide labels inherited by every secret (cannot override team keys) |
+
+### Folders
+
+Secrets can be organised into **folders** inside a project. Folders are
+auto-created when you include a slash-separated path in the secret key:
+
+```text
+Key:   deploy/prod/DATABASE_URL
+```
+
+This creates the folder `deploy` → subfolder `prod` → secret `DATABASE_URL`.
+
+Folders are listed in a table above the secret list on the project **Secrets**
+tab. Click a folder to open its own page:
+
+| Tab | Purpose |
+|-----|---------|
+| **Contents** | Sub-folders and secrets in this folder |
+| **Access** | Folder access mode (inherit/restricted) and role bindings |
+
+**Folder access** works like per-secret access:
+
+| `access_mode` | Who can access |
+|---------------|----------------|
+| `inherit` (default) | Project/team roles apply via scope chain |
+| `restricted` | Only folder-scope bindings + project admins |
+
+Only **project admins** can manage folder access, add bindings, or delete an
+empty folder. A folder with secrets inside cannot be deleted.
 
 ---
 

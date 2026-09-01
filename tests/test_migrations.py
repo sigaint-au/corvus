@@ -46,10 +46,57 @@ def test_migrations_ship_in_order():
     assert files == [
         "0001_init.sql",
         "0002_cli_session_tokens.sql",
+        "0003_secret_folders.sql",
+        "0004_materialize_folder_definer.sql",
+        "0005_folder_effective_access_label.sql",
+        "0006_machine_upsert_conflict_target.sql",
+        "0007_machine_upsert_folder.sql",
+        "0008_machine_upsert_folder_var.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
         assert name[4] == "_"
+
+
+def test_secret_folder_migration_covers_schema_and_rls():
+    sql = (migrations.MIGRATIONS_DIR / "0003_secret_folders.sql").read_text()
+    for fragment in (
+        "CREATE TABLE IF NOT EXISTS api.folders",
+        "folder_id",
+        "scope_kind = 'folder'",
+        "api.rbac_scope_chain",
+        "api.can_access_secret_row",
+        "validate_binding_scope",
+    ):
+        assert fragment in sql
+
+
+def test_machine_upsert_conflict_target():
+    sql = (migrations.MIGRATIONS_DIR / "0006_machine_upsert_conflict_target.sql").read_text()
+    assert "folder_id IS NULL AND deleted_at IS NULL" in sql
+    assert "ON CONFLICT (project_id, key)" in sql
+    # Stale 8-arg overload from 0001 must be dropped so GRANT is unambiguous.
+    assert (
+        "DROP FUNCTION IF EXISTS private.machine_upsert_enc("
+        "uuid, text, text, text, text, text, timestamptz, boolean)"
+    ) in sql
+    assert (
+        "GRANT EXECUTE ON FUNCTION private.machine_upsert_enc("
+        "uuid, text, text, text, text, text, timestamptz, boolean, text)"
+    ) in sql
+
+
+def test_machine_upsert_folder_var_not_shadowing_column():
+    sql = (migrations.MIGRATIONS_DIR / "0008_machine_upsert_folder_var.sql").read_text()
+    assert "v_folder_id uuid" in sql
+    assert "\n  folder_id uuid;" not in sql
+    assert "v_folder_id := private.materialize_folder_path" in sql
+    assert "p_project, v_folder_id, p_key" in sql
+    assert "ON CONFLICT (project_id, folder_id, key) WHERE folder_id IS NOT NULL" in sql
+    assert (
+        "GRANT EXECUTE ON FUNCTION private.machine_upsert_enc("
+        "uuid, text, text, text, text, text, timestamptz, boolean, text)"
+    ) in sql
 
 
 def test_squashed_baseline_contains_all_schema_layers():

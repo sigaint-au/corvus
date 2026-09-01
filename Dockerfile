@@ -42,7 +42,7 @@ USER appuser
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=10s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')" || exit 1
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "-w", "2", "--timeout", "60", "--graceful-timeout", "30", "--keep-alive", "5", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:8080", "-w", "2", "--timeout", "60", "--graceful-timeout", "30", "--keep-alive", "5", "--no-control-socket", "app:app"]
 
 # Dev-only: SoftHSM is in RHEL AppStream, not UBI or EPEL 9. Pull the EL9
 # package from AlmaLinux AppStream so local Compose can load

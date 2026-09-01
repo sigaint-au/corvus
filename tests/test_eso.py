@@ -224,6 +224,49 @@ class TestESO:
         sql = ' '.join(str(c.args[0]) for c in cur.execute.call_args_list)
         assert 'machine_upsert' in sql
 
+    def test_put_ssh_generates_keypair_when_value_omitted(self):
+        sid = uuid4()
+        fo = [
+            {'ok': True},
+            {'role': 'service-write'},
+            {'id': sid},
+            {'label': 'ci:ss_write'},
+            {
+                'id': sid,
+                'key': 'hosts/web01/users/deploy',
+                'value_enc': 'enc',
+                'note': 'deploy@web01',
+                'kind': 'ssh',
+                'expires_at': None,
+                'created_at': None,
+                'updated_at': None,
+            },
+        ]
+        conn, cur = _conn()
+        cur.fetchone.side_effect = fo
+        with patch.object(db, 'connect', return_value=conn):
+            r = self.client.put(
+                f'/eso/v1/projects/{self.pid}/secrets/hosts/web01/users/deploy',
+                json={'kind': 'ssh', 'note': 'deploy@web01', 'expires_days': 90},
+                headers={'Authorization': 'Bearer ss_write'},
+            )
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert body['ok']
+        assert body['kind'] == 'ssh'
+        assert body['ssh_public_key'].startswith('ssh-ed25519 ')
+        assert 'BEGIN OPENSSH PRIVATE KEY' in body['private_key']
+        assert body['value'] == body['private_key']
+
+    def test_put_plain_without_value_rejected(self):
+        r = self.client.put(
+            f'/eso/v1/projects/{self.pid}/secrets/K',
+            json={'note': 'x'},
+            headers={'Authorization': 'Bearer ss_write'},
+        )
+        assert r.status_code == 400
+        assert 'value' in r.get_json().get('error', '')
+
     def test_patch_secret_not_found(self):
         fo = [{'ok': True}, {'role': 'service-write'}, None]
         conn, cur = _conn()

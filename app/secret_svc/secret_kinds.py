@@ -165,6 +165,26 @@ def parse_pem_blocks(value: str) -> list[dict]:
     return blocks
 
 
+def extract_ssh_public_key(private_pem: str) -> str:
+    """Extract the public key (OpenSSH format) from an SSH private key PEM."""
+    try:
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            PublicFormat,
+            load_pem_private_key,
+            load_ssh_private_key,
+        )
+
+        raw = private_pem.encode("ascii")
+        try:
+            key: object = load_ssh_private_key(raw, password=None)  # type: ignore[assignment]
+        except ValueError:
+            key = load_pem_private_key(raw, password=None)  # type: ignore[assignment]
+        return key.public_key().public_bytes(Encoding.OpenSSH, PublicFormat.OpenSSH).decode("ascii")  # type: ignore[attr-defined]
+    except Exception:
+        return ""
+
+
 def parse_database_url(value: str) -> dict:
     """Break a DB URL into display fields (password kept separate).
 
