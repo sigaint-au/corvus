@@ -50,6 +50,7 @@ def test_migrations_ship_in_order():
         "0004_materialize_folder_definer.sql",
         "0005_folder_effective_access_label.sql",
         "0006_machine_upsert_conflict_target.sql",
+        "0007_machine_upsert_folder.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
