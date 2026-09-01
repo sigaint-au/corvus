@@ -345,7 +345,7 @@ def bulk_secrets(project_id):
 
 @authz.login_required
 def generate_ssh_key(project_id):
-    """Generate an SSH key pair server-side and return the private key."""
+    """Generate an SSH key pair server-side and return both keys."""
     key_type = (request.form.get("key_type") or "ed25519").strip()
     try:
         from cryptography.hazmat.primitives.asymmetric import ed25519, rsa, ec
@@ -353,6 +353,7 @@ def generate_ssh_key(project_id):
             Encoding,
             PrivateFormat,
             NoEncryption,
+            PublicFormat,
         )
 
         if key_type == "ed25519":
@@ -365,12 +366,16 @@ def generate_ssh_key(project_id):
             key = ec.generate_private_key(ec.SECP384R1())
         else:
             return jsonify(success=False, error="Unknown key type"), 400
-        pem = key.private_bytes(
+        private_pem = key.private_bytes(
             Encoding.PEM,
             PrivateFormat.OpenSSH if key_type == "ed25519" else PrivateFormat.TraditionalOpenSSL,
             NoEncryption(),
         ).decode("ascii")
-        return jsonify(success=True, key=pem)
+        public_pem = key.public_key().public_bytes(
+            Encoding.OpenSSH,
+            PublicFormat.OpenSSH,
+        ).decode("ascii")
+        return jsonify(success=True, private_key=private_pem, public_key=public_pem)
     except Exception as e:
         return jsonify(success=False, error=str(e)), 500
 
