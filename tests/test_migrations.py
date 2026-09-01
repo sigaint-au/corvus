@@ -49,6 +49,7 @@ def test_migrations_ship_in_order():
         "0003_secret_folders.sql",
         "0004_materialize_folder_definer.sql",
         "0005_folder_effective_access_label.sql",
+        "0006_machine_upsert_conflict_target.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -66,6 +67,12 @@ def test_secret_folder_migration_covers_schema_and_rls():
         "validate_binding_scope",
     ):
         assert fragment in sql
+
+
+def test_machine_upsert_conflict_target():
+    sql = (migrations.MIGRATIONS_DIR / "0006_machine_upsert_conflict_target.sql").read_text()
+    assert "folder_id IS NULL AND deleted_at IS NULL" in sql
+    assert "ON CONFLICT (project_id, key)" in sql
 
 
 def test_squashed_baseline_contains_all_schema_layers():
