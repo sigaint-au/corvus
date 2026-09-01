@@ -205,10 +205,14 @@ def project_detail(project_id):
             try:
                 cur.execute(
                     """
-                    SELECT id, path, access_mode
-                    FROM api.folders
-                    WHERE project_id = %s::uuid
-                    ORDER BY path
+                    SELECT f.id, f.path, f.access_mode
+                    FROM api.folders f
+                    WHERE f.project_id = %s::uuid
+                      AND EXISTS (
+                        SELECT 1 FROM api.secrets s
+                        WHERE s.folder_id = f.id AND s.deleted_at IS NULL
+                      )
+                    ORDER BY f.path
                     """,
                     (str(project_id),),
                 )

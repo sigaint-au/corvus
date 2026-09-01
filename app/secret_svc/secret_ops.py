@@ -109,9 +109,10 @@ def _load_secrets_page(cur, project_id, page, q):
         >>> # rows, pager = _load_secrets_page(cur, project_id, 1, "")
         >>> # isinstance(rows, list) and "limit" in pager
     """
-    where = "s.project_id = %s AND s.deleted_at IS NULL"
+    where = "s.project_id = %s AND s.deleted_at IS NULL AND s.folder_id IS NULL"
     params = [str(project_id)]
     if q:
+        where = "s.project_id = %s AND s.deleted_at IS NULL"
         like = f"%{q}%"
         where += """
           AND (
