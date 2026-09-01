@@ -51,6 +51,7 @@ def test_migrations_ship_in_order():
         "0005_folder_effective_access_label.sql",
         "0006_machine_upsert_conflict_target.sql",
         "0007_machine_upsert_folder.sql",
+        "0008_machine_upsert_folder_var.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -79,6 +80,19 @@ def test_machine_upsert_conflict_target():
         "DROP FUNCTION IF EXISTS private.machine_upsert_enc("
         "uuid, text, text, text, text, text, timestamptz, boolean)"
     ) in sql
+    assert (
+        "GRANT EXECUTE ON FUNCTION private.machine_upsert_enc("
+        "uuid, text, text, text, text, text, timestamptz, boolean, text)"
+    ) in sql
+
+
+def test_machine_upsert_folder_var_not_shadowing_column():
+    sql = (migrations.MIGRATIONS_DIR / "0008_machine_upsert_folder_var.sql").read_text()
+    assert "v_folder_id uuid" in sql
+    assert "\n  folder_id uuid;" not in sql
+    assert "v_folder_id := private.materialize_folder_path" in sql
+    assert "p_project, v_folder_id, p_key" in sql
+    assert "ON CONFLICT (project_id, folder_id, key) WHERE folder_id IS NOT NULL" in sql
     assert (
         "GRANT EXECUTE ON FUNCTION private.machine_upsert_enc("
         "uuid, text, text, text, text, text, timestamptz, boolean, text)"
