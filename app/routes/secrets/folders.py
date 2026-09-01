@@ -11,6 +11,7 @@ from lib.users import lookup_user_id
 from routes.rbac.helpers import _role_allowed_at_scope
 from secret_svc.folders import delete_empty_folder, materialize_folder_path
 from secret_svc.secret_ops import _parse_access_mode
+from ui import paging
 
 
 def _folder_access_url(project_id, folder_id):
@@ -23,6 +24,7 @@ def folder_view(project_id, folder_id):
     active_tab = (request.args.get("tab") or "contents").strip().lower()
     if active_tab not in ("contents", "access"):
         active_tab = "contents"
+    page = int(request.args.get("page") or 1)
     folder = None
     project = None
     can_admin = False
@@ -30,6 +32,9 @@ def folder_view(project_id, folder_id):
     secrets = []
     access_bindings = []
     access_groups = []
+    effective_access = []
+    effective_access_q = ""
+    effective_access_pager = None
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -87,6 +92,46 @@ def folder_view(project_id, folder_id):
                 (str(project["team_id"]),),
             )
             access_groups = list(cur.fetchall() or [])
+            try:
+                cur.execute(
+                    "SELECT * FROM api.effective_access_rows('folder', %s::uuid)",
+                    (str(folder_id),),
+                )
+                effective_access = list(cur.fetchall() or [])
+            except Exception:
+                conn.rollback()
+                effective_access = []
+            effective_access_q = (request.args.get("q") or "").strip()
+            if effective_access_q:
+                needle = effective_access_q.casefold()
+                effective_access = [
+                    row
+                    for row in effective_access
+                    if needle
+                    in " ".join(
+                        str(row.get(key) or "")
+                        for key in (
+                            "subject_email",
+                            "subject_name",
+                            "subject_kind",
+                            "role_name",
+                            "scope_label",
+                            "scope_kind",
+                            "grant_kind",
+                            "grant_subject",
+                        )
+                    ).casefold()
+                ]
+            effective_access_pager = paging.page_window(len(effective_access), page)
+            effective_access_pager.update(
+                endpoint="folder_view",
+                project_id=project_id,
+                folder_id=folder_id,
+                tab="access",
+                q=effective_access_q or None,
+            )
+            start = (page - 1) * effective_access_pager["per_page"]
+            effective_access = effective_access[start : start + effective_access_pager["per_page"]]
     return render_template(
         "folder_view.html",
         folder=folder,
@@ -100,6 +145,9 @@ def folder_view(project_id, folder_id):
         secrets=secrets,
         access_bindings=access_bindings,
         access_groups=access_groups,
+        effective_access=effective_access,
+        effective_access_q=effective_access_q,
+        effective_access_pager=effective_access_pager,
         role_dropdown=config.RBAC_SECRET_ROLE_DROPDOWN,
         subject_kinds=config.RBAC_SUBJECT_KINDS,
         access_modes=config.ACCESS_MODES,

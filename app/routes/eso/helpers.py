@@ -46,6 +46,8 @@ def _meta_item(row: dict, *, value: str | None = None) -> dict:
     out = {
         "id": str(row["id"]) if row.get("id") is not None else None,
         "key": row.get("key"),
+        "folder_id": str(row["folder_id"]) if row.get("folder_id") else None,
+        "folder_path": row.get("folder_path") or None,
         "note": row.get("note") or "",
         "kind": row.get("kind") or "plain",
         "expires_at": iso_utc(row.get("expires_at")),

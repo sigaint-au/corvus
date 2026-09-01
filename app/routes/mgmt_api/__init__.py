@@ -18,6 +18,11 @@ from .admin import (
     mgmt_admin_users,
 )
 from .export import mgmt_export_project
+from .folders import (
+    mgmt_create_folder,
+    mgmt_delete_folder,
+    mgmt_list_folders,
+)
 from .groups import (
     mgmt_add_group_member,
     mgmt_create_group,
@@ -104,6 +109,9 @@ def register(app):
     app.get(f"{base}/projects/<project_ref>/tokens")(mgmt_list_tokens)
     app.post(f"{base}/projects/<project_ref>/tokens")(mgmt_create_token)
     app.delete(f"{base}/projects/<project_ref>/tokens/<token_id>")(mgmt_delete_token)
+    app.get(f"{base}/projects/<project_ref>/folders")(mgmt_list_folders)
+    app.post(f"{base}/projects/<project_ref>/folders")(mgmt_create_folder)
+    app.delete(f"{base}/projects/<project_ref>/folders/<uuid:folder_id>")(mgmt_delete_folder)
     app.get(f"{base}/projects/<project_ref>/secrets/<path:key>/history")(mgmt_secret_history)
     app.patch(f"{base}/projects/<project_ref>/secrets/<path:key>")(mgmt_update_secret_access)
     app.post(f"{base}/projects/<project_ref>/secrets/<path:key>/bindings")(mgmt_add_secret_binding)

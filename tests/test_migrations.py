@@ -48,6 +48,7 @@ def test_migrations_ship_in_order():
         "0002_cli_session_tokens.sql",
         "0003_secret_folders.sql",
         "0004_materialize_folder_definer.sql",
+        "0005_folder_effective_access_label.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
