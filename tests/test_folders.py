@@ -39,6 +39,31 @@ def test_folder_access_tab_renders_shared_binding_panel():
     assert b"Add binding" in response.data
 
 
+def test_folder_contents_empty_states_use_shared_partial():
+    project_id = uuid4()
+    folder_id = uuid4()
+    conn, cur = mock_conn()
+    cur.fetchone.side_effect = [
+        {"id": folder_id, "project_id": project_id, "path": "ops", "access_mode": "inherit"},
+        {"id": project_id, "name": "prod", "team_name": "Ops", "team_id": uuid4()},
+        {"a": False},
+    ]
+    with store.app.test_client() as client:
+        with client.session_transaction() as session:
+            session["user_id"] = str(uuid4())
+            session["email"] = "folder@example.test"
+            session["is_global_admin"] = False
+        with patch.object(settings_svc, "get_settings", return_value={}), patch.object(
+            db, "as_user", return_value=conn
+        ):
+            response = client.get(f"/projects/{project_id}/folders/{folder_id}")
+
+    assert response.status_code == 200
+    assert b"No child folders" in response.data
+    assert b"No secrets in this folder" in response.data
+    assert b"empty-state" in response.data
+
+
 def test_parse_secret_path_splits_root_and_nested_keys():
     assert parse_secret_path("folder/1/2/3/secret") == (("folder", "1", "2", "3"), "secret")
     assert parse_secret_path("secret") == ((), "secret")

@@ -34,7 +34,12 @@
   <div class="table"><table><thead><tr><th>Folder</th><th>Access</th></tr></thead><tbody>
   {% for child in child_folders %}<tr><td><a href="{{ url_for('folder_view', project_id=project_id, folder_id=child.id) }}"><code class="k">{{ child.path }}</code></a></td><td class="muted">{{ child.access_mode }}</td></tr>{% endfor %}
   </tbody></table></div>
-  {% else %}<p class="empty">No child folders.</p>{% endif %}
+  {% else %}
+  {% set icon = 'folder' %}
+  {% set title = 'No child folders' %}
+  {% set text = 'Nested folders will appear here once created.' %}
+  {% include "partials/empty_state.html" %}
+  {% endif %}
 </section>
 <section>
   <div class="section-head"><h2>Secrets</h2></div>
@@ -42,7 +47,12 @@
   <div class="table"><table><thead><tr><th>Key</th><th>Kind</th><th>Updated</th></tr></thead><tbody>
   {% for secret in secrets %}<tr><td class="col-key"><a href="{{ url_for('secret_view', project_id=project_id, secret_id=secret.id) }}"><code class="k">{{ (secret.key or '').split('/')[-1] }}</code></a></td><td><span class="badge" data-variant="secondary">{{ secret.kind or 'plain' }}</span></td><td class="muted">{{ secret.updated_at|time_ago if secret.updated_at else '-' }}</td></tr>{% endfor %}
   </tbody></table></div>
-  {% else %}<p class="empty">No secrets in this folder.</p>{% endif %}
+  {% else %}
+  {% set icon = 'key' %}
+  {% set title = 'No secrets in this folder' %}
+  {% set text = 'Create a secret at the project level with this folder path as its key prefix.' %}
+  {% include "partials/empty_state.html" %}
+  {% endif %}
 </section>
 {% else %}
 <section>
