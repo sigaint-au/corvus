@@ -18,7 +18,7 @@
 </head>
 <body class="{% if session.get('user_id') %}app{% else %}auth{% endif %}">
   <a class="skip-link" href="#main-content">Skip to content</a>
-  {% if classification and classification.enabled %}
+  {% if classification and classification.enabled %}commi
   <div class="class-banner"
        style="background: {{ classification.color }}; color: {{ classification.fg }};"
        role="status">{{ classification.text }}</div>

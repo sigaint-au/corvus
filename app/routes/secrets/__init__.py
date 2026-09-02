@@ -17,6 +17,7 @@ from .crud import (
     create_secret,
     delete_secret,
     delete_secret_meta,
+    derive_ssh_public_key,
     generate_ssh_key,
     secret_new,
     update_secret_value,
@@ -103,6 +104,7 @@ def register(app):
     app.post("/projects/<uuid:project_id>/folders/<uuid:folder_id>/delete")(delete_folder)
     app.post("/trash/bulk")(bulk_trash)
     app.post("/projects/<uuid:project_id>/generate-ssh-key")(generate_ssh_key)
+    app.post("/projects/<uuid:project_id>/derive-ssh-key")(derive_ssh_public_key)
     app.route("/projects/<uuid:project_id>/secrets/new", methods=["GET", "POST"])(secret_new)
     app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access")(update_secret_access)
     app.post("/projects/<uuid:project_id>/secrets/<uuid:secret_id>/access/bindings")(

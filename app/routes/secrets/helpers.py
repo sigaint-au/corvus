@@ -19,6 +19,7 @@ from secret_svc.secret_kinds import (
     parse_kv_lines,
     parse_pem_blocks,
     split_cert_and_key,
+    ssh_fingerprint,
 )
 from secret_svc.secret_ops import _load_secrets_page
 from ui import paging
@@ -333,6 +334,7 @@ def _render_secret_view(
             kv_pairs=parse_kv_lines(plaintext) if kind == "kv" else [("", "")],
             pem_blocks=parse_pem_blocks(plaintext) if kind in ("certificate", "ssh") else [],
             ssh_public_key=extract_ssh_public_key(plaintext) if kind == "ssh" else "",
+            ssh_fingerprint=ssh_fingerprint(extract_ssh_public_key(plaintext)) if kind == "ssh" and plaintext else "",
             cert_pem=cert_pem,
             cert_key=cert_key,
             db_parts=parse_database_url(plaintext) if kind == "database" else {},

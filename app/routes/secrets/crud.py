@@ -15,7 +15,7 @@ from werkzeug.exceptions import HTTPException
 
 import audit
 from auth import authz
-from core import config, db
+from core import cache, config, db
 from lib import metadata
 from secret_svc.commands import (
     delete_secret_command,
@@ -346,6 +346,16 @@ def bulk_secrets(project_id):
 @authz.login_required
 def generate_ssh_key(project_id):
     """Generate an SSH key pair server-side and return both keys."""
+    # ponytail: rate limit per user+project, fail open if Redis unavailable
+    if cache.rate_limited(f"corvus:rl:ssh-gen:{session.get('user_id')}:{project_id}", limit=10, window=60):
+        return jsonify(success=False, error="Rate limited, try again shortly"), 429
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM api.projects WHERE id = %s", (str(project_id),))
+        if not cur.fetchone():
+            return jsonify(success=False, error="Not found"), 404
+        cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+        if not (cur.fetchone() or {}).get("w"):
+            return jsonify(success=False, error="Forbidden"), 403
     key_type = (request.form.get("key_type") or "ed25519").strip()
     try:
         from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
@@ -375,9 +385,48 @@ def generate_ssh_key(project_id):
             Encoding.OpenSSH,
             PublicFormat.OpenSSH,
         ).decode("ascii")
-        return jsonify(success=True, private_key=private_pem, public_key=public_pem)
+        # fingerprint for UI display without extra round-trip
+        try:
+            from secret_svc.secret_kinds import ssh_fingerprint
+
+            fp = ssh_fingerprint(public_pem)
+        except Exception:
+            fp = ""
+        resp = jsonify(success=True, private_key=private_pem, public_key=public_pem, fingerprint=fp)
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Pragma"] = "no-cache"
+        return resp
     except Exception as e:
         return jsonify(success=False, error=str(e)), 500
+
+
+@authz.login_required
+def derive_ssh_public_key(project_id):
+    """Derive public key + fingerprint from a pasted private key (no persistence)."""
+    if cache.rate_limited(f"corvus:rl:ssh-derive:{session.get('user_id')}:{project_id}", limit=30, window=60):
+        return jsonify(success=False, error="Rate limited, try again shortly"), 429
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM api.projects WHERE id = %s", (str(project_id),))
+        if not cur.fetchone():
+            return jsonify(success=False, error="Not found"), 404
+        cur.execute("SELECT api.can_write_project(%s) AS w", (str(project_id),))
+        if not (cur.fetchone() or {}).get("w"):
+            return jsonify(success=False, error="Forbidden"), 403
+    raw = (request.form.get("ssh_key") or request.form.get("private_key") or "").strip()
+    if not raw:
+        return jsonify(success=False, error="Private key required"), 400
+    from secret_svc.secret_kinds import extract_ssh_public_key, ssh_fingerprint, validate_ssh_private_key
+
+    err = validate_ssh_private_key(raw)
+    if err:
+        return jsonify(success=False, error=err), 400
+    pub = extract_ssh_public_key(raw)
+    if not pub:
+        return jsonify(success=False, error="Could not derive public key"), 400
+    fp = ssh_fingerprint(pub)
+    resp = jsonify(success=True, public_key=pub, fingerprint=fp)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @authz.login_required
@@ -437,6 +486,23 @@ def secret_new(project_id):
     note = (request.form.get("note") or "").strip()
     value = compose_secret_value(kind, request.form)
     kv_pairs = parse_kv_lines(value) if kind == "kv" else []
+    if kind == "ssh":
+        from secret_svc.secret_kinds import validate_ssh_private_key
+
+        ssh_err = validate_ssh_private_key(value)
+        if ssh_err:
+            flash(ssh_err, "error")
+            return render_template(
+                "secret_new.html",
+                **_new_ctx(
+                    kind=kind,
+                    key=key,
+                    note=note,
+                    expires_at=request.form.get("expires_at") or "",
+                    kv_pairs=kv_pairs or [("", "")],
+                    access_mode=_parse_access_mode(request.form),
+                ),
+            ), 400
     if not key or not value:
         flash("Key and value are required", "error")
         return render_template(

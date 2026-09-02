@@ -320,6 +320,24 @@ def secret_view(project_id, secret_id):
                     active_tab="secret",
                 )
                 return body, code
+            if kind == "ssh":
+                from secret_svc.secret_kinds import validate_ssh_private_key
+
+                ssh_err = validate_ssh_private_key(value)
+                if ssh_err:
+                    flash(ssh_err, "error")
+                    body, code = _render_secret_view(
+                        project_id=project_id,
+                        secret_id=secret_id,
+                        row=row_view,
+                        plaintext=value,
+                        kind=kind,
+                        can_write=True,
+                        status=400,
+                        can_admin=can_admin,
+                        active_tab="secret",
+                    )
+                    return body, code
             try:
                 expires_at = _parse_expires_at(request.form, allow_clear=True)
             except (ValueError, TypeError):

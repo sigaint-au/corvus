@@ -45,6 +45,7 @@ def secrets_list():
     access_mode = (request.args.get("access_mode") or "").strip() or None
     if access_mode not in ("restricted", "inherit", None):
         access_mode = None
+    folder = (request.args.get("folder") or "").strip().strip("/") or None
     team, secrets, team_projects = None, [], []
     secrets_pager = None
     if tid:
@@ -60,6 +61,7 @@ def secrets_list():
                     kind=kind,
                     due=due,
                     access_mode=access_mode,
+                    folder=folder,
                 )
     template = "partials/secrets_results.html" if authz.htmx() else "secrets.html"
     return render_template(
@@ -73,6 +75,7 @@ def secrets_list():
         filter_kind=kind,
         filter_due=due,
         filter_access_mode=access_mode,
+        filter_folder=folder,
         secret_kinds=config.SECRET_KINDS,
     )
 

@@ -185,6 +185,49 @@ def extract_ssh_public_key(private_pem: str) -> str:
         return ""
 
 
+def ssh_fingerprint(public_openssh: str) -> str:
+    """Return OpenSSH-style SHA256 fingerprint for a public key string."""
+    try:
+        import base64
+        import hashlib
+
+        parts = (public_openssh or "").strip().split()
+        if len(parts) < 2:
+            return ""
+        raw = base64.b64decode(parts[1])
+        digest = hashlib.sha256(raw).digest()
+        return "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("=")
+    except Exception:
+        return ""
+
+
+def validate_ssh_private_key(private_pem: str) -> str | None:
+    """Validate PEM is an unencrypted SSH private key; return error msg or None."""
+    v = (private_pem or "").strip()
+    if not v:
+        return "Private key is required"
+    if "ENCRYPTED" in v:
+        return "Passphrase-protected keys are not supported. Remove the passphrase before importing (ssh-keygen -p -f key -m PEM or -N \"\")."
+    try:
+        from cryptography.hazmat.primitives.serialization import (
+            load_pem_private_key,
+            load_ssh_private_key,
+        )
+
+        raw = v.encode("ascii")
+        try:
+            load_ssh_private_key(raw, password=None)
+        except ValueError as e:
+            # cryptography raises ValueError for encrypted keys even without ENCRYPTED header
+            if "password" in str(e).lower() or "encrypted" in str(e).lower():
+                return "Passphrase-protected keys are not supported. Remove the passphrase before importing."
+            # fall through to PEM loader
+            load_pem_private_key(raw, password=None)
+        return None
+    except Exception:
+        return "Invalid SSH private key"
+
+
 def parse_database_url(value: str) -> dict:
     """Break a DB URL into display fields (password kept separate).
 

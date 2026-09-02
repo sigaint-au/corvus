@@ -393,22 +393,38 @@ def _upsert_body(project_ref, key: str, body: dict):
         return jsonify({"error": "key and value required"}), 400
 
     ssh_public_key = None
+    ssh_fingerprint = None
     if kind_s == "ssh" and value is None:
-        from cryptography.hazmat.primitives.asymmetric import ed25519
-        from cryptography.hazmat.primitives.serialization import (
-            Encoding,
-            NoEncryption,
-            PrivateFormat,
-            PublicFormat,
-        )
+        _kt = (body.get("key_type") or body.get("ssh_key_type") or "ed25519").strip().lower()
+        try:
+            from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+            from cryptography.hazmat.primitives.serialization import (
+                Encoding,
+                NoEncryption,
+                PrivateFormat,
+                PublicFormat,
+            )
+            from secret_svc.secret_kinds import ssh_fingerprint as _fp
 
-        k = ed25519.Ed25519PrivateKey.generate()
-        value = k.private_bytes(
-            Encoding.PEM, PrivateFormat.OpenSSH, NoEncryption(),
-        ).decode("ascii")
-        ssh_public_key = k.public_key().public_bytes(
-            Encoding.OpenSSH, PublicFormat.OpenSSH,
-        ).decode("ascii")
+            if _kt == "ed25519":
+                k = ed25519.Ed25519PrivateKey.generate()
+            elif _kt == "rsa-4096":
+                k = rsa.generate_private_key(public_exponent=65537, key_size=4096)
+            elif _kt == "ecdsa-256":
+                k = ec.generate_private_key(ec.SECP256R1())
+            elif _kt == "ecdsa-384":
+                k = ec.generate_private_key(ec.SECP384R1())
+            else:
+                return jsonify({"error": "unknown key_type, use ed25519|rsa-4096|ecdsa-256|ecdsa-384"}), 400
+            enc_fmt = PrivateFormat.OpenSSH if _kt == "ed25519" else PrivateFormat.TraditionalOpenSSL
+            value = k.private_bytes(Encoding.PEM, enc_fmt, NoEncryption()).decode("ascii")
+            ssh_public_key = k.public_key().public_bytes(Encoding.OpenSSH, PublicFormat.OpenSSH).decode("ascii")
+            try:
+                ssh_fingerprint = _fp(ssh_public_key)
+            except Exception:
+                ssh_fingerprint = None
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     expires_at, set_expires, exp_err = _parse_expires_from_body(body)
     if exp_err:
@@ -464,6 +480,8 @@ def _upsert_body(project_ref, key: str, body: dict):
         if ssh_public_key:
             item["ssh_public_key"] = ssh_public_key
             item["private_key"] = value
+            if ssh_fingerprint:
+                item["ssh_fingerprint"] = ssh_fingerprint
         item["ok"] = True
         return jsonify(item), 200
 
@@ -503,5 +521,7 @@ def _upsert_body(project_ref, key: str, body: dict):
     if ssh_public_key:
         item["ssh_public_key"] = ssh_public_key
         item["private_key"] = value
+        if ssh_fingerprint:
+            item["ssh_fingerprint"] = ssh_fingerprint
     item["ok"] = True
     return jsonify(item), 200

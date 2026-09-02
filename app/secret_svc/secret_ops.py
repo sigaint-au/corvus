@@ -204,6 +204,7 @@ def _load_team_secrets_page(
     kind=None,
     due=None,
     access_mode=None,
+    folder=None,
 ):
     """Count + page live secrets for a whole team with optional filters.
 
@@ -216,6 +217,8 @@ def _load_team_secrets_page(
         kind: Optional secret kind (plain, database, …).
         due: Optional expiry bucket: ``overdue``, ``soon``, or ``none``.
         access_mode: Optional access mode filter: ``restricted`` (non-inherit) or ``inherit``.
+        folder: Optional folder path prefix filter (e.g. ``ops/prod``). Matches
+            exact folder and descendants (``ops/prod/%``).
 
     Returns:
         ``(rows, pager, projects)`` — projects is ``[{id, name}, …]`` for filters.
@@ -242,11 +245,18 @@ def _load_team_secrets_page(
         """
     elif due == "none":
         where += " AND s.expires_at IS NULL"
+    folder_norm = (folder or "").strip().strip("/")
+    if folder_norm:
+        # exact folder or any descendant; escape LIKE wildcards
+        esc = folder_norm.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        where += " AND (f.path = %s OR f.path LIKE %s ESCAPE '\\')"
+        params.extend([folder_norm, esc + "/%"])
     if q:
         like = f"%{q}%"
         where += """
           AND (
             s.key ILIKE %s OR s.note ILIKE %s OR p.name ILIKE %s
+            OR f.path ILIKE %s
             OR EXISTS (
               SELECT 1 FROM api.secret_meta m
               WHERE m.secret_id = s.id
@@ -254,13 +264,14 @@ def _load_team_secrets_page(
             )
           )
         """
-        params.extend([like, like, like, like, like])
+        params.extend([like, like, like, like, like, like])
 
     cur.execute(
         f"""
         SELECT count(*) AS n
         FROM api.secrets s
         JOIN api.projects p ON p.id = s.project_id
+        LEFT JOIN api.folders f ON f.id = s.folder_id
         WHERE {where}
         """,
         params,
@@ -274,12 +285,14 @@ def _load_team_secrets_page(
         kind=kind or None,
         due=due or None,
         access_mode=access_mode or None,
+        folder=folder_norm or None,
     )
     cur.execute(
         f"""
         SELECT s.id, s.key, s.note, s.kind, s.updated_at, s.expires_at,
                s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
                s.access_mode, p.id AS project_id, p.name AS project_name,
+               s.folder_id, f.path AS folder_path,
                api.can_access_secret(s.id, 'reveal') AS can_reveal,
                api.can_admin_project(s.project_id) AS is_admin,
                CASE
@@ -291,8 +304,9 @@ def _load_team_secrets_page(
         FROM api.secrets s
         JOIN api.projects p ON p.id = s.project_id
         JOIN api.teams t ON t.id = p.team_id
+        LEFT JOIN api.folders f ON f.id = s.folder_id
         WHERE {where}
-        ORDER BY p.name, s.key
+        ORDER BY p.name, f.path NULLS FIRST, s.key
         LIMIT %s OFFSET %s
         """,
         (*params, pager["limit"], pager["offset"]),
