@@ -58,6 +58,53 @@ def parse_secret_path(key: str) -> tuple[tuple[str, ...], str]:
     return parts[:-1], parts[-1]
 
 
+def compact_folder_rows(rows) -> list[dict]:
+    """Collapse linear single-child folder runs for display.
+
+    Each row needs ``id``, ``parent_id`` (None for roots), ``path`` and
+    ``n_secrets`` (direct live secrets). Folders with no secrets and
+    exactly one child are passthroughs and merge into their descendant;
+    leaves (including empty ones), branch points, and folders holding
+    secrets are kept. Sorted by path.
+    """
+    rows = list(rows or [])
+    kids: dict[str, list[dict]] = {}
+    for r in rows:
+        kids.setdefault(str(r.get("parent_id")), []).append(r)
+
+    def kids_of(node) -> list[dict]:
+        return kids.get(str(node.get("id")), [])
+
+    def descend(node) -> dict:
+        cur = node
+        while int(cur.get("n_secrets") or 0) == 0 and len(kids_of(cur)) == 1:
+            (cur,) = kids_of(cur)
+        return cur
+
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def walk(node):
+        target = descend(node)
+        key = str(target.get("id"))
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(target)
+        for child in kids_of(target):
+            walk(child)
+
+    ids = {str(r.get("id")) for r in rows}
+    for r in rows:
+        if str(r.get("parent_id")) not in ids:
+            walk(r)
+    for r in rows:  # orphans (RLS-filtered parent) still show, never drop
+        if str(r.get("id")) not in seen:
+            walk(r)
+    out.sort(key=lambda r: str(r.get("path") or ""))
+    return out
+
+
 def visible_folder_paths(secret_rows) -> list[str]:
     """Return folder prefixes represented by rows already allowed by RLS."""
     paths: set[str] = set()

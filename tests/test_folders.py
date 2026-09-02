@@ -149,3 +149,54 @@ def test_visible_folder_paths_only_uses_returned_secret_rows():
         "ops",
         "ops/prod",
     ]
+
+
+def _frow(fid, path, parent=None, n=0):
+    return {"id": fid, "parent_id": parent, "path": path, "access_mode": "inherit", "n_secrets": n}
+
+
+def test_compact_collapses_linear_chain_to_leaf():
+    from secret_svc.folders import compact_folder_rows
+
+    rows = [
+        _frow("1", "1"),
+        _frow("2", "1/2", parent="1"),
+        _frow("3", "1/2/3", parent="2"),
+        _frow("4", "1/2/3/4", parent="3", n=1),
+    ]
+    out = compact_folder_rows(rows)
+    assert [(r["id"], r["path"]) for r in out] == [("4", "1/2/3/4")]
+
+
+def test_compact_keeps_branch_and_empty_leaf():
+    from secret_svc.folders import compact_folder_rows
+
+    rows = [
+        _frow("r", "r"),
+        _frow("a", "r/a", parent="r", n=1),
+        _frow("b", "r/b", parent="r"),
+        _frow("c", "r/b/c", parent="b", n=2),
+        _frow("e", "empty", n=0),
+    ]
+    out = compact_folder_rows(rows)
+    assert [(r["id"], r["path"]) for r in out] == [
+        ("e", "empty"),
+        ("r", "r"),
+        ("a", "r/a"),
+        ("c", "r/b/c"),
+    ]
+
+
+def test_compact_empty_chain_shows_single_row():
+    from secret_svc.folders import compact_folder_rows
+
+    rows = [_frow("1", "new"), _frow("2", "new/nested", parent="1")]
+    out = compact_folder_rows(rows)
+    assert [(r["id"], r["path"]) for r in out] == [("2", "new/nested")]
+
+
+def test_compact_empty_input():
+    from secret_svc.folders import compact_folder_rows
+
+    assert compact_folder_rows([]) == []
+    assert compact_folder_rows(None) == []

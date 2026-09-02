@@ -15,6 +15,7 @@ import audit
 from auth import authz
 from core import config, db, settings_svc
 from lib import metadata
+from secret_svc.folders import compact_folder_rows
 from secret_svc.secret_kinds import (
     SOON_DAYS,
     annotate_token_expiry,
@@ -207,18 +208,17 @@ def project_detail(project_id):
             try:
                 cur.execute(
                     """
-                    SELECT f.id, f.path, f.access_mode
+                    SELECT f.id, f.parent_id, f.path, f.access_mode,
+                           (SELECT count(*) FROM api.secrets s
+                             WHERE s.folder_id = f.id AND s.deleted_at IS NULL
+                           ) AS n_secrets
                     FROM api.folders f
                     WHERE f.project_id = %s::uuid
-                      AND EXISTS (
-                        SELECT 1 FROM api.secrets s
-                        WHERE s.folder_id = f.id AND s.deleted_at IS NULL
-                      )
                     ORDER BY f.path
                     """,
                     (str(project_id),),
                 )
-                folder_rows = list(cur.fetchall() or [])
+                folder_rows = compact_folder_rows(cur.fetchall())
             except Exception:
                 folder_rows = []
             # Expiry dashboard: scan live secrets for this project (capped)
