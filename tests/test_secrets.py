@@ -67,6 +67,24 @@ class TestSecrets:
         assert b'>Access<' in r.data
         assert b'Activity' in r.data
 
+    def test_project_detail_shows_search_when_only_folders(self):
+        folder = {
+            'id': uuid4(), 'parent_id': None, 'path': 'ops',
+            'access_mode': 'inherit', 'n_secrets': 0,
+        }
+        project = {'id': self.pid, 'name': 'prod', 'team_name': 'Ops', 'team_id': uuid4()}
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [
+            project, {'w': True}, {'a': False}, {'r': 'team-member'}, {'g': False},
+            {'n': 0}, {'a': False}, {'n': 0},
+        ]
+        cur.fetchall.side_effect = [[], [folder], [], []]
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.get(f'/projects/{self.pid}?tab=secrets')
+        assert r.status_code == 200
+        assert b'aria-label="Search secrets"' in r.data
+        assert b'ops' in r.data
+
     def test_project_detail_htmx_returns_panel(self):
         with patch.object(db, 'as_user', return_value=self._project_conn()):
             r = self.client.get(
