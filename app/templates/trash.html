@@ -46,5 +46,8 @@
   {% endif %}
 </div>
 
+{% if team %}
+<p class="page-desc muted">Deleted secrets for <strong>{{ team.name }}</strong>. Restore to put them back in the project, or permanently delete.</p>
+{% endif %}
 {% include "partials/trash_results.html" %}
 {% endblock %}

@@ -2,7 +2,6 @@
 {% if not team %}
 <p class="empty">Select a team in the sidebar.</p>
 {% elif items %}
-<p class="page-desc muted">Deleted secrets for <strong>{{ team.name }}</strong>. Restore to put them back in the project, or permanently delete.</p>
 <form id="bulk-trash" method="post" action="{{ url_for('bulk_trash') }}">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <input type="hidden" name="bulk_action" id="bulk-action-field" value="">

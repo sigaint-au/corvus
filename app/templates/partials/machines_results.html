@@ -9,10 +9,10 @@
       <tbody>
       {% for t in tokens %}
         <tr>
-           <td>{{ t.name }}</td>
-           <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
-           <td><code class="k">{{ t.id }}</code></td>
-           <td><code class="k">{{ t.token_prefix }}…</code></td>
+           <td class="col-key">{{ t.name }}</td>
+            <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
+            <td><code class="k">{{ t.id }}</code></td>
+            <td><code class="k">{{ t.token_prefix }}…</code></td>
           <td><span class="badge" data-variant="secondary">{{ t.role or 'service-read' }}</span></td>
           <td class="muted" title="{% if t.last_used_at %}{{ t.last_used_at|time_when }}{% endif %}">{% if t.last_used_at %}{{ t.last_used_at|time_ago }}{% else %}never{% endif %}</td>
           <td class="muted" title="{{ t.created_at|time_when }}">{{ t.created_at|time_ago }}</td>
@@ -26,8 +26,11 @@
       </tbody>
     </table>
     </div>
-    {% elif q %}
-    <p class="empty">No machine accounts match “{{ q }}”.</p>
+    {% with pager=machines_pager %}
+    {% include "partials/pager.html" %}
+    {% endwith %}
+    {% elif search_q or q %}
+    <p class="empty">No machine accounts match “{{ search_q or q }}”.</p>
     {% else %}
     {% set icon = 'key' %}
     {% set title = 'No machine accounts' %}
@@ -35,7 +38,4 @@
     {% include "partials/empty_state.html" %}
     {% endif %}
   </section>
-  {% with pager=machines_pager %}
-  {% include "partials/pager.html" %}
-  {% endwith %}
 </div>

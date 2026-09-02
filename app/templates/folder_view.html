@@ -40,7 +40,7 @@
   <div class="section-head"><h2>Secrets</h2></div>
   {% if secrets %}
   <div class="table"><table><thead><tr><th>Key</th><th>Kind</th><th>Updated</th></tr></thead><tbody>
-  {% for secret in secrets %}<tr><td><a href="{{ url_for('secret_view', project_id=project_id, secret_id=secret.id) }}"><code class="k">{{ secret.key.split('/')[-1] }}</code></a></td><td>{{ secret.kind }}</td><td class="muted">{{ secret.updated_at|time_ago if secret.updated_at else '-' }}</td></tr>{% endfor %}
+  {% for secret in secrets %}<tr><td class="col-key"><a href="{{ url_for('secret_view', project_id=project_id, secret_id=secret.id) }}"><code class="k">{{ (secret.key or '').split('/')[-1] }}</code></a></td><td><span class="badge" data-variant="secondary">{{ secret.kind or 'plain' }}</span></td><td class="muted">{{ secret.updated_at|time_ago if secret.updated_at else '-' }}</td></tr>{% endfor %}
   </tbody></table></div>
   {% else %}<p class="empty">No secrets in this folder.</p>{% endif %}
 </section>

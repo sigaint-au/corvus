@@ -118,7 +118,7 @@ def machines_list():
                 )
                 tokens = annotate_token_expiry(tokens)
     template = "partials/machines_results.html" if authz.htmx() else "machines.html"
-    return render_template(template, team=team, tokens=tokens, machines_pager=machines_pager, q=q)
+    return render_template(template, team=team, tokens=tokens, machines_pager=machines_pager, q=q, search_q=q)
 
 
 @authz.login_required

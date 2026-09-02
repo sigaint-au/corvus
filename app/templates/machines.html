@@ -24,7 +24,7 @@
 {% endif %}
 {% else %}
 <p class="page-desc muted">Team: <strong>{{ team.name }}</strong></p>
-<form method="get" action="{{ url_for('machines_list') }}" class="audit-filters" role="search"
+<form method="get" action="{{ url_for('machines_list') }}" class="toolbar" role="search"
       hx-get="{{ url_for('machines_list') }}"
       hx-target="#machines-results"
       hx-swap="outerHTML"
