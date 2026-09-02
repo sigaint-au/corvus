@@ -175,7 +175,7 @@
     <form method="post" action="{{ url_for('revoke_other_sessions') }}" class="inline"
           onsubmit="return confirm('Sign out all other devices?')">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <button type="submit" class="link">Sign out other sessions</button>
+      <button type="submit" class="button ghost small">Sign out other sessions</button>
     </form>
     {% endif %}
   </div>

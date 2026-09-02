@@ -3,7 +3,12 @@
     <h2>Activity</h2>
   </div>
   <p class="muted">Who did what to secrets in this project, and when.</p>
-  <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="audit-filters" role="search">
+  <form method="get" action="{{ url_for('project_detail', project_id=project.id) }}" class="audit-filters" role="search"
+        hx-get="{{ url_for('project_detail', project_id=project.id) }}"
+        hx-target="#project-panel"
+        hx-swap="innerHTML"
+        hx-push-url="true"
+        hx-trigger="submit, input delay:400ms from:input[type=search], change">
     <input type="hidden" name="tab" value="audit">
     <fieldset class="group search-input">
       {% include "partials/search_icon.html" %}
@@ -13,6 +18,10 @@
     <label>Actor email
       <input type="search" name="actor" value="{{ audit_actor or '' }}"
              placeholder="e.g. alice@example.com" autocomplete="off">
+    </label>
+    <label>IP address
+      <input type="search" name="ip" value="{{ audit_ip or '' }}"
+             placeholder="e.g. 203.0.113.7" autocomplete="off">
     </label>
     <label>Action
       <select name="action">
@@ -28,9 +37,18 @@
     <label>To
       <input type="date" name="until" value="{{ audit_until or '' }}">
     </label>
-    {% if search_q or audit_actor or audit_action or audit_since or audit_until %}
+    <label class="check-row">
+      <input type="checkbox" name="hide_reveals" value="1" {% if hide_reveals %}checked{% endif %}>
+      Hide reveals
+    </label>
+    <button type="submit" class="button outline small">Apply</button>
+    {% if search_q or audit_actor or audit_ip or audit_action or audit_since or audit_until or hide_reveals %}
     <div class="audit-filter-actions">
-      <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}">Clear</a>
+      <a class="button ghost small" href="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
+         hx-get="{{ url_for('project_detail', project_id=project.id, tab='audit') }}"
+         hx-target="#project-panel"
+         hx-swap="innerHTML"
+         hx-push-url="true">Clear</a>
     </div>
     {% endif %}
   </form>
@@ -48,6 +66,7 @@
         <td>
           <span class="audit-summary">{{ e.summary }}</span>
           <span class="audit-action audit-{{ e.action }}">{{ e.action }}</span>
+          {% if e.ip_address %}<span class="muted" title="{{ e.user_agent or '' }}">{{ e.ip_address }}</span>{% endif %}
         </td>
         <td class="muted" title="{{ e.created_at }}">{{ e.when_display }}</td>
       </tr>

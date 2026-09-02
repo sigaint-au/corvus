@@ -136,6 +136,10 @@ def project_detail(project_id):
     audit_action = (request.args.get("action") or "").strip()
     audit_since = (request.args.get("since") or "").strip()
     audit_until = (request.args.get("until") or "").strip()
+    audit_ip = (request.args.get("ip") or "").strip()
+    hide_reveals = (request.args.get("hide_reveals") or "").strip().lower() in (
+        "1", "on", "true",
+    )
     secrets_pager = None
     audit_pager = None
     secret_rows = []
@@ -260,6 +264,8 @@ def project_detail(project_id):
                 action=audit_action,
                 since=audit_since,
                 until=audit_until,
+                ip=audit_ip,
+                hide_reveals=hide_reveals,
             )
             audit_pager = paging.page_window(total, page)
             audit_pager["endpoint"] = "project_detail"
@@ -270,6 +276,8 @@ def project_detail(project_id):
             audit_pager["action"] = audit_action
             audit_pager["since"] = audit_since
             audit_pager["until"] = audit_until
+            audit_pager["ip"] = audit_ip or None
+            audit_pager["hide_reveals"] = "1" if hide_reveals else None
             audit_rows = audit.list_for_project(
                 cur,
                 project_id,
@@ -280,6 +288,8 @@ def project_detail(project_id):
                 action=audit_action,
                 since=audit_since,
                 until=audit_until,
+                ip=audit_ip,
+                hide_reveals=hide_reveals,
             )
         elif tab in ("tokens", "integrations"):
             if tab == "tokens":
@@ -484,6 +494,8 @@ def project_detail(project_id):
         "audit_action": audit_action,
         "audit_since": audit_since,
         "audit_until": audit_until,
+        "audit_ip": audit_ip,
+        "hide_reveals": hide_reveals,
         "audit_actions": audit.ACTIONS,
         "new_token": session.pop("new_token", None),
         "due_overdue": due_overdue if tab == "secrets" else [],

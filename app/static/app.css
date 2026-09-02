@@ -1847,7 +1847,13 @@
     .audit-action.audit-revealed { color: var(--foreground); }
     .audit-action.audit-updated { color: var(--muted-foreground); }
     .audit-action.audit-deleted,
-    .audit-action.audit-purged { color: var(--danger); }
+    .audit-action.audit-purged,
+    .audit-action.audit-access_denied { color: var(--danger); }
+    .audit-action.audit-access_approved { color: var(--success); }
+    .audit-action.audit-access_requested { color: var(--warning); }
+    .audit-action.audit-machine_upsert { color: var(--muted-foreground); }
+    .card.danger-zone { border-color: var(--danger); }
+    .card.danger-zone > summary { color: var(--danger); font-weight: 600; }
     .audit-action.audit-exported { color: var(--warning); }
     .audit-filters {
       display: flex;
@@ -2083,6 +2089,7 @@
     .value-field .section-head .copy-btn,
     .pem-field .section-head .copy-btn,
     .pem-card .section-head .copy-btn,
+    .pem-card .section-head .dl-btn,
     .secret-view-form .section-head .copy-btn,
     .secret-view-form .form-actions .copy-btn {
       color: var(--muted-foreground);
@@ -2103,6 +2110,7 @@
     .value-field .section-head .copy-btn:hover,
     .pem-field .section-head .copy-btn:hover,
     .pem-card .section-head .copy-btn:hover,
+    .pem-card .section-head .dl-btn:hover,
     .secret-view-form .section-head .copy-btn:hover,
     .secret-view-form .form-actions .copy-btn:hover {
       color: var(--foreground);

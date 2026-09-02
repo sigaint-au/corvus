@@ -24,7 +24,8 @@ def list_org_for_team(cur, team_id, limit=40):
     """
     cur.execute(
         """
-        SELECT id, team_id, project_id, action, detail, actor_email, created_at
+        SELECT id, team_id, project_id, action, detail, actor_email, created_at,
+               ip_address, user_agent
         FROM api.org_audit
         WHERE team_id = %s
         ORDER BY created_at DESC
@@ -122,6 +123,7 @@ def list_org_audit(
         f"""
         SELECT a.id, a.team_id, a.project_id, a.action, a.detail,
                a.actor_email, a.user_id, a.created_at,
+               a.ip_address, a.user_agent,
                t.name AS team_name, p.name AS project_name
         FROM api.org_audit a
         LEFT JOIN api.teams t ON t.id = a.team_id
@@ -187,6 +189,8 @@ def _filter_clause(
     action: str = "",
     since: str = "",
     until: str = "",
+    ip: str = "",
+    hide_reveals: bool = False,
 ):
     """Build SQL fragment and params for secret audit list filters.
 
@@ -196,6 +200,8 @@ def _filter_clause(
         action: Exact action filter; only applied if action is in ACTIONS.
         since: Inclusive start date as YYYY-MM-DD (UTC start of day).
         until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+        ip: Substring filter on ip_address (case-insensitive).
+        hide_reveals: When True, exclude 'revealed' rows (noise filter).
 
     Returns:
         Tuple of (sql_fragment, params) where sql_fragment is AND-clauses
@@ -229,6 +235,12 @@ def _filter_clause(
     if action and action in ACTIONS:
         parts.append(" AND a.action = %s ")
         params.append(action)
+    ip = (ip or "").strip()
+    if ip:
+        parts.append(" AND a.ip_address ILIKE %s ")
+        params.append(f"%{ip}%")
+    if hide_reveals:
+        parts.append(" AND a.action <> 'revealed' ")
     since_dt = _parse_day(since, end=False)
     if since_dt:
         parts.append(" AND a.created_at >= %s ")
@@ -248,6 +260,8 @@ def count_for_project(
     action: str = "",
     since: str = "",
     until: str = "",
+    ip: str = "",
+    hide_reveals: bool = False,
 ) -> int:
     """Count secret_audit rows for a project with optional filters.
 
@@ -259,6 +273,8 @@ def count_for_project(
         action: Exact action filter if it is a known ACTIONS value.
         since: Inclusive start date as YYYY-MM-DD (UTC start of day).
         until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+        ip: Substring filter on ip_address (case-insensitive).
+        hide_reveals: When True, exclude 'revealed' rows (noise filter).
 
     Returns:
         Integer count of matching secret_audit rows for the project.
@@ -268,7 +284,10 @@ def count_for_project(
         >>> n >= 0
         True
     """
-    extra, params = _filter_clause(q=q, actor=actor, action=action, since=since, until=until)
+    extra, params = _filter_clause(
+        q=q, actor=actor, action=action, since=since, until=until,
+        ip=ip, hide_reveals=hide_reveals,
+    )
     cur.execute(
         f"""
         SELECT count(*) AS n
@@ -292,6 +311,8 @@ def list_for_project(
     action: str = "",
     since: str = "",
     until: str = "",
+    ip: str = "",
+    hide_reveals: bool = False,
 ):
     """List secret_audit rows for a project with filters and display fields.
 
@@ -305,6 +326,8 @@ def list_for_project(
         action: Exact action filter if it is a known ACTIONS value.
         since: Inclusive start date as YYYY-MM-DD (UTC start of day).
         until: Inclusive end date as YYYY-MM-DD (UTC end of day).
+        ip: Substring filter on ip_address (case-insensitive).
+        hide_reveals: When True, exclude 'revealed' rows (noise filter).
 
     Returns:
         List of secret_audit row mappings with summary (from describe_event)
@@ -315,11 +338,15 @@ def list_for_project(
         >>> "summary" in rows[0] and "when_display" in rows[0]
         True
     """
-    extra, params = _filter_clause(q=q, actor=actor, action=action, since=since, until=until)
+    extra, params = _filter_clause(
+        q=q, actor=actor, action=action, since=since, until=until,
+        ip=ip, hide_reveals=hide_reveals,
+    )
     cur.execute(
         f"""
         SELECT a.id, a.secret_id, a.secret_key, a.action, a.created_at,
                a.actor_email, a.user_id,
+               a.ip_address, a.user_agent,
                a.actor_email AS actor_name
         FROM api.secret_audit a
         WHERE a.project_id = %s

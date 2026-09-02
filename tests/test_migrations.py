@@ -55,6 +55,7 @@ def test_migrations_ship_in_order():
         "0009_machine_set_meta.sql",
         "0010_machine_meta_in_list.sql",
         "0011_machine_token_description.sql",
+        "0012_audit_ip_user_agent.sql",
     ]
     for name in files:
         assert name[:4].isdigit()

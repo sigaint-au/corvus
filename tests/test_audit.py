@@ -62,7 +62,10 @@ class TestAudit:
         assert 'private.audit_secret' in sql
         assert 'NULL::uuid' in sql
         assert 'INSERT INTO api.secret_audit' not in sql
-        assert params[-1] == 'a@b.c'
+        assert params[4] == 'a@b.c'
+        # trailing request-meta params (ip, user agent), blank with no headers
+        assert params[-2] == ''
+        assert params[-1] == ''
 
     def test_log_secret_emits_console_json(self):
         import json
@@ -94,6 +97,68 @@ class TestAudit:
         assert payload['secret_key'] == 'API_KEY'
         # single line — SIEM shippers parse one event per line
         assert '\n' not in records[0].getMessage()
+
+    def test_log_secret_passes_ip_and_user_agent(self):
+        cur = MagicMock()
+        pid = uuid4()
+        with store.app.test_request_context(
+            '/',
+            headers={'User-Agent': 'CorvusCLI/1.0', 'X-Forwarded-For': '203.0.113.7, 70.0.0.1'},
+        ):
+            from flask import session
+            session['email'] = 'a@b.c'
+            audit.log_secret(cur, project_id=pid, secret_key='K', action='revealed')
+        sql, params = (cur.execute.call_args.args[0], cur.execute.call_args.args[1])
+        assert 'private.audit_secret' in sql
+        assert params[-2] == '203.0.113.7'
+        assert params[-1] == 'CorvusCLI/1.0'
+
+    def test_log_org_passes_ip_and_user_agent(self):
+        cur = MagicMock()
+        with store.app.test_request_context(
+            '/', headers={'User-Agent': 'Mozilla/5.0'},
+            environ_overrides={'REMOTE_ADDR': '198.51.100.9'},
+        ):
+            from flask import session
+            session['email'] = 'a@b.c'
+            audit.log_org(cur, action='member_add', detail='x', team_id=uuid4())
+        sql, params = (cur.execute.call_args.args[0], cur.execute.call_args.args[1])
+        assert 'private.audit_org' in sql
+        assert params[-2] == '198.51.100.9'
+        assert params[-1] == 'Mozilla/5.0'
+
+    def test_client_meta_blank_outside_request(self):
+        assert audit._client_meta() == ('', '')
+
+    def test_filter_clause_ip_and_hide_reveals(self):
+        sql, params = audit._filter_clause(ip='203.0.113', hide_reveals=True)
+        assert 'ip_address' in sql
+        assert params[0] == '%203.0.113%'
+        assert "action <> 'revealed'" in sql
+        sql2, params2 = audit._filter_clause()
+        assert 'ip_address' not in sql2
+        assert 'revealed' not in sql2
+        assert params2 == []
+
+    def test_list_queries_select_ip_and_user_agent(self):
+        cur = MagicMock()
+        cur.fetchall.return_value = []
+        audit.list_for_project(cur, uuid4(), limit=1)
+        assert 'ip_address' in cur.execute.call_args.args[0]
+        assert 'user_agent' in cur.execute.call_args.args[0]
+        audit.list_org_audit(cur, limit=1)
+        assert 'ip_address' in cur.execute.call_args.args[0]
+        assert 'user_agent' in cur.execute.call_args.args[0]
+        audit.export_secret_audit(cur, limit=1)
+        assert 'ip_address' in cur.execute.call_args.args[0]
+        audit.export_org_audit(cur, limit=1)
+        assert 'ip_address' in cur.execute.call_args.args[0]
+
+    def test_migration_0012_adds_audit_ip_columns(self):
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0012_audit_ip_user_agent.sql').read_text()
+        assert 'api.secret_audit' in sql and 'ip_address' in sql
+        assert 'api.org_audit' in sql and 'user_agent' in sql
+        assert 'p_ip_address' in sql and 'p_user_agent' in sql
 
     def test_schema_revokes_secret_audit_insert(self):
         init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()

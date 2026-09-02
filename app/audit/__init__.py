@@ -41,7 +41,7 @@ from .queries import (
     list_org_for_team,
 )
 from .review import access_review_rows
-from .write import log_org, log_secret
+from .write import _client_meta, log_org, log_secret
 
 __all__ = [
     "ACTIONS",
@@ -87,4 +87,5 @@ __all__ = [
     "access_review_rows",
     "log_org",
     "log_secret",
+    "_client_meta",
 ]

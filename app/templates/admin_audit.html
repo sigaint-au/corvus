@@ -115,6 +115,7 @@
         <th>Action</th>
         <th>Detail</th>
         <th>Actor</th>
+        <th>IP</th>
         <th>Team</th>
         <th>Project</th>
       </tr>
@@ -126,6 +127,7 @@
         <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
         <td>{{ e.detail or '-' }}</td>
         <td class="muted">{{ e.actor_email or '-' }}</td>
+        <td class="muted" title="{{ e.user_agent or '' }}">{{ e.ip_address or '-' }}</td>
       <td>{{ e.team_name or '-' }}</td>
       <td>{{ e.project_name or '-' }}</td>
     </tr>

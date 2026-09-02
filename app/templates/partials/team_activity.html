@@ -15,7 +15,7 @@
   </div>
   {% if org_events %}
   <div class="table"><table>
-    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead>
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th><th>IP</th></tr></thead>
     <tbody>
     {% for e in org_events %}
       <tr>
@@ -23,6 +23,7 @@
         <td>{{ e.actor_email or 'unknown' }}</td>
         <td><span class="audit-action audit-{{ e.action }}">{{ e.action }}</span></td>
         <td class="muted">{{ e.detail }}</td>
+        <td class="muted" title="{{ e.user_agent or '' }}">{{ e.ip_address or '-' }}</td>
       </tr>
     {% endfor %}
     </tbody>

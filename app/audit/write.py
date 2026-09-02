@@ -15,6 +15,22 @@ from .constants import ACTIONS
 audit_console = logging.getLogger("corvus.audit")
 
 
+def _client_meta() -> tuple[str, str]:
+    """Return (user_agent, ip) for the current request, or ("", "") outside one.
+
+    Lazy import keeps auth -> audit imports cycle-free; background callers
+    without a request context get blanks rather than a RuntimeError.
+    """
+    try:
+        from auth.user_sessions import client_meta
+    except ImportError:
+        return "", ""
+    try:
+        return client_meta()
+    except RuntimeError:
+        return "", ""
+
+
 def _emit_console(kind: str, **fields) -> None:
     """Mirror an audit row as a single-line JSON record on stdout."""
     payload = {
@@ -61,10 +77,11 @@ def log_secret(
         raise ValueError(f"invalid audit action: {action}")
     # p_user_id is ignored by private.audit_secret; pass NULL for clarity.
     email = actor_email if actor_email is not None else (session.get("email") or "")
+    user_agent, ip = _client_meta()
     cur.execute(
         """
         SELECT private.audit_secret(
-          %s::uuid, %s::uuid, %s, %s, NULL::uuid, %s
+          %s::uuid, %s::uuid, %s, %s, NULL::uuid, %s, %s, %s
         )
         """,
         (
@@ -73,6 +90,8 @@ def log_secret(
             secret_key or "",
             action,
             email or "",
+            ip or "",
+            user_agent or "",
         ),
     )
     _emit_console(
@@ -82,6 +101,8 @@ def log_secret(
         project_id=str(project_id) if project_id else None,
         secret_id=str(secret_id) if secret_id else None,
         secret_key=secret_key or None,
+        ip=ip or None,
+        user_agent=user_agent or None,
     )
 
 
@@ -113,10 +134,11 @@ def log_org(
     if not action:
         raise ValueError("org audit action required")
     email = actor_email if actor_email is not None else (session.get("email") or "")
+    user_agent, ip = _client_meta()
     cur.execute(
         """
         SELECT private.audit_org(
-          %s::uuid, %s::uuid, %s, %s, %s
+          %s::uuid, %s::uuid, %s, %s, %s, %s, %s
         )
         """,
         (
@@ -125,6 +147,8 @@ def log_org(
             action,
             detail or "",
             email or "",
+            ip or "",
+            user_agent or "",
         ),
     )
     _emit_console(
@@ -134,4 +158,6 @@ def log_org(
         team_id=str(team_id) if team_id else None,
         project_id=str(project_id) if project_id else None,
         detail=detail or None,
+        ip=ip or None,
+        user_agent=user_agent or None,
     )

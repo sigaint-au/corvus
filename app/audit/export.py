@@ -43,7 +43,8 @@ def export_secret_audit(
         f"""
         SELECT a.id::text, a.created_at, a.action, a.secret_key, a.actor_email,
                a.project_id::text, p.name AS project_name,
-               t.name AS team_name, a.user_id::text
+               t.name AS team_name, a.user_id::text,
+               a.ip_address, a.user_agent
         FROM api.secret_audit a
         LEFT JOIN api.projects p ON p.id = a.project_id
         LEFT JOIN api.teams t ON t.id = p.team_id
@@ -95,7 +96,7 @@ def export_org_audit(
         SELECT a.id::text, a.created_at, a.action, a.detail, a.actor_email,
                a.team_id::text, t.name AS team_name,
                a.project_id::text, p.name AS project_name,
-               a.user_id::text
+               a.user_id::text, a.ip_address, a.user_agent
         FROM api.org_audit a
         LEFT JOIN api.teams t ON t.id = a.team_id
         LEFT JOIN api.projects p ON p.id = a.project_id

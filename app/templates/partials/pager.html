@@ -13,6 +13,8 @@
   'access_mode': pager.access_mode if pager else none,
   'folder': pager.folder if pager else none,
   'scope': pager.scope if pager else none,
+  'ip': pager.ip if pager else none,
+  'hide_reveals': pager.hide_reveals if pager else none,
 } %}
 {% if pager and pager.total > pager.per_page %}
 <nav class="pager hstack" aria-label="Pagination">

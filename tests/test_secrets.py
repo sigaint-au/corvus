@@ -140,6 +140,27 @@ class TestSecrets:
         assert b'revealed' in r.data
         assert b'u@ex.com' in r.data
 
+    def test_project_audit_tab_ip_and_hide_reveals_filters(self):
+        audit_rows = [{'id': uuid4(), 'secret_id': uuid4(), 'secret_key': 'API_KEY', 'action': 'created', 'created_at': '2026-01-01', 'actor_email': 'u@ex.com', 'user_id': self.uid, 'actor_name': 'User', 'ip_address': '203.0.113.7', 'user_agent': 'UA'}]
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='audit', audit_log=audit_rows)):
+            r = self.client.get(f'/projects/{self.pid}?tab=audit&ip=203.0.113.7&hide_reveals=1')
+        assert r.status_code == 200
+        assert b'value="203.0.113.7"' in r.data
+        assert b'checked' in r.data
+        assert b'Hide reveals' in r.data
+        assert b'Apply' in r.data
+
+    def test_project_audit_tab_htmx_returns_panel(self):
+        audit_rows = [{'id': uuid4(), 'secret_id': uuid4(), 'secret_key': 'API_KEY', 'action': 'created', 'created_at': '2026-01-01', 'actor_email': 'u@ex.com', 'user_id': self.uid, 'actor_name': 'User'}]
+        with patch.object(db, 'as_user', return_value=self._project_conn(tab='audit', audit_log=audit_rows)):
+            r = self.client.get(
+                f'/projects/{self.pid}?tab=audit',
+                headers={'HX-Request': 'true'},
+            )
+        assert r.status_code == 200
+        assert b'id="project-panel"' not in r.data
+        assert b'hx-get' in r.data
+
     def test_project_404(self):
         conn, _ = _conn(fetchone=None)
         with patch.object(db, 'as_user', return_value=conn):
