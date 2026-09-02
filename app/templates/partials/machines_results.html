@@ -5,11 +5,12 @@
     {% if tokens %}
     <div class="table">
     <table>
-      <thead><tr><th>Name</th><th>Project</th><th>Machine account ID</th><th>Prefix</th><th>Role</th><th>Last used</th><th>Created</th><th>Expires</th></tr></thead>
+      <thead><tr><th>Name</th><th>Description</th><th>Project</th><th>Machine account ID</th><th>Prefix</th><th>Role</th><th>Last used</th><th>Created</th><th>Expires</th></tr></thead>
       <tbody>
       {% for t in tokens %}
         <tr>
            <td class="col-key">{{ t.name }}</td>
+            <td class="muted">{% if t.description %}{{ t.description }}{% endif %}</td>
             <td><a href="{{ url_for('project_detail', project_id=t.project_id) }}">{{ t.project_name }}</a></td>
             <td><code class="k">{{ t.id }}</code></td>
             <td><code class="k">{{ t.token_prefix }}…</code></td>

@@ -35,7 +35,7 @@ def mgmt_list_tokens(project_ref):
             return jsonify({"error": "not found"}), 404
         cur.execute(
             """
-            SELECT id, name, token_prefix, role, expires_at, last_used_at, created_at
+            SELECT id, name, description, token_prefix, role, expires_at, last_used_at, created_at
               FROM api.machine_tokens
              WHERE project_id = %s::uuid
              ORDER BY created_at DESC
@@ -65,7 +65,7 @@ def mgmt_list_tokens(project_ref):
 
 
 def mgmt_create_token(project_ref):
-    """Create machine token. Body: name, role, expires_days.
+    """Create machine token. Body: name, description, role, expires_days.
 
     Returns the raw ``token`` once in the JSON body.
     """
@@ -74,6 +74,7 @@ def mgmt_create_token(project_ref):
         return err
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "machine").strip() or "machine"
+    description = str(body.get("description") or "").strip()[:500]
     role = (body.get("role") or "service-read").strip()
     if role not in config.MACHINE_TOKEN_ROLES:
         role = "service-read"
@@ -111,11 +112,11 @@ def mgmt_create_token(project_ref):
         cur.execute(
             """
             INSERT INTO api.machine_tokens
-              (project_id, name, token_hash, token_prefix, role, expires_at)
-            VALUES (%s::uuid, %s, %s, %s, %s, %s)
-            RETURNING id, name, token_prefix, role, expires_at, created_at
+              (project_id, name, description, token_hash, token_prefix, role, expires_at)
+            VALUES (%s::uuid, %s, %s, %s, %s, %s, %s)
+            RETURNING id, name, description, token_prefix, role, expires_at, created_at
             """,
-            (pid, name, thash, prefix, role, expires_at),
+            (pid, name, description, thash, prefix, role, expires_at),
         )
         row = cur.fetchone()
         if not row:

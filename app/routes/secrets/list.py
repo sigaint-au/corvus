@@ -194,7 +194,7 @@ def restore_secret(secret_id):
         try:
             cur.execute(
                 """
-                SELECT id, project_id, key FROM api.secrets
+                SELECT id, project_id, key, folder_id FROM api.secrets
                 WHERE id = %s AND deleted_at IS NOT NULL
                   AND api.can_write_project(project_id)
                 """,
@@ -204,14 +204,40 @@ def restore_secret(secret_id):
             if not row:
                 flash("Could not restore. You may lack permission, or a secret with that key already exists.", "error")
             else:
-                cur.execute(
-                    """
-                    UPDATE api.secrets
-                    SET deleted_at = NULL
-                    WHERE id = %s AND deleted_at IS NOT NULL
-                    """,
-                    (str(secret_id),),
-                )
+                try:
+                    cur.execute(
+                        """
+                        UPDATE api.secrets
+                        SET deleted_at = NULL
+                        WHERE id = %s::uuid AND deleted_at IS NOT NULL
+                          AND NOT EXISTS (
+                            SELECT 1 FROM api.secrets live
+                            WHERE live.project_id = %s::uuid
+                              AND live.deleted_at IS NULL
+                              AND live.key = %s
+                              AND live.folder_id IS NOT DISTINCT FROM %s::uuid
+                              AND live.id <> %s::uuid
+                          )
+                        """,
+                        (
+                            str(secret_id),
+                            str(row["project_id"]),
+                            row["key"],
+                            str(row["folder_id"]) if row.get("folder_id") else None,
+                            str(secret_id),
+                        ),
+                    )
+                except Exception as exc:
+                    if "duplicate key" in str(exc).lower() or "UniqueViolation" in type(exc).__name__:
+                        conn.rollback()
+                        flash("Could not restore. You may lack permission, or a secret with that key already exists.", "error")
+                        q = request.args.get("q") or ""
+                        if authz.htmx():
+                            tid = nav.ensure_active_team(session["user_id"])
+                            team, items = _trash_items(tid, q) if tid else (None, [])
+                            return render_template("partials/trash_results.html", team=team, items=items, search_q=q)
+                        return redirect(url_for("trash", q=q or None))
+                    raise
                 if cur.rowcount == 0:
                     flash("Could not restore. You may lack permission, or a secret with that key already exists.", "error")
                 else:
@@ -305,11 +331,12 @@ def bulk_trash():
         flash("Select at least one secret", "error")
         return redirect(url_for("trash", q=q))
     n = 0
+    skipped = 0
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         for sid in ids:
             cur.execute(
                 """
-                SELECT id, key, project_id FROM api.secrets
+                SELECT id, key, project_id, folder_id FROM api.secrets
                 WHERE id = %s::uuid AND deleted_at IS NOT NULL
                 """,
                 (sid,),
@@ -329,13 +356,37 @@ def bulk_trash():
             if not allowed.get(needed):
                 continue
             if action == "restore":
-                cur.execute(
-                    """
-                    UPDATE api.secrets SET deleted_at = NULL
-                    WHERE id = %s::uuid AND deleted_at IS NOT NULL
-                    """,
-                    (sid,),
-                )
+                # SAVEPOINT per row so one UniqueViolation race doesn't abort prior restores
+                cur.execute("SAVEPOINT sp_restore")
+                try:
+                    cur.execute(
+                        """
+                        UPDATE api.secrets SET deleted_at = NULL
+                        WHERE id = %s::uuid AND deleted_at IS NOT NULL
+                          AND NOT EXISTS (
+                            SELECT 1 FROM api.secrets live
+                            WHERE live.project_id = %s::uuid
+                              AND live.deleted_at IS NULL
+                              AND live.key = %s
+                              AND live.folder_id IS NOT DISTINCT FROM %s::uuid
+                              AND live.id <> %s::uuid
+                          )
+                        """,
+                        (
+                            sid,
+                            str(row["project_id"]),
+                            row["key"],
+                            str(row["folder_id"]) if row.get("folder_id") else None,
+                            sid,
+                        ),
+                    )
+                except Exception as exc:
+                    if "duplicate key" in str(exc).lower() or "UniqueViolation" in type(exc).__name__:
+                        cur.execute("ROLLBACK TO SAVEPOINT sp_restore")
+                        skipped += 1
+                        continue
+                    raise
+                cur.execute("RELEASE SAVEPOINT sp_restore")
                 if cur.rowcount:
                     audit.log_secret(
                         cur,
@@ -345,6 +396,8 @@ def bulk_trash():
                         action="restored",
                     )
                     n += 1
+                else:
+                    skipped += 1
             elif action == "purge":
                 cur.execute(
                     "DELETE FROM api.secrets WHERE id = %s::uuid AND deleted_at IS NOT NULL",
@@ -361,7 +414,10 @@ def bulk_trash():
                     n += 1
         conn.commit()
     if action == "restore":
-        flash(f"Restored {n} secret(s)", "ok")
+        if skipped:
+            flash(f"Restored {n} secret(s), {skipped} skipped (key already exists)", "ok" if n else "error")
+        else:
+            flash(f"Restored {n} secret(s)", "ok")
     else:
         flash(f"Permanently deleted {n} secret(s)", "ok")
     return redirect(url_for("trash", q=q))

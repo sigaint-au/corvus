@@ -91,9 +91,10 @@ def machines_list():
                 if q:
                     like = f"%{q}%"
                     where += (
-                        " AND (mt.name ILIKE %s OR p.name ILIKE %s OR mt.token_prefix ILIKE %s)"
+                        " AND (mt.name ILIKE %s OR p.name ILIKE %s OR mt.token_prefix ILIKE %s"
+                        " OR mt.description ILIKE %s)"
                     )
-                    params.extend([like, like, like])
+                    params.extend([like, like, like, like])
                 tokens, machines_pager = paging.paged_rows(
                     cur,
                     f"""
@@ -103,7 +104,7 @@ def machines_list():
                      WHERE {where}
                     """,
                     f"""
-                    SELECT mt.id, mt.name, mt.token_prefix, mt.role,
+                    SELECT mt.id, mt.name, mt.description, mt.token_prefix, mt.role,
                            mt.created_at, mt.expires_at, mt.last_used_at,
                            p.id AS project_id, p.name AS project_name
                       FROM api.machine_tokens mt
@@ -135,6 +136,7 @@ def create_token(project_id):
         POST /projects/<project_id>/tokens with name, role, expires_days form fields
     """
     name = request.form.get("name", "machine").strip() or "machine"
+    description = (request.form.get("description") or "").strip()[:500]
     role = (request.form.get("role") or "service-read").strip()
     if role not in config.MACHINE_TOKEN_ROLES:
         role = "service-read"
@@ -205,11 +207,11 @@ def create_token(project_id):
             cur.execute(
                 """
                 INSERT INTO api.machine_tokens
-                  (project_id, name, token_hash, token_prefix, role, expires_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                  (project_id, name, description, token_hash, token_prefix, role, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (str(project_id), name, thash, prefix, role, expires_at),
+                (str(project_id), name, description, thash, prefix, role, expires_at),
             )
             row = cur.fetchone()
             if not row:

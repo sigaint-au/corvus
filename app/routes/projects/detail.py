@@ -285,7 +285,7 @@ def project_detail(project_id):
             if tab == "tokens":
                 cur.execute(
                     """
-                    SELECT id, name, token_prefix, role, created_at, expires_at, last_used_at
+                    SELECT id, name, description, token_prefix, role, created_at, expires_at, last_used_at
                     FROM api.machine_tokens
                     WHERE project_id = %s
                     ORDER BY created_at DESC

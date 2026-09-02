@@ -45,17 +45,38 @@ def mgmt_restore_trash(project_ref, secret_id):
         pid = _resolve_project(cur, project_ref)
         if not pid:
             return jsonify({"error": "not found"}), 404
-        cur.execute(
-            """
-            UPDATE api.secrets SET deleted_at = NULL
-             WHERE id = %s::uuid AND project_id = %s::uuid
-               AND deleted_at IS NOT NULL
-            RETURNING id, key
-            """,
-            (secret_id, pid),
-        )
+        try:
+            cur.execute(
+                """
+                UPDATE api.secrets AS s SET deleted_at = NULL
+                 WHERE s.id = %s::uuid AND s.project_id = %s::uuid
+                   AND s.deleted_at IS NOT NULL
+                   AND NOT EXISTS (
+                     SELECT 1 FROM api.secrets live
+                     WHERE live.project_id = s.project_id
+                       AND live.deleted_at IS NULL
+                       AND live.key = s.key
+                       AND live.folder_id IS NOT DISTINCT FROM s.folder_id
+                       AND live.id <> s.id
+                   )
+                RETURNING s.id, s.key
+                """,
+                (secret_id, pid),
+            )
+        except Exception as exc:
+            if "duplicate key" in str(exc).lower() or "UniqueViolation" in type(exc).__name__:
+                conn.rollback()
+                return jsonify({"error": "key already exists"}), 409
+            raise
         row = cur.fetchone()
         if not row:
+            # distinguish conflict vs not found
+            cur.execute(
+                "SELECT 1 FROM api.secrets WHERE id = %s::uuid AND project_id = %s::uuid AND deleted_at IS NOT NULL",
+                (secret_id, pid),
+            )
+            if cur.fetchone():
+                return jsonify({"error": "key already exists"}), 409
             return jsonify({"error": "not found or forbidden"}), 404
         audit.log_secret(
             cur,
@@ -129,26 +150,58 @@ def mgmt_bulk_trash(project_ref):
         if not pid:
             return jsonify({"error": "not found"}), 404
         if action == "restore":
+            # Single-statement restore with conflict guard; NOT EXISTS avoids
+            # UniqueViolation on secrets_project_key_live / secrets_project_folder_key_live.
             if ids:
-                cur.execute(
-                    """
-                    UPDATE api.secrets SET deleted_at = NULL
-                     WHERE project_id = %s::uuid AND deleted_at IS NOT NULL
-                       AND id = ANY(%s::uuid[])
-                    RETURNING id, key
-                    """,
-                    (pid, ids),
-                )
+                try:
+                    cur.execute(
+                        """
+                        UPDATE api.secrets AS s SET deleted_at = NULL
+                         WHERE s.project_id = %s::uuid AND s.deleted_at IS NOT NULL
+                           AND s.id = ANY(%s::uuid[])
+                           AND NOT EXISTS (
+                             SELECT 1 FROM api.secrets live
+                             WHERE live.project_id = s.project_id
+                               AND live.deleted_at IS NULL
+                               AND live.key = s.key
+                               AND live.folder_id IS NOT DISTINCT FROM s.folder_id
+                               AND live.id <> s.id
+                           )
+                        RETURNING s.id, s.key
+                        """,
+                        (pid, ids),
+                    )
+                except Exception as exc:
+                    if "duplicate key" in str(exc).lower() or "UniqueViolation" in type(exc).__name__:
+                        conn.rollback()
+                        return jsonify({"error": "key already exists", "count": 0}), 409
+                    raise
             else:
-                cur.execute(
-                    """
-                    UPDATE api.secrets SET deleted_at = NULL
-                     WHERE project_id = %s::uuid AND deleted_at IS NOT NULL
-                    RETURNING id, key
-                    """,
-                    (pid,),
-                )
+                try:
+                    cur.execute(
+                        """
+                        UPDATE api.secrets AS s SET deleted_at = NULL
+                         WHERE s.project_id = %s::uuid AND s.deleted_at IS NOT NULL
+                           AND NOT EXISTS (
+                             SELECT 1 FROM api.secrets live
+                             WHERE live.project_id = s.project_id
+                               AND live.deleted_at IS NULL
+                               AND live.key = s.key
+                               AND live.folder_id IS NOT DISTINCT FROM s.folder_id
+                               AND live.id <> s.id
+                           )
+                        RETURNING s.id, s.key
+                        """,
+                        (pid,),
+                    )
+                except Exception as exc:
+                    if "duplicate key" in str(exc).lower() or "UniqueViolation" in type(exc).__name__:
+                        conn.rollback()
+                        return jsonify({"error": "key already exists", "count": 0}), 409
+                    raise
             rows = cur.fetchall() or []
+            skipped = len(ids) - len(rows) if ids else 0
+            # when ids empty, skipped not known without extra query; report via count only
             for r in rows:
                 audit.log_secret(
                     cur,

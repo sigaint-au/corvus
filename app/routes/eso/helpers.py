@@ -18,6 +18,7 @@ from werkzeug.exceptions import HTTPException
 import audit
 import crypto
 from core import cache, config, db
+from lib import metadata
 from lib.auth_tokens import classify_token
 from lib.datetime_utils import iso_utc
 from lib.validate import is_uuid
@@ -430,6 +431,22 @@ def _upsert_body(project_ref, key: str, body: dict):
     if exp_err:
         return jsonify({"error": exp_err}), 400
 
+    # -- metadata from agent (ponytail: secret_meta, no new table)
+    # agent sends {"metadata": {"corvus.managed-by": "corvus-agent", ...}}
+    # keep "labels" as alias for old agents during rollover
+    _meta_in = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
+    if not _meta_in and isinstance(body.get("labels"), dict):
+        # map old labels "managed-by"/"hostname" -> corvus.* namespace
+        _meta_in = {}
+        for lk, lv in body["labels"].items():
+            lk = str(lk).strip()
+            if not lk:
+                continue
+            if "." in lk or lk.startswith("corvus"):
+                _meta_in[lk] = lv
+            else:
+                _meta_in[f"corvus.{lk}"] = lv
+
     if kind == "machine":
         thash = ident
         with db.connect() as conn, conn.cursor() as cur:
@@ -461,6 +478,32 @@ def _upsert_body(project_ref, key: str, body: dict):
             out = cur.fetchone()
             if not out or not out["id"]:
                 return jsonify({"error": "forbidden"}), 403
+            # ponytail: persist corvus.* metadata via privileged helper; old agents use labels->metadata alias above
+            for mk, mv in list(_meta_in.items())[:20]:
+                mk = str(mk).strip()
+                if not metadata.validate_meta_key(mk):
+                    continue
+                mv_clean = metadata.clean_meta_value(str(mv) if mv is not None else "")
+                try:
+                    cur.execute("SAVEPOINT _corvus_meta")
+                    cur.execute(
+                        "SELECT private.machine_set_meta(%s::uuid, %s, %s, %s, %s)",
+                        (pid, thash, key, mk, mv_clean),
+                    )
+                    cur.execute("RELEASE SAVEPOINT _corvus_meta")
+                except Exception as e:
+                    try:
+                        cur.execute("ROLLBACK TO SAVEPOINT _corvus_meta")
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute("RELEASE SAVEPOINT _corvus_meta")
+                    except Exception:
+                        pass
+                    if "cannot be overridden" in str(e).lower():
+                        log.warning("metadata key %r overridden at team/project level, skipping", mk)
+                    else:
+                        log.warning("machine_set_meta failed for %r: %s", mk, e)
             actor = _machine_actor(cur, pid, thash)
             _audit(
                 cur,
@@ -506,6 +549,33 @@ def _upsert_body(project_ref, key: str, body: dict):
             )
         except HTTPException as e:
             return jsonify({"error": str(e)}), e.code
+        # ponytail: persist metadata for PAT path via secret_meta (RLS as_user)
+        for mk, mv in list(_meta_in.items())[:20]:
+            mk = str(mk).strip()
+            if not metadata.validate_meta_key(mk):
+                continue
+            mv_clean = metadata.clean_meta_value(str(mv) if mv is not None else "")
+            try:
+                cur.execute("SAVEPOINT _corvus_meta")
+                cur.execute(
+                    """
+                    INSERT INTO api.secret_meta (secret_id, key, value, updated_at)
+                    VALUES (%s::uuid, %s, %s, now())
+                    ON CONFLICT (secret_id, key) DO UPDATE
+                      SET value = EXCLUDED.value, updated_at = now()
+                    """,
+                    (str(sid), mk, mv_clean),
+                )
+                cur.execute("RELEASE SAVEPOINT _corvus_meta")
+            except Exception as e:
+                try:
+                    cur.execute("ROLLBACK TO SAVEPOINT _corvus_meta")
+                except Exception:
+                    pass
+                if "cannot be overridden" in str(e).lower():
+                    log.warning("metadata key %r overridden at team/project level, skipping", mk)
+                else:
+                    log.warning("metadata persist failed for %r: %s", mk, e)
         cur.execute(
             """
             SELECT id, key, note, kind, expires_at,

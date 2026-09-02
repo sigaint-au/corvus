@@ -32,7 +32,7 @@ class TestTokens:
         with self.client.session_transaction() as s:
             assert s.get('new_token', '').startswith('ss_')
         insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
-        assert insert_calls[0].args[1][4] == 'service-read'
+        assert insert_calls[0].args[1][5] == 'service-read'
         scope_calls = [c for c in cur.execute.call_args_list if c.args and 'machine_token_scope' in str(c.args[0])]
         assert scope_calls and any('*' in str(c.args[1]) for c in scope_calls)
 
@@ -45,7 +45,7 @@ class TestTokens:
         assert r.status_code == 302
         insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
         assert insert_calls
-        assert insert_calls[0].args[1][4] == 'service-write'
+        assert insert_calls[0].args[1][5] == 'service-write'
 
     def test_create_token_invalid_role_defaults_read(self):
         conn, cur = _conn()
@@ -55,7 +55,7 @@ class TestTokens:
             r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'x', 'role': 'owner'}, follow_redirects=False)
         assert r.status_code == 302
         insert_calls = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
-        assert insert_calls[0].args[1][4] == 'service-read'
+        assert insert_calls[0].args[1][5] == 'service-read'
 
     def test_create_token_reveal_denied(self):
         conn, _ = _conn(fetchone={'w': False})
@@ -268,3 +268,62 @@ class TestTokens:
         assert "source IN ('manual', 'ldap', 'oidc')" in init
         src = migrations_src()
         assert "CHECK (auth_source IN ('local', 'ldap', 'oidc'))" in src
+
+
+class TestMachineTokenDescription:
+
+    def setup_method(self, method=None):
+        store.app.config['TESTING'] = True
+        self.client = store.app.test_client()
+        self.pid = uuid4()
+        with self.client.session_transaction() as s:
+            s['user_id'] = str(uuid4())
+            s['email'] = 'u@ex.com'
+
+    def test_ui_create_stores_description(self):
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'w': True}, {}, {'id': uuid4()}]
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
+            r = self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'x', 'description': '  my desc  '}, follow_redirects=False)
+        assert r.status_code == 302
+        inserts = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
+        assert inserts
+        sql = str(inserts[0].args[0]).lower()
+        assert 'description' in sql
+        assert 'my desc' in str(inserts[0].args[1])
+
+    def test_ui_create_description_truncated_to_500(self):
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'w': True}, {}, {'id': uuid4()}]
+        long_desc = 'd' * 600
+        with patch.object(db, 'as_user', return_value=conn), patch.object(settings_svc, 'token_expiry_policy', return_value=(False, 3650)):
+            self.client.post(f'/projects/{self.pid}/tokens', data={'name': 'x', 'description': long_desc}, follow_redirects=False)
+        inserts = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
+        assert inserts
+        stored = [a for a in inserts[0].args[1] if isinstance(a, str) and a.startswith('d')]
+        assert stored and len(stored[0]) == 500
+
+    def test_mgmt_create_accepts_and_returns_description(self):
+        from routes.mgmt_api import tokens as mgmt_tokens
+
+        tid = uuid4()
+        conn, cur = _conn()
+        cur.fetchone.side_effect = [{'id': str(self.pid)}, {'w': True}, {'id': str(tid), 'name': 'x', 'description': 'my desc'}]
+        with store.app.test_request_context('/x', method='POST', json={'name': 'x', 'description': 'my desc'}):
+            with patch.object(mgmt_tokens, '_require_pat', return_value=(str(uuid4()), None)), \
+                 patch.object(mgmt_tokens.settings_svc, 'token_expiry_policy', return_value=(False, 3650)), \
+                 patch.object(db, 'as_user', return_value=conn):
+                resp, status = mgmt_tokens.mgmt_create_token(str(self.pid))
+        assert status == 201
+        inserts = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])]
+        assert inserts
+        assert 'my desc' in str(inserts[0].args[1])
+        assert resp.get_json()['description'] == 'my desc'
+
+    def test_token_list_queries_select_description(self):
+        src = routes_module_src('projects') + routes_module_src('project_tokens')
+        assert 'mt.description' in src or ', description' in src or 'description,' in src
+        from routes.mgmt_api import tokens as mgmt_tokens
+        import inspect
+
+        assert 'description' in inspect.getsource(mgmt_tokens.mgmt_list_tokens)

@@ -373,7 +373,7 @@ class TestESO:
             r = c.post(f'/projects/{self.pid}/tokens', data={'name': 'eso', 'role': 'reveal', 'expires_days': '30'}, follow_redirects=False)
         assert r.status_code == 302
         insert = [c for c in cur.execute.call_args_list if c.args and 'INSERT INTO api.machine_tokens' in str(c.args[0])][0]
-        assert insert.args[1][5] is not None
+        assert insert.args[1][6] is not None
 
     def test_mgmt_add_team_binding_owner_guard(self):
         """A non-owner must not grant team-owner via the management API."""

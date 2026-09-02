@@ -52,6 +52,9 @@ def test_migrations_ship_in_order():
         "0006_machine_upsert_conflict_target.sql",
         "0007_machine_upsert_folder.sql",
         "0008_machine_upsert_folder_var.sql",
+        "0009_machine_set_meta.sql",
+        "0010_machine_meta_in_list.sql",
+        "0011_machine_token_description.sql",
     ]
     for name in files:
         assert name[:4].isdigit()

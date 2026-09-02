@@ -23,6 +23,7 @@
       <thead>
         <tr>
            <th>Name</th>
+           <th>Description</th>
            <th>Machine account ID</th>
            <th>Prefix</th>
           <th>Role</th>
@@ -37,6 +38,7 @@
       {% for t in tokens %}
         <tr>
            <td>{{ t.name }}</td>
+           <td class="muted">{% if t.description %}{{ t.description }}{% endif %}</td>
            <td><code class="k">{{ t.id }}</code></td>
            <td><code class="k">{{ t.token_prefix }}…</code></td>
           <td><span class="badge" data-variant="secondary">{{ t.role or 'service-read' }}</span></td>
