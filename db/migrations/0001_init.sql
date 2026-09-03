@@ -3183,9 +3183,10 @@ SET row_security = off AS $$
     WHEN deleted_at IS NOT NULL THEN false
     WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
     WHEN api.can_admin_project(pid) THEN true
-    WHEN v_folder IS NOT NULL THEN (
-      api.rbac_folder_binding_allows(v_folder, need, v_subject)
-    )
+    -- Folder bindings grant access additively; when they do not match,
+    -- evaluation falls through to the inherit/restricted checks below.
+    WHEN v_folder IS NOT NULL
+     AND api.rbac_folder_binding_allows(v_folder, need, v_subject) THEN true
     WHEN COALESCE(mode, 'inherit') = 'restricted' THEN
       api.rbac_secret_binding_allows(sid, need, v_subject)
     WHEN need = 'write' THEN (
@@ -3856,52 +3857,10 @@ CREATE OR REPLACE FUNCTION private.machine_delete(
         END;
         $$;
 
-CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
-          p_project uuid,
-          p_hash text,
-          p_key text,
-          p_value_enc text,
-          p_note text,
-          p_kind text DEFAULT 'plain',
-          p_expires_at timestamptz DEFAULT NULL,
-          p_set_expires boolean DEFAULT false
-        )
-        RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
-        SET search_path = pg_catalog, api
-        SET row_security = off AS $$
-        DECLARE
-          sid uuid;
-          k text := COALESCE(NULLIF(btrim(p_kind), ''), 'plain');
-        BEGIN
-          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
-            RETURN NULL;
-          END IF;
-          IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
-            RETURN NULL;
-          END IF;
-          IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
-            RETURN NULL;
-          END IF;
-          IF k NOT IN ('plain', 'database', 'certificate', 'ssh', 'kv') THEN
-            k := 'plain';
-          END IF;
-          INSERT INTO api.secrets (project_id, key, value_enc, note, kind, expires_at)
-          VALUES (
-            p_project, p_key, p_value_enc, COALESCE(p_note, ''), k,
-            CASE WHEN p_set_expires THEN p_expires_at ELSE NULL END
-          )
-          ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
-            SET value_enc = EXCLUDED.value_enc,
-                note = EXCLUDED.note,
-                kind = EXCLUDED.kind,
-                expires_at = CASE
-                  WHEN p_set_expires THEN p_expires_at
-                  ELSE api.secrets.expires_at
-                END
-          RETURNING id INTO sid;
-          RETURN sid;
-        END;
-        $$;
+-- 0006 dropped the stale 8-arg machine_upsert_enc (no provider); the 9-arg
+-- form below is canonical. The DROP is a no-op on fresh installs.
+DROP FUNCTION IF EXISTS
+  private.machine_upsert_enc(uuid, text, text, text, text, text, timestamptz, boolean);
 
 
 -- ===== 0022_shared_with_me.sql =====
@@ -4167,56 +4126,99 @@ CREATE OR REPLACE FUNCTION private.machine_list_enc(p_project uuid, p_hash text)
         END;
         $$;
 
--- Machine upsert stores the provider the app encrypted with.
+-- Squashed from 0006/0007/0008: folder-aware upsert (slash keys materialize
+-- folders), provider-tagged writes, conflict targets matching the folder
+-- split partial indexes. v_folder_id avoids shadowing secrets.folder_id.
 CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
-          p_project uuid,
-          p_hash text,
-          p_key text,
-          p_value_enc text,
-          p_note text,
-          p_kind text DEFAULT 'plain',
-          p_expires_at timestamptz DEFAULT NULL,
-          p_set_expires boolean DEFAULT false,
-          p_crypto_provider text DEFAULT 'master'
-        )
-        RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
-        SET search_path = pg_catalog, api
-        SET row_security = off AS $$
-        DECLARE
-          sid uuid;
-          k text := COALESCE(NULLIF(btrim(p_kind), ''), 'plain');
-        BEGIN
-          IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
-            RETURN NULL;
-          END IF;
-          IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
-            RETURN NULL;
-          END IF;
-          IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
-            RETURN NULL;
-          END IF;
-          IF k NOT IN ('plain', 'database', 'certificate', 'ssh', 'kv') THEN
-            k := 'plain';
-          END IF;
-          INSERT INTO api.secrets (project_id, key, value_enc, note, kind, expires_at, crypto_provider)
-          VALUES (
-            p_project, p_key, p_value_enc, COALESCE(p_note, ''), k,
-            CASE WHEN p_set_expires THEN p_expires_at ELSE NULL END,
-            CASE WHEN p_crypto_provider IN ('master', 'project') THEN p_crypto_provider ELSE 'master' END
-          )
-          ON CONFLICT (project_id, key) WHERE deleted_at IS NULL DO UPDATE
-            SET value_enc = EXCLUDED.value_enc,
-                note = EXCLUDED.note,
-                kind = EXCLUDED.kind,
-                crypto_provider = EXCLUDED.crypto_provider,
-                expires_at = CASE
-                  WHEN p_set_expires THEN p_expires_at
-                  ELSE api.secrets.expires_at
-                END
-          RETURNING id INTO sid;
-          RETURN sid;
-        END;
-        $$;
+  p_project uuid,
+  p_hash text,
+  p_key text,
+  p_value_enc text,
+  p_note text,
+  p_kind text DEFAULT 'plain',
+  p_expires_at timestamptz DEFAULT NULL,
+  p_set_expires boolean DEFAULT false,
+  p_crypto_provider text DEFAULT 'master'
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
+DECLARE
+  sid uuid;
+  k text := COALESCE(NULLIF(btrim(p_kind), ''), 'plain');
+  parts text[];
+  folder_segments text[];
+  v_folder_id uuid;
+BEGIN
+  IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
+    RETURN NULL;
+  END IF;
+  IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
+    RETURN NULL;
+  END IF;
+  IF p_key IS NULL OR btrim(p_key) = '' OR p_value_enc IS NULL THEN
+    RETURN NULL;
+  END IF;
+  IF k NOT IN ('plain', 'database', 'certificate', 'ssh', 'kv') THEN
+    k := 'plain';
+  END IF;
+
+  -- Parse key into folder segments + leaf name
+  parts := string_to_array(p_key, '/');
+  IF array_length(parts, 1) > 1 THEN
+    folder_segments := parts[1:array_length(parts, 1) - 1];
+    FOR i IN 1 .. array_length(folder_segments, 1) LOOP
+      v_folder_id := private.materialize_folder_path(
+        p_project,
+        CASE WHEN i = 1 THEN NULL ELSE v_folder_id END,
+        folder_segments[i],
+        (SELECT array_to_string(folder_segments[1:i], '/'))
+      );
+    END LOOP;
+    INSERT INTO api.secrets (project_id, folder_id, key, value_enc, note, kind, expires_at, crypto_provider)
+    VALUES (
+      p_project, v_folder_id, p_key, p_value_enc, COALESCE(p_note, ''), k,
+      CASE WHEN p_set_expires THEN p_expires_at ELSE NULL END,
+      CASE WHEN p_crypto_provider IN ('master', 'project') THEN p_crypto_provider ELSE 'master' END
+    )
+    ON CONFLICT (project_id, folder_id, key) WHERE folder_id IS NOT NULL AND deleted_at IS NULL DO UPDATE
+      SET value_enc = EXCLUDED.value_enc,
+          note = EXCLUDED.note,
+          kind = EXCLUDED.kind,
+          crypto_provider = EXCLUDED.crypto_provider,
+          expires_at = CASE
+            WHEN p_set_expires THEN p_expires_at
+            ELSE api.secrets.expires_at
+          END
+    RETURNING id INTO sid;
+  ELSE
+    INSERT INTO api.secrets (project_id, key, value_enc, note, kind, expires_at, crypto_provider)
+    VALUES (
+      p_project, p_key, p_value_enc, COALESCE(p_note, ''), k,
+      CASE WHEN p_set_expires THEN p_expires_at ELSE NULL END,
+      CASE WHEN p_crypto_provider IN ('master', 'project') THEN p_crypto_provider ELSE 'master' END
+    )
+    ON CONFLICT (project_id, key) WHERE folder_id IS NULL AND deleted_at IS NULL DO UPDATE
+      SET value_enc = EXCLUDED.value_enc,
+          note = EXCLUDED.note,
+          kind = EXCLUDED.kind,
+          crypto_provider = EXCLUDED.crypto_provider,
+          expires_at = CASE
+            WHEN p_set_expires THEN p_expires_at
+            ELSE api.secrets.expires_at
+          END
+    RETURNING id INTO sid;
+  END IF;
+  RETURN sid;
+END;
+$$;
+
+-- The 9-arg overload is a distinct function: it needs its own grant
+-- (the earlier bare GRANT attached to the 8-arg form only). ESO write
+-- paths call this overload as authenticator.
+GRANT EXECUTE ON FUNCTION
+  private.machine_upsert_enc(uuid, text, text, text, text, text, timestamptz, boolean, text)
+  TO authenticator;
 
 -- Squashed from 0009_machine_set_meta.sql: privileged helper for persisting
 -- agent-supplied secret metadata (validated key allow-list enforced in app).
@@ -4724,21 +4726,38 @@ SET row_security = off AS $$
   );
 $$;
 
--- Authorize a folder row: project admins pass through; folder bindings by need.
+-- Authorize a folder row: project admins pass through; restricted folders
+-- check folder bindings only; otherwise the scope chain (folder → project →
+-- team) decides. Restores 0003_secret_folders.sql semantics.
 CREATE OR REPLACE FUNCTION api.can_access_folder(
-  fid uuid,
-  need text DEFAULT 'read',
+  p_folder_id uuid,
+  p_need text DEFAULT 'read',
   v_subject uuid DEFAULT NULL
 ) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = api, rbac, private, pg_catalog
 SET row_security = off AS $$
-  SELECT CASE
-    WHEN fid IS NULL THEN false
-    WHEN api.can_admin_project((SELECT f.project_id FROM api.folders f WHERE f.id = fid)) THEN true
-    WHEN api.rbac_folder_binding_allows(fid, need, v_subject) THEN true
-    ELSE false
-  END;
+  SELECT COALESCE((
+    SELECT CASE
+      WHEN api.can_admin_project(f.project_id) THEN true
+      WHEN f.access_mode = 'restricted' THEN api.rbac_folder_binding_allows(f.id, p_need, v_subject)
+      WHEN p_need = 'write' THEN (
+        api.can('update', 'secrets', 'folder', f.id, v_subject)
+        OR api.can('create', 'secrets', 'folder', f.id, v_subject)
+        OR api.can('admin', 'secrets', 'folder', f.id, v_subject)
+        OR api.can('*', '*', 'folder', f.id, v_subject)
+      )
+      ELSE (
+        api.can('get', 'secrets', 'folder', f.id, v_subject)
+        OR api.can('list', 'secrets', 'folder', f.id, v_subject)
+        OR api.can('reveal', 'secrets', 'folder', f.id, v_subject)
+        OR api.can('update', 'secrets', 'folder', f.id, v_subject)
+        OR api.can('admin', 'secrets', 'folder', f.id, v_subject)
+        OR api.can('*', '*', 'folder', f.id, v_subject)
+      )
+    END
+    FROM api.folders f WHERE f.id = p_folder_id
+  ), false);
 $$;
 
 GRANT EXECUTE ON FUNCTION api.can_access_folder TO authenticated, anon;
@@ -4767,16 +4786,17 @@ $$;
 GRANT EXECUTE ON FUNCTION private.materialize_folder_path TO authenticator, authenticated;
 
 
--- Squashed from 0003: folder RLS follows the same conventions as secrets.
+-- Squashed from 0003_secret_folders.sql (write access stays at project
+-- writer level, not admin).
 CREATE POLICY folders_select ON api.folders
 FOR SELECT TO authenticated USING (api.can_access_folder(id, 'read'));
 CREATE POLICY folders_insert ON api.folders
 FOR INSERT TO authenticated
-WITH CHECK (api.can_admin_project(project_id));
+WITH CHECK (api.can_write_project(project_id));
 CREATE POLICY folders_update ON api.folders
 FOR UPDATE TO authenticated
-USING (api.can_admin_project(project_id))
-WITH CHECK (api.can_admin_project(project_id));
+USING (api.can_write_project(project_id))
+WITH CHECK (api.can_write_project(project_id));
 CREATE POLICY folders_delete ON api.folders
 FOR DELETE TO authenticated USING (api.can_admin_project(project_id));
 GRANT SELECT, INSERT, UPDATE, DELETE ON api.folders TO authenticated;
@@ -5045,7 +5065,8 @@ CREATE POLICY webhooks_select ON api.webhooks FOR SELECT TO authenticated
 
 DROP POLICY IF EXISTS webhooks_write ON api.webhooks;
 CREATE POLICY webhooks_write ON api.webhooks FOR ALL TO authenticated
-  USING (api.is_global_admin() OR api.can_manage_rbac(scope_kind, scope_id));
+  USING (api.is_global_admin() OR api.can_manage_rbac(scope_kind, scope_id))
+  WITH CHECK (api.is_global_admin() OR api.can_manage_rbac(scope_kind, scope_id));
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON api.webhooks TO authenticated;
 

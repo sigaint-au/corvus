@@ -136,6 +136,30 @@ class TestOrgAccess:
         assert "NOT api.can_access_secret(sid, 'reveal')" in src
         assert 'rbac_secret_binding_allows' in rbac
 
+    def test_machine_upsert_enc_overload_has_authenticator_grant(self):
+        """Both machine_upsert_enc overloads must be executable by the ESO
+        paths, which connect as authenticator (bare GRANT covers one OID)."""
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
+        flat = re.sub(r"\s+", " ", init)
+        assert (
+            "private.machine_upsert_enc(uuid, text, text, text, text, text, "
+            "timestamptz, boolean, text)" in flat
+        )
+
+    def test_folder_access_restores_chain_semantics(self):
+        """can_access_folder keeps 0003 semantics: restricted folders check
+        bindings only, otherwise the folder→project→team chain decides."""
+        init = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
+        start = init.index('CREATE OR REPLACE FUNCTION api.can_access_folder(')
+        body = init[start:start + 2500]
+        assert "f.access_mode = 'restricted'" in body
+        assert "api.can('update', 'secrets', 'folder', f.id" in body
+        assert "api.can('get', 'secrets', 'folder', f.id" in body
+        folders = init[init.index('CREATE POLICY folders_select'):]
+        folders = folders[:folders.index('GRANT SELECT, INSERT, UPDATE, DELETE ON api.folders')]
+        assert 'WITH CHECK (api.can_write_project(project_id))' in folders
+        assert 'USING (api.can_write_project(project_id))' in folders
+
     def test_can_access_secret_row_modes_in_sql(self):
         """rbac.sql defines can_access_secret_row with mode branches and k8s bindings."""
         rbac = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
