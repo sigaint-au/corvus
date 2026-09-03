@@ -4,7 +4,7 @@ metadata:
   name: corvus-tls
 spec:
   dnsNames:
-    - corvus.sigaint.au
+    - secretserver.sigaint.au
   issuerRef:
     name: le-production
     kind: ClusterIssuer
