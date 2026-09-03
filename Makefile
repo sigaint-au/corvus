@@ -30,6 +30,12 @@ test:      ## Run unit tests (mocked DB — no Postgres needed)
 test-live: ## Run live integration tests (requires running stack)
 	pytest -m live
 
+docs-build: ## Build the docs site (strict) with the Sigaint theme
+	scripts/docs-build.sh
+
+docs-serve: ## Serve the docs site locally with live reload
+	scripts/docs-serve.sh
+
 lint:      ## Run pylint on application code
 	tox -e lint
 

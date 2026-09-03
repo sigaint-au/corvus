@@ -1,0 +1,13 @@
+/* Generated from https://sigaint.au/css/site.css by scripts/docs-fetch-theme.sh — do not edit. */
+:root {
+    --bg: #f7f7f5;
+    --bg-elev: #ffffff;
+    --ink: #0a0a0a;
+    --ink-2: #2a2a2a;
+    --muted: #4b5563;
+    --line: #e5e7eb;
+    --shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 12px 32px rgba(0, 0, 0, 0.05);
+    --radius: 14px;
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}

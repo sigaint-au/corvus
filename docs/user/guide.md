@@ -158,7 +158,7 @@ kind-specific fields:
 | Plain text / password | single value |
 | Database URL | scheme, host, port, user, password, database |
 | Certificate (PEM) | certificate + optional private key |
-| SSH private key | key PEM |
+| SSH private key | key PEM (paste a private key and use **Derive** to preview its public key + SHA256 fingerprint — nothing is stored until you save) |
 | Key / value pairs | multiple rows (revealed as a table / `.env`) |
 
 ### Reveal a secret value

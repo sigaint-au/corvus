@@ -4,6 +4,7 @@ repo_url: https://git.sigaint.au/Sigaint/corvus
 
 theme:
   name: material
+  logo: images/sigaint-corvus-logo.svg
   features:
     - navigation.sections
     - navigation.top
@@ -11,14 +12,20 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: black
       toggle:
         icon: material/weather-night
         name: Dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: black
       toggle:
         icon: material/weather-sunny
         name: Light mode
+
+extra_css:
+  - stylesheets/sigaint-tokens.css
+  - stylesheets/material-brand.css
 
 markdown_extensions:
   - admonition

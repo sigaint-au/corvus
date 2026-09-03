@@ -29,12 +29,14 @@ Project → **Integrations** (or **Machine accounts**):
 
 ```text
 Name: eso-prod
+Description: ESO pull for prod cluster   (optional, up to 500 chars)
 Role: service-reveal    (default is service-read)
 Expires (days): 90      (optional)
 [Create machine account]
 ```
 
-Copy the `ss_…` value immediately; it shows only this once.
+Copy the `ss_…` value immediately; it shows only this once. The description is
+shown in the token list to tell tokens apart; it is never secret.
 
 ---
 

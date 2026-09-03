@@ -149,6 +149,19 @@ Email/name autocomplete for member fields. Requires **login** (session).
 
 On query failure returns `[]` (does not 500).
 
+### `POST /projects/<uuid>/derive-ssh-key`
+
+Derive the OpenSSH public key plus SHA256 fingerprint from a pasted private
+key. Used by the SSH secret form. Requires **login** (session) and project
+**write** permission. Nothing is stored.
+
+Form field: `ssh_key` (or `private_key`). Rate-limited to 30 requests per
+minute per user and project.
+
+**200** `{"success": true, "public_key": "ssh-ed25519 …", "fingerprint": "SHA256:…"}`  
+**400** invalid or missing private key · **403** no write access ·
+**404** unknown project · **429** rate limited
+
 ---
 
 ## Managing secrets via the unified API (`/eso/v1`)

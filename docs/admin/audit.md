@@ -23,8 +23,13 @@ from caller-supplied input.
 
 ### Project audit log
 
-Open a project → **Audit log** tab. Filter by search text, actor, action, and
-date range.
+Open a project → **Audit log** tab. Filter by search text, actor, action, IP
+address (`ip` field, substring match), and date range. Tick **Hide reveals** to
+exclude noisy `revealed` rows.
+
+Each row also records the client's `ip_address` and `user_agent` (hover the IP
+in the global admin table to see the user agent). Both columns are included in
+CSV/JSON exports.
 
 ### Team activity
 

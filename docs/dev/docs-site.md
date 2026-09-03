@@ -17,12 +17,33 @@ for MkDocs 2.0 with no migration path — bump deliberately and rebuild.
 ## Working on the docs
 
 ```bash
-mkdocs serve        # live-reload preview at http://localhost:8000
-mkdocs build --strict   # CI-style check; any warning fails the build
+scripts/docs-serve.sh   # live-reload preview at http://localhost:8000
+scripts/docs-build.sh   # CI-style check; any warning fails the build
 ```
 
+(`make docs-serve` / `make docs-build` run the same scripts.)
 `--strict` is the default expectation: broken internal links, files missing
 from `nav`, and bad anchors abort the build. Run it before committing.
+
+## Sigaint theme
+
+Brand tokens (fonts, ink/paper colors) and the Corvus logo are snapshotted
+from the main site into the repo, so builds work offline:
+
+| Path | Role |
+|------|------|
+| `docs/stylesheets/sigaint-tokens.css` | Generated `:root` tokens — do not edit |
+| `docs/stylesheets/material-brand.css` | Hand-written Material bridge — edit this |
+| `docs/images/sigaint-corvus-logo.svg` | Header logo snapshot |
+
+```bash
+scripts/docs-fetch-theme.sh              # refresh snapshots from the main site
+scripts/docs-build.sh --refresh-theme    # refresh, then build
+SIGAINT_MAIN_URL=https://… scripts/docs-fetch-theme.sh  # override the source
+```
+
+`mkdocs.yml` pins the snapshots via `theme.logo`, `primary: black`, and
+`extra_css`. Commit refreshed snapshots like any other change.
 
 ## Conventions
 

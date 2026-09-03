@@ -28,7 +28,7 @@ Three interfaces cover every workflow:
 | Connect SSO / LDAP / OIDC | [Authentication](admin/authentication.md) |
 | Sync secrets into Kubernetes | [External Secrets Operator](admin/external-secrets.md) |
 | Stream events to your own endpoints | [Webhooks](admin/webhooks.md) |
-| Operate: backup, audit, upgrades | [Backup](admin/backup.md), [Audit](admin/audit.md), [Upgrades](admin/deploy.md#upgrades) |
+| Operate: backup, audit, upgrades | [Backup](admin/backup.md), [Audit](admin/audit.md), [Upgrades](admin/upgrades.md) |
 | Daily use in the UI or CLI | [User guide](user/guide.md), [CLI](user/cli.md) |
 | Integrate an application | [API reference](dev/api.md) |
 
