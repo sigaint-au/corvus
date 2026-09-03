@@ -249,6 +249,15 @@ RBAC_SERVICE_ROLE_DROPDOWN = (
     ("service-write", "Write"),
 )
 
+# Team membership roles assignable via directory maps (LDAP/OIDC group → team
+# role). Mirrors the DB CHECK on api.team_ldap_maps.role /
+# api.team_oidc_maps.role — keep in sync. Derived from the team dropdown so
+# cluster-scope entries (e.g. auditor) can never be offered or stored here.
+DIRECTORY_MAP_TEAM_DROPDOWN = tuple(
+    (n, label) for n, label in RBAC_TEAM_ROLE_DROPDOWN if n.startswith("team-")
+)
+DIRECTORY_MAP_TEAM_ROLES = tuple(n for n, _ in DIRECTORY_MAP_TEAM_DROPDOWN)
+
 # role-name lists (validated against in routes); derive from the dropdowns so
 # the two stay in sync. Prefer these over inline `[n for n, _ in ...]`.
 RBAC_TEAM_ROLE_NAMES = tuple(n for n, _ in RBAC_TEAM_ROLE_DROPDOWN)

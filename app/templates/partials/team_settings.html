@@ -131,6 +131,9 @@ syncTeamClassForm();
   <h2>Directory groups</h2>
   <p class="muted page-desc">
     Map IdP groups to a team role. Matching users are added on login.
+    For long-lived grants, use
+    <a href="{{ url_for('team_detail', team_id=team.id, tab='access') }}">Access</a>
+    instead.
   </p>
 
   <fieldset class="field-group">
@@ -171,7 +174,7 @@ syncTeamClassForm();
         </label>
         <label>Team role
           <select name="role">
-            {% for rname, label in team_role_dropdown|default([]) %}
+            {% for rname, label in dir_role_dropdown|default([]) %}
             <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
@@ -219,7 +222,7 @@ syncTeamClassForm();
         </label>
         <label>Team role
           <select name="role">
-            {% for rname, label in team_role_dropdown|default([]) %}
+            {% for rname, label in dir_role_dropdown|default([]) %}
             <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>

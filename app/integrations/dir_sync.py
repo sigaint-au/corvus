@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from core.config import DIRECTORY_MAP_TEAM_ROLES
+
 # Directory team maps store rbac.roles names (team-owner/admin/member/viewer);
-# rank by RBAC role name so the highest wins.
+# rank by RBAC role name so the highest wins. Derived from the canonical
+# directory-map roles so dropdown, validation, and sync cannot drift apart.
 TEAM_RBAC_RANK = {
-    "team-owner": 4,
-    "team-admin": 3,
-    "team-member": 2,
-    "team-viewer": 1,
+    name: rank
+    for rank, name in enumerate(reversed(DIRECTORY_MAP_TEAM_ROLES), start=1)
 }
 
 

@@ -350,6 +350,7 @@ def team_detail(team_id):
         webhooks=webhooks if tab == "webhooks" else [],
         can_edit_access=can_edit_access or is_admin,
         team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
+        dir_role_dropdown=config.DIRECTORY_MAP_TEAM_DROPDOWN,
         role_descriptions=role_descriptions,
         subject_kinds=config.RBAC_SUBJECT_KINDS,
         new_invite_url=session.pop("new_invite_url", None),

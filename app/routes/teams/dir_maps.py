@@ -36,10 +36,10 @@ def add_team_ldap_map(team_id):
         POST /teams/<team_id>/ldap-maps with ldap_group and role form fields
     """
     ldap_group = (request.form.get("ldap_group") or "").strip()
-    role = request.form.get("role", "team-member")
-    team_role_names = config.RBAC_TEAM_ROLE_NAMES
-    if role not in team_role_names:
-        role = "team-member"
+    role = (request.form.get("role") or "team-member").strip()
+    if role not in config.DIRECTORY_MAP_TEAM_ROLES:
+        flash("Unknown team role", "error")
+        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     if not ldap_group:
         flash("LDAP group required", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
@@ -113,10 +113,10 @@ def add_team_oidc_map(team_id):
         POST /teams/<team_id>/oidc-maps with oidc_group and role form fields
     """
     oidc_group = (request.form.get("oidc_group") or "").strip()
-    role = request.form.get("role", "team-member")
-    team_role_names = config.RBAC_TEAM_ROLE_NAMES
-    if role not in team_role_names:
-        role = "team-member"
+    role = (request.form.get("role") or "team-member").strip()
+    if role not in config.DIRECTORY_MAP_TEAM_ROLES:
+        flash("Unknown team role", "error")
+        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     if not oidc_group:
         flash("OIDC group required", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))

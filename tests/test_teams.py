@@ -122,6 +122,47 @@ class TestTeams:
         assert b'Danger zone' in r.data
         assert b'Reveal requests' in r.data
 
+    def test_directory_map_roles_exclude_cluster_scope(self):
+        assert tuple(n for n, _ in config.DIRECTORY_MAP_TEAM_DROPDOWN) == (
+            "team-owner",
+            "team-admin",
+            "team-member",
+            "team-viewer",
+        )
+        assert "auditor" not in config.DIRECTORY_MAP_TEAM_ROLES
+        team_labels = dict(config.RBAC_TEAM_ROLE_DROPDOWN)
+        for n, label in config.DIRECTORY_MAP_TEAM_DROPDOWN:
+            assert team_labels[n] == label
+
+    def test_team_settings_directory_selects_offer_only_mappable_roles(self):
+        tid = uuid4()
+        last_sql = {'s': ''}
+
+        def execute(sql, params=None):
+            last_sql['s'] = ' '.join(str(sql).lower().split())
+
+        def fetchone():
+            s = last_sql['s']
+            if 'from api.teams' in s and 'where id' in s:
+                return {
+                    'id': tid, 'name': 'T', 'default_token_days': 30,
+                    'allow_reveal_requests': True, 'classification_enabled': None,
+                }
+            if 'api.team_role' in s:
+                return {'r': 'team-owner'}
+            return None
+
+        conn, cur = _conn(fetchone=fetchone, fetchall=[])
+        cur.execute.side_effect = execute
+        with patch.object(db, 'as_user', return_value=conn), \
+             patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}):
+            r = self.client.get(f'/teams/{tid}?tab=settings')
+        assert r.status_code == 200
+        # both LDAP and OIDC selects offer the four mappable membership roles…
+        assert r.data.count(b'value="team-viewer"') == 2
+        # …and never the cluster-scope auditor role.
+        assert b'value="auditor"' not in r.data
+
     def test_update_team_settings_reveal_requests(self):
         tid = uuid4()
         last = {'sql': '', 'params': None}

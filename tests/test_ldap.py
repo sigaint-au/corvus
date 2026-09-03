@@ -175,6 +175,72 @@ class TestLDAPMaps:
             )
         assert r.status_code == 302
 
+    def test_add_team_ldap_map_rejects_auditor(self):
+        # 'auditor' is cluster-scope and outside the maps CHECK constraint;
+        # it must be rejected before any DB write (not coerced to member).
+        with patch.object(
+            db, "as_user", side_effect=AssertionError("invalid role must not touch DB")
+        ):
+            r = self.client.post(
+                f"/teams/{self.tid}/ldap-maps",
+                data={"ldap_group": "eng-secrets", "role": "auditor"},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        assert str(self.tid) in r.location
+
+    def test_add_team_oidc_map_ok(self):
+        conn, cur = _conn()
+        with patch.object(db, "as_user", return_value=conn):
+            r = self.client.post(
+                f"/teams/{self.tid}/oidc-maps",
+                data={"oidc_group": "eng-secrets", "role": "team-viewer"},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        executed = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        assert "insert into api.team_oidc_maps" in executed
+
+    def test_add_team_oidc_map_rejects_unknown_role(self):
+        with patch.object(
+            db, "as_user", side_effect=AssertionError("invalid role must not touch DB")
+        ):
+            r = self.client.post(
+                f"/teams/{self.tid}/oidc-maps",
+                data={"oidc_group": "eng-secrets", "role": "superuser"},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        assert str(self.tid) in r.location
+
+    def test_team_rbac_rank_matches_directory_roles(self):
+        from core import config
+        from integrations import dir_sync
+
+        assert dir_sync.TEAM_RBAC_RANK == {
+            "team-owner": 4,
+            "team-admin": 3,
+            "team-member": 2,
+            "team-viewer": 1,
+        }
+        assert set(dir_sync.TEAM_RBAC_RANK) == set(config.DIRECTORY_MAP_TEAM_ROLES)
+
+    def test_apply_team_membership_maps_skips_unranked_role(self):
+        from integrations import dir_sync
+
+        tid = uuid4()
+        conn, cur = _conn()
+        dir_sync.apply_team_membership_maps(
+            cur,
+            str(uuid4()),
+            ["eng-secrets"],
+            [{"team_id": tid, "ldap_group": "eng-secrets", "role": "auditor"}],
+            group_key="ldap_group",
+            source="ldap",
+        )
+        executed = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        assert "insert into rbac.bindings" not in executed
+
     def test_sync_ldap_user_applies_maps(self):
         uid = uuid4()
         tid = uuid4()
