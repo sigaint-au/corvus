@@ -773,8 +773,8 @@ def main() -> None:
             print(f"smeta {team_name}/{proj_name}/{secret_key}  {len(pairs)} keys")
 
     print()
-    print("All accounts password:", PASSWORD)
-    print("Log in at http://127.0.0.1:8080  e.g. admin@example.com / password")
+    print("All accounts password: (see PASSWORD in scripts/seed_mock.py)")
+    print("Log in at http://127.0.0.1:8080  e.g. admin@example.com")
     print("Custom roles:", ", ".join(name for name, _, _ in CUSTOM_ROLES))
     print("Machine tokens (raw, shown once):")
     for team_name, proj_name, name, _role, _keys in MACHINE_TOKENS:
