@@ -4,3 +4,15 @@ metadata:
   name: redis
 spec:
   replicas: 1
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: redis
+          app.kubernetes.io/part-of: corvus
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 10Gi

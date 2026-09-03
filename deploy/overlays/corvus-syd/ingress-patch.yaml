@@ -4,15 +4,15 @@ metadata:
   name: corvus
   annotations:
     cert-manager.io/cluster-issuer: le-production
-    external-dns.alpha.kubernetes.io/hostname: corvus.sigaint.au
+    external-dns.alpha.kubernetes.io/hostname: secretserver.sigaint.au
 spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - corvus.sigaint.au
+        - secretserver.sigaint.au
       secretName: corvus-tls
   rules:
-    - host: corvus.sigaint.au
+    - host: secretserver.sigaint.au
       http:
         paths:
           - path: /
