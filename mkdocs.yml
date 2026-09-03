@@ -47,6 +47,7 @@ nav:
       - Backup and restore: admin/backup.md
       - Access control (RBAC): admin/rbac.md
       - Authentication: admin/authentication.md
+      - Deprovisioning: admin/deprovisioning.md
       - Machine tokens: admin/machine-tokens.md
       - External Secrets Operator: admin/external-secrets.md
       - Webhooks: admin/webhooks.md

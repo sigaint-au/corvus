@@ -378,7 +378,12 @@ def notify_due_command(days, dry_run):
     help="Newline-delimited active directory emails. Required for OIDC.",
 )
 @click.option("--dry-run", is_flag=True, help="Count affected users without changing data.")
-def sync_directory_command(source, active_email_file, dry_run):
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Override roster-size safety guards. Never overrides the last-admin guard.",
+)
+def sync_directory_command(source, active_email_file, dry_run, force):
     """Disable directory users absent from the active directory roster."""
     from ops import sync_directory
 
@@ -386,10 +391,16 @@ def sync_directory_command(source, active_email_file, dry_run):
         source=source,
         active_email_file=active_email_file,
         dry_run=dry_run,
+        force=force,
     )
+    emails = result.get("disabled_emails") or []
+    shown = ", ".join(emails[:20])
+    if len(emails) > 20:
+        shown += f" (+{len(emails) - 20} more)"
     click.echo(
         f"sync-directory source={result['source']} disabled={result['disabled']} "
-        f"revoked_sessions={result['revoked_sessions']} revoked_tokens={result['revoked_tokens']}"
+        f"revoked_sessions={result['revoked_sessions']} "
+        f"revoked_cli_tokens={result['revoked_cli_tokens']} emails=[{shown}]"
     )
 
 

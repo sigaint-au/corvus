@@ -9,4 +9,5 @@ resources:
   - configmap.yaml
   - cronjob-purge-audit.yaml
   - cronjob-notify-due.yaml
+  - cronjob-sync-directory.yaml
   - networkpolicy.yaml

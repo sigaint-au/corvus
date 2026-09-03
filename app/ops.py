@@ -1,10 +1,22 @@
 """Operational jobs: due notifications and directory deprovisioning."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
+import audit
 from core import db
 from integrations import ldap_auth
+
+
+AUDIT_ACTOR = "sync-directory"
+# Refuse a live run when the roster covers less than this fraction of the
+# directory users known to Corvus — a sign of a truncated/failed fetch.
+MIN_ROSTER_FRACTION = 0.8
+LDAP_PAGE_SIZE = 500
+# Active Directory userAccountControl bit: ACCOUNTDISABLE.
+LDAP_ACCOUNTDISABLE = 0x2
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _global_admin_emails(cur) -> list[str]:
@@ -128,11 +140,77 @@ def send_due_notifications(days: int = 14, *, dry_run: bool = False) -> dict[str
 
 
 def _read_email_file(path: str) -> set[str]:
-    return {
-        line.strip().lower()
-        for line in Path(path).read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    }
+    """Read a roster file of one email per line; `#` starts a comment.
+
+    Malformed lines raise instead of silently disabling their owners —
+    a mangled file must fail closed, never half-match.
+    """
+    emails: set[str] = set()
+    bad: list[str] = []
+    for lineno, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if _EMAIL_RE.match(stripped):
+            emails.add(stripped.lower())
+        else:
+            bad.append(f"line {lineno}: {stripped[:60]}")
+    if bad:
+        shown = ", ".join(bad[:5])
+        extra = f" (+{len(bad) - 5} more)" if len(bad) > 5 else ""
+        raise ValueError(f"roster file has {len(bad)} invalid email line(s): {shown}{extra}")
+    return emails
+
+
+def _ldap_entry_locked(entry) -> bool:
+    """True when a directory entry is locked/disabled (not a leaver delete).
+
+    Covers Active Directory (`userAccountControl` ACCOUNTDISABLE bit),
+    389 DS / FreeIPA (`nsAccountLock`), and ppolicy-style
+    (`pwdAccountLockedTime`) servers. Unknown schemas fail open (not locked)
+    so exotic directories keep the old delete-only behavior.
+    """
+    uac = ldap_auth.ldap_attr(entry, "userAccountControl", "")
+    if uac.strip():
+        try:
+            if int(uac.strip()) & LDAP_ACCOUNTDISABLE:
+                return True
+        except ValueError:
+            pass
+    if ldap_auth.truthy(ldap_auth.ldap_attr(entry, "nsAccountLock", "")):
+        return True
+    if ldap_auth.ldap_attr(entry, "pwdAccountLockedTime", "").strip():
+        return True
+    return False
+
+
+def _ldap_search_all(conn, base: str, search_filter: str, attributes: list[str]) -> list:
+    """Return every matching entry, following paged-result cookies.
+
+    A single unpaged search silently truncates at the server size limit
+    (AD defaults to 1000), which would read as mass departures. If the
+    server rejects paging, fall back to one plain search.
+    """
+    from ldap3 import SUBTREE
+
+    try:
+        entries: list = []
+        cookie = None
+        first = True
+        while first or cookie:
+            page_kwargs = {"paged_size": LDAP_PAGE_SIZE}
+            if cookie:
+                page_kwargs["paged_cookie"] = cookie
+            conn.search(base, search_filter, search_scope=SUBTREE, attributes=attributes, **page_kwargs)
+            entries.extend(conn.entries)
+            controls = (conn.result or {}).get("controls", {})
+            paged = (controls.get("1.2.840.113556.1.4.319", {}) or {}).get("value", {}) or {}
+            cookie = paged.get("cookie")
+            first = False
+        return entries
+    except Exception:
+        conn.search(base, search_filter, search_scope=SUBTREE, attributes=attributes)
+        return list(conn.entries)
 
 
 def ldap_active_emails() -> set[str]:
@@ -160,12 +238,12 @@ def ldap_active_emails() -> set[str]:
         start_tls=want_tls,
     )
     email_attr = (cfg.get("ldap_email_attr") or "mail").strip() or "mail"
+    attributes = [email_attr, "userAccountControl", "nsAccountLock", "pwdAccountLockedTime"]
     try:
-        conn.search(user_base, "(objectClass=*)", search_scope=SUBTREE, attributes=[email_attr])
         return {
             ldap_auth.ldap_attr(entry, email_attr).strip().lower()
-            for entry in conn.entries
-            if ldap_auth.ldap_attr(entry, email_attr).strip()
+            for entry in _ldap_search_all(conn, user_base, "(objectClass=*)", attributes)
+            if ldap_auth.ldap_attr(entry, email_attr).strip() and not _ldap_entry_locked(entry)
         }
     finally:
         conn.unbind()
@@ -176,10 +254,23 @@ def sync_directory(
     source: str = "ldap",
     active_email_file: str | None = None,
     dry_run: bool = False,
-) -> dict[str, int | str]:
-    """Disable directory users absent from supplied/current directory roster."""
-    source = (source or "ldap").strip().lower()
-    sources = [s for s in source.split(",") if s in {"ldap", "oidc"}]
+    force: bool = False,
+) -> dict[str, int | str | list[str]]:
+    """Disable directory users absent from supplied/current directory roster.
+
+    Lockout is enforced by ``disabled_at`` (login, PAT/CLI-token, and RLS
+    checks all exclude disabled users), so personal access tokens are
+    deliberately left in place — re-enabling restores them, matching a
+    manual admin disable. Ephemeral CLI session tokens have no revoked
+    flag and are deleted.
+
+    Safety guards: an empty roster always refuses unless ``force``; a
+    roster covering less than ``MIN_ROSTER_FRACTION`` of known directory
+    users refuses unless ``force``; disabling the last active global
+    admin always refuses, even with ``force``.
+    """
+    wanted = {s.strip() for s in (source or "ldap").strip().lower().split(",") if s.strip()}
+    sources = sorted(wanted & {"ldap", "oidc"})
     if not sources:
         raise ValueError("source must be ldap, oidc, or ldap,oidc")
     if active_email_file:
@@ -188,13 +279,28 @@ def sync_directory(
         active = ldap_active_emails()
     else:
         raise ValueError("OIDC deprovisioning needs --active-email-file")
-    if not active:
+    if not active and not force:
         raise ValueError("active directory roster is empty; refusing to disable everyone")
 
     with db.connect_admin() as conn, conn.cursor() as cur:
         cur.execute(
+            "SELECT COUNT(*) AS n FROM private.users WHERE auth_source = ANY(%s) AND disabled_at IS NULL",
+            (sources,),
+        )
+        eligible = (cur.fetchone() or {}).get("n") or 0
+        if eligible and not force and len(active) < eligible * MIN_ROSTER_FRACTION:
+            raise ValueError(
+                f"roster covers {len(active)} of {eligible} active directory users "
+                f"(under {int(MIN_ROSTER_FRACTION * 100)}%); refusing — "
+                "check for a truncated/failed fetch, or pass --force"
+            )
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM private.users WHERE is_global_admin AND disabled_at IS NULL"
+        )
+        admin_total = (cur.fetchone() or {}).get("n") or 0
+        cur.execute(
             """
-            SELECT id, email FROM private.users
+            SELECT id, email, is_global_admin FROM private.users
             WHERE auth_source = ANY(%s)
               AND disabled_at IS NULL
               AND NOT (lower(email) = ANY(%s))
@@ -203,18 +309,31 @@ def sync_directory(
             (sources, sorted(active)),
         )
         stale = cur.fetchall() or []
+        stale_admins = sum(1 for r in stale if r.get("is_global_admin"))
+        if stale and stale_admins and admin_total - stale_admins <= 0:
+            raise ValueError(
+                "refusing to disable the last active global admin; "
+                "promote a successor (or re-enable afterwards via SQL) first"
+            )
+        emails = sorted(r["email"] for r in stale if r.get("email"))
         if dry_run or not stale:
-            return {"source": ",".join(sources), "disabled": len(stale), "revoked_sessions": 0, "revoked_tokens": 0}
+            return {
+                "source": ",".join(sources),
+                "disabled": len(stale),
+                "disabled_emails": emails,
+                "revoked_sessions": 0,
+                "revoked_cli_tokens": 0,
+            }
         ids = [str(r["id"]) for r in stale]
         cur.execute(
             "UPDATE private.users SET disabled_at = now() WHERE id = ANY(%s::uuid[])",
             (ids,),
         )
         cur.execute(
-            "DELETE FROM private.personal_access_tokens WHERE user_id = ANY(%s::uuid[])",
+            "DELETE FROM private.cli_session_tokens WHERE user_id = ANY(%s::uuid[])",
             (ids,),
         )
-        revoked_tokens = cur.rowcount or 0
+        revoked_cli_tokens = cur.rowcount or 0
         cur.execute(
             """
             UPDATE private.user_sessions
@@ -224,10 +343,18 @@ def sync_directory(
             (ids,),
         )
         revoked_sessions = cur.rowcount or 0
+        for r in stale:
+            audit.log_org(
+                cur,
+                action=audit.ORG_USER_DISABLED,
+                detail=f"user_id={r['id']} email={r.get('email')} source={','.join(sources)} via=sync-directory",
+                actor_email=AUDIT_ACTOR,
+            )
         conn.commit()
     return {
         "source": ",".join(sources),
         "disabled": len(stale),
+        "disabled_emails": emails,
         "revoked_sessions": revoked_sessions,
-        "revoked_tokens": revoked_tokens,
+        "revoked_cli_tokens": revoked_cli_tokens,
     }

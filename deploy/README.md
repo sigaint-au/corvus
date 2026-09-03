@@ -187,21 +187,30 @@ kubectl -n "$NS" rollout status deploy/corvus-app --timeout=180s
 
 ### Scheduled operational jobs
 
-The base app kustomization creates two UTC CronJobs using the same image and
+The base app kustomization creates three UTC CronJobs using the same image and
 bootstrap Secret as the web Deployment:
 
 - `corvus-purge-audit` — daily at 03:45 UTC; uses the configured
   `audit_retention_days` setting (`0` keeps audit rows forever).
 - `corvus-notify-due` — daily at 08:00 UTC; emails global admins about
   due secrets, token expiry, and pending access approvals through SMTP settings.
+- `corvus-sync-directory` — daily at 02:30 UTC; disables LDAP users missing
+  from the directory (see `docs/admin/deprovisioning.md`). LDAP connection
+  settings come from the same `corvus-app-env` ConfigMap as the Deployment.
 
-Both jobs use `concurrencyPolicy: Forbid`, retain three successful and failed
+All jobs use `concurrencyPolicy: Forbid`, retain three successful and failed
 Jobs, and stop after 15 minutes. Inspect or run a job manually:
 
 ```bash
-kubectl -n corvus get cronjob corvus-purge-audit corvus-notify-due
+kubectl -n corvus get cronjob corvus-purge-audit corvus-notify-due corvus-sync-directory
 kubectl -n corvus create job --from=cronjob/corvus-purge-audit purge-audit-manual
 kubectl -n corvus logs -f job/purge-audit-manual
+```
+
+To pause deprovisioning without removing it (e.g. on staging):
+
+```bash
+kubectl -n corvus patch cronjob corvus-sync-directory -p '{"spec":{"suspend":true}}'
 ```
 
 The staging overlay inherits these schedules under its own namespace.

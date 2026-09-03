@@ -108,6 +108,10 @@ patches:
     target:
       kind: CronJob
       name: corvus-notify-due
+  - path: pull-secret-cronjob.yaml
+    target:
+      kind: CronJob
+      name: corvus-sync-directory
   - path: drop-priority-class.yaml
     target:
       kind: Deployment

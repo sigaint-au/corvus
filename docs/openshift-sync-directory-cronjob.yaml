@@ -1,0 +1,92 @@
+# Kubernetes CronJob: daily directory deprovisioning
+#
+# Disables LDAP users missing from the directory (see
+# docs/admin/deprovisioning.md). Always dry-run first:
+#   kubectl create job --from=cronjob/corvus-sync-directory sync-directory-dry-run -n corvus \
+#     -- flask --app app sync-directory --source ldap --dry-run
+#
+# Prerequisites:
+#   - Same app image as the corvus Deployment
+#   - Secret/env with DATABASE_ADMIN_URL (and other app env vars as needed,
+#     including LDAP_* settings for --source ldap)
+#
+# Apply:
+#   kubectl apply -f docs/openshift-sync-directory-cronjob.yaml
+# Manual run:
+#   oc create job --from=cronjob/corvus-sync-directory sync-directory-manual -n corvus
+#   oc logs job/sync-directory-manual -n corvus
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: corvus-sync-directory
+  namespace: corvus
+  labels:
+    app: corvus
+    component: sync-directory
+spec:
+  # 02:30 UTC every day
+  schedule: "30 2 * * *"
+  timeZone: "UTC" # requires Kubernetes 1.27+; remove if unsupported
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app: corvus
+            component: sync-directory
+        spec:
+          restartPolicy: Never
+          # serviceAccountName: corvus
+          containers:
+            - name: sync-directory
+              # Replace with your ImageStream / registry tag
+              image: image-registry.openshift-image-registry.svc:5000/corvus/corvus:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - flask
+                - --app
+                - app
+                - sync-directory
+                - --source
+                - ldap
+              # OIDC / file-roster variant (mount the roster, e.g. via ConfigMap):
+              # command: ["flask", "--app", "app", "sync-directory",
+              #           "--source", "oidc",
+              #           "--active-email-file", "/etc/corvus/active-emails.txt"]
+              # volumeMounts:
+              #   - name: roster
+              #     mountPath: /etc/corvus
+              #     readOnly: true
+              envFrom:
+                # Must include at least DATABASE_ADMIN_URL (and usually DATABASE_URL,
+                # JWT_SECRET, MASTER_KEY, SECRET_KEY — same as the web Deployment).
+                - secretRef:
+                    name: corvus-app-env
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop: ["ALL"]
+          # volumes:
+          #   - name: roster
+          #     configMap:
+          #       name: corvus-active-emails
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
