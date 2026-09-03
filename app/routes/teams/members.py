@@ -13,7 +13,17 @@ from flask import (
 
 import audit
 from auth import authz, rbac_sync
-from core import config, db
+from auth.roles import (
+    MANAGE_TIER,
+    OWNER_TIER,
+    default_team_role,
+    highest_team_role,
+    role_names_for_scope,
+    roles_for_scope,
+    team_role_at_least,
+    team_tier_role,
+)
+from core import db
 from lib.users import lookup_user_id
 
 
@@ -33,11 +43,11 @@ def load_members_tab(cur, team_id, is_admin):
     """
     all_b = rbac_sync.list_scope_bindings(cur, "team", team_id)
     rbac_sync.enrich_binding_emails(all_b)
+    team_roles = set(role_names_for_scope(cur, "team"))
     members = [
         b
         for b in all_b
-        if b.get("subject_kind") == "User"
-        and str(b.get("role_name") or "").startswith("team-")
+        if b.get("subject_kind") == "User" and str(b.get("role_name") or "") in team_roles
     ]
     invites, join_requests = [], []
     if is_admin:
@@ -85,7 +95,7 @@ def enrich_join_request_emails(join_requests):
             jr.setdefault("name", "")
 
 
-def members_partial(team_id, *, form_email="", form_role="team-member"):
+def members_partial(team_id, *, form_email="", form_role=None):
     """Render the members-tab partial for HTMX swaps.
 
     Args:
@@ -108,11 +118,16 @@ def members_partial(team_id, *, form_email="", form_role="team-member"):
         )
         can_edit_access = bool((cur.fetchone() or {}).get("ok"))
         is_admin = (
-            my_role in ("team-owner", "team-admin")
+            team_role_at_least(cur, my_role, MANAGE_TIER)
             or bool(session.get("is_global_admin"))
             or can_edit_access
         )
         members, invites, join_requests = load_members_tab(cur, team_id, is_admin)
+        top_role = highest_team_role(cur) or OWNER_TIER
+        dropdown = roles_for_scope(cur, "team")
+        default_role = default_team_role(cur)
+        if not form_role:
+            form_role = default_role
     enrich_join_request_emails(join_requests)
     return render_template(
         "partials/team_members.html",
@@ -123,14 +138,16 @@ def members_partial(team_id, *, form_email="", form_role="team-member"):
         my_role=my_role,
         is_admin=is_admin,
         active_tab="members",
-        team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
+        team_role_dropdown=dropdown,
         form_email=form_email,
         form_role=form_role,
+        top_role=top_role,
+        default_role=default_role,
         new_invite_url=session.pop("new_invite_url", None),
     )
 
 
-def members_response(team_id, *, form_email="", form_role="team-member"):
+def members_response(team_id, *, form_email="", form_role=None):
     """Return the members partial for HTMX, else redirect to the members tab."""
     if authz.htmx():
         return members_partial(team_id, form_email=form_email, form_role=form_role)
@@ -257,15 +274,15 @@ def add_team_binding(team_id):
         POST /teams/<team_id>/members with email and role form fields
     """
     email = request.form.get("email", "").strip().lower()
-    role = request.form.get("role", "team-member")
-    role_names = config.RBAC_TEAM_ROLE_NAMES
-    if role not in role_names:
-        role = "team-member"
+    raw_role = (request.form.get("role") or "").strip()
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
-        # M1: only team owners may assign owner (admins cannot self-promote)
+        role_names = role_names_for_scope(cur, "team")
+        role = raw_role if raw_role in role_names else default_team_role(cur)
+        # Only the top tier may grant the top role (admins cannot self-promote)
+        top_role = highest_team_role(cur) or OWNER_TIER
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
         my_role = (cur.fetchone() or {}).get("r")
-        if role == "team-owner" and my_role != "team-owner":
+        if role == top_role and not team_role_at_least(cur, my_role, OWNER_TIER):
             flash("Only a team owner can grant the owner role", "error")
             return members_response(team_id, form_email=email, form_role=role)
         uid = lookup_user_id(cur, email)
@@ -278,7 +295,7 @@ def add_team_binding(team_id):
             cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (rname,))
             role_row = cur.fetchone()
             if not role_row:
-                flash(f"Built-in role {rname} missing — run schema ensure", "error")
+                flash(f"Role {rname} missing — run schema ensure", "error")
                 return members_response(team_id, form_email=email, form_role=role)
             # Check existing team binding for this user
             cur.execute(
@@ -288,7 +305,7 @@ def add_team_binding(team_id):
                 JOIN rbac.roles r ON r.id = b.role_id
                 WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
                   AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
-                  AND r.name IN ('team-owner','team-admin','team-member','team-viewer')
+                  AND 'team' = ANY (r.scopes)
                 """,
                 (uid, str(team_id)),
             )
@@ -338,7 +355,7 @@ def remove_team_binding(team_id, user_id):
                 JOIN rbac.roles r ON r.id = b.role_id
                 WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
                   AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
-                  AND r.name IN ('team-owner','team-admin','team-member','team-viewer')
+                  AND 'team' = ANY (r.scopes)
                 """,
                 (str(user_id), str(team_id)),
             )
@@ -382,7 +399,7 @@ def transfer_team_ownership(team_id):
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-        if (cur.fetchone() or {}).get("r") != "team-owner":
+        if not team_role_at_least(cur, (cur.fetchone() or {}).get("r"), OWNER_TIER):
             flash("Only owners can transfer ownership", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
         new_uid = lookup_user_id(cur, email)
@@ -398,14 +415,14 @@ def transfer_team_ownership(team_id):
                 cur,
                 user_id=new_uid,
                 team_id=team_id,
-                role="team-owner",
+                role=highest_team_role(cur) or OWNER_TIER,
                 created_by=session["user_id"],
             )
             rbac_sync.sync_user_team_binding(
                 cur,
                 user_id=session["user_id"],
                 team_id=team_id,
-                role="team-admin",
+                role=team_tier_role(cur, MANAGE_TIER),
                 created_by=session["user_id"],
             )
             audit.log_org(

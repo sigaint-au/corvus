@@ -137,9 +137,11 @@ def team_detail(team_id):
             (str(team_id),),
         )
         can_edit_access = bool((cur.fetchone() or {}).get("ok"))
-        # Team owner/admin, global admin, or anyone who can manage bindings
+        # Team manage tier, global admin, or anyone who can manage bindings
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         is_admin = (
-            my_role in ("team-owner", "team-admin")
+            team_role_at_least(cur, my_role, MANAGE_TIER)
             or bool(session.get("is_global_admin"))
             or can_edit_access
         )
@@ -282,6 +284,22 @@ def team_detail(team_id):
                 (str(team_id),),
             )
             team_meta = cur.fetchall() or []
+        from auth.roles import (
+            MANAGE_TIER,
+            MEMBER_TIER,
+            OWNER_TIER,
+            default_team_role,
+            highest_team_role,
+            roles_for_scope,
+            team_role_at_least,
+        )
+
+        team_role_dropdown = roles_for_scope(cur, "team")
+        top_role = highest_team_role(cur) or OWNER_TIER
+        default_role = default_team_role(cur)
+        can_create_projects = team_role_at_least(cur, my_role, MEMBER_TIER)
+        can_manage_team = team_role_at_least(cur, my_role, MANAGE_TIER)
+        is_owner = team_role_at_least(cur, my_role, OWNER_TIER)
     if join_requests:
         enrich_join_request_emails(join_requests)
     if access_bindings:
@@ -308,8 +326,8 @@ def team_detail(team_id):
         access_groups=access_groups,
         webhooks=webhooks if tab == "webhooks" else [],
         can_edit_access=can_edit_access or is_admin,
-        team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
-        dir_role_dropdown=config.DIRECTORY_MAP_TEAM_DROPDOWN,
+        team_role_dropdown=team_role_dropdown,
+        dir_role_dropdown=team_role_dropdown,
         role_descriptions=role_descriptions,
         subject_kinds=config.RBAC_SUBJECT_KINDS,
         new_invite_url=session.pop("new_invite_url", None),
@@ -319,7 +337,12 @@ def team_detail(team_id):
         is_admin=is_admin,
         team_meta=team_meta,
         form_email="",
-        form_role="team-member",
+        form_role=default_role,
+        top_role=top_role,
+        default_role=default_role,
+        can_create_projects=can_create_projects,
+        can_manage_team=can_manage_team,
+        is_owner=is_owner,
     )
 
 
@@ -337,8 +360,10 @@ def update_team_settings(team_id):
         POST /teams/<team_id>/settings with default_token_days and classification fields
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-        if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
+        if not team_role_at_least(cur, (cur.fetchone() or {}).get("r"), MANAGE_TIER):
             flash("Only owners or admins can change team settings", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
         default_token_days = None
@@ -440,9 +465,11 @@ def delete_team(team_id):
         POST /teams/<team_id>/delete
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import OWNER_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
         row = cur.fetchone()
-        if not row or row["r"] != "team-owner":
+        if not row or not team_role_at_least(cur, row["r"], OWNER_TIER):
             flash("Only team owners can delete a team", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
         try:
@@ -475,9 +502,11 @@ def upsert_team_meta(team_id):
     if len(value) > 2000:
         value = value[:2000]
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
         role = (cur.fetchone() or {}).get("r")
-        if role not in ("team-owner", "team-admin"):
+        if not team_role_at_least(cur, role, MANAGE_TIER):
             flash("Only owners or admins can manage team metadata", "error")
             return redirect(meta_url)
         try:
@@ -503,9 +532,11 @@ def delete_team_meta(team_id, meta_key):
     """Remove a team-level metadata field (owners/admins only)."""
     meta_url = url_for("team_detail", team_id=team_id, tab="meta")
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
         role = (cur.fetchone() or {}).get("r")
-        if role not in ("team-owner", "team-admin"):
+        if not team_role_at_least(cur, role, MANAGE_TIER):
             flash("Only owners or admins can manage team metadata", "error")
             return redirect(meta_url)
         try:

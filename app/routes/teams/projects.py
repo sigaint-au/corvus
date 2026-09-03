@@ -30,12 +30,16 @@ def new_project_wizard(team_id):
         GET /teams/<team_id>/projects/new
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import MANAGE_TIER, MEMBER_TIER, team_role_at_least
+
         team = db.team(cur, team_id)
         if not team:
             return "Not found", 404
         cur.execute("SELECT api.team_role(%s::uuid) AS r", (str(team_id),))
         my_role = (cur.fetchone() or {}).get("r") or ""
-    if my_role not in ("team-owner", "team-admin", "team-member"):
+        can_create = team_role_at_least(cur, my_role, MEMBER_TIER)
+        can_manage_team = team_role_at_least(cur, my_role, MANAGE_TIER)
+    if not can_create:
         flash("You don't have permission to create projects", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
     hsm_slots = []
@@ -49,6 +53,7 @@ def new_project_wizard(team_id):
         "team_new_project.html",
         team=team,
         my_role=my_role,
+        can_manage_team=can_manage_team,
         encryption="managed",
         hsm_available=bool(hsm_slots),
         hsm_slots=hsm_slots,
@@ -152,9 +157,11 @@ def delete_project_from_team(team_id, project_id):
         POST /teams/<team_id>/projects/<project_id>/delete
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
         row = cur.fetchone()
-        if not row or row["r"] not in ("team-owner", "team-admin"):
+        if not row or not team_role_at_least(cur, row["r"], MANAGE_TIER):
             flash("Only team owners or admins can delete projects", "error")
             return redirect(url_for("team_detail", team_id=team_id, tab="projects"))
         cur.execute(

@@ -266,6 +266,7 @@ def _reveal_toggle_html(
 
 def _render_secret_view(
     *,
+    role_dropdown=None,
     project_id,
     secret_id,
     row,
@@ -350,7 +351,7 @@ def _render_secret_view(
             access_modes=config.ACCESS_MODES,
             access_mode_labels=config.ACCESS_MODE_LABELS,
             can_edit_access=can_admin,
-            role_dropdown=config.RBAC_SECRET_ROLE_DROPDOWN,
+            role_dropdown=role_dropdown or list(config.RBAC_SECRET_ROLE_DROPDOWN),
             subject_kinds=config.RBAC_SUBJECT_KINDS,
             secret_bindings=secret_bindings or [],
             team_groups=team_groups or [],

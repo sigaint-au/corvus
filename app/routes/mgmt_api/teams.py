@@ -9,6 +9,15 @@ from flask import (
 
 import audit
 from auth import authz, rbac_sync
+from auth.roles import (
+    MANAGE_TIER,
+    OWNER_TIER,
+    default_team_role,
+    highest_team_role,
+    role_names_for_scope,
+    team_role_at_least,
+    team_tier_role,
+)
 from core import config, db, settings_svc
 from lib import metadata
 from lib.users import lookup_user_id
@@ -37,12 +46,12 @@ def mgmt_list_teams():
     with db.as_user(uid) as conn, conn.cursor() as cur:
         sql = """
             SELECT t.id, t.name, t.created_at,
-              COALESCE(api.team_role(t.id), 'team-owner') AS role,
+              COALESCE(api.team_role(t.id), %s) AS role,
               (SELECT count(*) FROM api.projects p WHERE p.team_id = t.id) AS project_count
             FROM api.teams t
             WHERE (%s OR api.is_team_member(t.id))
         """
-        params: list = [authz.is_global_admin(uid)]
+        params: list = [highest_team_role(cur) or OWNER_TIER, authz.is_global_admin(uid)]
         if like:
             sql += " AND t.name ILIKE %s"
             params.append(like)
@@ -154,23 +163,24 @@ def mgmt_add_team_binding(team_ref):
         return err
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
-    role = (body.get("role") or "team-member").strip()
-    role_names = config.RBAC_TEAM_ROLE_NAMES
-    if role not in role_names:
-        role = "team-member"
+    raw_role = (body.get("role") or "").strip()
     if not email:
         return jsonify({"error": "email is required"}), 400
     with db.as_user(uid) as conn, conn.cursor() as cur:
         tid = _resolve_team(cur, team_ref)
         if not tid:
             return jsonify({"error": "not found"}), 404
+        role = raw_role if raw_role in role_names_for_scope(cur, "team") else ""
+        if not role:
+            role = default_team_role(cur)
         cur.execute("SELECT api.can_manage_rbac('team', %s::uuid) AS ok", (tid,))
         if not (cur.fetchone() or {}).get("ok"):
             return jsonify({"error": "forbidden"}), 403
-        # M1: only team owners may assign owner
+        # Only the top tier may grant the top role
+        top_role = highest_team_role(cur) or OWNER_TIER
         cur.execute("SELECT api.team_role(%s::uuid) AS r", (tid,))
         my_role = (cur.fetchone() or {}).get("r")
-        if role == "team-owner" and my_role != "team-owner":
+        if role == top_role and not team_role_at_least(cur, my_role, OWNER_TIER):
             return jsonify({"error": "only a team owner can grant owner"}), 403
         mid = lookup_user_id(cur, email)
         if not mid:
@@ -182,7 +192,7 @@ def mgmt_add_team_binding(team_ref):
             JOIN rbac.roles r ON r.id = b.role_id
             WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
               AND b.subject_kind = 'User' AND b.subject_id = %s::uuid
-              AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+              AND 'team' = ANY (r.scopes)
             """,
             (tid, mid),
         )
@@ -220,7 +230,7 @@ def mgmt_remove_team_binding(team_ref, member_ref):
             JOIN rbac.roles r ON r.id = b.role_id
             WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
               AND b.subject_kind = 'User' AND b.subject_id = %s::uuid
-              AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+              AND 'team' = ANY (r.scopes)
             """,
             (tid, mid),
         )
@@ -257,8 +267,9 @@ def mgmt_transfer_team(team_ref):
         if not mid:
             return jsonify({"error": "user not found"}), 404
         # Promote the new owner first, then demote existing owners.
+        top_role = highest_team_role(cur) or OWNER_TIER
         rbac_sync.sync_user_team_binding(
-            cur, user_id=mid, team_id=tid, role="team-owner", created_by=uid
+            cur, user_id=mid, team_id=tid, role=top_role, created_by=uid
         )
         cur.execute(
             """
@@ -266,17 +277,17 @@ def mgmt_transfer_team(team_ref):
             FROM rbac.bindings b
             JOIN rbac.roles r ON r.id = b.role_id
             WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
-              AND b.subject_kind = 'User' AND r.name = 'team-owner'
+              AND b.subject_kind = 'User' AND r.name = %s
               AND b.subject_id <> %s::uuid
             """,
-            (tid, mid),
+            (tid, top_role, mid),
         )
         for owner in cur.fetchall() or []:
             rbac_sync.sync_user_team_binding(
                 cur,
                 user_id=owner["subject_id"],
                 team_id=tid,
-                role="team-admin",
+                role=team_tier_role(cur, MANAGE_TIER),
                 created_by=uid,
             )
         audit.log_org(
@@ -291,7 +302,7 @@ def mgmt_transfer_team(team_ref):
 
 def _team_meta_allowed(cur, tid: str) -> bool:
     cur.execute("SELECT api.team_role(%s) AS r", (tid,))
-    return (cur.fetchone() or {}).get("r") in ("team-owner", "team-admin")
+    return team_role_at_least(cur, (cur.fetchone() or {}).get("r"), MANAGE_TIER)
 
 
 def mgmt_upsert_team_meta(team_ref, meta_key):

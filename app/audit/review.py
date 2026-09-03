@@ -59,7 +59,7 @@ def access_review_rows(cur) -> list[dict]:
          JOIN private.users u ON u.id = b.subject_id
          JOIN api.teams t ON t.id = b.scope_id
          WHERE b.subject_kind = 'User' AND b.scope_kind = 'team'
-           AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+           AND 'team' = ANY (r.scopes)
          ORDER BY u.email, t.name
         """
     )
@@ -91,7 +91,7 @@ def access_review_rows(cur) -> list[dict]:
          JOIN api.projects p ON p.id = b.scope_id
          JOIN api.teams t ON t.id = p.team_id
          WHERE b.subject_kind = 'User' AND b.scope_kind = 'project'
-           AND r.name IN ('project-admin', 'project-write', 'project-reveal', 'project-read')
+           AND 'project' = ANY (r.scopes)
          ORDER BY u.email, t.name, p.name
         """
     )

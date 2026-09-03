@@ -30,7 +30,7 @@ Search with grep/glob first. `@` only the files you will change.
 Prefix supported tools with `rtk` (`rtk git`, `rtk pytest`, `rtk kubectl`, …).
 
 ## Invariants
-- UI roles: `team-owner` / `team-admin` / `team-member` / `team-viewer` and project/secret roles
+- Role vocab is DB-driven (`rbac.roles` via `app/auth/roles.py`); `app/core/config.py` dropdowns are offline fallback/seed only. Do not hardcode role names in routes, gates, or templates.
 - Machine-token `role` column: `service-read` | `service-reveal` | `service-write`
 - No `pyotp` — stdlib TOTP stays
 - `ALLOW_INSECURE_DEFAULTS=1` is local only

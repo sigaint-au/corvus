@@ -19,7 +19,7 @@ from flask import (
 
 import audit
 from auth import authz, rbac_sync
-from core import config, db
+from core import db
 from crypto import sha256_hex
 
 from .members import members_response
@@ -38,9 +38,7 @@ def create_team_invite(team_id):
     Example:
         POST /teams/<team_id>/invites with role and expires_days form fields
     """
-    role = request.form.get("role", "team-member")
-    if role not in config.INVITE_ROLES:
-        role = "team-member"
+    raw_role = (request.form.get("role") or "").strip()
     days = 7
     raw_days = (request.form.get("expires_days") or "7").strip()
     try:
@@ -52,6 +50,19 @@ def create_team_invite(team_id):
     expires = datetime.now(timezone.utc) + timedelta(days=days)
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
+            from auth.roles import (
+                OWNER_TIER,
+                default_team_role,
+                highest_team_role,
+                role_names_for_scope,
+            )
+
+            # Invites cover team roles except the top tier
+            # (ownership transfers, not invites).
+            top_role = highest_team_role(cur) or OWNER_TIER
+            role = raw_role if raw_role in role_names_for_scope(cur, "team") else ""
+            if not role or role == top_role:
+                role = default_team_role(cur)
             cur.execute(
                 """
                 INSERT INTO api.team_invites
@@ -156,7 +167,7 @@ def redeem_invite(token):
             JOIN rbac.roles r ON r.id = b.role_id
             WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
               AND b.subject_kind = 'User' AND b.subject_id = %s::uuid
-              AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+              AND 'team' = ANY (r.scopes)
             """,
             (str(inv["team_id"]), session["user_id"]),
         )
@@ -216,8 +227,10 @@ def approve_join_request(team_id, req_id):
         POST /teams/<team_id>/join-requests/<req_id>/approve
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-        if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
+        if not team_role_at_least(cur, (cur.fetchone() or {}).get("r"), MANAGE_TIER):
             flash("Only owners or admins can approve join requests", "error")
             return members_response(team_id)
         cur.execute(
@@ -232,16 +245,26 @@ def approve_join_request(team_id, req_id):
             flash("Request not found", "error")
             return members_response(team_id)
         try:
-            # Role in request row can be 'team-member' or legacy 'member'
+            # Role in request row is a current name, or a legacy short name
+            # from before roles were catalog-driven.
+            from auth.roles import (
+                MANAGE_TIER,
+                MEMBER_TIER,
+                OWNER_TIER,
+                VIEWER_TIER,
+                default_team_role,
+                role_names_for_scope,
+            )
+
             req_role = req["role"]
-            if req_role not in config.RBAC_TEAM_ROLE_NAMES:
+            if req_role not in role_names_for_scope(cur, "team"):
                 legacy_map = {
-                    "owner": "team-owner",
-                    "admin": "team-admin",
-                    "member": "team-member",
-                    "viewer": "team-viewer",
+                    "owner": OWNER_TIER,
+                    "admin": MANAGE_TIER,
+                    "member": MEMBER_TIER,
+                    "viewer": VIEWER_TIER,
                 }
-                req_role = legacy_map.get(req_role, "team-member")
+                req_role = legacy_map.get(req_role, default_team_role(cur))
             rbac_sync.sync_user_team_binding(
                 cur,
                 user_id=req["user_id"],
@@ -286,8 +309,10 @@ def reject_join_request(team_id, req_id):
         POST /teams/<team_id>/join-requests/<req_id>/reject
     """
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-        if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
+        if not team_role_at_least(cur, (cur.fetchone() or {}).get("r"), MANAGE_TIER):
             flash("Only owners or admins can reject join requests", "error")
             return members_response(team_id)
         cur.execute(

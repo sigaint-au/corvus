@@ -175,19 +175,18 @@ class TestLDAPMaps:
             )
         assert r.status_code == 302
 
-    def test_add_team_ldap_map_rejects_auditor(self):
-        # 'auditor' is cluster-scope and outside the maps CHECK constraint;
-        # it must be rejected before any DB write (not coerced to member).
-        with patch.object(
-            db, "as_user", side_effect=AssertionError("invalid role must not touch DB")
-        ):
+    def test_add_team_ldap_map_accepts_team_scope_role(self):
+        # 'auditor' is a team-scope role in rbac.roles, so directory maps accept it.
+        conn, cur = _conn()
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/teams/{self.tid}/ldap-maps",
                 data={"ldap_group": "eng-secrets", "role": "auditor"},
                 follow_redirects=False,
             )
         assert r.status_code == 302
-        assert str(self.tid) in r.location
+        executed = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        assert "insert into api.team_ldap_maps" in executed
 
     def test_add_team_oidc_map_ok(self):
         conn, cur = _conn()
@@ -202,9 +201,9 @@ class TestLDAPMaps:
         assert "insert into api.team_oidc_maps" in executed
 
     def test_add_team_oidc_map_rejects_unknown_role(self):
-        with patch.object(
-            db, "as_user", side_effect=AssertionError("invalid role must not touch DB")
-        ):
+        # Unknown roles are rejected inside the request (no map INSERT).
+        conn, cur = _conn()
+        with patch.object(db, "as_user", return_value=conn):
             r = self.client.post(
                 f"/teams/{self.tid}/oidc-maps",
                 data={"oidc_group": "eng-secrets", "role": "superuser"},
@@ -212,18 +211,19 @@ class TestLDAPMaps:
             )
         assert r.status_code == 302
         assert str(self.tid) in r.location
+        executed = " ".join(str(c.args[0]) for c in cur.execute.call_args_list).lower()
+        assert "insert into api.team_oidc_maps" not in executed
 
     def test_team_rbac_rank_matches_directory_roles(self):
-        from core import config
-        from integrations import dir_sync
+        from auth.roles import team_role_rank
 
-        assert dir_sync.TEAM_RBAC_RANK == {
+        conn, cur = _conn()
+        assert team_role_rank(cur) == {
             "team-owner": 4,
             "team-admin": 3,
             "team-member": 2,
             "team-viewer": 1,
         }
-        assert set(dir_sync.TEAM_RBAC_RANK) == set(config.DIRECTORY_MAP_TEAM_ROLES)
 
     def test_apply_team_membership_maps_skips_unranked_role(self):
         from integrations import dir_sync

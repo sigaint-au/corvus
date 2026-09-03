@@ -117,9 +117,7 @@ def users_suggest():
                         WHERE candidate.subject_kind = 'User'
                           AND candidate.subject_id = u.id
                           AND candidate.scope_kind = 'team'
-                          AND candidate_role.name IN (
-                            'team-owner', 'team-admin', 'team-member', 'team-viewer'
-                          )
+                          AND 'team' = ANY (candidate_role.scopes)
                           AND EXISTS (
                             SELECT 1
                             FROM rbac.bindings caller

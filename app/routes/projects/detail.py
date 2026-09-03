@@ -42,11 +42,11 @@ def projects_list():
         with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
             team = db.team(cur, tid)
             if team:
+                from auth.roles import MEMBER_TIER, team_role_at_least
+
                 cur.execute("SELECT api.team_role(%s::uuid) AS role", (tid,))
-                can_create_project = (cur.fetchone() or {}).get("role") in (
-                    "team-owner",
-                    "team-admin",
-                    "team-member",
+                can_create_project = team_role_at_least(
+                    cur, (cur.fetchone() or {}).get("role"), MEMBER_TIER
                 )
                 where = "p.team_id = %s"
                 params: list = [tid]
@@ -161,6 +161,8 @@ def project_detail(project_id):
     role_descriptions = {}
     can_edit_access = False
     default_token_days = None
+    # Filled DB-driven on the access tab below; other tabs do not render it.
+    project_role_dropdown = []
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -180,14 +182,18 @@ def project_detail(project_id):
         can_write = cur.fetchone()["w"]
         cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
         can_admin = cur.fetchone()["a"]
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s) AS r", (str(project["team_id"]),))
         team_role = (cur.fetchone() or {}).get("r")
-        # Project delete: team owner/admin (matches projects_delete RLS)
-        can_delete = team_role in ("team-owner", "team-admin")
-        # Key management is an org-level policy: team owner/admin or global admin.
+        # Project delete: team manage tier (matches projects_delete RLS)
+        can_delete = team_role_at_least(cur, team_role, MANAGE_TIER)
+        # Key management is an org-level policy: team manage tier or global admin.
         cur.execute("SELECT api.is_global_admin() AS g", ())
         is_global_admin = bool((cur.fetchone() or {}).get("g"))
-        can_manage_keys = bool(is_global_admin or team_role in ("team-owner", "team-admin"))
+        can_manage_keys = bool(
+            is_global_admin or team_role_at_least(cur, team_role, MANAGE_TIER)
+        )
         # Settings: project admins manage members; team owner/admin also see danger zone
         can_settings = bool(can_admin or can_delete)
         project_crypto = None
@@ -424,6 +430,9 @@ def project_detail(project_id):
                 }
             except Exception:
                 role_descriptions = {}
+            from auth.roles import roles_for_scope
+
+            project_role_dropdown = roles_for_scope(cur, "project")
         elif tab == "requests":
             cur.execute(
                 "SELECT * FROM private.secret_access_request_rows(%s::uuid)",
@@ -475,7 +484,7 @@ def project_detail(project_id):
         "effective_access_pager": effective_access_pager,
         "effective_access_q": effective_access_q,
         "can_edit_access": can_edit_access,
-        "project_role_dropdown": config.RBAC_PROJECT_ROLE_DROPDOWN,
+        "project_role_dropdown": project_role_dropdown,
         "role_descriptions": role_descriptions,
         "subject_kinds": config.RBAC_SUBJECT_KINDS,
         "secrets_pager": secrets_pager,
@@ -543,12 +552,14 @@ def delete_project(project_id):
             """,
             (str(project_id),),
         )
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         row = cur.fetchone()
         if not row:
             flash("Project not found", "error")
             return redirect(url_for("projects_list"))
         team_id = row["team_id"]
-        if row["r"] not in ("team-owner", "team-admin"):
+        if not team_role_at_least(cur, row["r"], MANAGE_TIER):
             flash("Only team owners or admins can delete projects", "error")
             return redirect(url_for("project_detail", project_id=project_id))
         cur.execute("DELETE FROM api.projects WHERE id = %s", (str(project_id),))
@@ -704,9 +715,12 @@ def project_crypto_action(project_id):
         team_id = proj.get("team_id")
         cur.execute("SELECT api.is_global_admin() AS g", ())
         is_global_admin = bool((cur.fetchone() or {}).get("g"))
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s::uuid) AS r", (str(team_id),))
         team_role = (cur.fetchone() or {}).get("r")
-    if not (is_global_admin or team_role in ("team-owner", "team-admin")):
+        can_manage_team = team_role_at_least(cur, team_role, MANAGE_TIER)
+    if not (is_global_admin or can_manage_team):
         flash("Only team owners, team admins, or global admins can manage the project key", "error")
         return redirect(url_for("project_detail", project_id=project_id, tab="settings"))
     if action == "adopt":

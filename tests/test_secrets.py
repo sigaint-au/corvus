@@ -29,6 +29,18 @@ class TestSecrets:
     def teardown_method(self, method=None):
         self._settings_patch.stop()
 
+    # Role-catalog rows consumed by the first roles.helper call per request
+    # (cached in flask.g afterwards). Mirrors the baseline seed precedences.
+    _CATALOG_ROWS = [
+        {'name': 'team-owner', 'description': 'Owner', 'scopes': ['team'], 'precedence': 4, 'built_in': True},
+        {'name': 'team-admin', 'description': 'Admin', 'scopes': ['team'], 'precedence': 3, 'built_in': True},
+        {'name': 'team-member', 'description': 'Member', 'scopes': ['team'], 'precedence': 2, 'built_in': True},
+        {'name': 'team-viewer', 'description': 'Viewer', 'scopes': ['team'], 'precedence': 1, 'built_in': True},
+        {'name': 'project-admin', 'description': 'Admin', 'scopes': ['project'], 'precedence': 0, 'built_in': True},
+        {'name': 'project-read', 'description': 'Read', 'scopes': ['project'], 'precedence': 0, 'built_in': True},
+        {'name': 'secret-reveal', 'description': 'Reveal', 'scopes': ['folder', 'secret'], 'precedence': 0, 'built_in': True},
+    ]
+
     def _project_conn(self, tab='secrets', can_write=True, can_admin=None, team_role='team-owner', secrets=None, tokens=None, audit_log=None, access_requests=None, total=None, pending_count=0):
         """as_user used by project_detail (tab-scoped queries)."""
         project = {'id': self.pid, 'name': 'prod', 'team_name': 'Ops', 'team_id': uuid4()}
@@ -55,7 +67,7 @@ class TestSecrets:
             fa = [rows] if tab in ('audit', 'tokens') else []
         conn, cur = _conn()
         cur.fetchone.side_effect = fo
-        cur.fetchall.side_effect = fa if fa else [[]]
+        cur.fetchall.side_effect = [self._CATALOG_ROWS] + (fa if fa else [[]])
         return conn
 
     def test_project_detail(self):
@@ -78,7 +90,7 @@ class TestSecrets:
             project, {'w': True}, {'a': False}, {'r': 'team-member'}, {'g': False},
             {'n': 0}, {'a': False}, {'n': 0},
         ]
-        cur.fetchall.side_effect = [[], [folder], [], []]
+        cur.fetchall.side_effect = [self._CATALOG_ROWS, [], [folder], [], []]
         with patch.object(db, 'as_user', return_value=conn):
             r = self.client.get(f'/projects/{self.pid}?tab=secrets')
         assert r.status_code == 200

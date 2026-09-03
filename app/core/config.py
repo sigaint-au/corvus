@@ -175,12 +175,12 @@ DEFAULT_SETTINGS = {
     # Require email_verified claim before linking/creating accounts (recommended)
     "oidc_require_email_verified": "true",
 }
-# Invite / join-request roles (cannot self-invite as owner) — rbac.roles names
-INVITE_ROLES = ("team-admin", "team-member", "team-viewer")
 # Machine accounts / ESO tokens: service-read (metadata), service-reveal (metadata + plaintext), service-write (read + write)
 MACHINE_TOKEN_ROLES = ("service-read", "service-reveal", "service-write")
 
 # ── Kubernetes-style RBAC (Subjects + Roles + Bindings) ───────────────
+# Static dropdowns below are the offline fallback and seed registry. At
+# runtime the UI reads scope vocab from rbac.roles (auth.roles) instead.
 # Familiar dropdown labels map to built-in rbac.roles names.
 RBAC_SCOPE_KINDS = ("cluster", "team", "project", "folder", "secret")
 RBAC_SUBJECT_KINDS = ("User", "Group", "ServiceAccount")

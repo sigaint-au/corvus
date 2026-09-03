@@ -9,20 +9,17 @@ from __future__ import annotations
 
 import logging
 
+from auth.roles import role_names_for_scope
+
 from core.config import (
     RBAC_CLUSTER_ROLE_DROPDOWN,
     RBAC_PROJECT_ROLE_DROPDOWN,
-    RBAC_PROJECT_ROLE_NAMES,
     RBAC_SECRET_ROLE_DROPDOWN,
     RBAC_SERVICE_ROLE_DROPDOWN,
     RBAC_TEAM_ROLE_DROPDOWN,
-    RBAC_TEAM_ROLE_NAMES,
 )
 
 log = logging.getLogger(__name__)
-
-TEAM_ROLE_NAMES = RBAC_TEAM_ROLE_NAMES
-PROJECT_ROLE_NAMES = RBAC_PROJECT_ROLE_NAMES
 
 
 # steep dropdowns → friendly label for list badges / tooltips
@@ -48,16 +45,19 @@ def role_id(cur, name: str):
 
 
 def count_team_owner_bindings(cur, team_id) -> int:
-    """Count team-owner bindings (User or Group) at team scope."""
+    """Count top-tier team bindings (User or Group) at team scope."""
+    from auth.roles import OWNER_TIER, highest_team_role
+
+    top_role = highest_team_role(cur) or OWNER_TIER
     cur.execute(
         """
         SELECT count(*) AS n
         FROM rbac.bindings b
         JOIN rbac.roles r ON r.id = b.role_id
         WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
-          AND r.name = 'team-owner'
+          AND r.name = %s
         """,
-        (str(team_id),),
+        (str(team_id), top_role),
     )
     return int((cur.fetchone() or {}).get("n") or 0)
 
@@ -65,11 +65,14 @@ def count_team_owner_bindings(cur, team_id) -> int:
 def ensure_not_last_team_owner(
     cur, team_id, *, subject_kind: str, subject_id, new_role: str | None
 ) -> None:
-    """Raise if removing/demoting the last team-owner binding at this scope.
+    """Raise if removing/demoting the last top-tier binding at this scope.
 
-    ``new_role`` is an ``rbac.roles`` name (e.g. ``"team-owner"``) or ``None``
-    / ``""`` to clear the binding.
+    ``new_role`` is an ``rbac.roles`` name or ``None`` / ``""`` to clear
+    the binding.
     """
+    from auth.roles import OWNER_TIER, highest_team_role
+
+    top_role = highest_team_role(cur) or OWNER_TIER
     cur.execute(
         """
         SELECT r.name AS role_name
@@ -77,15 +80,15 @@ def ensure_not_last_team_owner(
         JOIN rbac.roles r ON r.id = b.role_id
         WHERE b.subject_kind = %s AND b.subject_id = %s::uuid
           AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
-          AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+          AND 'team' = ANY (r.scopes)
         LIMIT 1
         """,
         (subject_kind, str(subject_id), str(team_id)),
     )
     row = cur.fetchone()
-    if not row or row.get("role_name") != "team-owner":
+    if not row or row.get("role_name") != top_role:
         return
-    if new_role == "team-owner":
+    if new_role == top_role:
         return
     if count_team_owner_bindings(cur, team_id) <= 1:
         raise ValueError(
@@ -102,7 +105,7 @@ def group_team_roles_map(cur, team_id) -> dict[str, str]:
         JOIN rbac.roles r ON r.id = b.role_id
         WHERE b.scope_kind = 'team' AND b.scope_id = %s::uuid
           AND b.subject_kind = 'Group'
-          AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+          AND 'team' = ANY (r.scopes)
         """,
         (str(team_id),),
     )
@@ -140,12 +143,12 @@ def sync_group_team_binding(cur, *, group_id, team_id, team_role: str | None, cr
           AND scope_kind = 'team' AND scope_id = %s::uuid
           AND role_id IN (
             SELECT id FROM rbac.roles
-            WHERE name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+            WHERE 'team' = ANY (scopes)
           )
         """,
         (str(group_id), str(team_id)),
     )
-    if team_role not in TEAM_ROLE_NAMES:
+    if team_role not in role_names_for_scope(cur, "team"):
         return
     rid = role_id(cur, team_role)
     if not rid:
@@ -184,12 +187,12 @@ def sync_group_project_binding(
           AND scope_kind = 'project' AND scope_id = %s::uuid
           AND role_id IN (
             SELECT id FROM rbac.roles
-            WHERE name IN ('project-admin', 'project-write', 'project-read')
+            WHERE 'project' = ANY (scopes)
           )
         """,
         (str(group_id), str(project_id)),
     )
-    if role not in PROJECT_ROLE_NAMES:
+    if role not in role_names_for_scope(cur, "project"):
         return
     rid = role_id(cur, role)
     if not rid:
@@ -237,12 +240,12 @@ def sync_user_team_binding(
           AND source = %s
           AND role_id IN (
             SELECT id FROM rbac.roles
-            WHERE name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+            WHERE 'team' = ANY (scopes)
           )
         """,
         (str(user_id), str(team_id), source),
     )
-    if role not in TEAM_ROLE_NAMES:
+    if role not in role_names_for_scope(cur, "team"):
         return
     rid = role_id(cur, role)
     if not rid:
@@ -280,12 +283,12 @@ def sync_user_project_binding(
           AND scope_kind = 'project' AND scope_id = %s::uuid
           AND role_id IN (
             SELECT id FROM rbac.roles
-            WHERE name IN ('project-admin', 'project-write', 'project-read')
+            WHERE 'project' = ANY (scopes)
           )
         """,
         (str(user_id), str(project_id)),
     )
-    if role not in PROJECT_ROLE_NAMES:
+    if role not in role_names_for_scope(cur, "project"):
         return
     rid = role_id(cur, role)
     if not rid:

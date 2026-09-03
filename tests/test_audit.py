@@ -155,7 +155,7 @@ class TestAudit:
         assert 'ip_address' in cur.execute.call_args.args[0]
 
     def test_migration_0012_adds_audit_ip_columns(self):
-        sql = (REPO_ROOT / 'db' / 'migrations' / '0012_audit_ip_user_agent.sql').read_text()
+        sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'api.secret_audit' in sql and 'ip_address' in sql
         assert 'api.org_audit' in sql and 'user_agent' in sql
         assert 'p_ip_address' in sql and 'p_user_agent' in sql

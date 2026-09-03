@@ -158,10 +158,10 @@ class TestTeams:
              patch.object(ldap_auth, 'ldap_cfg', return_value={'ldap_enabled': 'false'}):
             r = self.client.get(f'/teams/{tid}?tab=settings')
         assert r.status_code == 200
-        # both LDAP and OIDC selects offer the four mappable membership roles…
+        # both LDAP and OIDC selects offer the team-scope membership roles…
         assert r.data.count(b'value="team-viewer"') == 2
-        # …and never the cluster-scope auditor role.
-        assert b'value="auditor"' not in r.data
+        # …including auditor, which is team-scope in rbac.roles.
+        assert r.data.count(b'value="auditor"') == 2
 
     def test_update_team_settings_reveal_requests(self):
         tid = uuid4()
@@ -295,7 +295,23 @@ class TestTeams:
     def test_team_roles_include_viewer(self):
         assert 'team-viewer' in [n for n, _ in config.RBAC_TEAM_ROLE_DROPDOWN]
         assert not hasattr(config, 'TEAM_ROLES')
-        assert 'team-member' in config.INVITE_ROLES
+        assert not hasattr(config, 'INVITE_ROLES')
+
+    def test_invite_create_clamps_owner_to_member(self):
+        tid = uuid4()
+        conn, cur = _conn(fetchone={'id': uuid4()})
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/teams/{tid}/invites',
+                data={'role': 'team-owner', 'expires_days': '7'},
+                follow_redirects=False,
+            )
+        assert r.status_code == 302
+        inserts = [
+            c for c in cur.execute.call_args_list
+            if 'insert into api.team_invites' in str(c.args[0]).lower()
+        ]
+        assert inserts and inserts[0].args[1][2] == 'team-member'
 
     def _members_fetch_router(self, tid, uid, last):
         def fetchone():

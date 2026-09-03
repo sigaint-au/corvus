@@ -213,6 +213,7 @@ def profile():
             log.exception("profile: list PATs failed")
             personal_tokens = []
     teams, projects, pending, pins_list, recent = [], [], [], [], []
+    role_descriptions = {}
     activity_q = (request.args.get("q") or "").strip() if tab == "activity" else ""
     recent_pager = None
     secret_count = pin_count = 0
@@ -235,6 +236,9 @@ def profile():
                     (),
                 )
                 teams = cur.fetchall() or []
+                from auth.roles import roles_for_scope
+
+                role_descriptions = dict(roles_for_scope(cur, "team"))
 
             if tab in ("account", "projects"):
                 cur.execute(
@@ -371,6 +375,7 @@ def profile():
         teams=teams if tab == "teams" else [],
         projects=projects if tab == "projects" else [],
         pending_joins=pending if tab == "teams" else [],
+        role_descriptions=role_descriptions,
         pins=pins_list,
         recent=recent,
         activity_q=activity_q,

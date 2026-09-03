@@ -108,12 +108,31 @@ def test_access_modes_updated():
 
 
 def test_folder_scope_uses_secret_roles():
-    from routes.rbac.helpers import _role_allowed_at_scope, _role_dropdown_for_scope
+    from auth.roles import role_allowed_at_scope, roles_for_scope
+    from tests.helpers import mock_conn as _conn
 
     assert "folder" in config.RBAC_SCOPE_KINDS
-    assert _role_dropdown_for_scope("folder") == list(config.RBAC_SECRET_ROLE_DROPDOWN)
-    assert _role_allowed_at_scope("secret-read", "folder")
-    assert _role_allowed_at_scope("service-read", "folder")
+    conn, cur = _conn(
+        fetchall=[
+            {"name": "secret-read", "description": "r", "scopes": ["folder", "secret"], "precedence": 0, "built_in": True},
+            {"name": "service-read", "description": "r", "scopes": ["project", "folder", "secret"], "precedence": 0, "built_in": True},
+            {"name": "team-member", "description": "m", "scopes": ["team"], "precedence": 2, "built_in": True},
+        ]
+    )
+    assert [n for n, _ in roles_for_scope(cur, "folder")] == ["secret-read", "service-read"]
+    assert role_allowed_at_scope(cur, "secret-read", "folder")
+    assert role_allowed_at_scope(cur, "service-read", "folder")
+    assert not role_allowed_at_scope(cur, "team-member", "folder")
+
+
+def test_role_catalog_falls_back_to_config():
+    from auth.roles import role_allowed_at_scope, role_names_for_scope
+    from tests.helpers import mock_conn as _conn
+
+    conn, cur = _conn(fetchall=[])
+    assert "team-member" in role_names_for_scope(cur, "team")
+    assert role_allowed_at_scope(cur, "secret-read", "folder")
+    assert not role_allowed_at_scope(cur, "team-member", "folder")
 
 
 def test_parse_rules_yaml_multi_rule():
@@ -156,6 +175,70 @@ def test_parse_access_mode_accepts_rbac_modes():
     assert _parse_access_mode("writers") == "inherit"
     assert _parse_access_mode("admins") == "inherit"
     assert _parse_access_mode("owners") == "inherit"
+
+
+def _seed_like_rows(extra=()):
+    rows = [
+        {"name": "team-owner", "description": "Owner", "scopes": ["team"], "precedence": 4, "built_in": True},
+        {"name": "team-admin", "description": "Admin", "scopes": ["team"], "precedence": 3, "built_in": True},
+        {"name": "team-member", "description": "Member", "scopes": ["team"], "precedence": 2, "built_in": True},
+        {"name": "team-viewer", "description": "Viewer", "scopes": ["team"], "precedence": 1, "built_in": True},
+        {"name": "team-audit-viewer", "description": "Audit", "scopes": ["team"], "precedence": 0, "built_in": True},
+        {"name": "auditor", "description": "Auditor", "scopes": ["team", "project", "folder", "secret"], "precedence": 0, "built_in": True},
+        {"name": "project-read", "description": "Read", "scopes": ["project"], "precedence": 0, "built_in": True},
+        {"name": "secret-reveal", "description": "Reveal", "scopes": ["folder", "secret"], "precedence": 0, "built_in": True},
+    ]
+    return rows + list(extra)
+
+
+def test_team_tier_gates_match_legacy_allow_deny():
+    from auth.roles import MANAGE_TIER, MEMBER_TIER, OWNER_TIER, team_role_at_least
+    from tests.helpers import mock_conn as _conn
+
+    _, cur = _conn(fetchall=_seed_like_rows())
+    # manage tier: owner/admin pass, everything below denies
+    assert team_role_at_least(cur, "team-owner", MANAGE_TIER)
+    assert team_role_at_least(cur, "team-admin", MANAGE_TIER)
+    for denied in ("team-member", "team-viewer", "team-audit-viewer", "auditor", None, "nope"):
+        assert not team_role_at_least(cur, denied, MANAGE_TIER)
+    # member tier: viewer and below deny (create-project gate)
+    assert team_role_at_least(cur, "team-member", MEMBER_TIER)
+    for denied in ("team-viewer", "team-audit-viewer", "auditor", None):
+        assert not team_role_at_least(cur, denied, MEMBER_TIER)
+    # owner tier: only the top role passes
+    assert team_role_at_least(cur, "team-owner", OWNER_TIER)
+    assert not team_role_at_least(cur, "team-admin", OWNER_TIER)
+    # fail-closed on unknown tier
+    assert not team_role_at_least(cur, "team-owner", "no-such-tier")
+
+
+def test_custom_roles_rank_by_precedence():
+    from auth.roles import OWNER_TIER, highest_team_role, team_role_at_least, team_tier_role
+    from tests.helpers import mock_conn as _conn
+
+    _, cur = _conn(fetchall=_seed_like_rows([
+        {"name": "team-super", "description": "Above owner", "scopes": ["team"], "precedence": 9, "built_in": False},
+    ]))
+    assert highest_team_role(cur) == "team-super"
+    assert team_role_at_least(cur, "team-super", OWNER_TIER)
+    assert not team_role_at_least(cur, "team-owner", "team-super")
+    # manage tier still resolves to the built-in name when present
+    assert team_tier_role(cur, "team-admin") == "team-admin"
+
+
+def test_fallback_registry_matches_seed_parity():
+    from auth.roles import default_team_role, default_role_for_scope, highest_team_role, team_role_at_least
+    from tests.helpers import mock_conn as _conn
+
+    _, cur = _conn(fetchall=[])
+    assert highest_team_role(cur) == "team-owner"
+    assert default_team_role(cur) == "team-member"
+    assert team_role_at_least(cur, "team-admin", "team-admin")
+    assert not team_role_at_least(cur, "team-member", "team-admin")
+    assert default_role_for_scope(cur, "project") == "project-read"
+    assert default_role_for_scope(cur, "secret") == "secret-reveal"
+    assert default_role_for_scope(cur, "folder") == "secret-reveal"
+    assert default_role_for_scope(cur, "no-such-scope") == ""
 
 
 def test_schema_scrubs_legacy_access_modes():

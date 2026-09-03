@@ -185,6 +185,9 @@ def secret_view(project_id, secret_id):
     if active_tab not in ("secret", "meta", "access"):
         active_tab = "secret"
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import roles_for_scope
+
+        secret_role_dropdown = roles_for_scope(cur, "secret")
         row = get_secret_detail(cur, secret_id, project_id)
         if not row:
             return "Not found", 404
@@ -303,6 +306,7 @@ def secret_view(project_id, secret_id):
                 flash("Value is required", "error")
                 enc = fetch_secret_enc(cur, secret_id) or {}
                 body, code = _render_secret_view(
+        role_dropdown=secret_role_dropdown,
                     project_id=project_id,
                     secret_id=secret_id,
                     row=row_view,
@@ -327,6 +331,7 @@ def secret_view(project_id, secret_id):
                 if ssh_err:
                     flash(ssh_err, "error")
                     body, code = _render_secret_view(
+        role_dropdown=secret_role_dropdown,
                         project_id=project_id,
                         secret_id=secret_id,
                         row=row_view,
@@ -343,6 +348,7 @@ def secret_view(project_id, secret_id):
             except (ValueError, TypeError):
                 flash("Could not load or save this secret. Try again.", "error")
                 body, code = _render_secret_view(
+        role_dropdown=secret_role_dropdown,
                     project_id=project_id,
                     secret_id=secret_id,
                     row=row_view,
@@ -397,6 +403,7 @@ def secret_view(project_id, secret_id):
             if active_tab == "access" and not can_admin:
                 active_tab = "meta"
             body, code = _render_secret_view(
+        role_dropdown=secret_role_dropdown,
                 project_id=project_id,
                 secret_id=secret_id,
                 row=row,
@@ -420,6 +427,7 @@ def secret_view(project_id, secret_id):
         if not can_reveal:
             # Metadata only — do not decrypt or audit a reveal
             body, code = _render_secret_view(
+        role_dropdown=secret_role_dropdown,
                 project_id=project_id,
                 secret_id=secret_id,
                 row=row,
@@ -452,6 +460,7 @@ def secret_view(project_id, secret_id):
             conn.rollback()
             flash("Could not load or save this secret. Try again.", "error")
             body, code = _render_secret_view(
+        role_dropdown=secret_role_dropdown,
                 project_id=project_id,
                 secret_id=secret_id,
                 row=row,
@@ -491,6 +500,7 @@ def secret_view(project_id, secret_id):
         conn.commit()
     kind = normalize_kind(row.get("kind"))
     body, code = _render_secret_view(
+        role_dropdown=secret_role_dropdown,
         project_id=project_id,
         secret_id=secret_id,
         row=row,

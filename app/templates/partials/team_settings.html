@@ -175,7 +175,7 @@ syncTeamClassForm();
         <label>Team role
           <select name="role">
             {% for rname, label in dir_role_dropdown|default([]) %}
-            <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ rname }}" {% if rname == default_role %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </label>
@@ -223,7 +223,7 @@ syncTeamClassForm();
         <label>Team role
           <select name="role">
             {% for rname, label in dir_role_dropdown|default([]) %}
-            <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ rname }}" {% if rname == default_role %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </label>
@@ -233,7 +233,7 @@ syncTeamClassForm();
   </fieldset>
 </section>
 
-{% if my_role == 'team-owner' %}
+{% if is_owner %}
 <section class="list-panel">
   <h2>Ownership</h2>
   <p class="muted page-desc">Promotes the chosen user to owner and demotes you to admin.</p>

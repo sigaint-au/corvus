@@ -41,67 +41,51 @@ def _write_migrations(tmp_path, files):
 
 
 def test_migrations_ship_in_order():
-    """Squashed baseline plus additive CLI session token migration."""
+    """Single squashed baseline (pre-release: reset the DB, no upgrades)."""
     files = [p.name for p in migrations._migration_files()]
-    assert files == [
-        "0001_init.sql",
-        "0002_cli_session_tokens.sql",
-        "0003_secret_folders.sql",
-        "0004_materialize_folder_definer.sql",
-        "0005_folder_effective_access_label.sql",
-        "0006_machine_upsert_conflict_target.sql",
-        "0007_machine_upsert_folder.sql",
-        "0008_machine_upsert_folder_var.sql",
-        "0009_machine_set_meta.sql",
-        "0010_machine_meta_in_list.sql",
-        "0011_machine_token_description.sql",
-        "0012_audit_ip_user_agent.sql",
-        "0013_machine_token_description_select.sql",
-    ]
+    assert files == ["0001_init.sql"]
     for name in files:
         assert name[:4].isdigit()
         assert name[4] == "_"
 
 
-def test_secret_folder_migration_covers_schema_and_rls():
-    sql = (migrations.MIGRATIONS_DIR / "0003_secret_folders.sql").read_text()
+def test_baseline_covers_folders_schema_and_rls():
+    """Squashed folders support: nested table, secret link, RLS, authz."""
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
     for fragment in (
         "CREATE TABLE IF NOT EXISTS api.folders",
+        "parent_id uuid",
         "folder_id",
+        "secrets_project_folder_fk",
+        "secrets_project_folder_key_live",
         "scope_kind = 'folder'",
         "api.rbac_scope_chain",
         "api.can_access_secret_row",
+        "api.can_access_folder",
+        "api.rbac_folder_binding_allows",
+        "private.materialize_folder_path",
+        "folders_select",
+        "ALTER TABLE api.folders ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE api.folders FORCE ROW LEVEL SECURITY",
         "validate_binding_scope",
     ):
         assert fragment in sql
 
 
-def test_machine_upsert_conflict_target():
-    sql = (migrations.MIGRATIONS_DIR / "0006_machine_upsert_conflict_target.sql").read_text()
-    assert "folder_id IS NULL AND deleted_at IS NULL" in sql
-    assert "ON CONFLICT (project_id, key)" in sql
-    # Stale 8-arg overload from 0001 must be dropped so GRANT is unambiguous.
-    assert (
-        "DROP FUNCTION IF EXISTS private.machine_upsert_enc("
-        "uuid, text, text, text, text, text, timestamptz, boolean)"
-    ) in sql
-    assert (
-        "GRANT EXECUTE ON FUNCTION private.machine_upsert_enc("
-        "uuid, text, text, text, text, text, timestamptz, boolean, text)"
-    ) in sql
+def test_baseline_machine_upsert_contract():
+    """Effective upsert stores the provider the app encrypted with."""
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
+    assert "p_crypto_provider text DEFAULT 'master'" in sql
+    assert "ON CONFLICT (project_id, key) WHERE deleted_at IS NULL" in sql
 
 
-def test_machine_upsert_folder_var_not_shadowing_column():
-    sql = (migrations.MIGRATIONS_DIR / "0008_machine_upsert_folder_var.sql").read_text()
-    assert "v_folder_id uuid" in sql
-    assert "\n  folder_id uuid;" not in sql
-    assert "v_folder_id := private.materialize_folder_path" in sql
-    assert "p_project, v_folder_id, p_key" in sql
-    assert "ON CONFLICT (project_id, folder_id, key) WHERE folder_id IS NOT NULL" in sql
-    assert (
-        "GRANT EXECUTE ON FUNCTION private.machine_upsert_enc("
-        "uuid, text, text, text, text, text, timestamptz, boolean, text)"
-    ) in sql
+def test_baseline_machine_meta_in_list():
+    """Machine reads aggregate secret metadata for the CLI/ESO."""
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
+    assert "crypto_provider text, metadata jsonb" in sql
+    assert "created_at timestamptz, updated_at timestamptz, metadata jsonb" in sql
+    assert "jsonb_object_agg(m.key, m.value)" in sql
+    assert "CREATE OR REPLACE FUNCTION private.machine_set_meta" in sql
 
 
 def test_squashed_baseline_contains_all_schema_layers():
@@ -188,28 +172,43 @@ def test_squashed_baseline_contains_all_schema_layers():
     assert "'auditor'" in sql
 
 
-def test_machine_token_description_select_grant():
-    """0011 added description after 0001's column-level SELECT grant."""
-    sql = (migrations.MIGRATIONS_DIR / "0013_machine_token_description_select.sql").read_text()
-    assert "GRANT SELECT (description) ON api.machine_tokens TO authenticated" in sql
-    # token_hash stays withheld from authenticated (PostgREST / as_user).
+def test_baseline_machine_token_description_grant():
+    """Token description column is covered by the column-level SELECT grant."""
     init = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
     assert "REVOKE SELECT ON api.machine_tokens FROM authenticated" in init
-    assert (
-        "GRANT SELECT (\n"
-        "  id, project_id, name, token_prefix, role, expires_at, created_at, last_used_at\n"
-        ") ON api.machine_tokens TO authenticated"
-    ) in init
+    # token_hash stays withheld from authenticated (PostgREST / as_user).
+    assert "description text NOT NULL DEFAULT ''" in init
+    assert "created_at, last_used_at, description" in init
 
 
-def test_cli_session_tokens_migration_creates_table():
-    """The additive CLI session token migration defines the sso_ token store."""
-    sql = (migrations.MIGRATIONS_DIR / "0002_cli_session_tokens.sql").read_text()
+def test_baseline_cli_session_tokens_table():
+    """The squashed baseline defines the sso_ CLI token store."""
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
     assert "CREATE TABLE IF NOT EXISTS private.cli_session_tokens" in sql
     assert "token_hash text NOT NULL UNIQUE" in sql
     assert "expires_at timestamptz NOT NULL" in sql
     assert "REFERENCES private.users(id) ON DELETE CASCADE" in sql
     assert "cli_session_tokens_user_idx" in sql
+
+
+def test_baseline_roles_scope_assignment():
+    """Role scope vocab lives on rbac.roles; directory maps FK to role names."""
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
+    assert "scopes text[] NOT NULL DEFAULT '{}'" in sql
+    assert "precedence int NOT NULL DEFAULT 0" in sql
+    assert "role % cannot be assigned at scope %" in sql
+    assert "NEW.scope_kind = ANY (COALESCE(role_scopes" in sql
+    assert "REFERENCES rbac.roles (name)" in sql
+    assert "UPDATE rbac.roles SET scopes = ARRAY['team'], precedence = 4 WHERE name = 'team-owner'" in sql
+
+
+def test_baseline_audit_network_columns():
+    """Audit tables carry client IP/user-agent for forensics."""
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
+    assert sql.count("ip_address text NOT NULL DEFAULT ''") >= 2
+    assert sql.count("user_agent text NOT NULL DEFAULT ''") >= 2
+    assert "p_ip_address text DEFAULT ''" in sql
+    assert "p_user_agent text DEFAULT ''" in sql
 
 
 def test_squashed_baseline_is_idempotent_enough_for_fresh_init():

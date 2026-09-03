@@ -77,9 +77,7 @@ def add_secret_access_binding(project_id, secret_id):
     email = (request.form.get("subject_email") or "").strip().lower()
     group_id = (request.form.get("subject_group") or "").strip()
     sa_id = (request.form.get("subject_sa") or "").strip()
-    role_name = (request.form.get("role_name") or "").strip()
-    if not role_name:
-        role_name = "secret-reveal"
+    raw_role_name = (request.form.get("role_name") or "").strip()
     access_url = url_for(
         "secret_view",
         project_id=project_id,
@@ -96,10 +94,17 @@ def add_secret_access_binding(project_id, secret_id):
         flash("Enter a machine account ID.", "error")
         return redirect(access_url)
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import default_role_for_scope, role_names_for_scope
+
         cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
         if not (cur.fetchone() or {}).get("a"):
             flash("Only project admins can manage secret bindings", "error")
             return redirect(access_url)
+        role_name = (
+            raw_role_name
+            if raw_role_name in role_names_for_scope(cur, "secret")
+            else default_role_for_scope(cur, "secret")
+        )
         cur.execute(
             """
             SELECT s.id, s.key, s.access_mode, p.team_id
@@ -116,7 +121,7 @@ def add_secret_access_binding(project_id, secret_id):
         cur.execute("SELECT id FROM rbac.roles WHERE name = %s", (role_name,))
         role = cur.fetchone()
         if not role:
-            flash(f"Built-in role {role_name} missing. Run schema ensure.", "error")
+            flash(f"Role {role_name} missing. Run schema ensure.", "error")
             return redirect(access_url)
         try:
             if subject_kind == "User":

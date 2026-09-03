@@ -262,7 +262,7 @@ CREATE TABLE IF NOT EXISTS api.team_ldap_maps (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   ldap_group text NOT NULL,
-  role text NOT NULL CHECK (role IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')),
+  role text NOT NULL REFERENCES rbac.roles (name),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, ldap_group)
 );
@@ -432,11 +432,42 @@ CREATE TABLE IF NOT EXISTS api.org_audit (
   detail text NOT NULL DEFAULT '',
   user_id uuid REFERENCES private.users(id) ON DELETE SET NULL,
   actor_email text NOT NULL DEFAULT '',
+  -- Squashed from 0012: network context for post-incident forensics.
+  ip_address text NOT NULL DEFAULT '',
+  user_agent text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS org_audit_team_created_idx ON api.org_audit (team_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS org_audit_project_created_idx ON api.org_audit (project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS org_audit_user_idx ON api.org_audit (user_id, created_at DESC);
+
+-- ── Folders ────────────────────────────────────────────────────────────
+--
+-- WHAT: Optional hierarchy within a project (labels[group]; e.g. team/env).
+--
+-- WHY:  Move (not copy) secrets into folders; gate folder contents with
+--       folder bindings without redefining project membership.
+--
+-- RELATIONSHIPS: FK project_id → api.projects(id) CASCADE.
+-- CONSTRAINT: UNIQUE (project_id, name) — folder names unique within project.
+-- RLS: SELECT via can_read_project; write via can_admin_project.
+CREATE TABLE IF NOT EXISTS api.folders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
+  parent_id uuid,
+  name text NOT NULL CHECK (name <> '' AND name NOT IN ('.', '..') AND name !~ '[\\/]'),
+  path text NOT NULL CHECK (path <> '' AND path !~ '(^/|/$|//|[\\])'),
+  access_mode text NOT NULL DEFAULT 'inherit'
+    CHECK (access_mode IN ('inherit', 'restricted')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (project_id, id),
+  UNIQUE (project_id, path),
+  FOREIGN KEY (project_id, parent_id)
+    REFERENCES api.folders(project_id, id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS folders_project_parent_idx
+  ON api.folders(project_id, parent_id);
 
 -- ── Secrets ────────────────────────────────────────────────────────────
 --
@@ -445,7 +476,8 @@ CREATE INDEX IF NOT EXISTS org_audit_user_idx ON api.org_audit (user_id, created
 -- WHY:  Core data model. value_enc is Fernet ciphertext from Flask app.
 --       note is intentional plaintext for labels/search only.
 --
--- SOFT DELETE: deleted_at marks deletion; live rows unique on (project_id, key).
+-- SOFT DELETE: deleted_at marks deletion; live rows unique on (project_id, key)
+--              outside folders and (project_id, folder_id, key) inside one.
 --              Deleted secrets visible only to users with write access.
 --
 -- KEY COLUMNS:
@@ -465,6 +497,7 @@ CREATE INDEX IF NOT EXISTS org_audit_user_idx ON api.org_audit (user_id, created
 CREATE TABLE IF NOT EXISTS api.secrets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES api.projects(id) ON DELETE CASCADE,
+  folder_id uuid,
   key text NOT NULL,
   value_enc text NOT NULL,
   note text NOT NULL DEFAULT '',  -- non-sensitive; not encrypted
@@ -490,7 +523,16 @@ CREATE TABLE IF NOT EXISTS api.secrets (
     CHECK (crypto_provider IN ('master', 'project'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS secrets_project_key_live
-  ON api.secrets (project_id, key) WHERE deleted_at IS NULL;
+  ON api.secrets (project_id, key) WHERE deleted_at IS NULL AND folder_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS secrets_project_folder_key_live
+  ON api.secrets (project_id, folder_id, key) WHERE deleted_at IS NULL AND folder_id IS NOT NULL;
+-- Folder membership is project-scoped: a secret's folder must belong to the
+-- same project. Deleting a non-empty folder is refused (RESTRICT).
+ALTER TABLE api.secrets DROP CONSTRAINT IF EXISTS secrets_project_folder_fk;
+ALTER TABLE api.secrets
+  ADD CONSTRAINT secrets_project_folder_fk
+  FOREIGN KEY (project_id, folder_id)
+  REFERENCES api.folders(project_id, id) ON DELETE RESTRICT;
 
 -- ── Secret Metadata ────────────────────────────────────────────────────
 --
@@ -646,6 +688,9 @@ CREATE TABLE IF NOT EXISTS api.secret_audit (
     'machine_upsert', 'exported',
     'access_requested', 'access_approved', 'access_denied'
   )),
+  -- Squashed from 0012: network context for post-incident forensics.
+  ip_address text NOT NULL DEFAULT '',
+  user_agent text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS secret_audit_project_created_idx
@@ -834,6 +879,7 @@ ALTER TABLE api.secret_meta ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.secret_access_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_token_scope ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api.folders ENABLE ROW LEVEL SECURITY;
 
 -- ── Table Grants & Revocations ─────────────────────────────────────────
 --
@@ -887,6 +933,7 @@ ALTER TABLE api.machine_tokens FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.machine_token_scope FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.groups FORCE ROW LEVEL SECURITY;
 ALTER TABLE api.group_members FORCE ROW LEVEL SECURITY;
+ALTER TABLE api.folders FORCE ROW LEVEL SECURITY;
 
 -- Auth helpers (SECURITY DEFINER; Flask/anon only)
 -- Never auto-promote first registrant; GLOBAL_ADMIN_EMAIL / BOOTSTRAP_ADMIN_EMAIL does that in app.
@@ -1080,7 +1127,7 @@ CREATE TABLE IF NOT EXISTS api.team_oidc_maps (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   oidc_group text NOT NULL,
-  role text NOT NULL CHECK (role IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')),
+  role text NOT NULL REFERENCES rbac.roles (name),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, oidc_group)
 );
@@ -1102,6 +1149,20 @@ CREATE TABLE IF NOT EXISTS private.personal_access_tokens (
 );
 CREATE INDEX IF NOT EXISTS personal_access_tokens_user_idx
   ON private.personal_access_tokens (user_id, created_at DESC);
+
+-- Squashed from 0002_cli_session_tokens.sql: single-use CLI login handoff
+-- tokens (SSO for headless CLIs). Short-lived, hashed at rest, consumed once.
+CREATE TABLE IF NOT EXISTS private.cli_session_tokens (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES private.users(id) ON DELETE CASCADE,
+  token_hash text NOT NULL UNIQUE,
+  token_prefix text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cli_session_tokens_user_idx
+  ON private.cli_session_tokens (user_id, created_at DESC);
 
 -- private.create_team defined in 02-rbac.sql (inserts into rbac.bindings)
 
@@ -1242,12 +1303,16 @@ $$;
 --         p_action (text), p_detail (text, default ''), p_actor_email (text, nullable)
 -- Output: void
 -- Example: SELECT private.audit_org('<team-uuid>', NULL, 'member_added', 'alice@example.com');
+-- Squashed from 0012: audit_org records client network context for
+-- post-incident forensics. Existing callers keep working (new args default).
 CREATE OR REPLACE FUNCTION private.audit_org(
   p_team uuid,
   p_project uuid,
   p_action text,
   p_detail text DEFAULT '',
-  p_actor_email text DEFAULT NULL
+  p_actor_email text DEFAULT NULL,
+  p_ip_address text DEFAULT '',
+  p_user_agent text DEFAULT ''
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private, pg_catalog AS $$
 DECLARE
   uid uuid;
@@ -1266,10 +1331,11 @@ BEGIN
     NULLIF(p_actor_email, ''),
     ''
   );
-  INSERT INTO api.org_audit (team_id, project_id, action, detail, user_id, actor_email)
-  VALUES (p_team, p_project, p_action, COALESCE(p_detail, ''), uid, email);
+  INSERT INTO api.org_audit (team_id, project_id, action, detail, user_id, actor_email, ip_address, user_agent)
+  VALUES (p_team, p_project, p_action, COALESCE(p_detail, ''), uid, email, COALESCE(p_ip_address, ''), COALESCE(p_user_agent, ''));
 END;
 $$;
+GRANT EXECUTE ON FUNCTION private.audit_org(uuid, uuid, text, text, text, text, text) TO authenticator, authenticated;
 
 -- Resolve invite token → team (SECURITY DEFINER; hash is the gate).
 --
@@ -1300,13 +1366,17 @@ $$;
 --         p_action (text), p_user_id (uuid, ignored), p_actor_email (text, nullable)
 -- Output: void
 -- Example: SELECT private.audit_secret('<project-uuid>', '<secret-uuid>', 'API_KEY', 'revealed');
+-- Squashed from 0012: audit_secret records client network context for
+-- post-incident forensics. Existing callers keep working (new args default).
 CREATE OR REPLACE FUNCTION private.audit_secret(
   p_project uuid,
   p_secret_id uuid,
   p_secret_key text,
   p_action text,
   p_user_id uuid DEFAULT NULL,
-  p_actor_email text DEFAULT NULL
+  p_actor_email text DEFAULT NULL,
+  p_ip_address text DEFAULT '',
+  p_user_agent text DEFAULT ''
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = api, private, pg_catalog AS $$
 DECLARE
   uid uuid;
@@ -1330,10 +1400,11 @@ BEGIN
     NULLIF(p_actor_email, ''),
     ''
   );
-  INSERT INTO api.secret_audit (project_id, secret_id, secret_key, user_id, actor_email, action)
-  VALUES (p_project, p_secret_id, COALESCE(p_secret_key, ''), uid, email, p_action);
+  INSERT INTO api.secret_audit (project_id, secret_id, secret_key, user_id, actor_email, action, ip_address, user_agent)
+  VALUES (p_project, p_secret_id, COALESCE(p_secret_key, ''), uid, email, p_action, COALESCE(p_ip_address, ''), COALESCE(p_user_agent, ''));
 END;
 $$;
+GRANT EXECUTE ON FUNCTION private.audit_secret(uuid, uuid, text, text, uuid, text, text, text) TO authenticator, authenticated;
 
 -- ── Machine/ESO helpers (bypass RLS; token hash is the gate) ──
 -- These SECURITY DEFINER functions validate machine tokens and read/write
@@ -1911,6 +1982,12 @@ CREATE TABLE IF NOT EXISTS rbac.roles (
   name text NOT NULL UNIQUE,
   description text NOT NULL DEFAULT '',
   built_in boolean NOT NULL DEFAULT false,
+  -- Which scope_kind values this role may be bound at. Replaces the old
+  -- by-name convention (team-%/project-%/...) scattered through app code.
+  scopes text[] NOT NULL DEFAULT '{}'
+    CHECK (scopes <@ ARRAY['cluster', 'team', 'project', 'folder', 'secret']),
+  -- Directory-map precedence ("highest wins"); 0 = never auto-assigned.
+  precedence int NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -1950,7 +2027,7 @@ CREATE INDEX IF NOT EXISTS role_rules_role_idx ON rbac.role_rules(role_id);
 --   subject_kind  — 'User' (direct), 'Group' (via group_members),
 --                   'ServiceAccount' (machine tokens).
 --   subject_id    — UUID of the user, group, or machine token.
---   scope_kind    — 'cluster' (global), 'team', 'project', 'secret'.
+--   scope_kind    — 'cluster' (global), 'team', 'project', 'folder', 'secret'.
 --   scope_id      — NULL for cluster; UUID for team/project/secret.
 --   source        — 'manual' | 'ldap' | 'oidc'; how the binding was created.
 --   created_by    — User who created the binding (audit).
@@ -1976,9 +2053,9 @@ CREATE TABLE IF NOT EXISTS rbac.bindings (
   subject_kind text NOT NULL
     CHECK (subject_kind IN ('User', 'Group', 'ServiceAccount')),
   subject_id uuid NOT NULL,
-  -- cluster | team | project | secret
+  -- cluster | team | project | folder | secret
   scope_kind text NOT NULL
-    CHECK (scope_kind IN ('cluster', 'team', 'project', 'secret')),
+    CHECK (scope_kind IN ('cluster', 'team', 'project', 'folder', 'secret')),
   scope_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
@@ -2200,6 +2277,20 @@ BEGIN
   DELETE FROM rbac.role_rules WHERE role_id = rid;
   INSERT INTO rbac.role_rules (role_id, resources, verbs)
   VALUES (rid, ARRAY['secrets'], ARRAY['get', 'list', 'create', 'update', 'reveal']);
+
+  -- Role scope assignment (drives UI dropdowns, binding validation, and
+  -- directory-map rank — replaces the old team-%/project-% name convention).
+  UPDATE rbac.roles SET scopes = ARRAY['cluster'], precedence = 0
+   WHERE name IN ('global-admin', 'audit-viewer');
+  UPDATE rbac.roles SET scopes = ARRAY['team'], precedence = 4 WHERE name = 'team-owner';
+  UPDATE rbac.roles SET scopes = ARRAY['team'], precedence = 3 WHERE name = 'team-admin';
+  UPDATE rbac.roles SET scopes = ARRAY['team'], precedence = 2 WHERE name = 'team-member';
+  UPDATE rbac.roles SET scopes = ARRAY['team'], precedence = 1 WHERE name = 'team-viewer';
+  UPDATE rbac.roles SET scopes = ARRAY['team'], precedence = 0 WHERE name = 'team-audit-viewer';
+  UPDATE rbac.roles SET scopes = ARRAY['project'], precedence = 0 WHERE name LIKE 'project-%';
+  UPDATE rbac.roles SET scopes = ARRAY['folder', 'secret'], precedence = 0 WHERE name LIKE 'secret-%';
+  UPDATE rbac.roles SET scopes = ARRAY['project', 'folder', 'secret'], precedence = 0 WHERE name LIKE 'service-%';
+  UPDATE rbac.roles SET scopes = ARRAY['team', 'project', 'folder', 'secret'], precedence = 0 WHERE name = 'auditor';
 END;
 $$;
 
@@ -2217,6 +2308,7 @@ SELECT rbac.ensure_builtin_roles();
 -- Output: TABLE(scope_kind text, scope_id uuid) — ancestor scopes
 -- Example: SELECT * FROM api.rbac_scope_chain('secret', '<secret-uuid>');
 --          → ('secret', <sid>), ('project', <pid>), ('team', <tid>), ('cluster', NULL)
+-- Chain resolution now includes the folder level between secret and project.
 CREATE OR REPLACE FUNCTION api.rbac_scope_chain(
   p_scope_kind text,
   p_scope_id uuid
@@ -2226,6 +2318,7 @@ SET search_path = api, rbac, pg_catalog
 SET row_security = off AS $$
 DECLARE
   v_project uuid;
+  v_folder uuid;
   v_team uuid;
 BEGIN
   IF p_scope_kind IS NULL THEN
@@ -2237,7 +2330,24 @@ BEGIN
   END IF;
   IF p_scope_kind = 'secret' AND p_scope_id IS NOT NULL THEN
     scope_kind := 'secret'; scope_id := p_scope_id; RETURN NEXT;
-    SELECT s.project_id INTO v_project FROM api.secrets s WHERE s.id = p_scope_id;
+    SELECT s.folder_id, s.project_id INTO v_folder, v_project
+    FROM api.secrets s WHERE s.id = p_scope_id;
+    IF v_folder IS NOT NULL THEN
+      scope_kind := 'folder'; scope_id := v_folder; RETURN NEXT;
+    END IF;
+    IF v_project IS NOT NULL THEN
+      scope_kind := 'project'; scope_id := v_project; RETURN NEXT;
+      SELECT p.team_id INTO v_team FROM api.projects p WHERE p.id = v_project;
+      IF v_team IS NOT NULL THEN
+        scope_kind := 'team'; scope_id := v_team; RETURN NEXT;
+      END IF;
+    END IF;
+    scope_kind := 'cluster'; scope_id := NULL; RETURN NEXT;
+    RETURN;
+  END IF;
+  IF p_scope_kind = 'folder' AND p_scope_id IS NOT NULL THEN
+    scope_kind := 'folder'; scope_id := p_scope_id; RETURN NEXT;
+    SELECT f.project_id INTO v_project FROM api.folders f WHERE f.id = p_scope_id;
     IF v_project IS NOT NULL THEN
       scope_kind := 'project'; scope_id := v_project; RETURN NEXT;
       SELECT p.team_id INTO v_team FROM api.projects p WHERE p.id = v_project;
@@ -2588,47 +2698,9 @@ GRANT EXECUTE ON FUNCTION api.rbac_secret_binding_allows TO authenticator, authe
 --         deleted_at (timestamptz: secret.deleted_at; NULL = live)
 -- Output: boolean — true if access allowed
 -- Example: SELECT api.can_access_secret_row('<sid>', '<pid>', 'inherit', 'reveal', NULL);
-CREATE OR REPLACE FUNCTION api.can_access_secret_row(
-  sid uuid,
-  pid uuid,
-  mode text,
-  need text DEFAULT 'read',
-  deleted_at timestamptz DEFAULT NULL
-) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT CASE
-    WHEN sid IS NULL OR pid IS NULL THEN false
-    WHEN deleted_at IS NOT NULL THEN false
-    WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
-    -- Project admins always full
-    WHEN api.can_admin_project(pid) THEN true
-    -- Restricted: secret-scope bindings only
-    WHEN COALESCE(mode, 'inherit') = 'restricted' THEN
-      api.rbac_secret_binding_allows(sid, need)
-    -- inherit → project/team RBAC via the scope chain
-    WHEN need = 'write' THEN (
-      api.can('update', 'secrets', 'secret', sid)
-      OR api.can('create', 'secrets', 'secret', sid)
-      OR api.can('admin', 'secrets', 'secret', sid)
-      OR api.can('*', '*', 'secret', sid)
-    )
-    WHEN need = 'reveal' THEN (
-      api.can('reveal', 'secrets', 'secret', sid)
-      OR api.can('admin', 'secrets', 'secret', sid)
-      OR api.can('*', '*', 'secret', sid)
-    )
-    ELSE (
-      api.can('get', 'secrets', 'secret', sid)
-      OR api.can('list', 'secrets', 'secret', sid)
-      OR api.can('reveal', 'secrets', 'secret', sid)
-      OR api.can('update', 'secrets', 'secret', sid)
-      OR api.can('admin', 'secrets', 'secret', sid)
-      OR api.can('*', '*', 'secret', sid)
-    )
-  END;
-$$;
+-- Superseded by the folder-aware can_access_secret_row below (7 args with
+-- v_folder/v_subject). Dropped so the old 5-arg form cannot shadow it.
+DROP FUNCTION IF EXISTS api.can_access_secret_row(uuid, uuid, text, text, timestamptz);
 
 -- Wrapper for can_access_secret_row that loads the secret row from the DB.
 -- Use this when you have only the secret id (not the full row).
@@ -3040,6 +3112,10 @@ BEGIN
     UNION ALL
     SELECT 'project', p.id, p.name FROM api.projects p
     UNION ALL
+    SELECT 'folder', f.id,
+      COALESCE(p3.name, '') || ' / ' || f.name
+      FROM api.folders f LEFT JOIN api.projects p3 ON p3.id = f.project_id
+    UNION ALL
     SELECT 'secret', s.id, COALESCE(p2.name, '') || ' / ' || s.key
       FROM api.secrets s LEFT JOIN api.projects p2 ON p2.id = s.project_id
   ),
@@ -3087,6 +3163,52 @@ BEGIN
 END;
 $$;
 GRANT EXECUTE ON FUNCTION api.effective_access_rows TO authenticator, authenticated;
+
+-- Secrets: project admins pass; folder-bound secrets check folder bindings;
+-- restricted mode uses secret bindings; otherwise inherit project/team RBAC.
+CREATE OR REPLACE FUNCTION api.can_access_secret_row(
+  sid uuid,
+  pid uuid,
+  mode text,
+  need text DEFAULT 'read',
+  deleted_at timestamptz DEFAULT NULL,
+  v_folder uuid DEFAULT NULL,
+  v_subject uuid DEFAULT NULL
+) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT CASE
+    WHEN sid IS NULL OR pid IS NULL THEN false
+    WHEN deleted_at IS NOT NULL THEN false
+    WHEN need IS NULL OR need NOT IN ('read', 'reveal', 'write') THEN false
+    WHEN api.can_admin_project(pid) THEN true
+    WHEN v_folder IS NOT NULL THEN (
+      api.rbac_folder_binding_allows(v_folder, need, v_subject)
+    )
+    WHEN COALESCE(mode, 'inherit') = 'restricted' THEN
+      api.rbac_secret_binding_allows(sid, need, v_subject)
+    WHEN need = 'write' THEN (
+      api.can('update', 'secrets', 'secret', sid)
+      OR api.can('create', 'secrets', 'secret', sid)
+      OR api.can('admin', 'secrets', 'secret', sid)
+      OR api.can('*', '*', 'secret', sid)
+    )
+    WHEN need = 'reveal' THEN (
+      api.can('reveal', 'secrets', 'secret', sid)
+      OR api.can('admin', 'secrets', 'secret', sid)
+      OR api.can('*', '*', 'secret', sid)
+    )
+    ELSE (
+      api.can('get', 'secrets', 'secret', sid)
+      OR api.can('list', 'secrets', 'secret', sid)
+      OR api.can('reveal', 'secrets', 'secret', sid)
+      OR api.can('update', 'secrets', 'secret', sid)
+      OR api.can('admin', 'secrets', 'secret', sid)
+      OR api.can('*', '*', 'secret', sid)
+    )
+  END;
+$$;
 
 -- ── RLS Policies (created after auth functions exist) ──────────────────
 --
@@ -3670,7 +3792,7 @@ CREATE OR REPLACE FUNCTION private.machine_list_meta(
           id uuid, key text, note text, kind text,
           expires_at timestamptz, rotation_interval_days integer, rotation_owner text,
           rotation_next_at timestamptz, rotated_at timestamptz,
-          created_at timestamptz, updated_at timestamptz
+          created_at timestamptz, updated_at timestamptz, metadata jsonb
         )
         LANGUAGE plpgsql STABLE SECURITY DEFINER
         SET search_path = pg_catalog, api
@@ -3683,7 +3805,13 @@ CREATE OR REPLACE FUNCTION private.machine_list_meta(
           RETURN QUERY
             SELECT s.id, s.key, s.note, s.kind, s.expires_at,
                    s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
-                   s.created_at, s.updated_at
+                   s.created_at, s.updated_at,
+                   COALESCE(
+                     (SELECT jsonb_object_agg(m.key, m.value)
+                      FROM api.secret_meta m
+                      WHERE m.secret_id = s.id),
+                     '{}'::jsonb
+                   ) AS metadata
             FROM api.secrets s
             WHERE s.project_id = p_project
               AND s.deleted_at IS NULL
@@ -4090,6 +4218,40 @@ CREATE OR REPLACE FUNCTION private.machine_upsert_enc(
         END;
         $$;
 
+-- Squashed from 0009_machine_set_meta.sql: privileged helper for persisting
+-- agent-supplied secret metadata (validated key allow-list enforced in app).
+CREATE OR REPLACE FUNCTION private.machine_set_meta(
+  p_project uuid,
+  p_hash text,
+  p_key text,
+  p_meta_key text,
+  p_meta_value text
+) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, api
+SET row_security = off AS $$
+DECLARE
+  v_secret_id uuid;
+BEGIN
+  IF private.machine_role(p_project, p_hash) IS DISTINCT FROM 'service-write' THEN
+    RAISE EXCEPTION 'machine_set_meta requires service-write';
+  END IF;
+  IF NOT private.machine_key_allowed(p_project, p_hash, p_key) THEN
+    RAISE EXCEPTION 'machine_set_meta: key not allowed';
+  END IF;
+  SELECT id INTO v_secret_id
+  FROM api.secrets
+  WHERE project_id = p_project AND key = p_key AND deleted_at IS NULL;
+  IF v_secret_id IS NULL THEN
+    RAISE EXCEPTION 'machine_set_meta: secret not found';
+  END IF;
+  INSERT INTO api.secret_meta (secret_id, key, value)
+  VALUES (v_secret_id, p_meta_key, COALESCE(p_meta_value, ''))
+  ON CONFLICT (secret_id, key) DO UPDATE SET value = EXCLUDED.value;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION private.machine_set_meta TO authenticator;
+
 -- ===== 0025_project_key_provider.sql =====
 
 -- Expose a project's BYOK key provider to authenticated readers for list badges.
@@ -4429,8 +4591,11 @@ REVOKE EXECUTE ON FUNCTION api.list_hsm_slots()
 -- already selects the metadata columns explicitly; token_hash remains usable
 -- by privileged server-side code.
 REVOKE SELECT ON api.machine_tokens FROM authenticated;
+-- Squashed from 0011/0013: operator label for the tokens tab.
+ALTER TABLE api.machine_tokens
+  ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
 GRANT SELECT (
-  id, project_id, name, token_prefix, role, expires_at, created_at, last_used_at
+  id, project_id, name, token_prefix, role, expires_at, created_at, last_used_at, description
 ) ON api.machine_tokens TO authenticated;
 
 -- All API tables must apply RLS even when queried by their table owner. The
@@ -4516,8 +4681,109 @@ FOR UPDATE TO authenticated
 USING (api.can_admin_project(project_id))
 WITH CHECK (api.can_admin_project(project_id));
 
+-- ── Folders: authorization ─────────────────────────────────────────────
+-- Folder bindings participate in authorization (folder scope sits between
+-- secret and project in the scope chain).
+CREATE OR REPLACE FUNCTION api.rbac_folder_binding_allows(
+  p_folder uuid,
+  p_need text,
+  p_subject uuid DEFAULT NULL
+) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, rbac, private, pg_catalog
+SET row_security = off AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM api.rbac_subjects(COALESCE(p_subject, api.current_user_id())) sub
+    JOIN rbac.bindings b
+      ON b.subject_kind = sub.subject_kind
+     AND b.subject_id = sub.subject_id
+    JOIN rbac.role_rules rr ON rr.role_id = b.role_id
+    WHERE b.scope_kind = 'folder'
+      AND b.scope_id = p_folder
+      AND (
+        CASE lower(COALESCE(p_need, ''))
+          WHEN 'write' THEN
+            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'update')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'create')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
+          WHEN 'reveal' THEN
+            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'reveal')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
+          ELSE
+            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'get')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'list')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'reveal')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'update')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
+        END
+      )
+  );
+$$;
+
+-- Authorize a folder row: project admins pass through; folder bindings by need.
+CREATE OR REPLACE FUNCTION api.can_access_folder(
+  fid uuid,
+  need text DEFAULT 'read',
+  v_subject uuid DEFAULT NULL
+) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, rbac, private, pg_catalog
+SET row_security = off AS $$
+  SELECT CASE
+    WHEN fid IS NULL THEN false
+    WHEN api.can_admin_project((SELECT f.project_id FROM api.folders f WHERE f.id = fid)) THEN true
+    WHEN api.rbac_folder_binding_allows(fid, need, v_subject) THEN true
+    ELSE false
+  END;
+$$;
+
+GRANT EXECUTE ON FUNCTION api.can_access_folder TO authenticated, anon;
+
+-- Idempotent single-level folder ensure (SECURITY DEFINER so folder upserts
+-- during secret creation bypass RLS; the single authorizing check on
+-- api.secrets controls write access). The app calls once per path segment.
+CREATE OR REPLACE FUNCTION private.materialize_folder_path(
+  p_project_id uuid,
+  p_parent_id uuid,
+  p_name text,
+  p_path text
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = api, private, pg_catalog
+SET row_security = off AS $$
+DECLARE v_id uuid;
+BEGIN
+    INSERT INTO api.folders (project_id, parent_id, name, path)
+    VALUES (p_project_id, p_parent_id, p_name, p_path)
+    ON CONFLICT (project_id, path) DO UPDATE SET name = EXCLUDED.name
+    RETURNING id INTO v_id;
+    RETURN v_id;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION private.materialize_folder_path TO authenticator, authenticated;
+
+
+-- Squashed from 0003: folder RLS follows the same conventions as secrets.
+CREATE POLICY folders_select ON api.folders
+FOR SELECT TO authenticated USING (api.can_access_folder(id, 'read'));
+CREATE POLICY folders_insert ON api.folders
+FOR INSERT TO authenticated
+WITH CHECK (api.can_admin_project(project_id));
+CREATE POLICY folders_update ON api.folders
+FOR UPDATE TO authenticated
+USING (api.can_admin_project(project_id))
+WITH CHECK (api.can_admin_project(project_id));
+CREATE POLICY folders_delete ON api.folders
+FOR DELETE TO authenticated USING (api.can_admin_project(project_id));
+GRANT SELECT, INSERT, UPDATE, DELETE ON api.folders TO authenticated;
+
 -- Enforce the role/scope contract at the database boundary. The UI performs
 -- the same validation, but PostgREST writes must not be able to bypass it.
+-- Role scope compatibility is data-driven (rbac.roles.scopes), not by name.
 CREATE OR REPLACE FUNCTION rbac.validate_binding_scope()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -4525,9 +4791,10 @@ SECURITY DEFINER
 SET search_path = api, rbac, private, pg_catalog
 SET row_security = off AS $$
 DECLARE role_name text;
+DECLARE role_scopes text[];
 DECLARE invoker text := session_user;
 BEGIN
-  IF NEW.scope_kind NOT IN ('cluster', 'team', 'project', 'secret') THEN
+  IF NEW.scope_kind NOT IN ('cluster', 'team', 'project', 'folder', 'secret') THEN
     RAISE EXCEPTION 'invalid binding scope';
   END IF;
   IF (NEW.scope_kind = 'cluster') IS DISTINCT FROM (NEW.scope_id IS NULL) THEN
@@ -4537,21 +4804,11 @@ BEGIN
     RAISE EXCEPTION 'non-cluster bindings require a scope_id';
   END IF;
 
-  SELECT name INTO role_name FROM rbac.roles WHERE id = NEW.role_id;
+  SELECT name, scopes INTO role_name, role_scopes FROM rbac.roles WHERE id = NEW.role_id;
   IF role_name IS NULL THEN
     RAISE EXCEPTION 'binding role does not exist';
   END IF;
-  IF (
-    (role_name LIKE 'team-%' AND NEW.scope_kind <> 'team') OR
-    (role_name LIKE 'project-%' AND NEW.scope_kind <> 'project') OR
-    (role_name LIKE 'secret-%' AND NEW.scope_kind <> 'secret') OR
-    (role_name LIKE 'service-%' AND NEW.scope_kind NOT IN ('project', 'secret')) OR
-    (role_name IN ('global-admin', 'audit-viewer') AND NEW.scope_kind <> 'cluster') OR
-    (role_name NOT LIKE 'team-%' AND role_name NOT LIKE 'project-%'
-     AND role_name NOT LIKE 'secret-%' AND role_name NOT LIKE 'service-%'
-     AND role_name NOT IN ('global-admin', 'audit-viewer')
-     AND NEW.scope_kind = 'cluster')
-  ) THEN
+  IF NOT (NEW.scope_kind = ANY (COALESCE(role_scopes, '{}'))) THEN
     RAISE EXCEPTION 'role % cannot be assigned at scope %', role_name, NEW.scope_kind;
   END IF;
 
@@ -5152,6 +5409,7 @@ VALUES (true)
 ON CONFLICT DO NOTHING;
 
 -- 0024's machine_get_row omits the service-read ciphertext guard; restore it.
+-- Squashed: also aggregate secret metadata (machine_meta_in_list).
 DROP FUNCTION IF EXISTS private.machine_get_row(uuid, text, text);
 CREATE OR REPLACE FUNCTION private.machine_get_row(p_project uuid, p_hash text, p_key text)
 RETURNS TABLE (
@@ -5159,7 +5417,7 @@ RETURNS TABLE (
   expires_at timestamptz, rotation_interval_days integer, rotation_owner text,
   rotation_next_at timestamptz, rotated_at timestamptz,
   created_at timestamptz, updated_at timestamptz,
-  crypto_provider text
+  crypto_provider text, metadata jsonb
 )
 LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, api
@@ -5174,7 +5432,13 @@ BEGIN
   RETURN QUERY
     SELECT s.id, s.key, s.value_enc, s.note, s.kind, s.expires_at,
            s.rotation_interval_days, s.rotation_owner, s.rotation_next_at, s.rotated_at,
-           s.created_at, s.updated_at, s.crypto_provider
+           s.created_at, s.updated_at, s.crypto_provider,
+           COALESCE(
+             (SELECT jsonb_object_agg(m.key, m.value)
+              FROM api.secret_meta m
+              WHERE m.secret_id = s.id),
+             '{}'::jsonb
+           ) AS metadata
     FROM api.secrets s
     WHERE s.project_id = p_project AND s.key = p_key AND s.deleted_at IS NULL;
 END;

@@ -27,10 +27,7 @@ def add_project_binding(project_id):
     Body: email + role (admin|write|read). Writes ``rbac.bindings`` only.
     """
     email = (request.form.get("email") or "").strip().lower()
-    role = (request.form.get("role") or "project-read").strip()
-    project_role_names = config.RBAC_PROJECT_ROLE_NAMES
-    if role not in project_role_names:
-        role = "project-read"
+    raw_role = (request.form.get("role") or "").strip()
     dest = _project_access_url(project_id)
     if not email:
         flash("Enter an email address.", "error")
@@ -43,6 +40,13 @@ def add_project_binding(project_id):
         if not (cur.fetchone() or {}).get("ok"):
             flash("You don't have permission to do that", "error")
             return redirect(dest)
+        from auth.roles import default_role_for_scope, role_names_for_scope
+
+        role = (
+            raw_role
+            if raw_role in role_names_for_scope(cur, "project")
+            else default_role_for_scope(cur, "project")
+        )
         uid = lookup_user_id(cur, email)
         if not uid:
             flash(
@@ -120,10 +124,7 @@ def remove_project_binding(project_id, user_id):
 def add_project_group_role(project_id):
     """Grant a team group a project role via RBAC binding only."""
     group_id = (request.form.get("group_id") or "").strip()
-    role = (request.form.get("role") or "project-read").strip()
-    project_role_names = config.RBAC_PROJECT_ROLE_NAMES
-    if role not in project_role_names:
-        role = "project-read"
+    raw_role = (request.form.get("role") or "").strip()
     dest = _project_access_url(project_id)
     if not group_id:
         flash("Select a group.", "error")
@@ -136,6 +137,13 @@ def add_project_group_role(project_id):
         if not (cur.fetchone() or {}).get("ok"):
             flash("You don't have permission to do that", "error")
             return redirect(dest)
+        from auth.roles import default_role_for_scope, role_names_for_scope
+
+        role = (
+            raw_role
+            if raw_role in role_names_for_scope(cur, "project")
+            else default_role_for_scope(cur, "project")
+        )
         cur.execute(
             """
             SELECT p.team_id, g.name
@@ -240,9 +248,9 @@ def project_access_binding_create(project_id):
             flash("Project not found", "error")
             return redirect(url_for("projects"))
         try:
-            from auth import rbac_sync
+            from auth.roles import role_names_for_scope
 
-            if role_name not in rbac_sync.PROJECT_ROLE_NAMES:
+            if role_name not in role_names_for_scope(cur, "project"):
                 flash("Unknown role", "error")
                 return redirect(dest)
 

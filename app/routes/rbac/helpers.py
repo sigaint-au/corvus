@@ -10,32 +10,6 @@ _VALID_RESOURCES = set(config.RBAC_RESOURCES)
 _VALID_VERBS = set(config.RBAC_VERBS)
 
 
-def _role_dropdown_for_scope(scope_kind: str) -> list[tuple[str, str]]:
-    if scope_kind == "cluster":
-        return list(config.RBAC_CLUSTER_ROLE_DROPDOWN)
-    if scope_kind == "team":
-        return list(config.RBAC_TEAM_ROLE_DROPDOWN)
-    if scope_kind == "project":
-        return list(config.RBAC_PROJECT_ROLE_DROPDOWN)
-    if scope_kind in ("folder", "secret"):
-        return list(config.RBAC_SECRET_ROLE_DROPDOWN)
-    return []
-
-
-def _role_allowed_at_scope(role_name: str, scope_kind: str) -> bool:
-    if role_name.startswith("team-"):
-        return scope_kind == "team"
-    if role_name.startswith("project-"):
-        return scope_kind == "project"
-    if role_name.startswith("secret-"):
-        return scope_kind in ("folder", "secret")
-    if role_name.startswith("service-"):
-        return scope_kind in ("project", "folder", "secret")
-    if role_name in ("global-admin", "audit-viewer"):
-        return scope_kind == "cluster"
-    return scope_kind != "cluster"
-
-
 def _split_csv(val: str) -> list[str]:
     """Split ``a, b, [c]`` style lists into tokens."""
     raw = (val or "").strip()

@@ -13,14 +13,14 @@
         <a class="button ghost small" href="{{ url_for('team_detail', team_id=team.id, tab='projects') }}">Clear</a>
         {% endif %}
       </form>
-      {% if my_role in ('team-owner', 'team-admin', 'team-member') %}
+      {% if can_create_projects %}
       <a class="button outline small" href="{{ url_for('new_project_wizard', team_id=team.id) }}">+ Add project</a>
       {% endif %}
     </div>
   </div>
   {% if projects %}
   <div class="table"><table>
-    <thead><tr><th>Name</th><th>Description</th><th>Encryption</th><th>ID</th>{% if my_role in ('team-owner', 'team-admin') %}<th class="acts-col" aria-label="Actions"></th>{% endif %}</tr></thead>
+    <thead><tr><th>Name</th><th>Description</th><th>Encryption</th><th>ID</th>{% if can_manage_team %}<th class="acts-col" aria-label="Actions"></th>{% endif %}</tr></thead>
     <tbody>
     {% for p in projects %}
       <tr>
@@ -32,7 +32,7 @@
           {% else %}Server key{% endif %}
         </td>
         <td class="muted"><code class="k">{{ p.id }}</code></td>
-        {% if my_role in ('team-owner', 'team-admin') %}
+        {% if can_manage_team %}
         <td class="acts">
           <form method="post"
                 action="{{ url_for('delete_project_from_team', team_id=team.id, project_id=p.id) }}"

@@ -12,14 +12,16 @@ from flask import (
 
 import audit
 from auth import authz
-from core import config, db
+from core import db
 
 
 def _can_assign_team_owner(cur, team_id) -> bool:
+    from auth.roles import OWNER_TIER, team_role_at_least
+
     cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
-    return (cur.fetchone() or {}).get("r") == "team-owner" or authz.is_global_admin(
-        session["user_id"]
-    )
+    return team_role_at_least(
+        cur, (cur.fetchone() or {}).get("r"), OWNER_TIER
+    ) or authz.is_global_admin(session["user_id"])
 
 
 @authz.login_required
@@ -36,16 +38,25 @@ def add_team_ldap_map(team_id):
         POST /teams/<team_id>/ldap-maps with ldap_group and role form fields
     """
     ldap_group = (request.form.get("ldap_group") or "").strip()
-    role = (request.form.get("role") or "team-member").strip()
-    if role not in config.DIRECTORY_MAP_TEAM_ROLES:
-        flash("Unknown team role", "error")
-        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+    raw_role = (request.form.get("role") or "").strip()
     if not ldap_group:
         flash("LDAP group required", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
-            if role == "team-owner" and not _can_assign_team_owner(cur, team_id):
+            from auth.roles import (
+                OWNER_TIER,
+                default_team_role,
+                highest_team_role,
+                role_names_for_scope,
+            )
+
+            role = raw_role or default_team_role(cur)
+            if role not in role_names_for_scope(cur, "team"):
+                flash("Unknown team role", "error")
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+            top_role = highest_team_role(cur) or OWNER_TIER
+            if role == top_role and not _can_assign_team_owner(cur, team_id):
                 flash("Only a team owner can map the owner role", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             cur.execute(
@@ -113,16 +124,25 @@ def add_team_oidc_map(team_id):
         POST /teams/<team_id>/oidc-maps with oidc_group and role form fields
     """
     oidc_group = (request.form.get("oidc_group") or "").strip()
-    role = (request.form.get("role") or "team-member").strip()
-    if role not in config.DIRECTORY_MAP_TEAM_ROLES:
-        flash("Unknown team role", "error")
-        return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+    raw_role = (request.form.get("role") or "").strip()
     if not oidc_group:
         flash("OIDC group required", "error")
         return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
-            if role == "team-owner" and not _can_assign_team_owner(cur, team_id):
+            from auth.roles import (
+                OWNER_TIER,
+                default_team_role,
+                highest_team_role,
+                role_names_for_scope,
+            )
+
+            role = raw_role or default_team_role(cur)
+            if role not in role_names_for_scope(cur, "team"):
+                flash("Unknown team role", "error")
+                return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
+            top_role = highest_team_role(cur) or OWNER_TIER
+            if role == top_role and not _can_assign_team_owner(cur, team_id):
                 flash("Only a team owner can map the owner role", "error")
                 return redirect(url_for("team_detail", team_id=team_id, tab="settings"))
             cur.execute(

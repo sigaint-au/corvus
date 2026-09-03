@@ -58,8 +58,7 @@ class TestOrgAccess:
         assert 'project-read' in names
         assert 'project-write' in names
         assert 'project-admin' in names
-        assert 'team-member' in config.INVITE_ROLES
-        assert 'team-owner' not in config.INVITE_ROLES
+        assert not hasattr(config, 'INVITE_ROLES')
         assert not hasattr(config, 'TEAM_ROLES')
 
     def test_secret_meta_schema(self):

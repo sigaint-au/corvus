@@ -31,6 +31,7 @@ def rbac_roles():
         active_tab=tab,
         verbs=config.RBAC_VERBS,
         resources=config.RBAC_RESOURCES,
+        scope_kinds=config.RBAC_SCOPE_KINDS,
     )
 
 
@@ -65,16 +66,20 @@ def rbac_roles_create():
     if name in config.RBAC_BUILTIN_ROLES:
         flash("That name is reserved for a built-in role", "error")
         return redirect(url_for("rbac_roles", tab="create"))
+    scopes = [s for s in request.form.getlist("scopes") if s in config.RBAC_SCOPE_KINDS]
+    if not scopes:
+        flash("Select at least one scope this role can be assigned at", "error")
+        return redirect(url_for("rbac_roles", tab="create"))
 
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
         try:
             cur.execute(
                 """
-                INSERT INTO rbac.roles (name, description, built_in)
-                VALUES (%s, %s, false)
+                INSERT INTO rbac.roles (name, description, built_in, scopes)
+                VALUES (%s, %s, false, %s)
                 RETURNING id
                 """,
-                (name, description),
+                (name, description, scopes),
             )
             row = cur.fetchone()
             if not row:

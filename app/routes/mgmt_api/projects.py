@@ -11,6 +11,7 @@ from flask import (
 
 import audit
 from auth import rbac_sync
+from auth.roles import default_role_for_scope, role_names_for_scope
 from core import config, db
 from lib import metadata
 from lib.users import lookup_user_id
@@ -176,16 +177,18 @@ def mgmt_add_project_binding(project_ref):
         return err
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
-    role = (body.get("role") or "project-read").strip()
-    role_names = config.RBAC_PROJECT_ROLE_NAMES
-    if role not in role_names:
-        role = "project-read"
+    raw_role = (body.get("role") or "").strip()
     if not email:
         return jsonify({"error": "email required"}), 400
     with db.as_user(uid) as conn, conn.cursor() as cur:
         pid = _resolve_project(cur, project_ref)
         if not pid:
             return jsonify({"error": "not found"}), 404
+        role = (
+            raw_role
+            if raw_role in role_names_for_scope(cur, "project")
+            else default_role_for_scope(cur, "project")
+        )
         mid = lookup_user_id(cur, email)
         if not mid:
             return jsonify({"error": "user not found"}), 404

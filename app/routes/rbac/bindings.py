@@ -9,7 +9,7 @@ from auth import authz
 from core import config, db
 from lib.users import lookup_user_id
 from lib.validate import is_uuid
-from routes.rbac.helpers import _role_allowed_at_scope, _role_dropdown_for_scope
+from auth.roles import role_allowed_at_scope, roles_for_scope
 
 
 @authz.login_required
@@ -196,7 +196,7 @@ def rbac_bindings():
         all_roles = [
             r
             for r in (cur.fetchall() or [])
-            if _role_allowed_at_scope(r.get("name", ""), scope_kind)
+            if role_allowed_at_scope(cur, r.get("name", ""), scope_kind)
         ]
 
         if picker_team_id:
@@ -216,7 +216,7 @@ def rbac_bindings():
             )
             can_edit = bool((cur.fetchone() or {}).get("ok"))
 
-        dropdown = _role_dropdown_for_scope(scope_kind)
+        dropdown = roles_for_scope(cur, scope_kind)
 
         role_descriptions = {}
         try:
@@ -278,14 +278,17 @@ def rbac_bindings_create():
             if not role:
                 flash("Unknown role", "error")
                 return redirect(url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id))
-            if not _role_allowed_at_scope(role_name, scope_kind):
+            if not role_allowed_at_scope(cur, role_name, scope_kind):
                 flash("That role cannot be assigned at this scope", "error")
                 return redirect(url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id))
-            if role_name == "team-owner":
+            from auth.roles import OWNER_TIER, highest_team_role, team_role_at_least
+
+            top_role = highest_team_role(cur) or OWNER_TIER
+            if role_name == top_role:
                 cur.execute("SELECT api.team_role(%s) AS r", (scope_id,))
-                if (cur.fetchone() or {}).get("r") != "team-owner" and not authz.is_global_admin(
-                    session["user_id"]
-                ):
+                if not team_role_at_least(
+                    cur, (cur.fetchone() or {}).get("r"), OWNER_TIER
+                ) and not authz.is_global_admin(session["user_id"]):
                     flash("Only a team owner can grant the owner role", "error")
                     return redirect(url_for("rbac_bindings", scope=scope_kind, scope_id=scope_id))
 

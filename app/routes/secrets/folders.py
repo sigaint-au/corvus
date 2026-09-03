@@ -8,7 +8,7 @@ import audit
 from auth import authz, rbac_sync
 from core import config, db
 from lib.users import lookup_user_id
-from routes.rbac.helpers import _role_allowed_at_scope
+from auth.roles import role_allowed_at_scope
 from secret_svc.folders import delete_empty_folder, materialize_folder_path
 from secret_svc.secret_ops import _parse_access_mode
 from ui import paging
@@ -36,6 +36,9 @@ def folder_view(project_id, folder_id):
     effective_access_q = ""
     effective_access_pager = None
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import roles_for_scope
+
+        folder_role_dropdown = roles_for_scope(cur, "folder")
         cur.execute(
             """
             SELECT id, project_id, name, path, access_mode
@@ -148,7 +151,7 @@ def folder_view(project_id, folder_id):
         effective_access=effective_access,
         effective_access_q=effective_access_q,
         effective_access_pager=effective_access_pager,
-        role_dropdown=config.RBAC_SECRET_ROLE_DROPDOWN,
+        role_dropdown=folder_role_dropdown,
         subject_kinds=config.RBAC_SUBJECT_KINDS,
         access_modes=config.ACCESS_MODES,
         access_mode_labels=config.ACCESS_MODE_LABELS,
@@ -201,10 +204,8 @@ def add_folder_access_binding(project_id, folder_id):
     email = (request.form.get("subject_email") or "").strip().lower()
     group_id = (request.form.get("subject_group") or "").strip()
     sa_id = (request.form.get("subject_sa") or "").strip()
-    role_name = (request.form.get("role_name") or "secret-reveal").strip()
-    if subject_kind not in config.RBAC_SUBJECT_KINDS or not _role_allowed_at_scope(
-        role_name, "folder"
-    ):
+    raw_role_name = (request.form.get("role_name") or "").strip()
+    if subject_kind not in config.RBAC_SUBJECT_KINDS:
         flash("Invalid subject or role", "error")
         return redirect(access_url)
     if subject_kind == "User" and not email:
@@ -217,10 +218,17 @@ def add_folder_access_binding(project_id, folder_id):
         flash("Enter a machine account ID.", "error")
         return redirect(access_url)
     with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        from auth.roles import default_role_for_scope, role_names_for_scope
+
         cur.execute("SELECT api.can_admin_project(%s) AS a", (str(project_id),))
         if not (cur.fetchone() or {}).get("a"):
             flash("Only project admins can manage folder bindings", "error")
             return redirect(access_url)
+        role_name = (
+            raw_role_name
+            if raw_role_name in role_names_for_scope(cur, "folder")
+            else default_role_for_scope(cur, "folder")
+        )
         cur.execute(
             """
             SELECT f.path, p.team_id
@@ -234,6 +242,9 @@ def add_folder_access_binding(project_id, folder_id):
         role = cur.fetchone()
         if not folder or not role:
             flash("Folder or role not found", "error")
+            return redirect(access_url)
+        if not role_allowed_at_scope(cur, role_name, "folder"):
+            flash("That role cannot be assigned at folder scope", "error")
             return redirect(access_url)
         if subject_kind == "User":
             subject_id = lookup_user_id(cur, email)

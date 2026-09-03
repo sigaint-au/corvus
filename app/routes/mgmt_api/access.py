@@ -87,18 +87,23 @@ def mgmt_add_secret_binding(project_ref, key):
     if subject_kind not in ("User", "Group", "ServiceAccount"):
         subject_kind = "User"
     subject = (body.get("subject_id") or body.get("subject") or "").strip()
-    role_name = (body.get("role") or body.get("role_name") or "secret-reveal").strip()
+    raw_role_name = (body.get("role") or body.get("role_name") or "").strip()
     if not subject:
         return jsonify({"error": "subject_id is required"}), 400
     if subject_kind == "User":
         subject = subject.lower()
 
     with db.as_user(uid) as conn, conn.cursor() as cur:
+        from auth.roles import default_role_for_scope, role_names_for_scope
+
         pid = _resolve_project(cur, project_ref)
         if not pid:
             return jsonify({"error": "not found"}), 404
         if not _is_project_admin(cur, pid):
             return jsonify({"error": "forbidden"}), 403
+        role_name = raw_role_name or default_role_for_scope(cur, "secret")
+        if role_name not in role_names_for_scope(cur, "secret"):
+            return jsonify({"error": f"unknown role {role_name!r}"}), 400
         sid, _skey = _resolve_secret(cur, pid, key)
         if not sid:
             return jsonify({"error": "not found"}), 404

@@ -30,9 +30,13 @@ def team_group_detail(team_id, group_id):
         team = db.team(cur, team_id)
         if not team:
             return "Not found", 404
+        from auth.roles import MANAGE_TIER, team_role_at_least
+
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
         my_role = (cur.fetchone() or {}).get("r")
-        is_admin = my_role in ("team-owner", "team-admin") or bool(session.get("is_global_admin"))
+        is_admin = team_role_at_least(cur, my_role, MANAGE_TIER) or bool(
+            session.get("is_global_admin")
+        )
         cur.execute(
             """
             SELECT id, name, source, external_key, created_at

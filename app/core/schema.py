@@ -1,8 +1,8 @@
 """Schema bootstrap: apply pending migrations, then promote the bootstrap admin.
 
 Fresh volumes are created by ``docker-entrypoint-initdb.d`` (via
-``db/migrations/0001_init.sql``). This module applies any remaining migrations
-(``0002_rls_authz_hardening.sql``, …) at startup under a session advisory lock,
+``db/migrations/0001_init.sql``). This module applies any remaining additive
+migrations (``NNNN_slug.sql``) at startup under a session advisory lock,
 then promotes the configured bootstrap admin email (env-driven, not a
 migration).
 """

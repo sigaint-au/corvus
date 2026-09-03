@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-from core.config import DIRECTORY_MAP_TEAM_ROLES
+# Directory team maps store rbac.roles names; ranking is DB-driven via
+# auth.roles.team_role_rank so catalog, validation, and sync cannot drift.
 
-# Directory team maps store rbac.roles names (team-owner/admin/member/viewer);
-# rank by RBAC role name so the highest wins. Derived from the canonical
-# directory-map roles so dropdown, validation, and sync cannot drift apart.
-TEAM_RBAC_RANK = {
-    name: rank
-    for rank, name in enumerate(reversed(DIRECTORY_MAP_TEAM_ROLES), start=1)
-}
 
 
 def apply_global_admin_maps(cur, uid, groups, role_maps, group_key: str) -> None:
@@ -79,20 +73,19 @@ def apply_team_membership_maps(
         ...     cur, uid, groups, tmaps, group_key="oidc_group", source="oidc"
         ... )
     """
+    from auth.roles import team_role_rank
     from integrations.ldap_auth import group_matches
 
+    rank = team_role_rank(cur)
     desired: dict[str, str] = {}
     for m in tmaps:
         if not group_matches(m[group_key], groups):
             continue
         tid = str(m["team_id"])
         rname = m["role"]
-        if rname not in TEAM_RBAC_RANK:
+        if rname not in rank:
             continue
-        if (
-            tid not in desired
-            or TEAM_RBAC_RANK.get(rname, 0) > TEAM_RBAC_RANK.get(desired[tid], 0)
-        ):
+        if tid not in desired or rank.get(rname, 0) > rank.get(desired[tid], 0):
             desired[tid] = rname
 
     from auth import rbac_sync
@@ -104,7 +97,7 @@ def apply_team_membership_maps(
         JOIN rbac.roles r ON r.id = b.role_id
         WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
           AND b.scope_kind = 'team' AND b.source = %s
-          AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+          AND 'team' = ANY (r.scopes)
         """,
         (str(uid), source),
     )
@@ -123,7 +116,7 @@ def apply_team_membership_maps(
             WHERE b.subject_kind = 'User' AND b.subject_id = %s::uuid
               AND b.scope_kind = 'team' AND b.scope_id = %s::uuid
               AND b.source = 'manual'
-              AND r.name IN ('team-owner', 'team-admin', 'team-member', 'team-viewer')
+              AND 'team' = ANY (r.scopes)
             LIMIT 1
             """,
             (str(uid), tid),

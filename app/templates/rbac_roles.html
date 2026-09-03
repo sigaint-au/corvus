@@ -143,6 +143,14 @@
           <input type="text" name="description" placeholder="Optional summary" autocomplete="off">
         </label>
       </div>
+      <fieldset class="field-group">
+        <legend>Assignable at scopes</legend>
+        <div class="field-grid">
+          {% for scope in scope_kinds|default(['team', 'project', 'folder', 'secret', 'cluster']) %}
+          <label class="check-row"><input type="checkbox" name="scopes" value="{{ scope }}"{% if scope == 'team' %} checked{% endif %}> {{ scope|capitalize }}</label>
+          {% endfor %}
+        </div>
+      </fieldset>
     </fieldset>
 
     <ot-tabs>

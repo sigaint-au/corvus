@@ -6,7 +6,8 @@
 {% set role_dropdown = project_role_dropdown %}
 {% set full_bindings_url = url_for('rbac_bindings', scope='project', scope_id=project.id) %}
 {% set empty_message = 'No project-scope bindings yet. Team members still have access via their team role.' %}
-{% set help_html = 'Bind users, groups, or machine accounts to a <strong>project</strong> role (<code>project-admin</code> / <code>project-write</code> / <code>project-reveal</code> / <code>project-read</code>). Prefer team membership for broad access. Secret-level grants: secret Access tab. Reveal approval requests live under <a href="' ~ url_for('project_detail', project_id=project.id, tab='requests') ~ '">Requests</a>.' %}
+{% set help_roles = role_dropdown|default([])|map(attribute=0)|join('</code> / <code>') %}
+{% set help_html = 'Bind users, groups, or machine accounts to a <strong>project</strong> role (<code>' ~ help_roles ~ '</code>). Prefer team membership for broad access. Secret-level grants: secret Access tab. Reveal approval requests live under <a href="' ~ url_for('project_detail', project_id=project.id, tab='requests') ~ '">Requests</a>.' %}
 {% include "partials/access_bindings_panel.html" %}
 <section>
   <div class="section-head">
