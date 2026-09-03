@@ -1404,11 +1404,11 @@
     }
     .setup-guide-steps {
       list-style: none;
-      margin: 1.2rem 0 .8rem;
+      margin: 1.25rem 0 .8rem;
       padding: 0;
       display: flex;
       flex-direction: column;
-      gap: .65rem;
+      gap: .75rem;
       width: 100%;
       max-width: 24rem;
       text-align: left;
@@ -1416,12 +1416,13 @@
     .setup-guide-step {
       display: grid;
       grid-template-columns: 1.75rem 1fr;
-      gap: .65rem;
-      align-items: baseline;
-      padding: .6rem .75rem;
+      gap: .8rem;
+      align-items: start;
+      padding: .85rem .95rem;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--card);
+      line-height: 1.45;
     }
     .setup-guide-step.is-active {
       border-color: var(--side-accent);
@@ -1429,8 +1430,10 @@
     .setup-guide-n {
       display: grid;
       place-items: center;
+      flex-shrink: 0;
       width: 1.75rem;
       height: 1.75rem;
+      margin-top: .1rem;
       border-radius: 50%;
       font-size: .8rem;
       font-weight: 600;
@@ -1441,14 +1444,21 @@
       background: var(--side-accent);
       color: var(--primary-foreground);
     }
+    .setup-guide-body {
+      display: flex;
+      flex-direction: column;
+      gap: .2rem;
+      min-width: 0;
+    }
     .setup-guide-label {
       font-weight: 600;
       font-size: .9rem;
+      line-height: 1.4;
       color: var(--foreground);
     }
     .setup-guide-hint {
       font-size: .82rem;
-      line-height: 1.4;
+      line-height: 1.5;
       display: block;
     }
     .setup-guide-action { margin: .85rem 0 0; }
