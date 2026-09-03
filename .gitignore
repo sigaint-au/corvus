@@ -19,6 +19,7 @@ build/
 
 .omo/
 site/
-/.impeccable
+node_modules/
+.impeccable/
 .opencode/plans/
 plans/
