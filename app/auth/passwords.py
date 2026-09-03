@@ -11,8 +11,34 @@ from crypto import sha256_hex
 
 log = logging.getLogger(__name__)
 
-MIN_PASSWORD_LEN = 8
+MIN_PASSWORD_LEN = 12
 RESET_TOKEN_HOURS = 1
+
+
+def validate_new_password(password: str, *, email: str = "") -> str | None:
+    """Check a candidate local password against the policy.
+
+    Local passwords are break-glass only (SSO is recommended), so the bar
+    is length plus cheap structural rejects — no breach-list lookups.
+
+    Args:
+        password: Candidate plaintext password.
+        email: Account email; its local-part must not appear in the password.
+
+    Returns:
+        Error message string, or None when the password is acceptable.
+    """
+    pw = password or ""
+    if len(pw) < MIN_PASSWORD_LEN:
+        return f"Password must be at least {MIN_PASSWORD_LEN} characters"
+    if not pw.strip():
+        return "Password must not be blank"
+    if len(set(pw)) == 1:
+        return "Password must not repeat a single character"
+    local = (email or "").split("@", 1)[0].strip().lower()
+    if len(local) >= 4 and local in pw.lower():
+        return "Password must not contain your email address"
+    return None
 
 
 def change_password(user_id: str, old_password: str, new_password: str) -> tuple[bool, str]:
@@ -32,8 +58,8 @@ def change_password(user_id: str, old_password: str, new_password: str) -> tuple
         >>> if not ok:
         ...     flash(err, "error")
     """
-    if len(new_password or "") < MIN_PASSWORD_LEN:
-        return False, f"Password must be at least {MIN_PASSWORD_LEN} characters"
+    if err := validate_new_password(new_password):
+        return False, err
     if not old_password:
         return False, "Current password is required"
     try:
@@ -195,8 +221,8 @@ def consume_reset_token(token: str, new_password: str) -> tuple[bool, str]:
         >>> if ok:
         ...     flash("Password updated — please sign in")
     """
-    if len(new_password or "") < MIN_PASSWORD_LEN:
-        return False, f"Password must be at least {MIN_PASSWORD_LEN} characters"
+    if err := validate_new_password(new_password):
+        return False, err
     if not token:
         return False, "Invalid or expired reset link"
     th = sha256_hex(token)

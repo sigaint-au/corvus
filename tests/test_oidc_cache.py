@@ -1,6 +1,8 @@
 """OIDC shared-cache tests."""
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from integrations import oidc_auth
 
 
@@ -43,6 +45,21 @@ def test_rate_limited_sliding_window():
         assert cache.rate_limited("corvus:rl:x", limit=10, window=60) is True
     with patch.object(cache, "redis_client", return_value=None):
         assert cache.rate_limited("corvus:rl:x", limit=10, window=60) is False
+
+
+def test_client_secret_plain_empty_when_unset():
+    """No stored secret means no secret sent (public clients)."""
+    with patch.object(oidc_auth, "oidc_cfg", return_value={"oidc_client_secret": ""}):
+        assert oidc_auth._client_secret_plain() == ""
+
+
+def test_client_secret_plain_fails_closed():
+    """An undecryptable stored secret refuses instead of sending garbage."""
+    with patch.object(
+        oidc_auth, "oidc_cfg", return_value={"oidc_client_secret": "not-a-fernet-token"}
+    ):
+        with pytest.raises(RuntimeError, match="re-save"):
+            oidc_auth._client_secret_plain()
 
 
 def test_redis_client_without_package():

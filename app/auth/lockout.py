@@ -14,7 +14,10 @@ def is_locked(email: str) -> bool:
 
     Counts rows in ``private.login_failures`` within the last ``WINDOW``
     (5 minutes). Locked when count >= ``MAX_ATTEMPTS`` (5). On DB errors,
-    fails open (returns False) so login is not blocked by infrastructure issues.
+    fails open (returns False) so login is not blocked by infrastructure
+    issues — the miss is logged at error level because brute-force
+    protection is off while the check fails. This is the deliberate
+    counterpart to ``authz.is_account_disabled``, which fails closed.
 
     Args:
         email: Login email (normalized to lowercase). Empty string never locks.
@@ -41,12 +44,15 @@ def is_locked(email: str) -> bool:
             n = int((cur.fetchone() or {}).get("n") or 0)
             return n >= MAX_ATTEMPTS
     except Exception as e:
-        log.warning("lockout check failed: %s", e)
+        log.error("lockout check failed, failing open (no lockout enforced): %s", e)
         return False
 
 
 def record_failure(email: str):
     """Record a failed login attempt for lockout accounting.
+
+    A failed write is logged at error level: missed rows silently weaken
+    the lockout counter, so operators should alert on this message.
 
     Args:
         email: Login email that failed authentication. Empty values are ignored.
@@ -69,7 +75,7 @@ def record_failure(email: str):
                 (email,),
             )
     except Exception as e:
-        log.warning("lockout record failed: %s", e)
+        log.error("lockout record failed, attempts going uncounted: %s", e)
 
 
 def clear_failures(email: str):

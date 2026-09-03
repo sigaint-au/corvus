@@ -30,6 +30,22 @@ class TestLockout:
         with patch.object(db, 'connect_admin', side_effect=RuntimeError('db')):
             assert not lockout.is_locked('a@b.c')
 
+    def test_db_error_logs_at_error_level(self, caplog):
+        import logging
+
+        with patch.object(db, 'connect_admin', side_effect=RuntimeError('db')):
+            with caplog.at_level(logging.ERROR, logger='auth.lockout'):
+                assert not lockout.is_locked('a@b.c')
+        assert any(r.levelno >= logging.ERROR for r in caplog.records)
+
+    def test_record_failure_logs_at_error_level(self, caplog):
+        import logging
+
+        with patch.object(db, 'connect_admin', side_effect=RuntimeError('db')):
+            with caplog.at_level(logging.ERROR, logger='auth.lockout'):
+                lockout.record_failure('a@b.c')
+        assert any(r.levelno >= logging.ERROR for r in caplog.records)
+
     def test_record_and_clear(self):
         conn, cur = _conn()
         with patch.object(db, 'connect_admin', return_value=conn):

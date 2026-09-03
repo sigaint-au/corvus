@@ -5,7 +5,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import app as store
-from auth import authz
+from auth import authz, passwords
 from core import db, settings_svc
 from integrations import ldap_auth, mailer, oidc_auth
 from tests.helpers import REPO_ROOT
@@ -143,11 +143,11 @@ class TestAuth:
         with patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None):
             r = self.client.post('/register', data={'email': 'a@b.c', 'password': 'short', 'name': 'A'})
         assert r.status_code == 400
-        assert b'8 characters' in r.data
+        assert b'12 characters' in r.data
 
     def test_register_password_mismatch(self):
         with patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None):
-            r = self.client.post('/register', data={'email': 'a@b.c', 'password': 'password1', 'password_confirm': 'password2', 'name': 'A'})
+            r = self.client.post('/register', data={'email': 'a@b.c', 'password': 'password1234', 'password_confirm': 'password2', 'name': 'A'})
         assert r.status_code == 400
         assert b'Passwords do not match' in r.data
 
@@ -155,14 +155,14 @@ class TestAuth:
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid})
         with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
-            r = self.client.post('/register', data={'email': 'match@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=False)
+            r = self.client.post('/register', data={'email': 'match@b.c', 'password': 'password1234', 'password_confirm': 'password1234', 'name': 'N'}, follow_redirects=False)
         assert r.status_code == 302
 
     def test_register_ok(self):
         uid = uuid4()
         conn, _ = _conn(fetchone={'id': uid})
         with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch.object(authz, 'is_global_admin', return_value=False), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
-            r = self.client.post('/register', data={'email': 'new@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=False)
+            r = self.client.post('/register', data={'email': 'new@b.c', 'password': 'password1234', 'password_confirm': 'password1234', 'name': 'N'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/teams' in r.location
         with self.client.session_transaction() as s:
@@ -182,7 +182,7 @@ class TestAuth:
         conn, _ = _conn(fetchone={'id': uid})
         admin_conn, admin_cur = _conn()
         with patch.object(db, 'connect', return_value=conn), patch.object(db, 'connect_admin', return_value=admin_conn), patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None), patch('routes.auth.helpers.bootstrap_admin_email', return_value='admin@ex.com'), patch.object(authz, 'is_global_admin', return_value=True), patch('auth.totp_svc.needs_challenge', return_value=None), patch('integrations.mailer.login_alerts_enabled', return_value=False):
-            r = self.client.post('/register', data={'email': 'admin@ex.com', 'password': 'password1', 'password_confirm': 'password1', 'name': 'A'}, follow_redirects=False)
+            r = self.client.post('/register', data={'email': 'admin@ex.com', 'password': 'password1234', 'password_confirm': 'password1234', 'name': 'A'}, follow_redirects=False)
         assert r.status_code == 302
         sql = ' '.join(str(c.args[0]) for c in admin_cur.execute.call_args_list)
         assert 'is_global_admin = true' in sql
@@ -194,7 +194,7 @@ class TestAuth:
         assert r.status_code == 302
         assert '/login' in r.location
         with patch.object(settings_svc, 'registration_enabled', return_value=False):
-            r = self.client.post('/register', data={'email': 'new@b.c', 'password': 'password1', 'name': 'N'}, follow_redirects=False)
+            r = self.client.post('/register', data={'email': 'new@b.c', 'password': 'password1234', 'name': 'N'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/login' in r.location
 
@@ -235,7 +235,7 @@ class TestAuth:
         assert '/login' in r.location
 
     def test_change_password_requires_login(self):
-        r = self.client.post('/profile/password', data={'current_password': 'old', 'new_password': 'newpass12', 'new_password_confirm': 'newpass12'})
+        r = self.client.post('/profile/password', data={'current_password': 'old', 'new_password': 'newpass12345', 'new_password_confirm': 'newpass12345'})
         assert r.status_code == 302
         assert '/login' in r.location
 
@@ -245,7 +245,7 @@ class TestAuth:
             s['user_id'] = uid
             s['sid'] = str(uuid4())
         with patch('auth.passwords.change_password', return_value=(True, '')), patch('auth.user_sessions.revoke_other_sessions', return_value=2):
-            r = self.client.post('/profile/password', data={'current_password': 'oldpass12', 'new_password': 'newpass12', 'new_password_confirm': 'newpass12'}, follow_redirects=False)
+            r = self.client.post('/profile/password', data={'current_password': 'oldpass12', 'new_password': 'newpass12345', 'new_password_confirm': 'newpass12345'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/profile' in r.location
         assert 'tab=security' in r.location
@@ -254,7 +254,7 @@ class TestAuth:
         uid = str(uuid4())
         with self.client.session_transaction() as s:
             s['user_id'] = uid
-        r = self.client.post('/profile/password', data={'current_password': 'oldpass12', 'new_password': 'newpass12', 'new_password_confirm': 'other'}, follow_redirects=False)
+        r = self.client.post('/profile/password', data={'current_password': 'oldpass12', 'new_password': 'newpass12345', 'new_password_confirm': 'other'}, follow_redirects=False)
         assert r.status_code == 302
         with self.client.session_transaction() as s:
             flashes = s.get('_flashes') or []
@@ -272,12 +272,12 @@ class TestAuth:
         rev.assert_called_once_with(uid, sid)
 
     def test_reset_password_mismatch(self):
-        r = self.client.post('/reset-password/tok', data={'password': 'newpass12', 'password_confirm': 'nope'})
+        r = self.client.post('/reset-password/tok', data={'password': 'newpass12345', 'password_confirm': 'nope'})
         assert r.status_code == 400
 
     def test_reset_password_ok(self):
         with patch('auth.passwords.consume_reset_token', return_value=(True, '')):
-            r = self.client.post('/reset-password/goodtoken', data={'password': 'newpass12', 'password_confirm': 'newpass12'}, follow_redirects=False)
+            r = self.client.post('/reset-password/goodtoken', data={'password': 'newpass12345', 'password_confirm': 'newpass12345'}, follow_redirects=False)
         assert r.status_code == 302
         assert '/login' in r.location
 
@@ -582,7 +582,7 @@ class TestAuth:
              patch('auth.totp_svc.needs_challenge', return_value=None), \
              patch('integrations.mailer.login_alerts_enabled', return_value=False), \
              patch('integrations.mailer.smtp_configured', return_value=False):
-            r = self.client.post('/register', data={'email': 'nosmtp@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=False)
+            r = self.client.post('/register', data={'email': 'nosmtp@b.c', 'password': 'password1234', 'password_confirm': 'password1234', 'name': 'N'}, follow_redirects=False)
         assert r.status_code == 302
         with self.client.session_transaction() as s:
             assert s['user_id'] == str(uid)
@@ -605,7 +605,7 @@ class TestAuth:
              patch.object(authz, 'is_global_admin', return_value=False), \
              patch.object(mailer, 'smtp_configured', return_value=True), \
              patch.object(mailer, 'send_email_verification', side_effect=fake_send):
-            r = self.client.post('/register', data={'email': 'verify@b.c', 'password': 'password1', 'password_confirm': 'password1', 'name': 'N'}, follow_redirects=True)
+            r = self.client.post('/register', data={'email': 'verify@b.c', 'password': 'password1234', 'password_confirm': 'password1234', 'name': 'N'}, follow_redirects=True)
         assert r.status_code == 200
         assert '/login' in r.request.path  # back to sign-in after signup
         assert b'inbox' in r.data
@@ -739,3 +739,24 @@ class TestAuth:
         sql = (REPO_ROOT / 'db' / 'migrations' / '0001_init.sql').read_text()
         assert 'email_verified_at timestamptz' in sql
         assert 'GRANT EXECUTE ON FUNCTION private.verify_user TO authenticator' in sql
+
+
+class TestPasswordPolicy:
+
+    def test_minimum_length(self):
+        assert passwords.validate_new_password('short11') is not None
+        assert passwords.validate_new_password('twelve-chars') is None
+
+    def test_rejects_blank_and_repeated(self):
+        assert passwords.validate_new_password(' ' * 12) is not None
+        assert passwords.validate_new_password('a' * 12) is not None
+
+    def test_rejects_email_local_part(self):
+        assert passwords.validate_new_password('adalovelace-99', email='adalovelace@example.com') is not None
+        assert passwords.validate_new_password('lovelace-free-9', email='molly@example.com') is None
+
+    def test_register_rejects_email_password(self):
+        with patch.object(settings_svc, 'registration_enabled', return_value=True), patch.object(settings_svc, 'setup_notice', return_value=None):
+            r = store.app.test_client().post('/register', data={'email': 'adalovelace@b.c', 'password': 'adalovelace-99', 'password_confirm': 'adalovelace-99', 'name': 'A'})
+        assert r.status_code == 400
+        assert b'email address' in r.data

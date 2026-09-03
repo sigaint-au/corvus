@@ -297,6 +297,58 @@ class TestTeams:
         assert not hasattr(config, 'TEAM_ROLES')
         assert 'team-member' in config.INVITE_ROLES
 
+    def _members_fetch_router(self, tid, uid, last):
+        def fetchone():
+            s = last['s']
+            if 'from api.teams' in s and 'where id' in s:
+                return {'id': tid, 'name': 'T'}
+            if 'api.team_role' in s:
+                return {'r': 'team-owner'}
+            if 'can_manage_rbac' in s:
+                return {'ok': True}
+            if 'rbac.bindings' in s:
+                return {'id': uid, 'role_name': 'team-member'}
+            if 'lookup_user' in s:
+                return None
+            return None
+        return fetchone
+
+    def test_htmx_remove_member_returns_partial(self):
+        tid, uid = (uuid4(), uuid4())
+        last = {'s': ''}
+
+        def execute(sql, params=None):
+            last['s'] = ' '.join(str(sql).lower().split())
+
+        conn, cur = _conn(fetchone=self._members_fetch_router(tid, uid, last), fetchall=[])
+        cur.execute.side_effect = execute
+        cur.rowcount = 1
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/teams/{tid}/members/{uid}/remove', headers={'HX-Request': 'true'}
+            )
+        assert r.status_code == 200
+        assert b'id="team-members"' in r.data
+        assert b'<html' not in r.data.lower()
+
+    def test_htmx_add_member_error_preserves_email(self):
+        tid = uuid4()
+        last = {'s': ''}
+
+        def execute(sql, params=None):
+            last['s'] = ' '.join(str(sql).lower().split())
+
+        conn, cur = _conn(fetchone=self._members_fetch_router(tid, uuid4(), last), fetchall=[])
+        cur.execute.side_effect = execute
+        with patch.object(db, 'as_user', return_value=conn):
+            r = self.client.post(
+                f'/teams/{tid}/members',
+                data={'email': 'nope@x.com', 'role': 'team-member'},
+                headers={'HX-Request': 'true'},
+            )
+        assert r.status_code == 200
+        assert b'value="nope@x.com"' in r.data
+
     def test_add_member_viewer_role(self):
         tid, uid = (uuid4(), uuid4())
         conn, cur = _conn(fetchone={'id': uid})

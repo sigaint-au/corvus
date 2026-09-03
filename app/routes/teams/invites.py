@@ -22,6 +22,8 @@ from auth import authz, rbac_sync
 from core import config, db
 from crypto import sha256_hex
 
+from .members import members_response
+
 
 @authz.login_required
 def create_team_invite(team_id):
@@ -69,7 +71,7 @@ def create_team_invite(team_id):
             if not row:
                 flash("Permission denied", "error")
                 conn.rollback()
-                return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+                return members_response(team_id)
             audit.log_org(
                 cur,
                 team_id=team_id,
@@ -79,10 +81,10 @@ def create_team_invite(team_id):
             conn.commit()
         except Exception:
             flash("Could not update the invitation. Try again.", "error")
-            return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+            return members_response(team_id)
     session["new_invite_url"] = url_for("redeem_invite", token=raw, _external=True)
     flash("Invite link created. Copy it now; it shows only this once.", "ok")
-    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+    return members_response(team_id)
 
 
 @authz.login_required
@@ -118,7 +120,7 @@ def revoke_team_invite(team_id, invite_id):
             flash("Invite revoked", "ok")
         else:
             flash("Invite not found or already revoked", "error")
-    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+    return members_response(team_id)
 
 
 def redeem_invite(token):
@@ -217,7 +219,7 @@ def approve_join_request(team_id, req_id):
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
         if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
             flash("Only owners or admins can approve join requests", "error")
-            return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+            return members_response(team_id)
         cur.execute(
             """
             SELECT id, user_id, role, status FROM api.team_join_requests
@@ -228,7 +230,7 @@ def approve_join_request(team_id, req_id):
         req = cur.fetchone()
         if not req or req["status"] != "pending":
             flash("Request not found", "error")
-            return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+            return members_response(team_id)
         try:
             # Role in request row can be 'team-member' or legacy 'member'
             req_role = req["role"]
@@ -266,7 +268,7 @@ def approve_join_request(team_id, req_id):
         except Exception:
             conn.rollback()
             flash("Could not update the invitation. Try again.", "error")
-    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+    return members_response(team_id)
 
 
 @authz.login_required
@@ -287,7 +289,7 @@ def reject_join_request(team_id, req_id):
         cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
         if (cur.fetchone() or {}).get("r") not in ("team-owner", "team-admin"):
             flash("Only owners or admins can reject join requests", "error")
-            return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+            return members_response(team_id)
         cur.execute(
             """
             UPDATE api.team_join_requests
@@ -307,4 +309,4 @@ def reject_join_request(team_id, req_id):
             flash("Join request rejected", "ok")
         else:
             flash("Request not found", "error")
-    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+    return members_response(team_id)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from flask import (
     flash,
     redirect,
+    render_template,
     request,
     session,
     url_for,
@@ -14,6 +15,126 @@ import audit
 from auth import authz, rbac_sync
 from core import config, db
 from lib.users import lookup_user_id
+
+
+def load_members_tab(cur, team_id, is_admin):
+    """Load members-tab rows (bindings, invites, pending requests).
+
+    Shared by the full team page and the HTMX members partial so the two
+    cannot drift apart.
+
+    Args:
+        cur: Open DB cursor (user RLS).
+        team_id: UUID of the team.
+        is_admin: Whether invite/request rows are visible.
+
+    Returns:
+        Tuple ``(members, invites, join_requests)``.
+    """
+    all_b = rbac_sync.list_scope_bindings(cur, "team", team_id)
+    rbac_sync.enrich_binding_emails(all_b)
+    members = [
+        b
+        for b in all_b
+        if b.get("subject_kind") == "User"
+        and str(b.get("role_name") or "").startswith("team-")
+    ]
+    invites, join_requests = [], []
+    if is_admin:
+        cur.execute(
+            """
+            SELECT id, role, expires_at, created_at, revoked_at
+            FROM api.team_invites
+            WHERE team_id = %s
+            ORDER BY created_at DESC
+            LIMIT 20
+            """,
+            (str(team_id),),
+        )
+        invites = cur.fetchall()
+        cur.execute(
+            """
+            SELECT r.id, r.role, r.user_id, r.created_at
+            FROM api.team_join_requests r
+            WHERE r.team_id = %s AND r.status = 'pending'
+            ORDER BY r.created_at
+            """,
+            (str(team_id),),
+        )
+        join_requests = cur.fetchall() or []
+    return members, invites, join_requests
+
+
+def enrich_join_request_emails(join_requests):
+    """Fill email/name on pending join requests (admin lookup)."""
+    if not join_requests:
+        return
+    try:
+        with db.connect_admin() as aconn, aconn.cursor() as acur:
+            for jr in join_requests:
+                acur.execute(
+                    "SELECT email, name FROM private.users WHERE id = %s",
+                    (str(jr["user_id"]),),
+                )
+                u = acur.fetchone() or {}
+                jr["email"] = u.get("email") or str(jr["user_id"])
+                jr["name"] = u.get("name") or ""
+    except Exception:
+        for jr in join_requests:
+            jr.setdefault("email", str(jr.get("user_id")))
+            jr.setdefault("name", "")
+
+
+def members_partial(team_id, *, form_email="", form_role="team-member"):
+    """Render the members-tab partial for HTMX swaps.
+
+    Args:
+        team_id: UUID of the team.
+        form_email: Previously typed email to preserve after a failed add.
+        form_role: Previously selected role to preserve after a failed add.
+
+    Returns:
+        Rendered ``partials/team_members.html``, or 404 when invisible.
+    """
+    with db.as_user(session["user_id"]) as conn, conn.cursor() as cur:
+        team = db.team(cur, team_id)
+        if not team:
+            return "Not found", 404
+        cur.execute("SELECT api.team_role(%s) AS r", (str(team_id),))
+        my_role = (cur.fetchone() or {}).get("r")
+        cur.execute(
+            "SELECT api.can_manage_rbac('team', %s::uuid) AS ok",
+            (str(team_id),),
+        )
+        can_edit_access = bool((cur.fetchone() or {}).get("ok"))
+        is_admin = (
+            my_role in ("team-owner", "team-admin")
+            or bool(session.get("is_global_admin"))
+            or can_edit_access
+        )
+        members, invites, join_requests = load_members_tab(cur, team_id, is_admin)
+    enrich_join_request_emails(join_requests)
+    return render_template(
+        "partials/team_members.html",
+        team=team,
+        members=members,
+        invites=invites,
+        join_requests=join_requests,
+        my_role=my_role,
+        is_admin=is_admin,
+        active_tab="members",
+        team_role_dropdown=config.RBAC_TEAM_ROLE_DROPDOWN,
+        form_email=form_email,
+        form_role=form_role,
+        new_invite_url=session.pop("new_invite_url", None),
+    )
+
+
+def members_response(team_id, *, form_email="", form_role="team-member"):
+    """Return the members partial for HTMX, else redirect to the members tab."""
+    if authz.htmx():
+        return members_partial(team_id, form_email=form_email, form_role=form_role)
+    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
 
 
 @authz.login_required
@@ -146,11 +267,11 @@ def add_team_binding(team_id):
         my_role = (cur.fetchone() or {}).get("r")
         if role == "team-owner" and my_role != "team-owner":
             flash("Only a team owner can grant the owner role", "error")
-            return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+            return members_response(team_id, form_email=email, form_role=role)
         uid = lookup_user_id(cur, email)
         if not uid:
             flash("No user with that email. They need to register or sign in via LDAP first.", "error")
-            return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+            return members_response(team_id, form_email=email, form_role=role)
         try:
             # Check for existing binding to determine add vs update
             rname = role
@@ -158,7 +279,7 @@ def add_team_binding(team_id):
             role_row = cur.fetchone()
             if not role_row:
                 flash(f"Built-in role {rname} missing — run schema ensure", "error")
-                return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+                return members_response(team_id, form_email=email, form_role=role)
             # Check existing team binding for this user
             cur.execute(
                 """
@@ -189,7 +310,8 @@ def add_team_binding(team_id):
         except Exception:
             conn.rollback()
             flash("Could not update team membership. Try again.", "error")
-    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+            return members_response(team_id, form_email=email, form_role=role)
+    return members_response(team_id)
 
 
 @authz.login_required
@@ -223,7 +345,7 @@ def remove_team_binding(team_id, user_id):
             row = cur.fetchone()
             if not row:
                 flash("Member not found", "error")
-                return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+                return members_response(team_id)
             rbac_sync.sync_user_team_binding(
                 cur, user_id=user_id, team_id=team_id, role=None
             )
@@ -238,7 +360,7 @@ def remove_team_binding(team_id, user_id):
         except Exception:
             conn.rollback()
             flash("Could not update team membership. Try again.", "error")
-    return redirect(url_for("team_detail", team_id=team_id, tab="members"))
+    return members_response(team_id)
 
 
 @authz.login_required

@@ -20,6 +20,8 @@ from core import config, db, settings_svc
 from integrations import ldap_auth
 from ui import paging
 
+from .members import enrich_join_request_emails, load_members_tab
+
 log = logging.getLogger(__name__)
 
 
@@ -184,37 +186,7 @@ def team_detail(team_id):
                     managed_count += 1
         elif tab == "members":
             # User subjects only (people + invites)
-
-            all_b = rbac_sync.list_scope_bindings(cur, "team", team_id)
-            rbac_sync.enrich_binding_emails(all_b)
-            members = [
-                b
-                for b in all_b
-                if b.get("subject_kind") == "User"
-                and str(b.get("role_name") or "").startswith("team-")
-            ]
-            if is_admin:
-                cur.execute(
-                    """
-                    SELECT id, role, expires_at, created_at, revoked_at
-                    FROM api.team_invites
-                    WHERE team_id = %s
-                    ORDER BY created_at DESC
-                    LIMIT 20
-                    """,
-                    (str(team_id),),
-                )
-                invites = cur.fetchall()
-                cur.execute(
-                    """
-                    SELECT r.id, r.role, r.user_id, r.created_at
-                    FROM api.team_join_requests r
-                    WHERE r.team_id = %s AND r.status = 'pending'
-                    ORDER BY r.created_at
-                    """,
-                    (str(team_id),),
-                )
-                join_requests = cur.fetchall() or []
+            members, invites, join_requests = load_members_tab(cur, team_id, is_admin)
         elif tab == "webhooks" and is_admin:
             from routes.webhooks_ui import load_scope_webhooks
 
@@ -311,20 +283,7 @@ def team_detail(team_id):
             )
             team_meta = cur.fetchall() or []
     if join_requests:
-        try:
-            with db.connect_admin() as aconn, aconn.cursor() as acur:
-                for jr in join_requests:
-                    acur.execute(
-                        "SELECT email, name FROM private.users WHERE id = %s",
-                        (str(jr["user_id"]),),
-                    )
-                    u = acur.fetchone() or {}
-                    jr["email"] = u.get("email") or str(jr["user_id"])
-                    jr["name"] = u.get("name") or ""
-        except Exception:
-            for jr in join_requests:
-                jr.setdefault("email", str(jr.get("user_id")))
-                jr.setdefault("name", "")
+        enrich_join_request_emails(join_requests)
     if access_bindings:
         rbac_sync.enrich_binding_emails(access_bindings)
     return render_template(
@@ -359,6 +318,8 @@ def team_detail(team_id):
         active_tab=tab,
         is_admin=is_admin,
         team_meta=team_meta,
+        form_email="",
+        form_role="team-member",
     )
 
 

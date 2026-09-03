@@ -1,18 +1,30 @@
+<div id="team-members">
+{% if new_invite_url %}
+<div class="token-once">
+  <div class="section-head tight">
+    <strong>Invite link (copy now, shown once)</strong>
+    <button type="button" class="link copy-btn" data-copy-target="new-invite-pre" data-clear-seconds="60">Copy link</button>
+  </div>
+  <pre id="new-invite-pre">{{ new_invite_url }}</pre>
+</div>
+{% endif %}
 <section>
   <h2>Members</h2>
   <p class="muted">People with a team role binding. Manage groups and advanced bindings under <a href="{{ url_for('team_detail', team_id=team.id, tab='access') if is_admin else '#' }}">Access</a>.</p>
   {% if is_admin %}
-  <form method="post" action="{{ url_for('add_team_binding', team_id=team.id) }}" class="row">
+  <form method="post" action="{{ url_for('add_team_binding', team_id=team.id) }}" class="row"
+        hx-post="{{ url_for('add_team_binding', team_id=team.id) }}"
+        hx-target="#team-members" hx-swap="outerHTML">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>User email
-      <input type="email" name="email" required class="user-suggest"
+      <input type="email" name="email" required class="user-suggest" value="{{ form_email|default('') }}"
              list="user-suggest-list" placeholder="e.g. alice@example.com" autocomplete="off">
     </label>
     <label>Role
       <select name="role">
         {% for rname, label in team_role_dropdown|default([]) %}
         {% if rname != 'team-owner' or my_role == 'team-owner' %}
-        <option value="{{ rname }}" {% if rname == 'team-member' %}selected{% endif %}>{{ label }}</option>
+        <option value="{{ rname }}" {% if rname == (form_role|default('team-member')) %}selected{% endif %}>{{ label }}</option>
         {% endif %}
         {% endfor %}
       </select>
@@ -39,6 +51,8 @@
           <td class="acts">
             <form method="post"
                   action="{{ url_for('remove_team_binding', team_id=team.id, user_id=b.subject_id) }}"
+                  hx-post="{{ url_for('remove_team_binding', team_id=team.id, user_id=b.subject_id) }}"
+                  hx-target="#team-members" hx-swap="outerHTML"
                   class="inline"
                   onsubmit="return confirm('Remove this member?')">
               <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -70,7 +84,9 @@
 <section>
   <h2>Invites &amp; join requests</h2>
   <p class="muted">Share a link. Recipients sign in, request to join, and an owner approves.</p>
-  <form method="post" action="{{ url_for('create_team_invite', team_id=team.id) }}" class="row">
+  <form method="post" action="{{ url_for('create_team_invite', team_id=team.id) }}" class="row"
+        hx-post="{{ url_for('create_team_invite', team_id=team.id) }}"
+        hx-target="#team-members" hx-swap="outerHTML">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <label>Role
       <select name="role">
@@ -96,6 +112,8 @@
         <td class="acts">
           {% if not i.revoked_at %}
           <form method="post" action="{{ url_for('revoke_team_invite', team_id=team.id, invite_id=i.id) }}"
+                hx-post="{{ url_for('revoke_team_invite', team_id=team.id, invite_id=i.id) }}"
+                hx-target="#team-members" hx-swap="outerHTML"
                 class="inline" onsubmit="return confirm('Revoke this invite?')">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Revoke</button>
@@ -119,11 +137,15 @@
         <td><span class="badge" data-variant="secondary">{{ r.role }}</span></td>
         <td class="muted" title="{{ r.created_at|time_when }}">{{ r.created_at|time_ago }}</td>
         <td class="acts">
-          <form method="post" action="{{ url_for('approve_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
+          <form method="post" action="{{ url_for('approve_join_request', team_id=team.id, req_id=r.id) }}" class="inline"
+                hx-post="{{ url_for('approve_join_request', team_id=team.id, req_id=r.id) }}"
+                hx-target="#team-members" hx-swap="outerHTML">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link">Approve</button>
           </form>
-          <form method="post" action="{{ url_for('reject_join_request', team_id=team.id, req_id=r.id) }}" class="inline">
+          <form method="post" action="{{ url_for('reject_join_request', team_id=team.id, req_id=r.id) }}" class="inline"
+                hx-post="{{ url_for('reject_join_request', team_id=team.id, req_id=r.id) }}"
+                hx-target="#team-members" hx-swap="outerHTML">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="link danger">Reject</button>
           </form>
@@ -137,3 +159,4 @@
   {% endif %}
 </section>
 {% endif %}
+</div>

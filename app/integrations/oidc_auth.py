@@ -87,13 +87,18 @@ def oidc_enabled() -> bool:
 
 
 def _client_secret_plain() -> str:
-    """Decrypt the OIDC client secret, falling back to stored value.
+    """Decrypt the OIDC client secret, failing closed on decrypt failure.
 
-    On decrypt failure (e.g. plaintext mis-save or MASTER_KEY rotation),
-    logs a warning and returns the stored string as plaintext.
+    A stored value that does not decrypt (e.g. after MASTER_KEY rotation)
+    refuses the exchange instead of sending a wrong secret to the IdP: the
+    callback logs the cause and the admin must re-save the secret in Server
+    settings.
 
     Returns:
         Plaintext client secret string, or empty string if unset.
+
+    Raises:
+        RuntimeError: When a stored secret cannot be decrypted.
 
     Example:
         >>> secret = _client_secret_plain()
@@ -105,13 +110,11 @@ def _client_secret_plain() -> str:
         return ""
     try:
         return crypto.decrypt(enc)
-    except Exception:
-        # Mis-saved plaintext or MASTER_KEY rotation — do not silently treat as OK forever.
-        log.warning(
-            "OIDC client secret decrypt failed; using stored value as plaintext "
-            "(re-save secret in Server settings after fixing MASTER_KEY)"
-        )
-        return enc
+    except Exception as e:
+        raise RuntimeError(
+            "OIDC client secret cannot be decrypted with the current "
+            "MASTER_KEY; re-save it in Server settings"
+        ) from e
 
 
 def _http_json(method: str, url: str, data: dict | None = None, headers: dict | None = None) -> dict:

@@ -44,7 +44,9 @@ POST /login
 ```
 
 1. Check the login lockout counter (`private.login_failures`). 5 failed
-   attempts → 5 minute lockout.
+   attempts → 5 minute lockout. If this check errors, login proceeds and
+   the miss is logged at error level (fail-open); the disabled-account
+   check later in this flow fails closed instead. Alert on both messages.
 2. Try local password verification (`private.verify_user`).
 3. If that fails and LDAP is enabled, try LDAP bind + group sync.
 4. On success check whether the account needs a 2FA step:

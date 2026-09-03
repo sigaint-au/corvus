@@ -14,7 +14,7 @@ from flask import (
     url_for,
 )
 
-from auth import authz, totp_svc
+from auth import authz, passwords, totp_svc
 from core import db, settings_svc
 from integrations import mailer
 
@@ -48,8 +48,8 @@ def register_page():
         password = request.form.get("password", "")
         password_confirm = request.form.get("password_confirm") or ""
         name = request.form.get("name", "").strip()
-        if len(password) < 8:
-            flash("Password must be at least 8 characters", "error")
+        if err := passwords.validate_new_password(password, email=email):
+            flash(err, "error")
             return render_template("register.html", setup_notice=notice), 400
         if password != password_confirm:
             flash("Passwords do not match", "error")
