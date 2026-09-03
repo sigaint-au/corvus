@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from flask import (
     flash,
     jsonify,
@@ -38,6 +40,8 @@ from .helpers import (
     _reveal_toggle_html,
     _secrets_redirect_or_partial,
 )
+
+log = logging.getLogger(__name__)
 
 
 @authz.login_required
@@ -396,8 +400,9 @@ def generate_ssh_key(project_id):
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["Pragma"] = "no-cache"
         return resp
-    except Exception as e:
-        return jsonify(success=False, error=str(e)), 500
+    except Exception:
+        log.warning("generate_ssh_key failed", exc_info=True)
+        return jsonify(success=False, error="Could not generate key"), 500
 
 
 @authz.login_required
