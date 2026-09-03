@@ -81,7 +81,7 @@ spec:
       dnsPolicy: ClusterFirst
       containers:
         - name: app
-          image: ghcr.io/sigaint/corvus/app:latest
+          image: quay.io/sigaint/corvus:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

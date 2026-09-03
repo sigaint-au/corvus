@@ -15,6 +15,25 @@ namespace: corvus-staging
 resources:
   - ../../base
 
+# Pin images so staging does not float on `:latest` from the base.
+# Bump newTag for rollouts, same procedure as prod.
+images:
+  - name: quay.io/sigaint/corvus
+    newName: quay.io/sigaint/corvus
+    newTag: "latest"   # floating tag: roll with `kubectl rollout restart`
+  - name: postgrest/postgrest
+    newName: postgrest/postgrest
+    newTag: v12.2.3
+  - name: bitnami/redis
+    newName: bitnami/redis
+    newTag: 7.2.4
+  - name: bitnami/redis-exporter
+    newName: bitnami/redis-exporter
+    newTag: 1.58.0
+  - name: bitnami/kubectl
+    newName: bitnami/kubectl
+    newTag: 1.30.4
+
 # Replicas + HPA tuned for cost, not HA. Each patch entry targets exactly
 # one resource by kind+name.
 patches:
@@ -54,10 +73,6 @@ patches:
     target:
       kind: Certificate
       name: corvus-tls
-  - path: enable-insecure-defaults.yaml
-    target:
-      kind: ConfigMap
-      name: corvus-app-env
 
 configurations:
   - kustomize-config.yaml

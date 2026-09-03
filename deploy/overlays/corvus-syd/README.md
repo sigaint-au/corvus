@@ -20,7 +20,11 @@ cp -r deploy/overlays/corvus-syd deploy/overlays/my-cluster
 - [cert-manager](https://cert-manager.io/) ClusterIssuer `le-production` exists.
 - [CloudNativePG](https://cloudnative-pg.io/) operator is installed (API 1.28-compatible Cluster spec).
 - Ingress controller class `traefik`.
-- Optional: Prometheus `PodMonitor` CRDs (base still emits them).
+- Prometheus `PodMonitor` CRDs (required: the base still emits 2 PodMonitors,
+  and `kubectl apply` fails if the CRDs are missing). If your cluster has no
+  Prometheus Operator, delete `podmonitor.yaml` from
+  `deploy/base/postgres/kustomization.yaml` and
+  `deploy/base/redis/kustomization.yaml` in your copy, or install the CRDs first.
 - Optional: a dockerconfig Secret named `quay-registry` if the app image is private.
 
 It **drops** from base: ClusterIssuers, PriorityClass, the Namespace object,

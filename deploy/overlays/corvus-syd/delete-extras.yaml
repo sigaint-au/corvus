@@ -1,4 +1,8 @@
 # No object-store credentials in this cluster; skip barman backups.
+# NOTE: $patch: delete entries must keep `namespace: corvus` — kustomize
+# matches the namespace too, and a namespace-less selector matches nothing.
+# When copying this overlay to another namespace, update the namespaces
+# here together with kustomization.yaml.
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:

@@ -36,7 +36,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: notify-due
-              image: ghcr.io/sigaint/corvus/app:latest
+              image: quay.io/sigaint/corvus:latest
               imagePullPolicy: IfNotPresent
               command: ["flask", "--app", "app", "notify-due"]
               envFrom:

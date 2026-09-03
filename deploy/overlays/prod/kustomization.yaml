@@ -30,9 +30,9 @@ resources:
 # Pin the prod image to a tagged release. Update via the upgrade procedure
 # documented in the README.
 images:
-  - name: ghcr.io/sigaint/corvus/app
-    newName: ghcr.io/sigaint/corvus/app
-    newTag: "2026.8.23.1"   # operators bump this for rollouts
+  - name: quay.io/sigaint/corvus
+    newName: quay.io/sigaint/corvus
+    newTag: "latest"   # floating tag: roll with `kubectl rollout restart`
   - name: postgrest/postgrest
     newName: postgrest/postgrest
     newTag: v12.2.3
@@ -42,12 +42,12 @@ images:
   - name: bitnami/redis-exporter
     newName: bitnami/redis-exporter
     newTag: 1.58.0
-  - name: ghcr.io/cloudnative-pg/postgresql
-    newName: ghcr.io/cloudnative-pg/postgresql
-    newTag: "16"
   - name: bitnami/kubectl
     newName: bitnami/kubectl
     newTag: 1.30.4
+# NOTE: no images entry for ghcr.io/cloudnative-pg/postgresql — CNPG pins
+# its image via spec.imageName (see postgres-storage-patch.yaml), which the
+# images transformer does not rewrite. Bump it there.
 
 # Patches: each entry targets exactly one resource by kind+name. Multi-doc
 # patches need separate entries.

@@ -11,12 +11,18 @@ resources:
   - ../../base
 
 images:
-  - name: ghcr.io/sigaint/corvus/app
+  - name: quay.io/sigaint/corvus
     newName: quay.io/sigaint/corvus
-    newTag: "2026.8.23.1"   # operators: bump this to roll the app image
+    newTag: "latest"   # floating tag: roll with `kubectl rollout restart`
+  # NOTE: stock redis image instead of Bitnami — different entrypoint and
+  # config layout. Kept working by redis-runtime.yaml (--requirepass from
+  # the Redis Secret) and redis-url.yaml. Verify after any base redis
+  # config change; if Bitnami-specific fields break, revert to bitnami/redis.
   - name: bitnami/redis
     newName: docker.io/library/redis
     newTag: 7.2-alpine
+  # NOTE: docker.io/bitnamilegacy is a deprecated namespace. If pulls fail,
+  # switch to a maintained redis-exporter image.
   - name: bitnami/redis-exporter
     newName: docker.io/bitnamilegacy/redis-exporter
     newTag: "1.58.0"
