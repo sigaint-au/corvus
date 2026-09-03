@@ -256,13 +256,14 @@ CREATE TABLE IF NOT EXISTS api.teams (
 -- WHY:  Automatic team membership and role assignment from LDAP group
 --       membership. No manual provisioning needed for directory-managed users.
 --
--- RELATIONSHIPS: FK team_id → api.teams(id) CASCADE.
+-- RELATIONSHIPS: FK team_id → api.teams(id) CASCADE;
+--                FK role → rbac.roles(name) (attached after the catalog exists).
 -- RLS: Team members can SELECT; team-owner/admin can write.
 CREATE TABLE IF NOT EXISTS api.team_ldap_maps (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   ldap_group text NOT NULL,
-  role text NOT NULL REFERENCES rbac.roles (name),
+  role text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, ldap_group)
 );
@@ -1127,7 +1128,7 @@ CREATE TABLE IF NOT EXISTS api.team_oidc_maps (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id uuid NOT NULL REFERENCES api.teams(id) ON DELETE CASCADE,
   oidc_group text NOT NULL,
-  role text NOT NULL REFERENCES rbac.roles (name),
+  role text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, oidc_group)
 );
@@ -1991,6 +1992,17 @@ CREATE TABLE IF NOT EXISTS rbac.roles (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Directory maps are created with api.teams, before this catalog. Attach the
+-- name FKs here so initdb does not abort on a missing rbac schema.
+ALTER TABLE api.team_ldap_maps DROP CONSTRAINT IF EXISTS team_ldap_maps_role_fkey;
+ALTER TABLE api.team_ldap_maps
+  ADD CONSTRAINT team_ldap_maps_role_fkey
+  FOREIGN KEY (role) REFERENCES rbac.roles (name);
+ALTER TABLE api.team_oidc_maps DROP CONSTRAINT IF EXISTS team_oidc_maps_role_fkey;
+ALTER TABLE api.team_oidc_maps
+  ADD CONSTRAINT team_oidc_maps_role_fkey
+  FOREIGN KEY (role) REFERENCES rbac.roles (name);
+
 -- ── RBAC Role Rules ────────────────────────────────────────────────────
 --
 -- WHAT: Policy rules defining what resources and verbs a role permits.
@@ -2702,75 +2714,6 @@ GRANT EXECUTE ON FUNCTION api.rbac_secret_binding_allows TO authenticator, authe
 -- v_folder/v_subject). Dropped so the old 5-arg form cannot shadow it.
 DROP FUNCTION IF EXISTS api.can_access_secret_row(uuid, uuid, text, text, timestamptz);
 
--- Wrapper for can_access_secret_row that loads the secret row from the DB.
--- Use this when you have only the secret id (not the full row).
---
--- Input:  sid  (uuid: secret id),
---         need (text: 'read'|'reveal'|'write'; default 'read')
--- Output: boolean — true if access allowed (false if secret not found)
--- Example: SELECT api.can_access_secret('<secret-uuid>', 'reveal');
-CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
-RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT COALESCE(
-    (
-      SELECT api.can_access_secret_row(
-        s.id, s.project_id, s.access_mode, need, s.deleted_at
-      )
-      FROM api.secrets s
-      WHERE s.id = sid
-    ),
-    false
-  );
-$$;
-
--- Check if the current user can reveal the secret value NOW.
--- Combines RBAC reveal permission with the approval layer:
---   1. Deleted secrets cannot be revealed (restore requires write access).
---   2. Global admins and project admins always pass.
---   3. Must be able to see the secret (read).
---   4. If an approved access request exists, pass.
---   5. If reveal ACL grants it and no approval needed, pass.
---
--- Input:  sid (uuid: secret id)
--- Output: boolean — true if reveal allowed now
--- Example: SELECT api.can_reveal_secret('<secret-uuid>');
-CREATE OR REPLACE FUNCTION api.can_reveal_secret(sid uuid) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, private
-SET row_security = off AS $$
-  SELECT CASE
-    WHEN sid IS NULL THEN false
-    WHEN NOT EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid AND s.deleted_at IS NULL
-    ) THEN false
-    WHEN api.is_global_admin() THEN true
-    WHEN EXISTS (
-      SELECT 1 FROM api.secrets s
-      WHERE s.id = sid
-        AND s.deleted_at IS NULL
-        AND api.can_admin_project(s.project_id)
-    ) THEN true
-    WHEN NOT api.can_access_secret(sid, 'read') THEN false
-    WHEN EXISTS (
-      SELECT 1 FROM api.secret_access_requests r
-      WHERE r.secret_id = sid
-        AND r.user_id = api.current_user_id()
-        AND r.status = 'approved'
-        AND r.approved_until IS NOT NULL
-        AND r.approved_until > now()
-    ) THEN true
-    WHEN NOT api.can_access_secret(sid, 'reveal') THEN false
-    WHEN NOT COALESCE(api.secret_requires_approval(sid), false) THEN true
-    ELSE false
-  END;
-$$;
-
-GRANT EXECUTE ON FUNCTION api.can_reveal_secret TO authenticated, anon;
-
 -- Create a team and bind the creator as team-owner via rbac.bindings.
 -- Called by the Flask app when a user creates a new team.
 --
@@ -3164,6 +3107,49 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION api.effective_access_rows TO authenticator, authenticated;
 
+-- Folder bindings participate in authorization (folder scope sits between
+-- secret and project in the scope chain). Defined here so LANGUAGE sql
+-- can_access_secret_row can resolve it at CREATE time.
+CREATE OR REPLACE FUNCTION api.rbac_folder_binding_allows(
+  p_folder uuid,
+  p_need text,
+  p_subject uuid DEFAULT NULL
+) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, rbac, private, pg_catalog
+SET row_security = off AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM api.rbac_subjects(COALESCE(p_subject, api.current_user_id())) sub
+    JOIN rbac.bindings b
+      ON b.subject_kind = sub.subject_kind
+     AND b.subject_id = sub.subject_id
+    JOIN rbac.role_rules rr ON rr.role_id = b.role_id
+    WHERE b.scope_kind = 'folder'
+      AND b.scope_id = p_folder
+      AND (
+        CASE lower(COALESCE(p_need, ''))
+          WHEN 'write' THEN
+            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'update')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'create')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
+          WHEN 'reveal' THEN
+            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'reveal')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
+          ELSE
+            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'get')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'list')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'reveal')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'update')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
+            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
+        END
+      )
+  );
+$$;
+
 -- Secrets: project admins pass; folder-bound secrets check folder bindings;
 -- restricted mode uses secret bindings; otherwise inherit project/team RBAC.
 CREATE OR REPLACE FUNCTION api.can_access_secret_row(
@@ -3210,6 +3196,75 @@ SET row_security = off AS $$
     )
   END;
 $$;
+
+-- Wrapper for can_access_secret_row that loads the secret row from the DB.
+-- Use this when you have only the secret id (not the full row).
+--
+-- Input:  sid  (uuid: secret id),
+--         need (text: 'read'|'reveal'|'write'; default 'read')
+-- Output: boolean — true if access allowed (false if secret not found)
+-- Example: SELECT api.can_access_secret('<secret-uuid>', 'reveal');
+CREATE OR REPLACE FUNCTION api.can_access_secret(sid uuid, need text DEFAULT 'read')
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT COALESCE(
+    (
+      SELECT api.can_access_secret_row(
+        s.id, s.project_id, s.access_mode, need, s.deleted_at
+      )
+      FROM api.secrets s
+      WHERE s.id = sid
+    ),
+    false
+  );
+$$;
+
+-- Check if the current user can reveal the secret value NOW.
+-- Combines RBAC reveal permission with the approval layer:
+--   1. Deleted secrets cannot be revealed (restore requires write access).
+--   2. Global admins and project admins always pass.
+--   3. Must be able to see the secret (read).
+--   4. If an approved access request exists, pass.
+--   5. If reveal ACL grants it and no approval needed, pass.
+--
+-- Input:  sid (uuid: secret id)
+-- Output: boolean — true if reveal allowed now
+-- Example: SELECT api.can_reveal_secret('<secret-uuid>');
+CREATE OR REPLACE FUNCTION api.can_reveal_secret(sid uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = api, private
+SET row_security = off AS $$
+  SELECT CASE
+    WHEN sid IS NULL THEN false
+    WHEN NOT EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = sid AND s.deleted_at IS NULL
+    ) THEN false
+    WHEN api.is_global_admin() THEN true
+    WHEN EXISTS (
+      SELECT 1 FROM api.secrets s
+      WHERE s.id = sid
+        AND s.deleted_at IS NULL
+        AND api.can_admin_project(s.project_id)
+    ) THEN true
+    WHEN NOT api.can_access_secret(sid, 'read') THEN false
+    WHEN EXISTS (
+      SELECT 1 FROM api.secret_access_requests r
+      WHERE r.secret_id = sid
+        AND r.user_id = api.current_user_id()
+        AND r.status = 'approved'
+        AND r.approved_until IS NOT NULL
+        AND r.approved_until > now()
+    ) THEN true
+    WHEN NOT api.can_access_secret(sid, 'reveal') THEN false
+    WHEN NOT COALESCE(api.secret_requires_approval(sid), false) THEN true
+    ELSE false
+  END;
+$$;
+
+GRANT EXECUTE ON FUNCTION api.can_reveal_secret TO authenticated, anon;
 
 -- ── RLS Policies (created after auth functions exist) ──────────────────
 --
@@ -4684,47 +4739,7 @@ USING (api.can_admin_project(project_id))
 WITH CHECK (api.can_admin_project(project_id));
 
 -- ── Folders: authorization ─────────────────────────────────────────────
--- Folder bindings participate in authorization (folder scope sits between
--- secret and project in the scope chain).
-CREATE OR REPLACE FUNCTION api.rbac_folder_binding_allows(
-  p_folder uuid,
-  p_need text,
-  p_subject uuid DEFAULT NULL
-) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = api, rbac, private, pg_catalog
-SET row_security = off AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM api.rbac_subjects(COALESCE(p_subject, api.current_user_id())) sub
-    JOIN rbac.bindings b
-      ON b.subject_kind = sub.subject_kind
-     AND b.subject_id = sub.subject_id
-    JOIN rbac.role_rules rr ON rr.role_id = b.role_id
-    WHERE b.scope_kind = 'folder'
-      AND b.scope_id = p_folder
-      AND (
-        CASE lower(COALESCE(p_need, ''))
-          WHEN 'write' THEN
-            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'update')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'create')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
-          WHEN 'reveal' THEN
-            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'reveal')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
-          ELSE
-            api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'get')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'list')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'reveal')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'update')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, 'secrets', 'admin')
-            OR api.rbac_rule_matches(rr.resources, rr.verbs, '*', '*')
-        END
-      )
-  );
-$$;
+-- rbac_folder_binding_allows is created before can_access_secret_row.
 
 -- Authorize a folder row: project admins pass through; restricted folders
 -- check folder bindings only; otherwise the scope chain (folder → project →

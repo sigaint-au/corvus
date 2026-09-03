@@ -480,7 +480,7 @@ def main() -> None:
                 """
                 INSERT INTO api.secrets (project_id, key, value_enc, note, kind)
                 VALUES (%s::uuid, %s, %s, %s, %s)
-                ON CONFLICT (project_id, key) WHERE deleted_at IS NULL
+                ON CONFLICT (project_id, key) WHERE deleted_at IS NULL AND folder_id IS NULL
                 DO UPDATE SET
                   value_enc = EXCLUDED.value_enc,
                   note = EXCLUDED.note,

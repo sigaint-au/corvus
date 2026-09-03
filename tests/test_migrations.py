@@ -202,6 +202,32 @@ def test_baseline_roles_scope_assignment():
     assert "UPDATE rbac.roles SET scopes = ARRAY['team'], precedence = 4 WHERE name = 'team-owner'" in sql
 
 
+def test_baseline_role_fks_after_rbac_catalog():
+    """Directory-map FKs to rbac.roles(name) must follow CREATE TABLE rbac.roles.
+
+    compose mounts 0001_init.sql as docker-entrypoint-initdb.d; a forward
+    reference aborts postgres and the rest of the stack never becomes healthy.
+    """
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
+    code = "\n".join(line.split("--", 1)[0] for line in sql.splitlines())
+    lowered = code.lower()
+    roles_at = lowered.index("create table if not exists rbac.roles")
+    first_name_fk = lowered.index("references rbac.roles (name)")
+    assert roles_at < first_name_fk
+
+
+def test_baseline_secret_access_helpers_order():
+    """LANGUAGE sql helpers bind callees at CREATE time; keep dependency order."""
+    sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
+    code = "\n".join(line.split("--", 1)[0] for line in sql.splitlines())
+    lowered = code.lower()
+    folder = lowered.index("create or replace function api.rbac_folder_binding_allows(")
+    row = lowered.index("create or replace function api.can_access_secret_row(")
+    wrap = lowered.index("create or replace function api.can_access_secret(")
+    reveal = lowered.index("create or replace function api.can_reveal_secret(")
+    assert folder < row < wrap < reveal
+
+
 def test_baseline_audit_network_columns():
     """Audit tables carry client IP/user-agent for forensics."""
     sql = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
