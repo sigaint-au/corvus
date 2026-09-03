@@ -56,6 +56,7 @@ def test_migrations_ship_in_order():
         "0010_machine_meta_in_list.sql",
         "0011_machine_token_description.sql",
         "0012_audit_ip_user_agent.sql",
+        "0013_machine_token_description_select.sql",
     ]
     for name in files:
         assert name[:4].isdigit()
@@ -185,6 +186,20 @@ def test_squashed_baseline_contains_all_schema_layers():
     assert "service-read" in sql
     # auditor role
     assert "'auditor'" in sql
+
+
+def test_machine_token_description_select_grant():
+    """0011 added description after 0001's column-level SELECT grant."""
+    sql = (migrations.MIGRATIONS_DIR / "0013_machine_token_description_select.sql").read_text()
+    assert "GRANT SELECT (description) ON api.machine_tokens TO authenticated" in sql
+    # token_hash stays withheld from authenticated (PostgREST / as_user).
+    init = (migrations.MIGRATIONS_DIR / "0001_init.sql").read_text()
+    assert "REVOKE SELECT ON api.machine_tokens FROM authenticated" in init
+    assert (
+        "GRANT SELECT (\n"
+        "  id, project_id, name, token_prefix, role, expires_at, created_at, last_used_at\n"
+        ") ON api.machine_tokens TO authenticated"
+    ) in init
 
 
 def test_cli_session_tokens_migration_creates_table():
