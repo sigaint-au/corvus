@@ -7,5 +7,5 @@ cryptography==50.0.2
 gunicorn==26.2.0
 ldap3==2.9.1
 qrcode==8.2
-python-pkcs11==0.9.5
+python-pkcs11==0.10.0
 redis>=8.1.0,<9
