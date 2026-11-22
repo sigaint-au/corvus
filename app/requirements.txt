@@ -4,7 +4,7 @@ psycopg[binary]>=3.3.6,<4
 psycopg-pool>=3.3.1,<4
 PyJWT==2.13.0
 cryptography==50.0.2
-gunicorn==26.2.0
+gunicorn==27.0.1
 ldap3==2.9.1
 qrcode==8.2
 python-pkcs11==0.10.0
